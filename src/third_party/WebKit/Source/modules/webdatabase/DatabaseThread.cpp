@@ -34,6 +34,7 @@
 #include "modules/webdatabase/SQLTransactionClient.h"
 #include "modules/webdatabase/SQLTransactionCoordinator.h"
 #include "platform/Logging.h"
+#include "platform/ThreadSafeFunctional.h"
 #include "platform/heap/glue/MessageLoopInterruptor.h"
 #include "platform/heap/glue/PendingGCRunner.h"
 #include "public/platform/Platform.h"
@@ -42,7 +43,7 @@ namespace blink {
 
 DatabaseThread::DatabaseThread()
     : m_transactionClient(adoptPtr(new SQLTransactionClient()))
-    , m_transactionCoordinator(adoptPtrWillBeNoop(new SQLTransactionCoordinator()))
+    , m_transactionCoordinator(new SQLTransactionCoordinator())
     , m_cleanupSync(0)
     , m_terminationRequested(false)
 {
@@ -54,12 +55,10 @@ DatabaseThread::~DatabaseThread()
     ASSERT(!m_thread);
 }
 
-void DatabaseThread::trace(Visitor* visitor)
+DEFINE_TRACE(DatabaseThread)
 {
-#if ENABLE(OILPAN)
     visitor->trace(m_openDatabaseSet);
     visitor->trace(m_transactionCoordinator);
-#endif
 }
 
 void DatabaseThread::start()
@@ -67,12 +66,12 @@ void DatabaseThread::start()
     if (m_thread)
         return;
     m_thread = WebThreadSupportingGC::create("WebCore: Database");
-    m_thread->postTask(new Task(WTF::bind(&DatabaseThread::setupDatabaseThread, this)));
+    m_thread->postTask(FROM_HERE, new Task(threadSafeBind(&DatabaseThread::setupDatabaseThread, this)));
 }
 
 void DatabaseThread::setupDatabaseThread()
 {
-    m_thread->attachGC();
+    m_thread->initialize();
 }
 
 void DatabaseThread::terminate()
@@ -84,7 +83,7 @@ void DatabaseThread::terminate()
         m_terminationRequested = true;
         m_cleanupSync = &sync;
         WTF_LOG(StorageAPI, "DatabaseThread %p was asked to terminate\n", this);
-        m_thread->postTask(new Task(WTF::bind(&DatabaseThread::cleanupDatabaseThread, this)));
+        m_thread->postTask(FROM_HERE, new Task(threadSafeBind(&DatabaseThread::cleanupDatabaseThread, this)));
     }
     sync.waitForTaskCompletion();
     // The WebThread destructor blocks until all the tasks of the database
@@ -110,19 +109,20 @@ void DatabaseThread::cleanupDatabaseThread()
     // inconsistent or locked state.
     if (m_openDatabaseSet.size() > 0) {
         // As the call to close will modify the original set, we must take a copy to iterate over.
-        WillBeHeapHashSet<RefPtrWillBeMember<Database> > openSetCopy;
+        HeapHashSet<Member<Database>> openSetCopy;
         openSetCopy.swap(m_openDatabaseSet);
-        WillBeHeapHashSet<RefPtrWillBeMember<Database> >::iterator end = openSetCopy.end();
-        for (WillBeHeapHashSet<RefPtrWillBeMember<Database> >::iterator it = openSetCopy.begin(); it != end; ++it)
+        HeapHashSet<Member<Database>>::iterator end = openSetCopy.end();
+        for (HeapHashSet<Member<Database>>::iterator it = openSetCopy.begin(); it != end; ++it)
             (*it)->close();
     }
+    m_openDatabaseSet.clear();
 
-    m_thread->postTask(new Task(WTF::bind(&DatabaseThread::cleanupDatabaseThreadCompleted, this)));
+    m_thread->postTask(FROM_HERE, new Task(WTF::bind(&DatabaseThread::cleanupDatabaseThreadCompleted, this)));
 }
 
 void DatabaseThread::cleanupDatabaseThreadCompleted()
 {
-    m_thread->detachGC();
+    m_thread->shutdown();
     if (m_cleanupSync) // Someone wanted to know when we were done cleaning up.
         m_cleanupSync->taskCompleted();
 }
@@ -132,7 +132,9 @@ void DatabaseThread::recordDatabaseOpen(Database* database)
     ASSERT(isDatabaseThread());
     ASSERT(database);
     ASSERT(!m_openDatabaseSet.contains(database));
-    m_openDatabaseSet.add(database);
+    MutexLocker lock(m_terminationRequestedMutex);
+    if (!m_terminationRequested)
+        m_openDatabaseSet.add(database);
 }
 
 void DatabaseThread::recordDatabaseClosed(Database* database)
@@ -156,7 +158,7 @@ void DatabaseThread::scheduleTask(PassOwnPtr<DatabaseTask> task)
     ASSERT(m_thread);
     ASSERT(!terminationRequested());
     // WebThread takes ownership of the task.
-    m_thread->postTask(task.leakPtr());
+    m_thread->postTask(FROM_HERE, new Task(threadSafeBind(&DatabaseTask::run, task)));
 }
 
 } // namespace blink

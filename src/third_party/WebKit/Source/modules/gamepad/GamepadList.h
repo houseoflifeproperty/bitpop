@@ -33,7 +33,7 @@
 
 namespace blink {
 
-class GamepadList FINAL : public GarbageCollected<GamepadList>, public ScriptWrappable {
+class GamepadList final : public GarbageCollected<GamepadList>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static GamepadList* create()
@@ -45,7 +45,7 @@ public:
     Gamepad* item(unsigned index);
     unsigned length() const { return WebGamepads::itemsLengthCap; }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     GamepadList();

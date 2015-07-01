@@ -25,14 +25,13 @@
 #include "chrome/installer/util/google_update_settings.h"
 #include "chrome/installer/util/helper.h"
 #include "chrome/installer/util/install_util.h"
+#include "chrome/installer/util/installer_util_strings.h"
 #include "chrome/installer/util/l10n_string_util.h"
 #include "chrome/installer/util/uninstall_metrics.h"
 #include "chrome/installer/util/updating_app_registration_data.h"
 #include "chrome/installer/util/util_constants.h"
 #include "chrome/installer/util/wmi.h"
 #include "content/public/common/result_codes.h"
-
-#include "installer_util_strings.h"  // NOLINT
 
 namespace {
 
@@ -97,8 +96,9 @@ void GoogleChromeDistribution::DoPostUninstallOperations(
   iexplore = iexplore.AppendASCII("Internet Explorer");
   iexplore = iexplore.AppendASCII("iexplore.exe");
 
-  base::string16 command = iexplore.value() + L" " + GetUninstallSurveyUrl() +
-      L"&" + kVersionParam + L"=" + base::UTF8ToWide(version.GetString()) +
+  base::string16 command = L"\"" + iexplore.value() + L"\" " +
+      GetUninstallSurveyUrl() +
+      L"&" + kVersionParam + L"=" + base::ASCIIToUTF16(version.GetString()) +
       L"&" + kOSParam + L"=" + os_version;
 
   base::string16 uninstall_metrics;
@@ -252,10 +252,6 @@ bool GoogleChromeDistribution::GetCommandExecuteImplClsid(
     base::string16* handler_class_uuid) {
   if (handler_class_uuid)
     *handler_class_uuid = kCommandExecuteImplUuid;
-  return true;
-}
-
-bool GoogleChromeDistribution::AppHostIsSupported() {
   return true;
 }
 

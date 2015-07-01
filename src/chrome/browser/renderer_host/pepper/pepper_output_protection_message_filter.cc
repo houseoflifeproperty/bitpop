@@ -30,43 +30,43 @@ namespace chrome {
 namespace {
 
 #if defined(OS_CHROMEOS)
-COMPILE_ASSERT(static_cast<int>(PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_NONE) ==
+static_assert(static_cast<int>(PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_NONE) ==
                    static_cast<int>(ui::DISPLAY_CONNECTION_TYPE_NONE),
-               PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_NONE);
-COMPILE_ASSERT(
+              "PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_NONE value mismatch");
+static_assert(
     static_cast<int>(PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_UNKNOWN) ==
         static_cast<int>(ui::DISPLAY_CONNECTION_TYPE_UNKNOWN),
-    PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_UNKNOWN);
-COMPILE_ASSERT(
+    "PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_UNKNOWN value mismatch");
+static_assert(
     static_cast<int>(PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_INTERNAL) ==
         static_cast<int>(ui::DISPLAY_CONNECTION_TYPE_INTERNAL),
-    PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_INTERNAL);
-COMPILE_ASSERT(static_cast<int>(PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_VGA) ==
+    "PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_INTERNAL value mismatch");
+static_assert(static_cast<int>(PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_VGA) ==
                    static_cast<int>(ui::DISPLAY_CONNECTION_TYPE_VGA),
-               PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_VGA);
-COMPILE_ASSERT(static_cast<int>(PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_HDMI) ==
+               "PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_VGA value mismatch");
+static_assert(static_cast<int>(PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_HDMI) ==
                    static_cast<int>(ui::DISPLAY_CONNECTION_TYPE_HDMI),
-               PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_HDMI);
-COMPILE_ASSERT(static_cast<int>(PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_DVI) ==
+               "PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_HDMI value mismatch");
+static_assert(static_cast<int>(PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_DVI) ==
                    static_cast<int>(ui::DISPLAY_CONNECTION_TYPE_DVI),
-               PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_DVI);
-COMPILE_ASSERT(
+               "PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_DVI value mismatch");
+static_assert(
     static_cast<int>(PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_DISPLAYPORT) ==
         static_cast<int>(ui::DISPLAY_CONNECTION_TYPE_DISPLAYPORT),
-    PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_DISPLAYPORT);
-COMPILE_ASSERT(
+    "PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_DISPLAYPORT value mismatch");
+static_assert(
     static_cast<int>(PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_NETWORK) ==
         static_cast<int>(ui::DISPLAY_CONNECTION_TYPE_NETWORK),
-    PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_NETWORK);
-COMPILE_ASSERT(static_cast<int>(PP_OUTPUT_PROTECTION_METHOD_PRIVATE_NONE) ==
+    "PP_OUTPUT_PROTECTION_LINK_TYPE_PRIVATE_NETWORK value mismatch");
+static_assert(static_cast<int>(PP_OUTPUT_PROTECTION_METHOD_PRIVATE_NONE) ==
                    static_cast<int>(ui::CONTENT_PROTECTION_METHOD_NONE),
-               PP_OUTPUT_PROTECTION_METHOD_PRIVATE_NONE);
-COMPILE_ASSERT(static_cast<int>(PP_OUTPUT_PROTECTION_METHOD_PRIVATE_HDCP) ==
+               "PP_OUTPUT_PROTECTION_METHOD_PRIVATE_NONE value mismatch");
+static_assert(static_cast<int>(PP_OUTPUT_PROTECTION_METHOD_PRIVATE_HDCP) ==
                    static_cast<int>(ui::CONTENT_PROTECTION_METHOD_HDCP),
-               PP_OUTPUT_PROTECTION_METHOD_PRIVATE_HDCP);
+               "PP_OUTPUT_PROTECTION_METHOD_PRIVATE_HDCP value mismatch");
 
 bool GetCurrentDisplayId(content::RenderFrameHost* rfh, int64* display_id) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   gfx::NativeView native_view = rfh->GetNativeView();
   gfx::Screen* screen = gfx::Screen::GetScreenFor(native_view);
   if (!screen)
@@ -75,6 +75,10 @@ bool GetCurrentDisplayId(content::RenderFrameHost* rfh, int64* display_id) {
   *display_id = display.id();
   return true;
 }
+
+void DoNothing(bool status) {
+}
+
 #endif
 
 }  // namespace
@@ -85,19 +89,32 @@ bool GetCurrentDisplayId(content::RenderFrameHost* rfh, int64* display_id) {
 class PepperOutputProtectionMessageFilter::Delegate
     : public aura::WindowObserver {
  public:
+  typedef base::Callback<void(int32_t /* result */,
+                              uint32_t /* link_mask */,
+                              uint32_t /* protection_mask*/)>
+      QueryStatusCallback;
+  typedef base::Callback<void(int32_t /* result */)> EnableProtectionCallback;
+
   Delegate(int render_process_id, int render_frame_id);
-  virtual ~Delegate();
+  ~Delegate() override;
 
   // aura::WindowObserver overrides.
-  virtual void OnWindowHierarchyChanged(
-      const aura::WindowObserver::HierarchyChangeParams& params) OVERRIDE;
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
+  void OnWindowHierarchyChanged(
+      const aura::WindowObserver::HierarchyChangeParams& params) override;
+  void OnWindowDestroying(aura::Window* window) override;
 
-  int32_t OnQueryStatus(uint32_t* link_mask, uint32_t* protection_mask);
-  int32_t OnEnableProtection(uint32_t desired_method_mask);
+  void QueryStatus(const QueryStatusCallback& callback);
+  void EnableProtection(uint32_t desired_method_mask,
+                        const EnableProtectionCallback& callback);
 
  private:
   ui::DisplayConfigurator::ContentProtectionClientId GetClientId();
+
+  void QueryStatusComplete(
+      const QueryStatusCallback& callback,
+      const ui::DisplayConfigurator::QueryProtectionResponse& response);
+  void EnableProtectionComplete(const EnableProtectionCallback& callback,
+                                bool success);
 
   // Used to lookup the WebContents associated with this PP_Instance.
   int render_process_id_;
@@ -114,6 +131,9 @@ class PepperOutputProtectionMessageFilter::Delegate
   // The last desired method mask. Will enable this mask on new display if
   // renderer changes display.
   uint32_t desired_method_mask_;
+
+  base::WeakPtrFactory<PepperOutputProtectionMessageFilter::Delegate>
+      weak_ptr_factory_;
 };
 
 PepperOutputProtectionMessageFilter::Delegate::Delegate(int render_process_id,
@@ -122,17 +142,13 @@ PepperOutputProtectionMessageFilter::Delegate::Delegate(int render_process_id,
       render_frame_id_(render_frame_id),
       window_(NULL),
       client_id_(ui::DisplayConfigurator::kInvalidClientId),
-      display_id_(0) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
-#if defined(USE_ATHENA)
-  // Fail for now so that we can catch the event in the crash report.
-  // crbug.com/381398
-  CHECK(false);
-#endif
+      display_id_(0),
+      weak_ptr_factory_(this) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
 }
 
 PepperOutputProtectionMessageFilter::Delegate::~Delegate() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   ui::DisplayConfigurator* configurator =
       ash::Shell::GetInstance()->display_configurator();
@@ -144,7 +160,7 @@ PepperOutputProtectionMessageFilter::Delegate::~Delegate() {
 
 ui::DisplayConfigurator::ContentProtectionClientId
 PepperOutputProtectionMessageFilter::Delegate::GetClientId() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (client_id_ == ui::DisplayConfigurator::kInvalidClientId) {
     content::RenderFrameHost* rfh =
         content::RenderFrameHost::FromID(render_process_id_, render_frame_id_);
@@ -154,34 +170,67 @@ PepperOutputProtectionMessageFilter::Delegate::GetClientId() {
     window_ = rfh->GetNativeView();
     if (!window_)
       return ui::DisplayConfigurator::kInvalidClientId;
-    window_->AddObserver(this);
 
     ui::DisplayConfigurator* configurator =
         ash::Shell::GetInstance()->display_configurator();
     client_id_ = configurator->RegisterContentProtectionClient();
+
+    if (client_id_ != ui::DisplayConfigurator::kInvalidClientId)
+      window_->AddObserver(this);
   }
   return client_id_;
 }
 
-int32_t PepperOutputProtectionMessageFilter::Delegate::OnQueryStatus(
-    uint32_t* link_mask,
-    uint32_t* protection_mask) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+void PepperOutputProtectionMessageFilter::Delegate::QueryStatus(
+    const QueryStatusCallback& callback) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   content::RenderFrameHost* rfh =
       content::RenderFrameHost::FromID(render_process_id_, render_frame_id_);
   if (!rfh) {
     LOG(WARNING) << "RenderFrameHost is not alive.";
-    return PP_ERROR_FAILED;
+    callback.Run(PP_ERROR_FAILED, 0, 0);
+    return;
   }
 
   ui::DisplayConfigurator* configurator =
       ash::Shell::GetInstance()->display_configurator();
-  bool result = configurator->QueryContentProtectionStatus(
-      GetClientId(), display_id_, link_mask, protection_mask);
+  configurator->QueryContentProtectionStatus(
+      GetClientId(), display_id_,
+      base::Bind(
+          &PepperOutputProtectionMessageFilter::Delegate::QueryStatusComplete,
+          weak_ptr_factory_.GetWeakPtr(), callback));
+}
 
+void PepperOutputProtectionMessageFilter::Delegate::EnableProtection(
+    uint32_t desired_method_mask,
+    const EnableProtectionCallback& callback) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+  ui::DisplayConfigurator* configurator =
+      ash::Shell::GetInstance()->display_configurator();
+  configurator->EnableContentProtection(
+      GetClientId(), display_id_, desired_method_mask,
+      base::Bind(&PepperOutputProtectionMessageFilter::Delegate::
+                     EnableProtectionComplete,
+                 weak_ptr_factory_.GetWeakPtr(), callback));
+  desired_method_mask_ = desired_method_mask;
+}
+
+void PepperOutputProtectionMessageFilter::Delegate::QueryStatusComplete(
+    const QueryStatusCallback& callback,
+    const ui::DisplayConfigurator::QueryProtectionResponse& response) {
+  content::RenderFrameHost* rfh =
+      content::RenderFrameHost::FromID(render_process_id_, render_frame_id_);
+  if (!rfh) {
+    LOG(WARNING) << "RenderFrameHost is not alive.";
+    callback.Run(PP_ERROR_FAILED, 0, 0);
+    return;
+  }
+
+  uint32_t link_mask = response.link_mask;
   // If we successfully retrieved the device level status, check for capturers.
-  if (result) {
+  if (response.success) {
     const bool capture_detected =
         // Check for tab capture on the current tab.
         content::WebContents::FromRenderFrameHost(rfh)->GetCapturerCount() >
@@ -190,22 +239,17 @@ int32_t PepperOutputProtectionMessageFilter::Delegate::OnQueryStatus(
         MediaCaptureDevicesDispatcher::GetInstance()
             ->IsDesktopCaptureInProgress();
     if (capture_detected)
-      *link_mask |= ui::DISPLAY_CONNECTION_TYPE_NETWORK;
+      link_mask |= ui::DISPLAY_CONNECTION_TYPE_NETWORK;
   }
 
-  return result ? PP_OK : PP_ERROR_FAILED;
+  callback.Run(response.success ? PP_OK : PP_ERROR_FAILED, link_mask,
+               response.protection_mask);
 }
 
-int32_t PepperOutputProtectionMessageFilter::Delegate::OnEnableProtection(
-    uint32_t desired_method_mask) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-
-  ui::DisplayConfigurator* configurator =
-      ash::Shell::GetInstance()->display_configurator();
-  bool result = configurator->EnableContentProtection(
-      GetClientId(), display_id_, desired_method_mask);
-  desired_method_mask_ = desired_method_mask;
-  return result ? PP_OK : PP_ERROR_FAILED;
+void PepperOutputProtectionMessageFilter::Delegate::EnableProtectionComplete(
+    const EnableProtectionCallback& callback,
+    bool result) {
+  callback.Run(result ? PP_OK : PP_ERROR_FAILED);
 }
 
 void PepperOutputProtectionMessageFilter::Delegate::OnWindowHierarchyChanged(
@@ -227,10 +271,12 @@ void PepperOutputProtectionMessageFilter::Delegate::OnWindowHierarchyChanged(
     // Display changed and should enable output protections on new display.
     ui::DisplayConfigurator* configurator =
         ash::Shell::GetInstance()->display_configurator();
-    configurator->EnableContentProtection(
-        GetClientId(), new_display_id, desired_method_mask_);
-    configurator->EnableContentProtection(
-        GetClientId(), display_id_, ui::CONTENT_PROTECTION_METHOD_NONE);
+    configurator->EnableContentProtection(GetClientId(), new_display_id,
+                                          desired_method_mask_,
+                                          base::Bind(&DoNothing));
+    configurator->EnableContentProtection(GetClientId(), display_id_,
+                                          ui::CONTENT_PROTECTION_METHOD_NONE,
+                                          base::Bind(&DoNothing));
   }
   display_id_ = new_display_id;
 }
@@ -245,9 +291,10 @@ void PepperOutputProtectionMessageFilter::Delegate::OnWindowDestroying(
 
 PepperOutputProtectionMessageFilter::PepperOutputProtectionMessageFilter(
     content::BrowserPpapiHost* host,
-    PP_Instance instance) {
+    PP_Instance instance)
+    : weak_ptr_factory_(this) {
 #if defined(OS_CHROMEOS)
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
   int render_process_id = 0;
   int render_frame_id = 0;
   host->GetRenderFrameIDsForInstance(
@@ -288,15 +335,11 @@ int32_t PepperOutputProtectionMessageFilter::OnResourceMessageReceived(
 int32_t PepperOutputProtectionMessageFilter::OnQueryStatus(
     ppapi::host::HostMessageContext* context) {
 #if defined(OS_CHROMEOS)
-  uint32_t link_mask = 0, protection_mask = 0;
-  int32_t result = delegate_->OnQueryStatus(&link_mask, &protection_mask);
-
   ppapi::host::ReplyMessageContext reply_context =
       context->MakeReplyMessageContext();
-  reply_context.params.set_result(result);
-  SendReply(reply_context,
-            PpapiPluginMsg_OutputProtection_QueryStatusReply(link_mask,
-                                                             protection_mask));
+  delegate_->QueryStatus(
+      base::Bind(&PepperOutputProtectionMessageFilter::OnQueryStatusComplete,
+                 weak_ptr_factory_.GetWeakPtr(), reply_context));
   return PP_OK_COMPLETIONPENDING;
 #else
   NOTIMPLEMENTED();
@@ -310,15 +353,34 @@ int32_t PepperOutputProtectionMessageFilter::OnEnableProtection(
 #if defined(OS_CHROMEOS)
   ppapi::host::ReplyMessageContext reply_context =
       context->MakeReplyMessageContext();
-  int32_t result = delegate_->OnEnableProtection(desired_method_mask);
-  reply_context.params.set_result(result);
-  SendReply(reply_context,
-            PpapiPluginMsg_OutputProtection_EnableProtectionReply());
+  delegate_->EnableProtection(
+      desired_method_mask,
+      base::Bind(
+          &PepperOutputProtectionMessageFilter::OnEnableProtectionComplete,
+          weak_ptr_factory_.GetWeakPtr(), reply_context));
   return PP_OK_COMPLETIONPENDING;
 #else
   NOTIMPLEMENTED();
   return PP_ERROR_NOTSUPPORTED;
 #endif
+}
+
+void PepperOutputProtectionMessageFilter::OnQueryStatusComplete(
+    ppapi::host::ReplyMessageContext reply_context,
+    int32_t result,
+    uint32_t link_mask,
+    uint32_t protection_mask) {
+  reply_context.params.set_result(result);
+  SendReply(reply_context, PpapiPluginMsg_OutputProtection_QueryStatusReply(
+                               link_mask, protection_mask));
+}
+
+void PepperOutputProtectionMessageFilter::OnEnableProtectionComplete(
+    ppapi::host::ReplyMessageContext reply_context,
+    int32_t result) {
+  reply_context.params.set_result(result);
+  SendReply(reply_context,
+            PpapiPluginMsg_OutputProtection_EnableProtectionReply());
 }
 
 }  // namespace chrome

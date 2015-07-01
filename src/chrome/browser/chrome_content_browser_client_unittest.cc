@@ -6,11 +6,13 @@
 
 #include "base/command_line.h"
 #include "base/metrics/field_trial.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/variations/entropy_provider.h"
 #include "content/public/browser/navigation_controller.h"
@@ -22,7 +24,7 @@
 
 namespace chrome {
 
-typedef testing::Test ChromeContentBrowserClientTest;
+using ChromeContentBrowserClientTest = testing::Test;
 
 TEST_F(ChromeContentBrowserClientTest, ShouldAssignSiteForURL) {
   ChromeContentBrowserClient client;
@@ -31,16 +33,69 @@ TEST_F(ChromeContentBrowserClientTest, ShouldAssignSiteForURL) {
   EXPECT_TRUE(client.ShouldAssignSiteForURL(GURL("https://www.google.com")));
 }
 
+// BrowserWithTestWindowTest doesn't work on iOS and Android.
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+
+using ChromeContentBrowserClientWindowTest = BrowserWithTestWindowTest;
+
+static void DidOpenURLForWindowTest(content::WebContents** target_contents,
+                                    content::WebContents* opened_contents) {
+  DCHECK(target_contents);
+
+  *target_contents = opened_contents;
+}
+
+// This test opens two URLs using ContentBrowserClient::OpenURL. It expects the
+// URLs to be opened in new tabs and activated, changing the active tabs after
+// each call and increasing the tab count by 2.
+TEST_F(ChromeContentBrowserClientWindowTest, OpenURL) {
+  ChromeContentBrowserClient client;
+
+  int previous_count = browser()->tab_strip_model()->count();
+
+  GURL urls[] = { GURL("https://www.google.com"),
+                  GURL("https://www.chromium.org") };
+
+  for (const GURL& url : urls) {
+    content::OpenURLParams params(url,
+                                  content::Referrer(),
+                                  NEW_FOREGROUND_TAB,
+                                  ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                                  false);
+    // TODO(peter): We should have more in-depth browser tests for the window
+    // opening functionality, which also covers Android. This test can currently
+    // only be ran on platforms where OpenURL is implemented synchronously.
+    // See https://crbug.com/457667.
+    content::WebContents* web_contents = nullptr;
+    client.OpenURL(browser()->profile(),
+                   params,
+                   base::Bind(&DidOpenURLForWindowTest, &web_contents));
+
+    EXPECT_TRUE(web_contents);
+
+    content::WebContents* active_contents = browser()->tab_strip_model()->
+        GetActiveWebContents();
+    EXPECT_EQ(web_contents, active_contents);
+    EXPECT_EQ(url, active_contents->GetVisibleURL());
+  }
+
+  EXPECT_EQ(previous_count + 2, browser()->tab_strip_model()->count());
+}
+
+#endif // !defined(OS_ANDROID) && !defined(OS_IOS)
+
+#if defined(ENABLE_WEBRTC)
+
 // NOTE: Any updates to the expectations in these tests should also be done in
 // the browser test WebRtcDisableEncryptionFlagBrowserTest.
 class DisableWebRtcEncryptionFlagTest : public testing::Test {
  public:
   DisableWebRtcEncryptionFlagTest()
-      : from_command_line_(CommandLine::NO_PROGRAM),
-        to_command_line_(CommandLine::NO_PROGRAM) {}
+      : from_command_line_(base::CommandLine::NO_PROGRAM),
+        to_command_line_(base::CommandLine::NO_PROGRAM) {}
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     from_command_line_.AppendSwitch(switches::kDisableWebRtcEncryption);
   }
 
@@ -51,8 +106,8 @@ class DisableWebRtcEncryptionFlagTest : public testing::Test {
         channel);
   }
 
-  CommandLine from_command_line_;
-  CommandLine to_command_line_;
+  base::CommandLine from_command_line_;
+  base::CommandLine to_command_line_;
 
   DISALLOW_COPY_AND_ASSIGN(DisableWebRtcEncryptionFlagTest);
 };
@@ -86,6 +141,8 @@ TEST_F(DisableWebRtcEncryptionFlagTest, StableChannel) {
   EXPECT_FALSE(to_command_line_.HasSwitch(switches::kDisableWebRtcEncryption));
 }
 
+#endif  // ENABLE_WEBRTC
+
 }  // namespace chrome
 
 #if !defined(OS_IOS) && !defined(OS_ANDROID)
@@ -93,7 +150,7 @@ namespace content {
 
 class InstantNTPURLRewriteTest : public BrowserWithTestWindowTest {
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     BrowserWithTestWindowTest::SetUp();
     field_trial_list_.reset(new base::FieldTrialList(
         new metrics::SHA1EntropyProvider("42")));
@@ -107,6 +164,7 @@ class InstantNTPURLRewriteTest : public BrowserWithTestWindowTest {
     ui_test_utils::WaitForTemplateURLServiceToLoad(template_url_service);
 
     TemplateURLData data;
+    data.SetShortName(base::ASCIIToUTF16("foo.com"));
     data.SetURL("http://foo.com/url?bar={searchTerms}");
     data.new_tab_url = new_tab_page_url.spec();
     TemplateURL* template_url = new TemplateURL(data);

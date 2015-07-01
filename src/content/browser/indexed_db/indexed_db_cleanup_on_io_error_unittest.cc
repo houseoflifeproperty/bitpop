@@ -48,10 +48,10 @@ class BustedLevelDBDatabase : public LevelDBDatabase {
       const LevelDBComparator* /*comparator*/) {
     return scoped_ptr<LevelDBDatabase>(new BustedLevelDBDatabase);
   }
-  virtual leveldb::Status Get(const base::StringPiece& key,
-                              std::string* value,
-                              bool* found,
-                              const LevelDBSnapshot* = 0) OVERRIDE {
+  leveldb::Status Get(const base::StringPiece& key,
+                      std::string* value,
+                      bool* found,
+                      const LevelDBSnapshot* = 0) override {
     return leveldb::Status::IOError("It's busted!");
   }
 
@@ -61,17 +61,15 @@ class BustedLevelDBDatabase : public LevelDBDatabase {
 
 class BustedLevelDBFactory : public LevelDBFactory {
  public:
-  virtual leveldb::Status OpenLevelDB(
-      const base::FilePath& file_name,
-      const LevelDBComparator* comparator,
-      scoped_ptr<LevelDBDatabase>* db,
-      bool* is_disk_full = 0) OVERRIDE {
+  leveldb::Status OpenLevelDB(const base::FilePath& file_name,
+                              const LevelDBComparator* comparator,
+                              scoped_ptr<LevelDBDatabase>* db,
+                              bool* is_disk_full = 0) override {
     if (open_error_.ok())
       *db = BustedLevelDBDatabase::Open(file_name, comparator);
     return open_error_;
   }
-  virtual leveldb::Status DestroyLevelDB(
-      const base::FilePath& file_name) OVERRIDE {
+  leveldb::Status DestroyLevelDB(const base::FilePath& file_name) override {
     return leveldb::Status::IOError("error");
   }
   void SetOpenError(const leveldb::Status& open_error) {
@@ -144,8 +142,9 @@ TEST(IndexedDBNonRecoverableIOErrorTest, NuancedCleanupTest) {
   EXPECT_CALL(mock_leveldb_factory, OpenLevelDB(_, _, _, _)).Times(Exactly(4));
   EXPECT_CALL(mock_leveldb_factory, DestroyLevelDB(_)).Times(Exactly(0));
 
-  busted_factory.SetOpenError(MakeIOError(
-      "some filename", "some message", leveldb_env::kNewLogger, ENOSPC));
+  busted_factory.SetOpenError(MakeIOError("some filename", "some message",
+                                          leveldb_env::kNewLogger,
+                                          base::File::FILE_ERROR_NO_SPACE));
   scoped_refptr<IndexedDBBackingStore> backing_store =
       IndexedDBBackingStore::Open(factory,
                                   origin,
@@ -178,8 +177,9 @@ TEST(IndexedDBNonRecoverableIOErrorTest, NuancedCleanupTest) {
                                   &s);
   ASSERT_TRUE(s.IsIOError());
 
-  busted_factory.SetOpenError(MakeIOError(
-      "some filename", "some message", leveldb_env::kNewLogger, EIO));
+  busted_factory.SetOpenError(MakeIOError("some filename", "some message",
+                                          leveldb_env::kNewLogger,
+                                          base::File::FILE_ERROR_IO));
   scoped_refptr<IndexedDBBackingStore> backing_store3 =
       IndexedDBBackingStore::Open(factory,
                                   origin,

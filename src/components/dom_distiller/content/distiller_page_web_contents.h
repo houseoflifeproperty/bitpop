@@ -18,15 +18,17 @@ namespace dom_distiller {
 
 class SourcePageHandleWebContents : public SourcePageHandle {
  public:
-  explicit SourcePageHandleWebContents(
-      scoped_ptr<content::WebContents> web_contents);
-  virtual ~SourcePageHandleWebContents();
+  SourcePageHandleWebContents(content::WebContents* web_contents, bool owned);
+  ~SourcePageHandleWebContents() override;
 
-  scoped_ptr<content::WebContents> GetWebContents();
+  // Retreives the WebContents. The SourcePageHandleWebContents keeps ownership.
+  content::WebContents* web_contents() { return web_contents_; }
 
  private:
-  // The WebContents this class owns.
-  scoped_ptr<content::WebContents> web_contents_;
+  // The WebContents this class holds.
+  content::WebContents* web_contents_;
+  // Whether this owns |web_contents_|.
+  bool owned_;
 };
 
 class DistillerPageWebContentsFactory : public DistillerPageFactory {
@@ -34,12 +36,12 @@ class DistillerPageWebContentsFactory : public DistillerPageFactory {
   explicit DistillerPageWebContentsFactory(
       content::BrowserContext* browser_context)
       : DistillerPageFactory(), browser_context_(browser_context) {}
-  virtual ~DistillerPageWebContentsFactory() {}
+  ~DistillerPageWebContentsFactory() override {}
 
-  virtual scoped_ptr<DistillerPage> CreateDistillerPage(
-      const gfx::Size& render_view_size) const OVERRIDE;
-  virtual scoped_ptr<DistillerPage> CreateDistillerPageWithHandle(
-      scoped_ptr<SourcePageHandle> handle) const OVERRIDE;
+  scoped_ptr<DistillerPage> CreateDistillerPage(
+      const gfx::Size& render_view_size) const override;
+  scoped_ptr<DistillerPage> CreateDistillerPageWithHandle(
+      scoped_ptr<SourcePageHandle> handle) const override;
 
  private:
   content::BrowserContext* browser_context_;
@@ -53,24 +55,25 @@ class DistillerPageWebContents : public DistillerPage,
       content::BrowserContext* browser_context,
       const gfx::Size& render_view_size,
       scoped_ptr<SourcePageHandleWebContents> optional_web_contents_handle);
-  virtual ~DistillerPageWebContents();
+  ~DistillerPageWebContents() override;
 
   // content::WebContentsDelegate implementation.
-  virtual gfx::Size GetSizeForNewRenderView(
-      content::WebContents* web_contents) const OVERRIDE;
+  gfx::Size GetSizeForNewRenderView(
+      content::WebContents* web_contents) const override;
 
   // content::WebContentsObserver implementation.
-  virtual void DocumentLoadedInFrame(
-      content::RenderFrameHost* render_frame_host) OVERRIDE;
+  void DocumentLoadedInFrame(
+      content::RenderFrameHost* render_frame_host) override;
 
-  virtual void DidFailLoad(content::RenderFrameHost* render_frame_host,
-                           const GURL& validated_url,
-                           int error_code,
-                           const base::string16& error_description) OVERRIDE;
+  void DidFailLoad(content::RenderFrameHost* render_frame_host,
+                   const GURL& validated_url,
+                   int error_code,
+                   const base::string16& error_description) override;
 
  protected:
-  virtual void DistillPageImpl(const GURL& url,
-                               const std::string& script) OVERRIDE;
+  bool StringifyOutput() override;
+  bool CreateNewContext() override;
+  void DistillPageImpl(const GURL& url, const std::string& script) override;
 
  private:
   friend class TestDistillerPageWebContents;
@@ -97,6 +100,7 @@ class DistillerPageWebContents : public DistillerPage,
 
   // Called when the distillation is done or if the page load failed.
   void OnWebContentsDistillationDone(const GURL& page_url,
+                                     const base::TimeTicks& javascript_start,
                                      const base::Value* value);
 
   // The current state of the |DistillerPage|, initially |IDLE|.
@@ -105,7 +109,8 @@ class DistillerPageWebContents : public DistillerPage,
   // The JavaScript to inject to extract content.
   std::string script_;
 
-  scoped_ptr<content::WebContents> web_contents_;
+  scoped_ptr<SourcePageHandleWebContents> source_page_handle_;
+
   content::BrowserContext* browser_context_;
   gfx::Size render_view_size_;
   DISALLOW_COPY_AND_ASSIGN(DistillerPageWebContents);

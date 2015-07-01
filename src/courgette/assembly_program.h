@@ -87,7 +87,7 @@ class AssemblyProgram {
   CheckBool EmitByteInstruction(uint8 byte) WARN_UNUSED_RESULT;
 
   // Generates multiple bytes of data or machine instructions.
-  CheckBool EmitBytesInstruction(const uint8* value, uint32 len)
+  CheckBool EmitBytesInstruction(const uint8* value, size_t len)
       WARN_UNUSED_RESULT;
 
   // Generates 4-byte relative reference to address of 'label'.
@@ -100,6 +100,9 @@ class AssemblyProgram {
 
   // Generates 4-byte absolute reference to address of 'label'.
   CheckBool EmitAbs32(Label* label) WARN_UNUSED_RESULT;
+
+  // Generates 8-byte absolute reference to address of 'label'.
+  CheckBool EmitAbs64(Label* label) WARN_UNUSED_RESULT;
 
   // Looks up a label or creates a new one.  Might return NULL.
   Label* FindOrMakeAbs32Label(RVA rva);
@@ -118,19 +121,20 @@ class AssemblyProgram {
     return instructions_;
   }
 
-  // Returns the label if the instruction contains and absolute address,
+  // Returns the label if the instruction contains an absolute 32-bit address,
   // otherwise returns NULL.
   Label* InstructionAbs32Label(const Instruction* instruction) const;
 
-  // Returns the label if the instruction contains and rel32 offset,
+  // Returns the label if the instruction contains an absolute 64-bit address,
+  // otherwise returns NULL.
+  Label* InstructionAbs64Label(const Instruction* instruction) const;
+
+  // Returns the label if the instruction contains a rel32 offset,
   // otherwise returns NULL.
   Label* InstructionRel32Label(const Instruction* instruction) const;
 
   // Trim underused labels
   CheckBool TrimLabels();
-
-  void PrintLabelCounts(RVAToLabel* labels);
-  void CountRel32ARM();
 
  private:
   ExecutableType kind_;

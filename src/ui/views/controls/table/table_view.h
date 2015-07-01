@@ -52,6 +52,9 @@ class VIEWS_EXPORT TableView
     : public views::View,
       public ui::TableModelObserver {
  public:
+  // Internal class name.
+  static const char kViewClassName[];
+
   // Used to track a visible column. Useful only for the header.
   struct VIEWS_EXPORT VisibleColumn {
     VisibleColumn();
@@ -90,7 +93,7 @@ class VIEWS_EXPORT TableView
             const std::vector<ui::TableColumn>& columns,
             TableTypes table_type,
             bool single_selection);
-  virtual ~TableView();
+  ~TableView() override;
 
   // Assigns a new model to the table view, detaching the old one if present.
   // If |model| is NULL, the table view cannot be used after this call. This
@@ -165,28 +168,30 @@ class VIEWS_EXPORT TableView
   int row_height() const { return row_height_; }
 
   // View overrides:
-  virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
-  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
-  virtual bool GetTooltipText(const gfx::Point& p,
-                              base::string16* tooltip) const OVERRIDE;
-  virtual bool GetTooltipTextOrigin(const gfx::Point& p,
-                                    gfx::Point* loc) const OVERRIDE;
+  void Layout() override;
+  const char* GetClassName() const override;
+  gfx::Size GetPreferredSize() const override;
+  bool OnKeyPressed(const ui::KeyEvent& event) override;
+  bool OnMousePressed(const ui::MouseEvent& event) override;
+  void OnGestureEvent(ui::GestureEvent* event) override;
+  bool GetTooltipText(const gfx::Point& p,
+                      base::string16* tooltip) const override;
+  bool GetTooltipTextOrigin(const gfx::Point& p,
+                            gfx::Point* loc) const override;
+  void GetAccessibleState(ui::AXViewState* state) override;
 
   // ui::TableModelObserver overrides:
-  virtual void OnModelChanged() OVERRIDE;
-  virtual void OnItemsChanged(int start, int length) OVERRIDE;
-  virtual void OnItemsAdded(int start, int length) OVERRIDE;
-  virtual void OnItemsRemoved(int start, int length) OVERRIDE;
+  void OnModelChanged() override;
+  void OnItemsChanged(int start, int length) override;
+  void OnItemsAdded(int start, int length) override;
+  void OnItemsRemoved(int start, int length) override;
 
  protected:
   // View overrides:
-  virtual gfx::Point GetKeyboardContextMenuLocation() OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual void OnFocus() OVERRIDE;
-  virtual void OnBlur() OVERRIDE;
+  gfx::Point GetKeyboardContextMenuLocation() override;
+  void OnPaint(gfx::Canvas* canvas) override;
+  void OnFocus() override;
+  void OnBlur() override;
 
  private:
   friend class TableViewTestHelper;

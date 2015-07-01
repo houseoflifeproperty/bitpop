@@ -22,13 +22,13 @@ class PPAPI_PROXY_EXPORT PluginResourceVar : public ppapi::ResourceVar {
   explicit PluginResourceVar(ppapi::Resource* resource);
 
   // ResourceVar override.
-  virtual PP_Resource GetPPResource() const OVERRIDE;
-  virtual bool IsPending() const OVERRIDE;
+  PP_Resource GetPPResource() const override;
+  bool IsPending() const override;
 
   scoped_refptr<ppapi::Resource> resource() const { return resource_; }
 
  protected:
-  virtual ~PluginResourceVar();
+  ~PluginResourceVar() override;
 
  private:
   // If NULL, this represents the PP_Resource 0.

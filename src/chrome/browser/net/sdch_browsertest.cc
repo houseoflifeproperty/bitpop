@@ -34,6 +34,7 @@
 #include "content/public/test/test_utils.h"
 #include "crypto/sha2.h"
 #include "net/base/sdch_manager.h"
+#include "net/base/sdch_observer.h"
 #include "net/http/http_response_headers.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
@@ -216,6 +217,7 @@ class SdchResponseHandler {
     } else {
       DCHECK_EQ(request.relative_url, kDictionaryURLPath);
       DCHECK_NE(sdch_dictionary_contents_, "");
+      response->AddCustomHeader("Cache-Control", "max-age=3600");
       response->set_content_type("application/x-sdch-dictionary");
       response->set_content(sdch_dictionary_contents_);
     }
@@ -225,7 +227,7 @@ class SdchResponseHandler {
          it != callbacks.end(); ++it) {
       it->Run();
     }
-    return response.PassAs<net::test_server::HttpResponse>();
+    return response.Pass();
   }
 
   void WaitAndGetRequestVector(int num_requests,
@@ -259,7 +261,41 @@ class SdchResponseHandler {
   base::WeakPtrFactory<SdchResponseHandler> weak_ptr_factory_;
 };
 
-class SdchBrowserTest : public InProcessBrowserTest, net::URLFetcherDelegate {
+class TestSdchObserver : public net::SdchObserver {
+ public:
+  TestSdchObserver() : manager_(nullptr), fetch_count_(0) {}
+  ~TestSdchObserver() override {
+    if (manager_) {
+      manager_->RemoveObserver(this);
+    }
+  }
+
+  void Observe(net::SdchManager* manager) {
+    DCHECK(!manager_);
+    manager_ = manager;
+    manager_->AddObserver(this);
+  }
+
+  // SdchObserver
+  void OnDictionaryAdded(const GURL& /* dictionary_url */,
+                         const std::string& /* server_hash */) override {}
+  void OnDictionaryRemoved(const std::string& /* server_hash */) override {}
+  void OnGetDictionary(const GURL& /* request_url */,
+                       const GURL& /* dictionary_url */) override {
+    fetch_count_++;
+  }
+  void OnDictionaryUsed(const std::string& /* server_hash */) override {}
+  void OnClearDictionaries() override {}
+
+  int fetch_count() const { return fetch_count_; }
+
+ private:
+  net::SdchManager* manager_;
+  int fetch_count_;
+};
+
+class SdchBrowserTest : public InProcessBrowserTest,
+                        public net::URLFetcherDelegate {
  public:
   static const char kTestHost[];
 
@@ -273,7 +309,7 @@ class SdchBrowserTest : public InProcessBrowserTest, net::URLFetcherDelegate {
 
   void FetchUrlDetailed(GURL url, net::URLRequestContextGetter* getter) {
     url_fetch_complete_ = false;
-    fetcher_.reset(net::URLFetcher::Create(url, net::URLFetcher::GET, this));
+    fetcher_ = net::URLFetcher::Create(url, net::URLFetcher::GET, this);
     fetcher_->SetRequestContext(getter);
     fetcher_->Start();
     if (!url_fetch_complete_) {
@@ -318,7 +354,7 @@ class SdchBrowserTest : public InProcessBrowserTest, net::URLFetcherDelegate {
                        bool* sdch_encoding_used) {
     FetchUrlDetailed(
         GURL(base::StringPrintf(
-            "http://%s:%d%s", kTestHost, test_server_port(), kDataURLPath)),
+            "http://%s:%u%s", kTestHost, test_server_port(), kDataURLPath)),
         getter);
     EXPECT_EQ(net::URLRequestStatus::SUCCESS, FetcherStatus().status())
         << "Error code is " << FetcherStatus().error();
@@ -351,8 +387,10 @@ class SdchBrowserTest : public InProcessBrowserTest, net::URLFetcherDelegate {
     int fetches = -1;
     base::RunLoop run_loop;
     content::BrowserThread::PostTaskAndReply(
-        content::BrowserThread::IO, FROM_HERE,
+        content::BrowserThread::IO,
+        FROM_HERE,
         base::Bind(&SdchBrowserTest::GetNumberOfDictionaryFetchesOnIOThread,
+                   base::Unretained(this),
                    base::Unretained(profile->GetRequestContext()),
                    &fetches),
         run_loop.QuitClosure());
@@ -405,10 +443,36 @@ class SdchBrowserTest : public InProcessBrowserTest, net::URLFetcherDelegate {
         second_browser_->tab_strip_model()->GetActiveWebContents());
     second_browser_->window()->Show();
 
+    content::BrowserThread::PostTask(
+        content::BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(&SdchBrowserTest::SubscribeToSdchNotifications,
+                   base::Unretained(this),
+                   make_scoped_refptr(
+                       second_browser_->profile()->GetRequestContext())));
+
+    return true;
+  }
+
+  bool SetupIncognitoBrowser() {
+    incognito_browser_ = CreateIncognitoBrowser();
+
+    if (!incognito_browser_)
+      return false;
+
+    content::BrowserThread::PostTask(
+        content::BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(&SdchBrowserTest::SubscribeToSdchNotifications,
+                   base::Unretained(this),
+                   make_scoped_refptr(
+                       incognito_browser_->profile()->GetRequestContext())));
+
     return true;
   }
 
   Browser* second_browser() { return second_browser_; }
+  Browser* incognito_browser() { return incognito_browser_; }
 
   // Server information and control.
 
@@ -424,7 +488,7 @@ class SdchBrowserTest : public InProcessBrowserTest, net::URLFetcherDelegate {
     run_loop.Run();
   }
 
-  int test_server_port() { return test_server_.port(); }
+  uint16 test_server_port() { return test_server_.port(); }
 
   void SetSdchCacheability(bool cache_sdch_response) {
     base::RunLoop run_loop;
@@ -502,25 +566,27 @@ class SdchBrowserTest : public InProcessBrowserTest, net::URLFetcherDelegate {
  private:
   static void NukeSdchDictionariesOnIOThread(
       net::URLRequestContextGetter* context_getter) {
-    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+    DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
     net::SdchManager* sdch_manager =
         context_getter->GetURLRequestContext()->sdch_manager();
     DCHECK(sdch_manager);
     sdch_manager->ClearData();
   }
 
-  static void GetNumberOfDictionaryFetchesOnIOThread(
-      net::URLRequestContextGetter* url_request_context_getter,
+  void GetNumberOfDictionaryFetchesOnIOThread(
+      net::URLRequestContextGetter* context_getter,
       int* result) {
-    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
-    net::SdchManager* sdch_manager =
-        url_request_context_getter->GetURLRequestContext()->sdch_manager();
-    DCHECK(sdch_manager);
-    *result = sdch_manager->GetFetchesCountForTesting();
+    DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
+
+    net::SdchManager* manager(
+        context_getter->GetURLRequestContext()->sdch_manager());
+    DCHECK(observers_.end() != observers_.find(manager));
+
+    *result = observers_[manager].fetch_count();
   }
 
   // InProcessBrowserTest
-  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitchASCII(
         switches::kHostResolverRules,
         "MAP " + std::string(kTestHost) + " 127.0.0.1");
@@ -530,20 +596,49 @@ class SdchBrowserTest : public InProcessBrowserTest, net::URLFetcherDelegate {
 #endif
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     test_server_.RegisterRequestHandler(
         base::Bind(&SdchResponseHandler::HandleRequest,
                    base::Unretained(&response_handler_)));
     CHECK(test_server_.InitializeAndWaitUntilReady());
     url_request_context_getter_ = browser()->profile()->GetRequestContext();
+
+    content::BrowserThread::PostTask(
+        content::BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(&SdchBrowserTest::SubscribeToSdchNotifications,
+                   base::Unretained(this),
+                   url_request_context_getter_));
   }
 
-  virtual void TearDownOnMainThread() OVERRIDE {
+  void TearDownOnMainThread() override {
     CHECK(test_server_.ShutdownAndWaitUntilComplete());
+
+    content::BrowserThread::PostTask(
+        content::BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(&SdchBrowserTest::UnsubscribeFromAllSdchNotifications,
+                   base::Unretained(this)));
+  }
+
+  void SubscribeToSdchNotifications(
+      net::URLRequestContextGetter* context_getter) {
+    DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
+
+    net::SdchManager* manager =
+        context_getter->GetURLRequestContext()->sdch_manager();
+    DCHECK(observers_.end() == observers_.find(manager));
+
+    observers_[manager].Observe(manager);
+  }
+
+  void UnsubscribeFromAllSdchNotifications() {
+    DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
+    observers_.clear();
   }
 
   // URLFetcherDelegate
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE {
+  void OnURLFetchComplete(const net::URLFetcher* source) override {
     url_fetch_complete_ = true;
     if (waiting_)
       base::MessageLoopForUI::current()->Quit();
@@ -558,6 +653,10 @@ class SdchBrowserTest : public InProcessBrowserTest, net::URLFetcherDelegate {
   base::ScopedTempDir second_profile_data_dir_;
   Profile* second_profile_;
   Browser* second_browser_;
+  Browser* incognito_browser_;
+
+  // IO Thread access only.
+  std::map<net::SdchManager*, TestSdchObserver> observers_;
 };
 
 const char SdchBrowserTest::kTestHost[] = "our.test.host.com";
@@ -587,14 +686,14 @@ IN_PROC_BROWSER_TEST_F(SdchBrowserTest, BrowsingDataRemover) {
 IN_PROC_BROWSER_TEST_F(SdchBrowserTest, Isolation) {
   ASSERT_TRUE(ForceSdchDictionaryLoad(browser()));
   ASSERT_TRUE(SetupSecondBrowser());
+  ASSERT_TRUE(SetupIncognitoBrowser());
 
   // Data fetches from incognito or separate profiles should not be SDCH
   // encoded.
   bool sdch_encoding_used = true;
-  Browser* incognito_browser = CreateIncognitoBrowser();
-  EXPECT_TRUE(GetDataDetailed(
-      incognito_browser->profile()->GetRequestContext(),
-      &sdch_encoding_used));
+  EXPECT_TRUE(
+      GetDataDetailed(incognito_browser()->profile()->GetRequestContext(),
+                      &sdch_encoding_used));
   EXPECT_FALSE(sdch_encoding_used);
 
   sdch_encoding_used = true;
@@ -605,8 +704,8 @@ IN_PROC_BROWSER_TEST_F(SdchBrowserTest, Isolation) {
 
 // Confirm a dictionary loaded in incognito isn't visible in the main profile.
 IN_PROC_BROWSER_TEST_F(SdchBrowserTest, ReverseIsolation) {
-  Browser* incognito_browser = CreateIncognitoBrowser();
-  ASSERT_TRUE(ForceSdchDictionaryLoad(incognito_browser));
+  ASSERT_TRUE(SetupIncognitoBrowser());
+  ASSERT_TRUE(ForceSdchDictionaryLoad(incognito_browser()));
 
   // Data fetches on main browser should not be SDCH encoded.
   bool sdch_encoding_used = true;

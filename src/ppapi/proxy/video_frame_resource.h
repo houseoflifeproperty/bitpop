@@ -22,21 +22,21 @@ class PPAPI_PROXY_EXPORT VideoFrameResource : public Resource,
                      int32_t index,
                      MediaStreamBuffer* buffer);
 
-  virtual ~VideoFrameResource();
+  ~VideoFrameResource() override;
 
   // PluginResource overrides:
-  virtual thunk::PPB_VideoFrame_API* AsPPB_VideoFrame_API() OVERRIDE;
+  thunk::PPB_VideoFrame_API* AsPPB_VideoFrame_API() override;
 
   // PPB_VideoFrame_API overrides:
-  virtual PP_TimeDelta GetTimestamp() OVERRIDE;
-  virtual void SetTimestamp(PP_TimeDelta timestamp) OVERRIDE;
-  virtual PP_VideoFrame_Format GetFormat() OVERRIDE;
-  virtual PP_Bool GetSize(PP_Size* size) OVERRIDE;
-  virtual void* GetDataBuffer() OVERRIDE;
-  virtual uint32_t GetDataBufferSize() OVERRIDE;
-  virtual MediaStreamBuffer* GetBuffer() OVERRIDE;
-  virtual int32_t GetBufferIndex() OVERRIDE;
-  virtual void Invalidate() OVERRIDE;
+  PP_TimeDelta GetTimestamp() override;
+  void SetTimestamp(PP_TimeDelta timestamp) override;
+  PP_VideoFrame_Format GetFormat() override;
+  PP_Bool GetSize(PP_Size* size) override;
+  void* GetDataBuffer() override;
+  uint32_t GetDataBufferSize() override;
+  MediaStreamBuffer* GetBuffer() override;
+  int32_t GetBufferIndex() override;
+  void Invalidate() override;
 
   // Frame index
   int32_t index_;

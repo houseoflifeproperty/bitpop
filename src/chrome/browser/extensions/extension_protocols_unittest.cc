@@ -101,7 +101,7 @@ class ExtensionProtocolTest : public testing::Test {
         old_factory_(NULL),
         resource_context_(&test_url_request_context_) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     testing::Test::SetUp();
     extension_info_map_ = new InfoMap();
     net::URLRequestContext* request_context =
@@ -109,7 +109,7 @@ class ExtensionProtocolTest : public testing::Test {
     old_factory_ = request_context->job_factory();
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     net::URLRequestContext* request_context =
         resource_context_.GetRequestContext();
     request_context->set_job_factory(old_factory_);
@@ -127,13 +127,17 @@ class ExtensionProtocolTest : public testing::Test {
 
   void StartRequest(net::URLRequest* request,
                     ResourceType resource_type) {
-    content::ResourceRequestInfo::AllocateForTesting(request,
-                                                     resource_type,
-                                                     &resource_context_,
-                                                     -1,
-                                                     -1,
-                                                     -1,
-                                                     false);
+    content::ResourceRequestInfo::AllocateForTesting(
+        request,
+        resource_type,
+        &resource_context_,
+        -1,      // render_process_id
+        -1,      // render_view_id
+        -1,      // render_frame_id
+        resource_type == content::RESOURCE_TYPE_MAIN_FRAME,  // is_main_frame
+        false,   // parent_is_main_frame
+        true,    // allow_download
+        false);  // is_async
     request->Start();
     base::MessageLoop::current()->Run();
   }
@@ -172,7 +176,7 @@ TEST_F(ExtensionProtocolTest, IncognitoRequest) {
     {"split enabled", true, true, true, true},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     scoped_refptr<Extension> extension =
         CreateTestExtension(cases[i].name, cases[i].incognito_split_mode);
     extension_info_map_->AddExtension(
@@ -187,8 +191,7 @@ TEST_F(ExtensionProtocolTest, IncognitoRequest) {
           resource_context_.GetRequestContext()->CreateRequest(
               extension->GetResourceURL("404.html"),
               net::DEFAULT_PRIORITY,
-              &test_delegate_,
-              NULL));
+              &test_delegate_));
       StartRequest(request.get(), content::RESOURCE_TYPE_MAIN_FRAME);
       EXPECT_EQ(net::URLRequestStatus::FAILED, request->status().status());
 
@@ -207,8 +210,7 @@ TEST_F(ExtensionProtocolTest, IncognitoRequest) {
           resource_context_.GetRequestContext()->CreateRequest(
               extension->GetResourceURL("404.html"),
               net::DEFAULT_PRIORITY,
-              &test_delegate_,
-              NULL));
+              &test_delegate_));
       StartRequest(request.get(), content::RESOURCE_TYPE_SUB_FRAME);
       EXPECT_EQ(net::URLRequestStatus::FAILED, request->status().status());
 
@@ -251,8 +253,7 @@ TEST_F(ExtensionProtocolTest, ComponentResourceRequest) {
         resource_context_.GetRequestContext()->CreateRequest(
             extension->GetResourceURL("webstore_icon_16.png"),
             net::DEFAULT_PRIORITY,
-            &test_delegate_,
-            NULL));
+            &test_delegate_));
     StartRequest(request.get(), content::RESOURCE_TYPE_MEDIA);
     EXPECT_EQ(net::URLRequestStatus::SUCCESS, request->status().status());
     CheckForContentLengthHeader(request.get());
@@ -266,8 +267,7 @@ TEST_F(ExtensionProtocolTest, ComponentResourceRequest) {
         resource_context_.GetRequestContext()->CreateRequest(
             extension->GetResourceURL("webstore_icon_16.png"),
             net::DEFAULT_PRIORITY,
-            &test_delegate_,
-            NULL));
+            &test_delegate_));
     StartRequest(request.get(), content::RESOURCE_TYPE_MEDIA);
     EXPECT_EQ(net::URLRequestStatus::SUCCESS, request->status().status());
     CheckForContentLengthHeader(request.get());
@@ -291,8 +291,7 @@ TEST_F(ExtensionProtocolTest, ResourceRequestResponseHeaders) {
         resource_context_.GetRequestContext()->CreateRequest(
             extension->GetResourceURL("test.dat"),
             net::DEFAULT_PRIORITY,
-            &test_delegate_,
-            NULL));
+            &test_delegate_));
     StartRequest(request.get(), content::RESOURCE_TYPE_MEDIA);
     EXPECT_EQ(net::URLRequestStatus::SUCCESS, request->status().status());
 
@@ -332,8 +331,7 @@ TEST_F(ExtensionProtocolTest, AllowFrameRequests) {
         resource_context_.GetRequestContext()->CreateRequest(
             extension->GetResourceURL("test.dat"),
             net::DEFAULT_PRIORITY,
-            &test_delegate_,
-            NULL));
+            &test_delegate_));
     StartRequest(request.get(), content::RESOURCE_TYPE_MAIN_FRAME);
     EXPECT_EQ(net::URLRequestStatus::SUCCESS, request->status().status());
   }
@@ -342,8 +340,7 @@ TEST_F(ExtensionProtocolTest, AllowFrameRequests) {
         resource_context_.GetRequestContext()->CreateRequest(
             extension->GetResourceURL("test.dat"),
             net::DEFAULT_PRIORITY,
-            &test_delegate_,
-            NULL));
+            &test_delegate_));
     StartRequest(request.get(), content::RESOURCE_TYPE_SUB_FRAME);
     EXPECT_EQ(net::URLRequestStatus::SUCCESS, request->status().status());
   }
@@ -354,8 +351,7 @@ TEST_F(ExtensionProtocolTest, AllowFrameRequests) {
         resource_context_.GetRequestContext()->CreateRequest(
             extension->GetResourceURL("test.dat"),
             net::DEFAULT_PRIORITY,
-            &test_delegate_,
-            NULL));
+            &test_delegate_));
     StartRequest(request.get(), content::RESOURCE_TYPE_MEDIA);
     EXPECT_EQ(net::URLRequestStatus::FAILED, request->status().status());
   }

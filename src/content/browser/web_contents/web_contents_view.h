@@ -10,9 +10,9 @@
 #include "base/basictypes.h"
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
 
 namespace content {
 class RenderViewHost;
@@ -79,8 +79,13 @@ class WebContentsView {
   // Sets up the View that holds the rendered web page, receives messages for
   // it and contains page plugins. The host view should be sized to the current
   // size of the WebContents.
+  //
+  // |is_guest_view_hack| is temporary hack and will be removed once
+  // RenderWidgetHostViewGuest is not dependent on platform view.
+  // TODO(lazyboy): Remove |is_guest_view_hack| once http://crbug.com/330264 is
+  // fixed.
   virtual RenderWidgetHostViewBase* CreateViewForWidget(
-      RenderWidgetHost* render_widget_host) = 0;
+      RenderWidgetHost* render_widget_host, bool is_guest_view_hack) = 0;
 
   // Creates a new View that holds a popup and receives messages for it.
   virtual RenderWidgetHostViewBase* CreateViewForPopupWidget(

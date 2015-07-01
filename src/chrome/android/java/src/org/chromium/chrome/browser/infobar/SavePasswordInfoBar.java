@@ -1,49 +1,62 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser.infobar;
 
-import android.widget.CheckBox;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ClickableSpan;
+import android.view.View;
 
-import org.chromium.chrome.browser.password_manager.PasswordAuthenticationManager;
+import org.chromium.base.CalledByNative;
+import org.chromium.chrome.browser.ResourceId;
 
 /**
- * The infobar that allows saving passwords for autofill.
+ * The Save Password infobar offers the user the ability to save a password for the site.
+ * Appearance and behaviour of infobar buttons depends on from where infobar was
+ * triggered.
  */
 public class SavePasswordInfoBar extends ConfirmInfoBar {
+    private final boolean mIsMoreButtonNeeded;
+    private final int mTitleLinkRangeStart;
+    private final int mTitleLinkRangeEnd;
+    private final String mTitle;
 
-    private final SavePasswordInfoBarDelegate mDelegate;
-    private final long mNativeInfoBar;
-    private CheckBox mUseAdditionalAuthenticationCheckbox;
+    @CalledByNative
+    private static InfoBar show(int enumeratedIconId, String message, int titleLinkStart,
+            int titleLinkEnd, String primaryButtonText, String secondaryButtonText,
+            boolean isMoreButtonNeeded) {
+        return new SavePasswordInfoBar(ResourceId.mapToDrawableId(enumeratedIconId), message,
+                titleLinkStart, titleLinkEnd, primaryButtonText, secondaryButtonText,
+                isMoreButtonNeeded);
+    }
 
-    public SavePasswordInfoBar(long nativeInfoBar, SavePasswordInfoBarDelegate delegate,
-            int iconDrawableId, String message, String primaryButtonText,
-            String secondaryButtonText) {
-        super(nativeInfoBar, null, iconDrawableId, message,
-                null, primaryButtonText, secondaryButtonText);
-        mNativeInfoBar = nativeInfoBar;
-        mDelegate = delegate;
+    private SavePasswordInfoBar(int iconDrawbleId, String message, int titleLinkStart,
+            int titleLinkEnd, String primaryButtonText, String secondaryButtonText,
+            boolean isMoreButtonNeeded) {
+        super(null, iconDrawbleId, null, message, null, primaryButtonText, secondaryButtonText);
+        mIsMoreButtonNeeded = isMoreButtonNeeded;
+        mTitleLinkRangeStart = titleLinkStart;
+        mTitleLinkRangeEnd = titleLinkEnd;
+        mTitle = message;
     }
 
     @Override
     public void createContent(InfoBarLayout layout) {
-        if (PasswordAuthenticationManager.isPasswordAuthenticationEnabled()) {
-            mUseAdditionalAuthenticationCheckbox = new CheckBox(getContext());
-            mUseAdditionalAuthenticationCheckbox.setText(
-                    PasswordAuthenticationManager.getPasswordProtectionString());
-            layout.setCustomContent(mUseAdditionalAuthenticationCheckbox);
-        }
-
         super.createContent(layout);
-    }
-
-    @Override
-    public void onButtonClicked(boolean isPrimaryButton) {
-        if (isPrimaryButton && mUseAdditionalAuthenticationCheckbox != null
-                && mUseAdditionalAuthenticationCheckbox.isChecked()) {
-            mDelegate.setUseAdditionalAuthentication(mNativeInfoBar, true);
+        if (mIsMoreButtonNeeded) {
+            layout.setCustomViewInButtonRow(OverflowSelector.createOverflowSelector(getContext()));
         }
-        super.onButtonClicked(isPrimaryButton);
+        if (mTitleLinkRangeStart != 0 && mTitleLinkRangeEnd != 0) {
+            SpannableString title = new SpannableString(mTitle);
+            title.setSpan(new ClickableSpan() {
+                @Override
+                public void onClick(View view) {
+                    onLinkClicked();
+                }
+            }, mTitleLinkRangeStart, mTitleLinkRangeEnd, Spanned.SPAN_INCLUSIVE_INCLUSIVE);
+            layout.setMessage(title);
+        }
     }
 }

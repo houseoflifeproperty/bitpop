@@ -28,14 +28,11 @@ namespace remoting {
 class ClipboardMac : public Clipboard {
  public:
   ClipboardMac();
-  virtual ~ClipboardMac();
+  ~ClipboardMac() override;
 
   // Must be called on the UI thread.
-  virtual void Start(
-      scoped_ptr<protocol::ClipboardStub> client_clipboard) OVERRIDE;
-  virtual void InjectClipboardEvent(
-      const protocol::ClipboardEvent& event) OVERRIDE;
-  virtual void Stop() OVERRIDE;
+  void Start(scoped_ptr<protocol::ClipboardStub> client_clipboard) override;
+  void InjectClipboardEvent(const protocol::ClipboardEvent& event) override;
 
  private:
   void CheckClipboardForChanges();
@@ -53,7 +50,7 @@ ClipboardMac::ClipboardMac() : current_change_count_(0) {
 ClipboardMac::~ClipboardMac() {
   // In it2me the destructor is not called in the same thread that the timer is
   // created. Thus the timer must have already been destroyed by now.
-  DCHECK(clipboard_polling_timer_.get() == NULL);
+  DCHECK(clipboard_polling_timer_.get() == nullptr);
 }
 
 void ClipboardMac::Start(scoped_ptr<protocol::ClipboardStub> client_clipboard) {
@@ -92,11 +89,6 @@ void ClipboardMac::InjectClipboardEvent(const protocol::ClipboardEvent& event) {
   current_change_count_ = [[NSPasteboard generalPasteboard] changeCount];
 }
 
-void ClipboardMac::Stop() {
-  clipboard_polling_timer_.reset();
-  client_clipboard_.reset();
-}
-
 void ClipboardMac::CheckClipboardForChanges() {
   NSPasteboard* pasteboard = [NSPasteboard generalPasteboard];
   NSInteger change_count = [pasteboard changeCount];
@@ -117,7 +109,7 @@ void ClipboardMac::CheckClipboardForChanges() {
 }
 
 scoped_ptr<Clipboard> Clipboard::Create() {
-  return scoped_ptr<Clipboard>(new ClipboardMac());
+  return make_scoped_ptr(new ClipboardMac());
 }
 
 }  // namespace remoting

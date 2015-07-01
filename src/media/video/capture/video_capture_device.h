@@ -21,8 +21,9 @@
 #include "base/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "media/base/media_export.h"
+#include "media/base/video_capture_types.h"
 #include "media/base/video_frame.h"
-#include "media/video/capture/video_capture_types.h"
+#include "ui/gfx/gpu_memory_buffer.h"
 
 namespace media {
 
@@ -41,16 +42,21 @@ class MEDIA_EXPORT VideoCaptureDevice {
     Name();
     Name(const std::string& name, const std::string& id);
 
-#if defined(OS_WIN)
+#if defined(OS_LINUX)
+    // Linux/CrOS targets Capture Api type: it can only be set on construction.
+    enum CaptureApiType {
+      V4L2_SINGLE_PLANE,
+      V4L2_MULTI_PLANE,
+      API_TYPE_UNKNOWN
+    };
+#elif defined(OS_WIN)
     // Windows targets Capture Api type: it can only be set on construction.
     enum CaptureApiType {
       MEDIA_FOUNDATION,
       DIRECT_SHOW,
-      DIRECT_SHOW_WDM_CROSSBAR,
       API_TYPE_UNKNOWN
     };
-#endif
-#if defined(OS_MACOSX)
+#elif defined(OS_MACOSX)
     // Mac targets Capture Api type: it can only be set on construction.
     enum CaptureApiType {
       AVFOUNDATION,
@@ -63,10 +69,25 @@ class MEDIA_EXPORT VideoCaptureDevice {
       USB_OR_BUILT_IN,
       OTHER_TRANSPORT
     };
+#elif defined (OS_ANDROID)
+    // Android targets Capture Api type: it can only be set on construction.
+    // Automatically generated enum to interface with Java world.
+    //
+    // A Java counterpart will be generated for this enum.
+    // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.media
+    enum CaptureApiType {
+      API1,
+      API2_LEGACY,
+      API2_FULL,
+      API2_LIMITED,
+      TANGO,
+      API_TYPE_UNKNOWN
+    };
 #endif
-#if defined(OS_WIN) || defined(OS_MACOSX)
-    Name(const std::string& name,
-         const std::string& id,
+
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX) || \
+    defined(OS_ANDROID)
+    Name(const std::string& name, const std::string& id,
          const CaptureApiType api_type);
 #endif
 #if defined(OS_MACOSX)
@@ -102,10 +123,12 @@ class MEDIA_EXPORT VideoCaptureDevice {
       return unique_id_ < other.id();
     }
 
-#if defined(OS_WIN) || defined(OS_MACOSX)
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX) || \
+    defined(OS_ANDROID)
     CaptureApiType capture_api_type() const {
       return capture_api_class_.capture_api_type();
     }
+    const char* GetCaptureApiTypeString() const;
 #endif
 #if defined(OS_WIN)
     // Certain devices need an ID different from the |unique_id_| for
@@ -116,7 +139,7 @@ class MEDIA_EXPORT VideoCaptureDevice {
     void set_capabilities_id(const std::string& id) {
       capabilities_id_ = id;
     }
-#endif
+#endif  // if defined(OS_WIN)
 #if defined(OS_MACOSX)
     TransportType transport_type() const {
       return transport_type_;
@@ -127,12 +150,13 @@ class MEDIA_EXPORT VideoCaptureDevice {
     void set_is_blacklisted(bool is_blacklisted) {
       is_blacklisted_ = is_blacklisted;
     }
-#endif  // if defined(OS_WIN)
+#endif  // if defined(OS_MACOSX)
 
    private:
     std::string device_name_;
     std::string unique_id_;
-#if defined(OS_WIN) || defined(OS_MACOSX)
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX) || \
+    defined(OS_ANDROID)
     // This class wraps the CaptureApiType to give it a by default value if not
     // initialized.
     class CaptureApiClass {
@@ -165,42 +189,24 @@ class MEDIA_EXPORT VideoCaptureDevice {
   // Manages a list of Name entries.
   typedef std::list<Name> Names;
 
-  class MEDIA_EXPORT Client {
+   // Interface defining the methods that clients of VideoCapture must have. It
+   // is actually two-in-one: clients may implement OnIncomingCapturedData() or
+   // ReserveOutputBuffer() + OnIncomingCapturedVideoFrame(), or all of them.
+   // All clients must implement OnError().
+   class MEDIA_EXPORT Client {
    public:
     // Memory buffer returned by Client::ReserveOutputBuffer().
-    class Buffer : public base::RefCountedThreadSafe<Buffer> {
+    class MEDIA_EXPORT Buffer {
      public:
-      int id() const { return id_; }
-      void* data() const { return data_; }
-      size_t size() const { return size_; }
-
-     protected:
-      friend class base::RefCountedThreadSafe<Buffer>;
-
-      Buffer(int id, void* data, size_t size)
-          : id_(id), data_(data), size_(size) {}
-      virtual ~Buffer() {}
-
-      const int id_;
-      void* const data_;
-      const size_t size_;
+      virtual ~Buffer() = 0;
+      virtual int id() const = 0;
+      virtual size_t size() const = 0;
+      virtual void* data() = 0;
+      virtual gfx::GpuMemoryBufferType GetType() = 0;
+      virtual ClientBuffer AsClientBuffer() = 0;
     };
 
     virtual ~Client() {}
-
-    // Reserve an output buffer into which contents can be captured directly.
-    // The returned Buffer will always be allocated with a memory size suitable
-    // for holding a packed video frame with pixels of |format| format, of
-    // |dimensions| frame dimensions. It is permissible for |dimensions| to be
-    // zero; in which case the returned Buffer does not guarantee memory
-    // backing, but functions as a reservation for external input for the
-    // purposes of buffer throttling.
-    //
-    // The output buffer stays reserved for use until the Buffer object is
-    // destroyed.
-    virtual scoped_refptr<Buffer> ReserveOutputBuffer(
-        media::VideoFrame::Format format,
-        const gfx::Size& dimensions) = 0;
 
     // Captured a new video frame, data for which is pointed to by |data|.
     //
@@ -211,19 +217,50 @@ class MEDIA_EXPORT VideoCaptureDevice {
     virtual void OnIncomingCapturedData(const uint8* data,
                                         int length,
                                         const VideoCaptureFormat& frame_format,
-                                        int rotation,  // Clockwise.
-                                        base::TimeTicks timestamp) = 0;
+                                        int clockwise_rotation,
+                                        const base::TimeTicks& timestamp) = 0;
 
-    // Captured a new video frame, held in |frame|.
+    // Captured a 3 planar YUV frame. Planes are possibly disjoint.
+    // |frame_format| must indicate I420.
+    virtual void OnIncomingCapturedYuvData(
+        const uint8* y_data,
+        const uint8* u_data,
+        const uint8* v_data,
+        size_t y_stride,
+        size_t u_stride,
+        size_t v_stride,
+        const VideoCaptureFormat& frame_format,
+        int clockwise_rotation,
+        const base::TimeTicks& timestamp) = 0;
+
+    // Reserve an output buffer into which contents can be captured directly.
+    // The returned Buffer will always be allocated with a memory size suitable
+    // for holding a packed video frame with pixels of |format| format, of
+    // |dimensions| frame dimensions. It is permissible for |dimensions| to be
+    // zero; in which case the returned Buffer does not guarantee memory
+    // backing, but functions as a reservation for external input for the
+    // purposes of buffer throttling.
     //
-    // As the frame is backed by a reservation returned by
+    // The output buffer stays reserved and mapped for use until the Buffer
+    // object is destroyed or returned.
+    virtual scoped_ptr<Buffer> ReserveOutputBuffer(
+        media::VideoPixelFormat format,
+        const gfx::Size& dimensions) = 0;
+
+    // Captured new video data, held in |frame| or |buffer|, respectively for
+    // OnIncomingCapturedVideoFrame() and  OnIncomingCapturedBuffer().
+    //
+    // In both cases, as the frame is backed by a reservation returned by
     // ReserveOutputBuffer(), delivery is guaranteed and will require no
     // additional copies in the browser process.
+    virtual void OnIncomingCapturedBuffer(
+        scoped_ptr<Buffer> buffer,
+        const VideoCaptureFormat& frame_format,
+        const base::TimeTicks& timestamp) = 0;
     virtual void OnIncomingCapturedVideoFrame(
-        const scoped_refptr<Buffer>& buffer,
-        const VideoCaptureFormat& buffer_format,
-        const scoped_refptr<media::VideoFrame>& frame,
-        base::TimeTicks timestamp) = 0;
+        scoped_ptr<Buffer> buffer,
+        const scoped_refptr<VideoFrame>& frame,
+        const base::TimeTicks& timestamp) = 0;
 
     // An error has occurred that cannot be handled and VideoCaptureDevice must
     // be StopAndDeAllocate()-ed. |reason| is a text description of the error.

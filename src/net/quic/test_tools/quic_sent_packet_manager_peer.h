@@ -16,8 +16,22 @@ namespace test {
 
 class QuicSentPacketManagerPeer {
  public:
+  static size_t GetMaxTailLossProbes(
+      QuicSentPacketManager* sent_packet_manager);
+
   static void SetMaxTailLossProbes(
       QuicSentPacketManager* sent_packet_manager, size_t max_tail_loss_probes);
+
+  static bool GetUseNewRto(QuicSentPacketManager* sent_packet_manager);
+
+  static QuicByteCount GetReceiveWindow(
+      QuicSentPacketManager* sent_packet_manager);
+
+  static void SetPerspective(QuicSentPacketManager* sent_packet_manager,
+                             Perspective perspective);
+
+  static const SendAlgorithmInterface* GetSendAlgorithm(
+      const QuicSentPacketManager& sent_packet_manager);
 
   static void SetSendAlgorithm(QuicSentPacketManager* sent_packet_manager,
                                SendAlgorithmInterface* send_algorithm);
@@ -25,20 +39,10 @@ class QuicSentPacketManagerPeer {
   static const LossDetectionInterface* GetLossAlgorithm(
       QuicSentPacketManager* sent_packet_manager);
 
-  static const SendAlgorithmInterface* GetCongestionControlAlgorithm(
-      const QuicSentPacketManager& sent_packet_manager);
-
   static void SetLossAlgorithm(QuicSentPacketManager* sent_packet_manager,
                                LossDetectionInterface* loss_detector);
 
   static RttStats* GetRttStats(QuicSentPacketManager* sent_packet_manager);
-
-  static size_t GetNackCount(
-      const QuicSentPacketManager* sent_packet_manager,
-      QuicPacketSequenceNumber sequence_number);
-
-  static size_t GetPendingRetransmissionCount(
-      const QuicSentPacketManager* sent_packet_manager);
 
   static bool HasPendingPackets(
       const QuicSentPacketManager* sent_packet_manager);

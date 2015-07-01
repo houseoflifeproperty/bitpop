@@ -27,10 +27,10 @@ namespace {
 class TestBrowserContextIncognito : public TestBrowserContext {
  public:
   TestBrowserContextIncognito() {}
-  virtual ~TestBrowserContextIncognito() {}
+  ~TestBrowserContextIncognito() override {}
 
   // TestBrowserContext implementation.
-  virtual bool IsOffTheRecord() const OVERRIDE { return true; }
+  bool IsOffTheRecord() const override { return true; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestBrowserContextIncognito);
@@ -42,14 +42,14 @@ class TestProcessManagerDelegate : public ProcessManagerDelegate {
   TestProcessManagerDelegate()
       : is_background_page_allowed_(true),
         defer_creating_startup_background_hosts_(false) {}
-  virtual ~TestProcessManagerDelegate() {}
+  ~TestProcessManagerDelegate() override {}
 
   // ProcessManagerDelegate implementation.
-  virtual bool IsBackgroundPageAllowed(BrowserContext* context) const OVERRIDE {
+  bool IsBackgroundPageAllowed(BrowserContext* context) const override {
     return is_background_page_allowed_;
   }
-  virtual bool DeferCreatingStartupBackgroundHosts(
-      BrowserContext* context) const OVERRIDE {
+  bool DeferCreatingStartupBackgroundHosts(
+      BrowserContext* context) const override {
     return defer_creating_startup_background_hosts_;
   }
 
@@ -69,7 +69,7 @@ class ProcessManagerTest : public ExtensionsTest {
         &process_manager_delegate_);
   }
 
-  virtual ~ProcessManagerTest() {}
+  ~ProcessManagerTest() override {}
 
   // Use original_context() to make it clear it is a non-incognito context.
   BrowserContext* original_context() { return browser_context(); }
@@ -103,20 +103,13 @@ TEST_F(ProcessManagerTest, ExtensionNotificationRegistration) {
   scoped_ptr<ProcessManager> manager1(ProcessManager::CreateForTesting(
       original_context(), extension_registry()));
 
-  EXPECT_EQ(original_context(), manager1->GetBrowserContext());
+  EXPECT_EQ(original_context(), manager1->browser_context());
   EXPECT_EQ(0u, manager1->background_hosts().size());
 
   // It observes other notifications from this context.
   EXPECT_TRUE(IsRegistered(manager1.get(),
                            extensions::NOTIFICATION_EXTENSIONS_READY_DEPRECATED,
                            original_context()));
-  EXPECT_TRUE(IsRegistered(manager1.get(),
-                           extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
-                           original_context()));
-  EXPECT_TRUE(
-      IsRegistered(manager1.get(),
-                   extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
-                   original_context()));
   EXPECT_TRUE(IsRegistered(manager1.get(),
                            extensions::NOTIFICATION_EXTENSION_HOST_DESTROYED,
                            original_context()));
@@ -125,16 +118,10 @@ TEST_F(ProcessManagerTest, ExtensionNotificationRegistration) {
   scoped_ptr<ProcessManager> manager2(
       ProcessManager::CreateIncognitoForTesting(incognito_context(),
                                                 original_context(),
-                                                manager1.get(),
                                                 extension_registry()));
 
-  EXPECT_EQ(incognito_context(), manager2->GetBrowserContext());
+  EXPECT_EQ(incognito_context(), manager2->browser_context());
   EXPECT_EQ(0u, manager2->background_hosts().size());
-
-  // Some notifications are observed for the original context.
-  EXPECT_TRUE(IsRegistered(manager2.get(),
-                           extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
-                           original_context()));
 
   // Some notifications are observed for the incognito context.
   EXPECT_TRUE(IsRegistered(manager2.get(),

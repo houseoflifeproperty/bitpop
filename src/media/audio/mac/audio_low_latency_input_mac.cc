@@ -9,6 +9,7 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/mac/mac_logging.h"
+#include "base/metrics/sparse_histogram.h"
 #include "media/audio/mac/audio_manager_mac.h"
 #include "media/base/audio_bus.h"
 #include "media/base/data_buffer.h"
@@ -17,6 +18,10 @@ namespace media {
 
 // Number of blocks of buffers used in the |fifo_|.
 const int kNumberOfBlocksBufferInFifo = 2;
+
+// Max length of sequence of TooManyFramesToProcessError errors.
+// The stream will be stopped as soon as this time limit is passed.
+const int kMaxErrorTimeoutInSeconds = 1;
 
 static std::ostream& operator<<(std::ostream& os,
                                 const AudioStreamBasicDescription& format) {
@@ -179,38 +184,9 @@ bool AUAudioInputStream::Open() {
     return false;
   }
 
-  // Set the desired number of frames in the IO buffer (output scope).
-  // WARNING: Setting this value changes the frame size for all input audio
-  // units in the current process.  As a result, the AURenderCallback must be
-  // able to handle arbitrary buffer sizes and FIFO appropriately.
-  UInt32 buffer_size = 0;
-  UInt32 property_size = sizeof(buffer_size);
-  result = AudioUnitGetProperty(audio_unit_,
-                                kAudioDevicePropertyBufferFrameSize,
-                                kAudioUnitScope_Output,
-                                1,
-                                &buffer_size,
-                                &property_size);
-  if (result != noErr) {
-    HandleError(result);
+  if (!manager_->MaybeChangeBufferSize(
+          input_device_id_, audio_unit_, 1, number_of_frames_))
     return false;
-  }
-
-  // Only set the buffer size if we're the only active stream or the buffer size
-  // is lower than the current buffer size.
-  if (manager_->input_stream_count() == 1 || number_of_frames_ < buffer_size) {
-    buffer_size = number_of_frames_;
-    result = AudioUnitSetProperty(audio_unit_,
-                                  kAudioDevicePropertyBufferFrameSize,
-                                  kAudioUnitScope_Output,
-                                  1,
-                                  &buffer_size,
-                                  sizeof(buffer_size));
-    if (result != noErr) {
-      HandleError(result);
-      return false;
-    }
-  }
 
   // Register the input procedure for the AUHAL.
   // This procedure will be called when the AUHAL has received new data
@@ -269,6 +245,7 @@ void AUAudioInputStream::Start(AudioInputCallback* callback) {
   }
 
   sink_ = callback;
+  last_success_time_ = base::TimeTicks::Now();
   StartAgc();
   OSStatus result = AudioOutputUnitStart(audio_unit_);
   if (result == noErr) {
@@ -286,6 +263,7 @@ void AUAudioInputStream::Stop() {
   DCHECK_EQ(result, noErr);
   started_ = false;
   sink_ = NULL;
+  fifo_.Clear();
 
   OSSTATUS_DLOG_IF(ERROR, result != noErr, result)
       << "Failed to stop acquiring data";
@@ -488,6 +466,31 @@ OSStatus AUAudioInputStream::InputProc(void* user_data,
   if (!audio_input)
     return kAudioUnitErr_InvalidElement;
 
+  // Update the |mDataByteSize| value in the audio_buffer_list() since
+  // |number_of_frames| can be changed on the fly.
+  // |mDataByteSize| needs to be exactly mapping to |number_of_frames|,
+  // otherwise it will put CoreAudio into bad state and results in
+  // AudioUnitRender() returning -50 for the new created stream.
+  // We have also seen kAudioUnitErr_TooManyFramesToProcess (-10874) and
+  // kAudioUnitErr_CannotDoInCurrentContext (-10863) as error codes.
+  // See crbug/428706 for details.
+  UInt32 new_size = number_of_frames * audio_input->format_.mBytesPerFrame;
+  AudioBuffer* audio_buffer = audio_input->audio_buffer_list()->mBuffers;
+  if (new_size != audio_buffer->mDataByteSize) {
+    if (new_size > audio_buffer->mDataByteSize) {
+      // This can happen if the device is unpluged during recording. We
+      // allocate enough memory here to avoid depending on how CoreAudio
+      // handles it.
+      // See See http://www.crbug.com/434681 for one example when we can enter
+      // this scope.
+      audio_input->audio_data_buffer_.reset(new uint8[new_size]);
+      audio_buffer->mData = audio_input->audio_data_buffer_.get();
+    }
+
+    // Update the |mDataByteSize| to match |number_of_frames|.
+    audio_buffer->mDataByteSize = new_size;
+  }
+
   // Receive audio from the AUHAL from the output scope of the Audio Unit.
   OSStatus result = AudioUnitRender(audio_input->audio_unit(),
                                     flags,
@@ -495,8 +498,32 @@ OSStatus AUAudioInputStream::InputProc(void* user_data,
                                     bus_number,
                                     number_of_frames,
                                     audio_input->audio_buffer_list());
-  if (result)
+  if (result) {
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Media.AudioInputCbErrorMac", result);
+    OSSTATUS_DLOG(ERROR, result) << "AudioUnitRender() failed ";
+    if (result != kAudioUnitErr_TooManyFramesToProcess) {
+      audio_input->HandleError(result);
+    } else {
+      DCHECK(!audio_input->last_success_time_.is_null());
+      // We delay stopping the stream for kAudioUnitErr_TooManyFramesToProcess
+      // since it has been observed that some USB headsets can cause this error
+      // but only for a few initial frames at startup and then then the stream
+      // returns to a stable state again. See b/19524368 for details.
+      // Instead, we measure time since last valid audio frame and call
+      // HandleError() only if a too long error sequence is detected. We do
+      // this to avoid ending up in a non recoverable bad core audio state.
+      base::TimeDelta time_since_last_success =
+          base::TimeTicks::Now() - audio_input->last_success_time_;
+      if ((time_since_last_success >
+           base::TimeDelta::FromSeconds(kMaxErrorTimeoutInSeconds))) {
+        DLOG(ERROR) << "Too long sequence of TooManyFramesToProcess errors!";
+        audio_input->HandleError(result);
+      }
+    }
     return result;
+  }
+  // Update time of successful call to AudioUnitRender().
+  audio_input->last_success_time_ = base::TimeTicks::Now();
 
   // Deliver recorded data to the consumer as a callback.
   return audio_input->Provide(number_of_frames,
@@ -523,6 +550,21 @@ OSStatus AUAudioInputStream::Provide(UInt32 number_of_frames,
   DCHECK(audio_data);
   if (!audio_data)
     return kAudioUnitErr_InvalidElement;
+
+  // Dynamically increase capacity of the FIFO to handle larger buffers from
+  // CoreAudio. This can happen in combination with Apple Thunderbolt Displays
+  // when the Display Audio is used as capture source and the cable is first
+  // remove and then inserted again.
+  // See http://www.crbug.com/434681 for details.
+  if (static_cast<int>(number_of_frames) > fifo_.GetUnfilledFrames()) {
+    // Derive required increase in number of FIFO blocks. The increase is
+    // typically one block.
+    const int blocks =
+        static_cast<int>((number_of_frames - fifo_.GetUnfilledFrames()) /
+                         number_of_frames_) + 1;
+    DLOG(WARNING) << "Increasing FIFO capacity by " << blocks << " blocks";
+    fifo_.IncreaseCapacity(blocks);
+  }
 
   // Copy captured (and interleaved) data into FIFO.
   fifo_.Push(audio_data, number_of_frames, format_.mBitsPerChannel / 8);

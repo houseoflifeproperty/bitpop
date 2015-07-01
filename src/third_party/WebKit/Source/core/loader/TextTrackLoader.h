@@ -47,9 +47,9 @@ public:
     virtual void newRegionsAvailable(TextTrackLoader*) = 0;
 };
 
-class TextTrackLoader FINAL : public NoBaseWillBeGarbageCollectedFinalized<TextTrackLoader>, public ResourceOwner<RawResource>, private VTTParserClient {
+class TextTrackLoader final : public NoBaseWillBeGarbageCollectedFinalized<TextTrackLoader>, public ResourceOwner<RawResource>, private VTTParserClient {
     WTF_MAKE_NONCOPYABLE(TextTrackLoader);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(TextTrackLoader);
 public:
     static PassOwnPtrWillBeRawPtr<TextTrackLoader> create(TextTrackLoaderClient& client, Document& document)
     {
@@ -63,20 +63,20 @@ public:
     enum State { Idle, Loading, Finished, Failed };
     State loadState() { return m_state; }
 
-    void getNewCues(WillBeHeapVector<RefPtrWillBeMember<VTTCue> >& outputCues);
-    void getNewRegions(WillBeHeapVector<RefPtrWillBeMember<VTTRegion> >& outputRegions);
+    void getNewCues(WillBeHeapVector<RefPtrWillBeMember<TextTrackCue>>& outputCues);
+    void getNewRegions(WillBeHeapVector<RefPtrWillBeMember<VTTRegion>>& outputRegions);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     // RawResourceClient
-    virtual void dataReceived(Resource*, const char* data, int length) OVERRIDE;
-    virtual void notifyFinished(Resource*) OVERRIDE;
+    virtual void dataReceived(Resource*, const char* data, unsigned length) override;
+    virtual void notifyFinished(Resource*) override;
 
     // VTTParserClient
-    virtual void newCuesParsed() OVERRIDE;
-    virtual void newRegionsParsed() OVERRIDE;
-    virtual void fileFailedToParse() OVERRIDE;
+    virtual void newCuesParsed() override;
+    virtual void newRegionsParsed() override;
+    virtual void fileFailedToParse() override;
 
     TextTrackLoader(TextTrackLoaderClient&, Document&);
 

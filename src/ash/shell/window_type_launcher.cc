@@ -5,7 +5,6 @@
 #include "ash/shell/window_type_launcher.h"
 
 #include "ash/root_window_controller.h"
-#include "ash/screensaver/screensaver_view.h"
 #include "ash/session/session_state_delegate.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
@@ -17,10 +16,7 @@
 #include "ash/system/status_area_widget.h"
 #include "ash/system/web_notification/web_notification_tray.h"
 #include "ash/test/child_modal_window.h"
-#include "base/bind.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time/time.h"
-#include "content/public/browser/browser_thread.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
@@ -61,8 +57,7 @@ class ModalWindow : public views::WidgetDelegateView,
     open_button_->SetStyle(views::Button::STYLE_BUTTON);
     AddChildView(open_button_);
   }
-  virtual ~ModalWindow() {
-  }
+  ~ModalWindow() override {}
 
   static void OpenModalWindow(aura::Window* parent, ui::ModalType modal_type) {
     views::Widget* widget =
@@ -73,13 +68,11 @@ class ModalWindow : public views::WidgetDelegateView,
   }
 
   // Overridden from views::View:
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
+  void OnPaint(gfx::Canvas* canvas) override {
     canvas->FillRect(GetLocalBounds(), color_);
   }
-  virtual gfx::Size GetPreferredSize() const OVERRIDE {
-    return gfx::Size(200, 200);
-  }
-  virtual void Layout() OVERRIDE {
+  gfx::Size GetPreferredSize() const override { return gfx::Size(200, 200); }
+  void Layout() override {
     gfx::Size open_ps = open_button_->GetPreferredSize();
     gfx::Rect local_bounds = GetLocalBounds();
     open_button_->SetBounds(
@@ -88,22 +81,15 @@ class ModalWindow : public views::WidgetDelegateView,
   }
 
   // Overridden from views::WidgetDelegate:
-  virtual views::View* GetContentsView() OVERRIDE {
-    return this;
-  }
-  virtual bool CanResize() const OVERRIDE {
-    return true;
-  }
-  virtual base::string16 GetWindowTitle() const OVERRIDE {
+  views::View* GetContentsView() override { return this; }
+  bool CanResize() const override { return true; }
+  base::string16 GetWindowTitle() const override {
     return base::ASCIIToUTF16("Modal Window");
   }
-  virtual ui::ModalType GetModalType() const OVERRIDE {
-    return modal_type_;
-  }
+  ui::ModalType GetModalType() const override { return modal_type_; }
 
   // Overridden from views::ButtonListener:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE {
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override {
     DCHECK(sender == open_button_);
     OpenModalWindow(GetWidget()->GetNativeView(), modal_type_);
   }
@@ -122,8 +108,7 @@ class NonModalTransient : public views::WidgetDelegateView {
       : color_(g_colors[g_color_index]) {
     ++g_color_index %= arraysize(g_colors);
   }
-  virtual ~NonModalTransient() {
-  }
+  ~NonModalTransient() override {}
 
   static void OpenNonModalTransient(aura::Window* parent) {
     views::Widget* widget =
@@ -145,24 +130,18 @@ class NonModalTransient : public views::WidgetDelegateView {
   }
 
   // Overridden from views::View:
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
+  void OnPaint(gfx::Canvas* canvas) override {
     canvas->FillRect(GetLocalBounds(), color_);
   }
-  virtual gfx::Size GetPreferredSize() const OVERRIDE {
-    return gfx::Size(250, 250);
-  }
+  gfx::Size GetPreferredSize() const override { return gfx::Size(250, 250); }
 
   // Overridden from views::WidgetDelegate:
-  virtual views::View* GetContentsView() OVERRIDE {
-    return this;
-  }
-  virtual bool CanResize() const OVERRIDE {
-    return true;
-  }
-  virtual base::string16 GetWindowTitle() const OVERRIDE {
+  views::View* GetContentsView() override { return this; }
+  bool CanResize() const override { return true; }
+  base::string16 GetWindowTitle() const override {
     return base::ASCIIToUTF16("Non-Modal Transient");
   }
-  virtual void DeleteDelegate() OVERRIDE {
+  void DeleteDelegate() override {
     if (GetWidget() == non_modal_transient_)
       non_modal_transient_ = NULL;
 
@@ -225,8 +204,6 @@ WindowTypeLauncher::WindowTypeLauncher()
           this, base::ASCIIToUTF16("Open Views Examples Window"))),
       show_hide_window_button_(new views::LabelButton(
           this, base::ASCIIToUTF16("Show/Hide a Window"))),
-      show_screensaver_(new views::LabelButton(
-          this, base::ASCIIToUTF16("Show the Screensaver [for 5 seconds]"))),
       show_web_notification_(new views::LabelButton(
           this, base::ASCIIToUTF16("Show a web/app notification"))) {
   create_button_->SetStyle(views::Button::STYLE_BUTTON);
@@ -241,7 +218,6 @@ WindowTypeLauncher::WindowTypeLauncher()
   transient_button_->SetStyle(views::Button::STYLE_BUTTON);
   examples_button_->SetStyle(views::Button::STYLE_BUTTON);
   show_hide_window_button_->SetStyle(views::Button::STYLE_BUTTON);
-  show_screensaver_->SetStyle(views::Button::STYLE_BUTTON);
   show_web_notification_->SetStyle(views::Button::STYLE_BUTTON);
 
   views::GridLayout* layout = new views::GridLayout(this);
@@ -266,7 +242,6 @@ WindowTypeLauncher::WindowTypeLauncher()
   AddViewToLayout(layout, transient_button_);
   AddViewToLayout(layout, examples_button_);
   AddViewToLayout(layout, show_hide_window_button_);
-  AddViewToLayout(layout, show_screensaver_);
   AddViewToLayout(layout, show_web_notification_);
   set_context_menu_controller(this);
 }
@@ -333,13 +308,6 @@ void WindowTypeLauncher::ButtonPressed(views::Button* sender,
     NonModalTransient::OpenNonModalTransient(GetWidget()->GetNativeView());
   } else if (sender == show_hide_window_button_) {
     NonModalTransient::ToggleNonModalTransient(GetWidget()->GetNativeView());
-  } else if (sender == show_screensaver_) {
-    ash::ShowScreensaver(GURL("http://www.google.com"));
-    content::BrowserThread::PostDelayedTask(content::BrowserThread::UI,
-                                            FROM_HERE,
-                                            base::Bind(&ash::CloseScreensaver),
-                                            base::TimeDelta::FromSeconds(5));
-
   } else if (sender == show_web_notification_) {
     scoped_ptr<message_center::Notification> notification;
     notification.reset(new message_center::Notification(

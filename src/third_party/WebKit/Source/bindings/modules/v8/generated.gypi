@@ -5,6 +5,10 @@
 {
   'variables': {
     'bindings_modules_v8_output_dir': '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/modules/v8',
+    'bindings_modules_v8_generated_union_type_files': [
+        '<(bindings_modules_v8_output_dir)/UnionTypesModules.cpp',
+        '<(bindings_modules_v8_output_dir)/UnionTypesModules.h',
+    ],
 
     'conditions': [
       ['OS=="win" and buildtype=="Official"', {
@@ -36,6 +40,9 @@
           '<(bindings_modules_v8_output_dir)/V8GeneratedModulesBindings19.cpp',
         ],
       }],
+    ],
+    'bindings_modules_v8_generated_partial_aggregate_files': [
+      '<(bindings_modules_v8_output_dir)/V8GeneratedModulesBindingsPartial.cpp',
     ],
   },
 }

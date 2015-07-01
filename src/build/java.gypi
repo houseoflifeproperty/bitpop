@@ -19,6 +19,8 @@
 #  java_in_dir - The top-level java directory. The src should be in
 #    <java_in_dir>/src.
 # Optional/automatic variables:
+#  add_to_dependents_classpaths - Set to 0 if the resulting jar file should not
+#    be added to its dependents' classpaths.
 #  additional_input_paths - These paths will be included in the 'inputs' list to
 #    ensure that this target is rebuilt when one of these paths changes.
 #  additional_src_dirs - Additional directories with .java files to be compiled
@@ -49,6 +51,7 @@
     '<(DEPTH)/build/android/setup.gyp:build_output_dirs'
   ],
   'variables': {
+    'add_to_dependents_classpaths%': 1,
     'android_jar': '<(android_sdk)/android.jar',
     'input_jars_paths': [ '<(android_jar)' ],
     'additional_src_dirs': [],
@@ -66,6 +69,7 @@
     'has_java_resources%': 0,
     'res_extra_dirs': [],
     'res_extra_files': [],
+    'res_v14_skip%': 0,
     'res_v14_verify_only%': 0,
     'resource_input_paths': ['>@(res_extra_files)'],
     'intermediate_dir': '<(SHARED_INTERMEDIATE_DIR)/<(_target_name)',
@@ -74,6 +78,8 @@
     'lint_result': '<(intermediate_dir)/lint_result.xml',
     'lint_config': '<(intermediate_dir)/lint_config.xml',
     'never_lint%': 0,
+    'findbugs_stamp': '<(intermediate_dir)/findbugs.stamp',
+    'run_findbugs%': 0,
     'proguard_config%': '',
     'proguard_preprocess%': '0',
     'variables': {
@@ -97,20 +103,22 @@
     'emma_instrument': '<(emma_instrument)',
     'javac_jar_path': '<(javac_jar_path)',
   },
-  # This all_dependent_settings is used for java targets only. This will add the
-  # jar path to the classpath of dependent java targets.
-  'all_dependent_settings': {
-    'variables': {
-      'input_jars_paths': ['<(jar_final_path)'],
-      'library_dexed_jars_paths': ['<(dex_path)'],
-    },
-  },
   'conditions': [
+    ['add_to_dependents_classpaths == 1', {
+      # This all_dependent_settings is used for java targets only. This will add the
+      # jar path to the classpath of dependent java targets.
+      'all_dependent_settings': {
+        'variables': {
+          'input_jars_paths': ['<(jar_final_path)'],
+          'library_dexed_jars_paths': ['<(dex_path)'],
+        },
+      },
+    }],
     ['has_java_resources == 1', {
       'variables': {
-        'res_dir': '<(java_in_dir)/res',
-        'res_input_dirs': ['<(res_dir)', '<@(res_extra_dirs)'],
-        'resource_input_paths': ['<!@(find <(res_dir) -type f)'],
+        'resource_dir': '<(java_in_dir)/res',
+        'res_input_dirs': ['<(resource_dir)', '<@(res_extra_dirs)'],
+        'resource_input_paths': ['<!@(find <(resource_dir) -type f)'],
 
         'R_dir': '<(intermediate_dir)/java_R',
         'R_text_file': '<(R_dir)/R.txt',
@@ -150,6 +158,9 @@
             'inputs_list_file': '>|(java_resources.<(_target_name).gypcmd >@(resource_input_paths))',
             'process_resources_options': [],
             'conditions': [
+              ['res_v14_skip == 1', {
+                'process_resources_options': ['--v14-skip']
+              }],
               ['res_v14_verify_only == 1', {
                 'process_resources_options': ['--v14-verify-only']
               }],
@@ -209,6 +220,31 @@
             '--proguard-config=<(proguard_config)',
             '--classpath=<(android_sdk_jar) >(input_jars_paths)',
           ]
+        },
+      ],
+    }],
+    ['run_findbugs == 1', {
+      'actions': [
+        {
+          'action_name': 'findbugs_<(_target_name)',
+          'message': 'Running findbugs on <(_target_name)',
+          'inputs': [
+            '<(DEPTH)/build/android/findbugs_diff.py',
+            '<(DEPTH)/build/android/findbugs_filter/findbugs_exclude.xml',
+            '<(DEPTH)/build/android/pylib/utils/findbugs.py',
+            '>@(input_jars_paths)',
+            '<(jar_final_path)',
+            '<(compile_stamp)',
+          ],
+          'outputs': [
+            '<(findbugs_stamp)',
+          ],
+          'action': [
+            'python', '<(DEPTH)/build/android/findbugs_diff.py',
+            '--auxclasspath-gyp', '>(input_jars_paths)',
+            '--stamp', '<(findbugs_stamp)',
+            '<(jar_final_path)',
+          ],
         },
       ],
     }],

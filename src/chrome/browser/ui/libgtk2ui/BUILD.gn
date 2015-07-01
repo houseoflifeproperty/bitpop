@@ -61,33 +61,58 @@ component("libgtk2ui") {
       "gconf_listener.h",
     ]
   }
-  if (is_clang) {
-    # G_DEFINE_TYPE automatically generates a *get_instance_private inline
-    # function after glib 2.37. That's unused. Prevent to complain about it.
-    cflags = [ "-Wno-unused-function" ]
-  }
-
   defines = [ "LIBGTK2UI_IMPLEMENTATION" ]
 
   configs += [
     "//build/config/linux:gconf",
-    "//build/config/linux:gtk",
-    "//build/config/linux:gtkprint",
     "//printing:cups",
+  ]
+
+  # gn orders flags on a target before flags from configs. The default config
+  # adds -Wall, and these flags have to be after -Wall -- so they need to come
+  # from a config and can't be on the target directly.
+  config("libgtk2ui_warnings") {
+    if (is_clang) {
+      cflags = [
+        # G_DEFINE_TYPE automatically generates a *get_instance_private inline
+        # function after glib 2.37. That's unused. Prevent to complain about it.
+        "-Wno-unused-function",
+
+        # G_STATIC_ASSERT uses a typedef as a static_assert.
+        "-Wno-unused-local-typedef",
+      ]
+    }
+  }
+  configs += [
+    ":libgtk2ui_warnings",
+    "//build/config/linux:x11",
   ]
 
   deps = [
     "//base",
-    "//base:i18n",
     "//base/third_party/dynamic_annotations",
+    "//base:i18n",
+    "//build/config/linux/gtk",
+    "//build/config/linux/gtk:gtkprint",
     "//chrome/app/theme:theme_resources",
     "//chrome:extra_resources",
     "//chrome:resources",
     "//chrome:strings",
     "//components/resources",
+    "//content/public/browser",
+    "//printing",
     "//skia",
+    "//third_party/mojo/src/mojo/edk/system",
+    "//ui/aura",
     "//ui/base",
+    "//ui/base/ime",
+    "//ui/events",
+    "//ui/events:events_base",
+    "//ui/gfx",
+    "//ui/gfx/x",
+    "//ui/native_theme",
     "//ui/resources",
+    "//ui/shell_dialogs",
     "//ui/strings",
     "//ui/views",
   ]

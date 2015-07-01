@@ -12,6 +12,9 @@
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_utils.h"
 #include "content/common/resource_request_body.h"
+#include "content/public/common/request_context_frame_type.h"
+#include "content/public/common/request_context_type.h"
+#include "content/public/common/resource_type.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "net/url_request/url_request_context.h"
 #include "storage/browser/blob/blob_storage_context.h"
@@ -34,8 +37,9 @@ class ServiceWorkerRequestHandlerTest : public testing::Test {
   ServiceWorkerRequestHandlerTest()
       : browser_thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP) {}
 
-  virtual void SetUp() OVERRIDE {
-    helper_.reset(new EmbeddedWorkerTestHelper(kMockRenderProcessId));
+  void SetUp() override {
+    helper_.reset(
+        new EmbeddedWorkerTestHelper(base::FilePath(), kMockRenderProcessId));
 
     // A new unstored registration/version.
     registration_ = new ServiceWorkerRegistration(
@@ -47,7 +51,9 @@ class ServiceWorkerRequestHandlerTest : public testing::Test {
 
     // An empty host.
     scoped_ptr<ServiceWorkerProviderHost> host(new ServiceWorkerProviderHost(
-        kMockRenderProcessId, kMockProviderId, context()->AsWeakPtr(), NULL));
+        kMockRenderProcessId, MSG_ROUTING_NONE, kMockProviderId,
+        SERVICE_WORKER_PROVIDER_FOR_WINDOW, context()->AsWeakPtr(), nullptr));
+    host->SetDocumentUrl(GURL("http://host/scope/"));
     provider_host_ = host->AsWeakPtr();
     context()->AddProviderHost(host.Pass());
 
@@ -55,18 +61,19 @@ class ServiceWorkerRequestHandlerTest : public testing::Test {
     base::RunLoop().RunUntilIdle();
 
     version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
-    registration_->SetActiveVersion(version_.get());
+    registration_->SetActiveVersion(version_);
     context()->storage()->StoreRegistration(
         registration_.get(),
         version_.get(),
         base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
-    provider_host_->AssociateRegistration(registration_.get());
+    provider_host_->AssociateRegistration(registration_.get(),
+                                          false /* notify_controllerchange */);
     base::RunLoop().RunUntilIdle();
   }
 
-  virtual void TearDown() OVERRIDE {
-    version_ = NULL;
-    registration_ = NULL;
+  void TearDown() override {
+    version_ = nullptr;
+    registration_ = nullptr;
     helper_.reset();
   }
 
@@ -81,17 +88,22 @@ class ServiceWorkerRequestHandlerTest : public testing::Test {
                               ResourceType resource_type) {
     const GURL kDocUrl(url);
     scoped_ptr<net::URLRequest> request = url_request_context_.CreateRequest(
-        kDocUrl, net::DEFAULT_PRIORITY, &url_request_delegate_, NULL);
+        kDocUrl, net::DEFAULT_PRIORITY, &url_request_delegate_);
     request->set_method(method);
-    ServiceWorkerRequestHandler::InitializeHandler(request.get(),
-                                                   context_wrapper(),
-                                                   &blob_storage_context_,
-                                                   kMockRenderProcessId,
-                                                   kMockProviderId,
-                                                   skip_service_worker,
-                                                   resource_type,
-                                                   NULL);
-    return ServiceWorkerRequestHandler::GetHandler(request.get()) != NULL;
+    ServiceWorkerRequestHandler::InitializeHandler(
+        request.get(),
+        context_wrapper(),
+        &blob_storage_context_,
+        kMockRenderProcessId,
+        kMockProviderId,
+        skip_service_worker,
+        FETCH_REQUEST_MODE_NO_CORS,
+        FETCH_CREDENTIALS_MODE_OMIT,
+        resource_type,
+        REQUEST_CONTEXT_TYPE_HYPERLINK,
+        REQUEST_CONTEXT_FRAME_TYPE_TOP_LEVEL,
+        nullptr);
+    return ServiceWorkerRequestHandler::GetHandler(request.get()) != nullptr;
   }
 
  protected:
@@ -113,9 +125,9 @@ TEST_F(ServiceWorkerRequestHandlerTest, InitializeHandler) {
   EXPECT_FALSE(InitializeHandlerCheck(
       "ftp://host/scope/doc", "GET", false, RESOURCE_TYPE_MAIN_FRAME));
 
-  EXPECT_FALSE(InitializeHandlerCheck(
+  EXPECT_TRUE(InitializeHandlerCheck(
       "http://host/scope/doc", "OPTIONS", false, RESOURCE_TYPE_MAIN_FRAME));
-  EXPECT_FALSE(InitializeHandlerCheck(
+  EXPECT_TRUE(InitializeHandlerCheck(
       "https://host/scope/doc", "OPTIONS", false, RESOURCE_TYPE_MAIN_FRAME));
 
   provider_host_->SetDocumentUrl(GURL(""));

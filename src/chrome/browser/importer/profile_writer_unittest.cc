@@ -9,7 +9,6 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/importer/importer_unittest_utils.h"
 #include "chrome/common/importer/imported_bookmark_entry.h"
@@ -18,18 +17,20 @@
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/bookmarks/test/bookmark_test_helpers.h"
+#include "components/history/core/browser/history_service.h"
 #include "components/history/core/browser/history_types.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using bookmarks::BookmarkMatch;
+using bookmarks::BookmarkModel;
 using content::BrowserThread;
 
 class TestProfileWriter : public ProfileWriter {
  public:
   explicit TestProfileWriter(Profile* profile) : ProfileWriter(profile) {}
  protected:
-  virtual ~TestProfileWriter() {}
+  ~TestProfileWriter() override {}
 };
 
 class ProfileWriterTest : public testing::Test {
@@ -38,7 +39,7 @@ class ProfileWriterTest : public testing::Test {
       : ui_thread_(BrowserThread::UI, &loop_),
         file_thread_(BrowserThread::FILE, &loop_) {
   }
-  virtual ~ProfileWriterTest() {}
+  ~ProfileWriterTest() override {}
 
   // Create test bookmark entries to be added to ProfileWriter to
   // simulate bookmark importing.
@@ -91,9 +92,9 @@ class ProfileWriterTest : public testing::Test {
   }
 
   void VerifyHistoryCount(Profile* profile) {
-    HistoryService* history_service =
-        HistoryServiceFactory::GetForProfile(profile,
-                                             Profile::EXPLICIT_ACCESS);
+    history::HistoryService* history_service =
+        HistoryServiceFactory::GetForProfile(
+            profile, ServiceAccessType::EXPLICIT_ACCESS);
     history::QueryOptions options;
     base::CancelableTaskTracker history_task_tracker;
     history_service->QueryHistory(
@@ -141,7 +142,7 @@ TEST_F(ProfileWriterTest, CheckBookmarksWithMultiProfile) {
 
   BookmarkModel* bookmark_model2 =
       BookmarkModelFactory::GetForProfile(&profile2);
-  test::WaitForBookmarkModelToLoad(bookmark_model2);
+  bookmarks::test::WaitForBookmarkModelToLoad(bookmark_model2);
   bookmarks::AddIfNotBookmarked(
       bookmark_model2, GURL("http://www.bing.com"), base::ASCIIToUTF16("Bing"));
   TestingProfile profile1;
@@ -150,7 +151,7 @@ TEST_F(ProfileWriterTest, CheckBookmarksWithMultiProfile) {
   CreateImportedBookmarksEntries();
   BookmarkModel* bookmark_model1 =
       BookmarkModelFactory::GetForProfile(&profile1);
-  test::WaitForBookmarkModelToLoad(bookmark_model1);
+  bookmarks::test::WaitForBookmarkModelToLoad(bookmark_model1);
 
   scoped_refptr<TestProfileWriter> profile_writer(
       new TestProfileWriter(&profile1));
@@ -174,7 +175,7 @@ TEST_F(ProfileWriterTest, CheckBookmarksAfterWritingDataTwice) {
   CreateImportedBookmarksEntries();
   BookmarkModel* bookmark_model =
       BookmarkModelFactory::GetForProfile(&profile);
-  test::WaitForBookmarkModelToLoad(bookmark_model);
+  bookmarks::test::WaitForBookmarkModelToLoad(bookmark_model);
 
   scoped_refptr<TestProfileWriter> profile_writer(
       new TestProfileWriter(&profile));

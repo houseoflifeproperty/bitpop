@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/path_service.h"
@@ -15,16 +16,13 @@
 #include "ui/base/ui_base_paths.h"
 #include "url/url_util.h"
 
-#if defined(OS_MACOSX)
-#include "base/mac/bundle_locations.h"
-#endif
-
 #if !defined(OS_IOS)
 #include "ui/gl/gl_surface.h"
 #endif
 
 #if defined(OS_ANDROID)
 #include "base/android/jni_android.h"
+#include "components/invalidation/android/component_jni_registrar.h"
 #include "ui/base/android/ui_base_jni_registrar.h"
 #include "ui/gfx/android/gfx_jni_registrar.h"
 #endif
@@ -36,7 +34,7 @@ class ComponentsTestSuite : public base::TestSuite {
   ComponentsTestSuite(int argc, char** argv) : base::TestSuite(argc, argv) {}
 
  private:
-  virtual void Initialize() OVERRIDE {
+  void Initialize() override {
     base::TestSuite::Initialize();
 
     // Initialize the histograms subsystem, so that any histograms hit in tests
@@ -52,38 +50,24 @@ class ComponentsTestSuite : public base::TestSuite {
     JNIEnv* env = base::android::AttachCurrentThread();
     gfx::android::RegisterJni(env);
     ui::android::RegisterJni(env);
-#endif
-
-#if defined(OS_MACOSX) && !defined(OS_IOS)
-    // Look in the framework bundle for resources.
-    base::FilePath path;
-    PathService::Get(base::DIR_EXE, &path);
-
-    // TODO(tfarina): This is temporary. The right fix is to write a
-    // framework-Info.plist and integrate that into the build.
-    // Hardcode the framework name here to avoid having to depend on chrome's
-    // common target for chrome::kFrameworkName.
-#if defined(GOOGLE_CHROME_BUILD)
-    path = path.AppendASCII("Google Chrome Framework.framework");
-#elif defined(CHROMIUM_BUILD)
-    path = path.AppendASCII("Chromium Framework.framework");
-#else
-#error Unknown branding
-#endif
-
-    base::mac::SetOverrideFrameworkBundlePath(path);
+    invalidation::android::RegisterInvalidationJni(env);
 #endif
 
     ui::RegisterPathProvider();
 
-    // TODO(tfarina): This should be changed to InitSharedInstanceWithPakFile()
-    // so we can load our pak file instead of chrome.pak. crbug.com/348563
-    ui::ResourceBundle::InitSharedInstanceWithLocale(
-        "en-US", NULL, ui::ResourceBundle::LOAD_COMMON_RESOURCES);
-    base::FilePath resources_pack_path;
-    PathService::Get(base::DIR_MODULE, &resources_pack_path);
+    base::FilePath pak_path;
+#if defined(OS_ANDROID)
+    PathService::Get(ui::DIR_RESOURCE_PAKS_ANDROID, &pak_path);
+#else
+    PathService::Get(base::DIR_MODULE, &pak_path);
+#endif
+
+    base::FilePath ui_test_pak_path;
+    ASSERT_TRUE(PathService::Get(ui::UI_TEST_PAK, &ui_test_pak_path));
+    ui::ResourceBundle::InitSharedInstanceWithPakPath(ui_test_pak_path);
+
     ui::ResourceBundle::GetSharedInstance().AddDataPackFromPath(
-        resources_pack_path.AppendASCII("resources.pak"),
+        pak_path.AppendASCII("components_tests_resources.pak"),
         ui::SCALE_FACTOR_NONE);
 
     // These schemes need to be added globally to pass tests of
@@ -98,12 +82,8 @@ class ComponentsTestSuite : public base::TestSuite {
         "chrome-extension");
   }
 
-  virtual void Shutdown() OVERRIDE {
+  void Shutdown() override {
     ui::ResourceBundle::CleanupSharedInstance();
-
-#if defined(OS_MACOSX) && !defined(OS_IOS)
-  base::mac::SetOverrideFrameworkBundle(NULL);
-#endif
 
     base::TestSuite::Shutdown();
   }
@@ -114,13 +94,13 @@ class ComponentsTestSuite : public base::TestSuite {
 class ComponentsUnitTestEventListener : public testing::EmptyTestEventListener {
  public:
   ComponentsUnitTestEventListener() {}
-  virtual ~ComponentsUnitTestEventListener() {}
+  ~ComponentsUnitTestEventListener() override {}
 
-  virtual void OnTestStart(const testing::TestInfo& test_info) OVERRIDE {
+  void OnTestStart(const testing::TestInfo& test_info) override {
     content_initializer_.reset(new content::TestContentClientInitializer());
   }
 
-  virtual void OnTestEnd(const testing::TestInfo& test_info) OVERRIDE {
+  void OnTestEnd(const testing::TestInfo& test_info) override {
     content_initializer_.reset();
   }
 

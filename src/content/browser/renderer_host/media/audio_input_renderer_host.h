@@ -101,25 +101,26 @@ class CONTENT_EXPORT AudioInputRendererHost
 
   // Called from UI thread from the owner of this object.
   // |user_input_monitor| is used for typing detection and can be NULL.
-  AudioInputRendererHost(media::AudioManager* audio_manager,
+  AudioInputRendererHost(int render_process_id,
+                         media::AudioManager* audio_manager,
                          MediaStreamManager* media_stream_manager,
                          AudioMirroringManager* audio_mirroring_manager,
                          media::UserInputMonitor* user_input_monitor);
 
   // BrowserMessageFilter implementation.
-  virtual void OnChannelClosing() OVERRIDE;
-  virtual void OnDestruct() const OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  void OnChannelClosing() override;
+  void OnDestruct() const override;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // AudioInputController::EventHandler implementation.
-  virtual void OnCreated(media::AudioInputController* controller) OVERRIDE;
-  virtual void OnRecording(media::AudioInputController* controller) OVERRIDE;
-  virtual void OnError(media::AudioInputController* controller,
-      media::AudioInputController::ErrorCode error_code) OVERRIDE;
-  virtual void OnData(media::AudioInputController* controller,
-                      const media::AudioBus* data) OVERRIDE;
-  virtual void OnLog(media::AudioInputController* controller,
-                     const std::string& message) OVERRIDE;
+  void OnCreated(media::AudioInputController* controller) override;
+  void OnRecording(media::AudioInputController* controller) override;
+  void OnError(media::AudioInputController* controller,
+               media::AudioInputController::ErrorCode error_code) override;
+  void OnData(media::AudioInputController* controller,
+              const media::AudioBus* data) override;
+  void OnLog(media::AudioInputController* controller,
+             const std::string& message) override;
 
  private:
   // TODO(henrika): extend test suite (compare AudioRenderHost)
@@ -130,7 +131,7 @@ class CONTENT_EXPORT AudioInputRendererHost
   struct AudioEntry;
   typedef std::map<int, AudioEntry*> AudioEntryMap;
 
-  virtual ~AudioInputRendererHost();
+  ~AudioInputRendererHost() override;
 
   // Methods called on IO thread ----------------------------------------------
 
@@ -140,17 +141,17 @@ class CONTENT_EXPORT AudioInputRendererHost
   // registers to AudioInputDeviceManager. Then calls DoCreateStream.
   // For non-ChromeOS: Just calls DoCreateStream.
   void OnCreateStream(int stream_id,
-                      int render_view_id,
+                      int render_frame_id,
                       int session_id,
                       const AudioInputHostMsg_CreateStream_Config& config);
 
   // Creates an audio input stream with the specified format whose data is
-  // consumed by an entity in the render view referenced by |render_view_id|.
+  // consumed by an entity in the RenderFrame referenced by |render_frame_id|.
   // |session_id| is used to find out which device to be used for the stream.
   // Upon success/failure, the peer is notified via the
   // NotifyStreamCreated message.
   void DoCreateStream(int stream_id,
-                      int render_view_id,
+                      int render_frame_id,
                       int session_id,
                       const AudioInputHostMsg_CreateStream_Config& config);
 
@@ -208,6 +209,9 @@ class CONTENT_EXPORT AudioInputRendererHost
   // AudioInputDeviceManager.
   void MaybeUnregisterKeyboardMicStream(
       const AudioInputHostMsg_CreateStream_Config& config);
+
+  // ID of the RenderProcessHost that owns this instance.
+  const int render_process_id_;
 
   // Used to create an AudioInputController.
   media::AudioManager* audio_manager_;

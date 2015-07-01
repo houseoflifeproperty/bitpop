@@ -63,7 +63,12 @@ class CHROMEOS_EXPORT SessionManagerClient : public DBusClient {
   // Adds and removes the observer.
   virtual void AddObserver(Observer* observer) = 0;
   virtual void RemoveObserver(Observer* observer) = 0;
-  virtual bool HasObserver(Observer* observer) = 0;
+  virtual bool HasObserver(const Observer* observer) const = 0;
+
+  // Returns the most recent screen-lock state received from session_manager.
+  // This mirrors the last Observer::ScreenIsLocked() or ScreenIsUnlocked()
+  // call.
+  virtual bool IsScreenLocked() const = 0;
 
   // Kicks off an attempt to emit the "login-prompt-visible" upstart signal.
   virtual void EmitLoginPromptVisible() = 0;
@@ -88,6 +93,12 @@ class CHROMEOS_EXPORT SessionManagerClient : public DBusClient {
 
   // Notifies that the lock screen is dismissed.
   virtual void NotifyLockScreenDismissed() = 0;
+
+  // Notifies that supervised user creation have started.
+  virtual void NotifySupervisedUserCreationStarted() = 0;
+
+  // Notifies that supervised user creation have finished.
+  virtual void NotifySupervisedUserCreationFinished() = 0;
 
   // Map that is used to describe the set of active user sessions where |key|
   // is user_id and |value| is user_id_hash.
@@ -168,16 +179,13 @@ class CHROMEOS_EXPORT SessionManagerClient : public DBusClient {
   virtual void SetFlagsForUser(const std::string& username,
                                const std::vector<std::string>& flags) = 0;
 
-  typedef base::Callback<void(const std::vector<std::string>& state_keys,
-                              bool first_boot)> StateKeysCallback;
+  typedef base::Callback<void(const std::vector<std::string>& state_keys)>
+      StateKeysCallback;
 
   // Get the currently valid server-backed state keys for the device.
   // Server-backed state keys are opaque, device-unique, time-dependent,
   // client-determined identifiers that are used for keying state in the cloud
-  // for the device to retrieve after a device factory reset. The |first_boot|
-  // parameter indicates if this is the very first boot of the device after
-  // being assembled (even a "factory reset" will not trigger this again) in
-  // which case doing the enrollment check makes no sense.
+  // for the device to retrieve after a device factory reset.
   //
   // The state keys are returned asynchronously via |callback|. The callback
   // will be invoked with an empty state key vector in case of errors.
@@ -186,7 +194,7 @@ class CHROMEOS_EXPORT SessionManagerClient : public DBusClient {
   // Creates the instance.
   static SessionManagerClient* Create(DBusClientImplementationType type);
 
-  virtual ~SessionManagerClient();
+  ~SessionManagerClient() override;
 
  protected:
   // Create() should be used instead.

@@ -4,7 +4,6 @@
 
 #include "ash/system/tray/tray_background_view.h"
 
-#include "ash/ash_switches.h"
 #include "ash/root_window_controller.h"
 #include "ash/screen_util.h"
 #include "ash/shelf/shelf_layout_manager.h"
@@ -22,16 +21,18 @@
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
-#include "ui/base/resource/resource_bundle.h"
+#include "ui/base/nine_image_painter_factory.h"
+#include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_element.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/events/event_constants.h"
 #include "ui/gfx/animation/tween.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_operations.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/nine_image_painter.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
@@ -71,13 +72,12 @@ class TrayBackgroundView::TrayWidgetObserver : public views::WidgetObserver {
       : host_(host) {
   }
 
-  virtual void OnWidgetBoundsChanged(views::Widget* widget,
-                                     const gfx::Rect& new_bounds) OVERRIDE {
+  void OnWidgetBoundsChanged(views::Widget* widget,
+                             const gfx::Rect& new_bounds) override {
     host_->AnchorUpdated();
   }
 
-  virtual void OnWidgetVisibilityChanged(views::Widget* widget,
-                                         bool visible) OVERRIDE {
+  void OnWidgetVisibilityChanged(views::Widget* widget, bool visible) override {
     host_->AnchorUpdated();
   }
 
@@ -101,56 +101,9 @@ class TrayBackground : public views::Background {
   explicit TrayBackground(TrayBackgroundView* tray_background_view) :
       tray_background_view_(tray_background_view) {
     set_alpha(kTrayBackgroundAlpha);
-    ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-    leading_images_[kImageHorizontal][kImageTypeDefault] =
-        rb.GetImageNamed(IDR_AURA_TRAY_BG_HORIZ_LEFT).ToImageSkia();
-    middle_images_[kImageHorizontal][kImageTypeDefault] =
-        rb.GetImageNamed(IDR_AURA_TRAY_BG_HORIZ_CENTER).ToImageSkia();
-    trailing_images_[kImageHorizontal][kImageTypeDefault] =
-        rb.GetImageNamed(IDR_AURA_TRAY_BG_HORIZ_RIGHT).ToImageSkia();
-
-    leading_images_[kImageHorizontal][kImageTypeOnBlack] =
-        rb.GetImageNamed(IDR_AURA_TRAY_BG_HORIZ_LEFT_ONBLACK).ToImageSkia();
-    middle_images_[kImageHorizontal][kImageTypeOnBlack] =
-        rb.GetImageNamed(IDR_AURA_TRAY_BG_HORIZ_CENTER_ONBLACK).ToImageSkia();
-    trailing_images_[kImageHorizontal][kImageTypeOnBlack] =
-        rb.GetImageNamed(IDR_AURA_TRAY_BG_HORIZ_RIGHT_ONBLACK).ToImageSkia();
-
-    leading_images_[kImageHorizontal][kImageTypePressed] =
-        rb.GetImageNamed(IDR_AURA_TRAY_BG_HORIZ_LEFT_PRESSED).ToImageSkia();
-    middle_images_[kImageHorizontal][kImageTypePressed] =
-        rb.GetImageNamed(IDR_AURA_TRAY_BG_HORIZ_CENTER_PRESSED).ToImageSkia();
-    trailing_images_[kImageHorizontal][kImageTypePressed] =
-        rb.GetImageNamed(IDR_AURA_TRAY_BG_HORIZ_RIGHT_PRESSED).ToImageSkia();
-
-    leading_images_[kImageVertical][kImageTypeDefault] =
-        rb.GetImageNamed(IDR_AURA_TRAY_BG_VERTICAL_TOP).ToImageSkia();
-    middle_images_[kImageVertical][kImageTypeDefault] =
-        rb.GetImageNamed(
-            IDR_AURA_TRAY_BG_VERTICAL_CENTER).ToImageSkia();
-    trailing_images_[kImageVertical][kImageTypeDefault] =
-        rb.GetImageNamed(IDR_AURA_TRAY_BG_VERTICAL_BOTTOM).ToImageSkia();
-
-    leading_images_[kImageVertical][kImageTypeOnBlack] =
-        rb.GetImageNamed(IDR_AURA_TRAY_BG_VERTICAL_TOP_ONBLACK).ToImageSkia();
-    middle_images_[kImageVertical][kImageTypeOnBlack] =
-        rb.GetImageNamed(
-            IDR_AURA_TRAY_BG_VERTICAL_CENTER_ONBLACK).ToImageSkia();
-    trailing_images_[kImageVertical][kImageTypeOnBlack] =
-        rb.GetImageNamed(
-            IDR_AURA_TRAY_BG_VERTICAL_BOTTOM_ONBLACK).ToImageSkia();
-
-    leading_images_[kImageVertical][kImageTypePressed] =
-        rb.GetImageNamed(IDR_AURA_TRAY_BG_VERTICAL_TOP_PRESSED).ToImageSkia();
-    middle_images_[kImageVertical][kImageTypePressed] =
-        rb.GetImageNamed(
-            IDR_AURA_TRAY_BG_VERTICAL_CENTER_PRESSED).ToImageSkia();
-    trailing_images_[kImageVertical][kImageTypePressed] =
-        rb.GetImageNamed(
-            IDR_AURA_TRAY_BG_VERTICAL_BOTTOM_PRESSED).ToImageSkia();
   }
 
-  virtual ~TrayBackground() {}
+  ~TrayBackground() override {}
 
   SkColor color() { return color_; }
   void set_color(SkColor color) { color_ = color; }
@@ -163,7 +116,21 @@ class TrayBackground : public views::Background {
   }
 
   // Overridden from views::Background.
-  virtual void Paint(gfx::Canvas* canvas, views::View* view) const OVERRIDE {
+  void Paint(gfx::Canvas* canvas, views::View* view) const override {
+    const int kGridSizeForPainter = 9;
+    const int kImages[kNumOrientations][kNumStates][kGridSizeForPainter] = {
+      { // Horizontal
+        IMAGE_GRID_HORIZONTAL(IDR_AURA_TRAY_BG_HORIZ),
+        IMAGE_GRID_HORIZONTAL(IDR_AURA_TRAY_BG_HORIZ_ONBLACK),
+        IMAGE_GRID_HORIZONTAL(IDR_AURA_TRAY_BG_HORIZ_PRESSED),
+      },
+      { // Vertical
+        IMAGE_GRID_VERTICAL(IDR_AURA_TRAY_BG_VERTICAL),
+        IMAGE_GRID_VERTICAL(IDR_AURA_TRAY_BG_VERTICAL_ONBLACK),
+        IMAGE_GRID_VERTICAL(IDR_AURA_TRAY_BG_VERTICAL_PRESSED),
+      }
+    };
+
     int orientation = kImageHorizontal;
     ShelfWidget* shelf_widget = GetShelfWidget();
     if (shelf_widget &&
@@ -178,56 +145,13 @@ class TrayBackground : public views::Background {
     else
       state = kImageTypeDefault;
 
-    const gfx::ImageSkia* leading = leading_images_[orientation][state];
-    const gfx::ImageSkia* middle = middle_images_[orientation][state];
-    const gfx::ImageSkia* trailing = trailing_images_[orientation][state];
-
-    gfx::Rect bounds(view->GetLocalBounds());
-    gfx::Point leading_location, trailing_location;
-    gfx::Rect middle_bounds;
-
-    if (orientation == kImageHorizontal) {
-      leading_location = gfx::Point(0, 0);
-      trailing_location = gfx::Point(bounds.width() - trailing->width(), 0);
-      middle_bounds = gfx::Rect(
-          leading->width(),
-          0,
-          bounds.width() - (leading->width() + trailing->width()),
-          bounds.height());
-    } else {
-      leading_location = gfx::Point(0, 0);
-      trailing_location = gfx::Point(0, bounds.height() - trailing->height());
-      middle_bounds = gfx::Rect(
-          0,
-          leading->height(),
-          bounds.width(),
-          bounds.height() - (leading->height() + trailing->height()));
-    }
-
-    canvas->DrawImageInt(*leading,
-                         leading_location.x(),
-                         leading_location.y());
-
-    canvas->DrawImageInt(*trailing,
-                         trailing_location.x(),
-                         trailing_location.y());
-
-    canvas->TileImageInt(*middle,
-                         middle_bounds.x(),
-                         middle_bounds.y(),
-                         middle_bounds.width(),
-                         middle_bounds.height());
+    ui::CreateNineImagePainter(kImages[orientation][state])
+        ->Paint(canvas, view->GetLocalBounds());
   }
 
   SkColor color_;
   // Reference to the TrayBackgroundView for which this is a background.
   TrayBackgroundView* tray_background_view_;
-
-  // References to the images used as backgrounds, they are owned by the
-  // resource bundle class.
-  const gfx::ImageSkia* leading_images_[kNumOrientations][kNumStates];
-  const gfx::ImageSkia* middle_images_[kNumOrientations][kNumStates];
-  const gfx::ImageSkia* trailing_images_[kNumOrientations][kNumStates];
 
   DISALLOW_COPY_AND_ASSIGN(TrayBackground);
 };
@@ -310,7 +234,6 @@ TrayBackgroundView::TrayBackgroundView(StatusAreaWidget* status_area_widget)
           kTrayBackgroundHoverAlpha - kTrayBackgroundAlpha),
       hovered_(false),
       draw_background_as_active_(false),
-      touch_feedback_enabled_(false),
       widget_observer_(new TrayWidgetObserver(this)) {
   set_notify_enter_exit_on_child(true);
 
@@ -328,16 +251,12 @@ TrayBackgroundView::TrayBackgroundView(StatusAreaWidget* status_area_widget)
   SetFillsBoundsOpaquely(false);
   // Start the tray items not visible, because visibility changes are animated.
   views::View::SetVisible(false);
-
-  if (CommandLine::ForCurrentProcess()->
-          HasSwitch(switches::kAshEnableTouchViewTouchFeedback)) {
-    touch_feedback_enabled_ = true;
-  }
 }
 
 TrayBackgroundView::~TrayBackgroundView() {
   if (GetWidget())
     GetWidget()->RemoveObserver(widget_observer_.get());
+  StopObservingImplicitAnimations();
 }
 
 void TrayBackgroundView::Initialize() {
@@ -435,7 +354,7 @@ gfx::Rect TrayBackgroundView::GetFocusBounds() {
 }
 
 void TrayBackgroundView::OnGestureEvent(ui::GestureEvent* event) {
-  if (touch_feedback_enabled_) {
+  if (switches::IsTouchFeedbackEnabled()) {
     if (event->type() == ui::ET_GESTURE_TAP_DOWN) {
       SetDrawBackgroundAsActive(true);
     } else if (event->type() ==  ui::ET_GESTURE_SCROLL_BEGIN ||
@@ -519,6 +438,15 @@ void TrayBackgroundView::OnImplicitAnimationsCompleted() {
      layer()->GetTargetVisibility())
     return;
   views::View::SetVisible(false);
+}
+
+bool TrayBackgroundView::RequiresNotificationWhenAnimatorDestroyed() const {
+  // This is needed so that OnImplicitAnimationsCompleted() is called even upon
+  // destruction of the animator. This can occure when parallel animations
+  // caused by ScreenRotationAnimator end before the animations of
+  // TrayBackgroundView. This allows for a proper update to the visual state of
+  // the view. (crbug.com/476667)
+  return true;
 }
 
 void TrayBackgroundView::HideTransformation() {

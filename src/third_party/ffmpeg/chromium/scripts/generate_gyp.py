@@ -11,9 +11,12 @@ FFmpeg's configure scripts and Makefiles. It scans through build directories for
 object files then does a reverse lookup against the FFmpeg source tree to find
 the corresponding C or assembly file.
 
-Running build_ffmpeg.sh for ia32, arm, and arm-neon platforms is required
-prior to running this script. The arm and arm-neon platforms assume a
-Chromium OS build environment.
+Running build_ffmpeg.sh for ia32, arm, arm-neon and mips32 platforms is
+required prior to running this script. The arm, arm-neon and mips32 platforms
+assume a Chromium OS build environment.
+
+The Ensemble branding supports the following architectures: ia32, x86, arm, and
+mipsel.
 
 Step 1: Have a Chromium OS checkout (refer to http://dev.chromium.org)
   mkdir chromeos
@@ -43,11 +46,17 @@ Step 6: Build for arm/arm-neon platforms inside chroot
   ./chromium/scripts/build_ffmpeg.sh linux arm path/to/chromeos/deps/ffmpeg
   ./chromium/scripts/build_ffmpeg.sh linux arm-neon path/to/chromeos/deps/ffmpeg
 
-Step 7: Build for Windows platform; you will need a MinGW shell started from
+Step 7: Setup build environment for MIPS:
+  ./setup_board --board mipsel-o32-generic
+
+Step 8: Build for mipsel platform inside chroot
+  ./chromium/scripts/build_ffmpeg.py linux mipsel
+
+Step 9: Build for Windows platform; you will need a MinGW shell started from
 inside a Visual Studio Command Prompt to run build_ffmpeg.sh:
   ./chromium/scripts/build_ffmpeg.sh win ia32 $(pwd)
 
-Step 8: Exit chroot and generate gyp file
+Step 10: Exit chroot and generate gyp file
   exit
   cd path/to/chromeos/deps/ffmpeg
   ./chromium/scripts/generate_gyp.py
@@ -60,12 +69,16 @@ is significantly more painful.
 
 __author__ = 'scherkus@chromium.org (Andrew Scherkus)'
 
+import collections
 import datetime
 import fnmatch
 import itertools
 import optparse
 import os
+import re
 import string
+import subprocess
+import shutil
 
 COPYRIGHT = """# Copyright %d The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
@@ -131,8 +144,8 @@ GN_SOURCE_END = """]
 """
 
 # Controls GYP conditional stanza generation.
-SUPPORTED_ARCHITECTURES = ['ia32', 'arm', 'arm-neon', 'x64']
-SUPPORTED_TARGETS = ['Chromium', 'Chrome', 'ChromiumOS', 'ChromeOS']
+SUPPORTED_ARCHITECTURES = ['ia32', 'arm', 'arm-neon', 'x64', 'mipsel']
+SUPPORTED_TARGETS = ['Chromium', 'Chrome', 'ChromiumOS', 'ChromeOS', 'Ensemble']
 # Mac doesn't have any platform specific files, so just use linux and win.
 SUPPORTED_PLATFORMS = ['linux', 'win']
 
@@ -169,6 +182,7 @@ def CleanObjectFiles(object_files):
       'libavutil/audio_fifo.o',
       'libavutil/aes.o',
       'libavutil/blowfish.o',
+      'libavutil/cast5.o',
       'libavutil/des.o',
       'libavutil/file.o',
       'libavutil/hash.o',
@@ -280,7 +294,7 @@ def GetSourceFileSet(object_to_sources, object_files):
     object_files: A list of object file paths.
 
   Returns:
-    A python set of source files requried to build said objects.
+    A python set of source files required to build said objects.
   """
   source_set = set()
   for name in object_files:
@@ -300,7 +314,7 @@ class SourceSet(object):
 
     Args:
       sources: a python set of source files
-      architectures: a python set of architectures (i.e., arm, x64)
+      architectures: a python set of architectures (i.e., arm, x64, mipsel)
       targets: a python set of targets (i.e., Chromium, Chrome)
       platforms: a python set of platforms (i.e., win, linux)
     """
@@ -428,16 +442,16 @@ class SourceSet(object):
 
     # Only build a non-trivial conditional if it's a subset of all supported
     # architectures. targets. Arch conditions look like:
-    #   (cpu_arch == "arm" || (cpu_arch == "arm" && arm_use_neon))
+    #   (current_cpu == "arm" || (current_cpu == "arm" && arm_use_neon))
     arch_conditions = []
     if self.architectures != set(SUPPORTED_ARCHITECTURES):
       for arch in self.architectures:
         if arch == 'arm-neon':
-          arch_conditions.append('(cpu_arch == "arm" && arm_use_neon)')
+          arch_conditions.append('(current_cpu == "arm" && arm_use_neon)')
         elif arch == 'ia32':
-          arch_conditions.append('cpu_arch == "x86"')
+          arch_conditions.append('current_cpu == "x86"')
         else:
-          arch_conditions.append('cpu_arch == "%s"' % arch)
+          arch_conditions.append('current_cpu == "%s"' % arch)
 
     # Only build a non-trivial conditional if it's a subset of all supported
     # targets. Branding conditions look like:
@@ -581,16 +595,24 @@ def ParseOptions():
                     default=False,
                     help='Output a GN file instead of a gyp file.')
 
+  parser.add_option('-p',
+                    '--print_licenses',
+                    dest='print_licenses',
+                    default=False,
+                    action="store_true",
+                    help='Print all licenses to console.')
+
   options, args = parser.parse_args()
 
   if not options.source_dir:
     parser.error('No FFmpeg source directory specified')
-
-  if not os.path.exists(options.source_dir):
+  elif not os.path.exists(options.source_dir):
     parser.error('FFmpeg source directory does not exist')
 
   if not options.build_dir:
     parser.error('No build root directory specified')
+  elif not os.path.exists(options.build_dir):
+    parser.error('FFmpeg build directory does not exist')
 
   return options, args
 
@@ -615,6 +637,234 @@ def WriteGn(fd, build_dir, disjoint_sets):
   # Generate conditional stanza for each disjoint source set.
   for s in reversed(disjoint_sets):
     fd.write(s.GenerateGnStanza())
+
+
+# Lists of files that are exempt from searching in GetIncludeSources.
+IGNORED_INCLUDE_FILES = [
+  # Chromium generated files
+  'config.h',
+  os.path.join('libavutil', 'avconfig.h'),
+  os.path.join('libavutil', 'ffversion.h'),
+
+  # Current configure values are set such that we don't include these (because
+  # of various defines) and we also don't generate them at all, so we will fail
+  # to find these because they don't exist in our repository.
+  os.path.join('libavcodec', 'aacps_tables.h'),
+  os.path.join('libavcodec', 'aacsbr_tables.h'),
+  os.path.join('libavcodec', 'aac_tables.h'),
+  os.path.join('libavcodec', 'cabac_tables.h'),
+  os.path.join('libavcodec', 'cbrt_tables.h'),
+  os.path.join('libavcodec', 'mpegaudio_tables.h'),
+  os.path.join('libavcodec', 'pcm_tables.h'),
+  os.path.join('libavcodec', 'sinewin_tables.h'),
+]
+
+
+# Known licenses that are acceptable for static linking
+# DO NOT ADD TO THIS LIST without first confirming with lawyers that the
+# licenses are okay to add.
+LICENSE_WHITELIST = [
+  'BSD (3 clause) LGPL (v2.1 or later)',
+  'ISC GENERATED FILE',
+  'LGPL (v2.1 or later)',
+  'LGPL (v2.1 or later) GENERATED FILE',
+  'MIT/X11 (BSD like)',
+  'Public domain LGPL (v2.1 or later)',
+]
+
+
+# Files permitted to report an UNKNOWN license. All files mentioned here should
+# give the full path from the source_dir to avoid ambiguity.
+# DO NOT ADD TO THIS LIST without first confirming with lawyers that the files
+# you're adding have acceptable licenses.
+UNKNOWN_WHITELIST = [
+  # From of Independent JPEG group. No named license, but usage is allowed.
+  os.path.join('libavcodec', 'jrevdct.c'),
+  os.path.join('libavcodec', 'jfdctfst.c'),
+  os.path.join('libavcodec', 'jfdctint_template.c'),
+]
+
+
+# Regex to find lines matching #include "some_dir\some_file.h".
+INCLUDE_REGEX = re.compile('#\s*include\s+"([^"]+)"')
+
+# Regex to find whacky includes that we might be overlooking (e.g. using macros
+# or defines).
+EXOTIC_INCLUDE_REGEX = re.compile('#\s*include\s+[^"<\s].+')
+
+# Prefix added to renamed files as part of
+RENAME_PREFIX = 'autorename'
+
+
+def GetIncludedSources(file_path, source_dir, include_set, depth = 0):
+  """ Recurse over include tree, accumulating absolute paths to all included
+  files (including the seed file) in include_set.
+
+  Pass in the set returned from previous calls to avoid re-walking parts of the
+  tree. Given file_path may be relative (to options.src_dir) or absolute.
+
+  NOTE: This algorithm is greedy. It does not know which includes may be
+  excluded due to compile-time defines, so it considers any mentioned include.
+
+  NOTE: This algorithm makes hard assumptions about the include search paths.
+  Paths are checked in the order:
+  1. Directory of the file containing the #include directive
+  2. Directory specified by source_dir
+
+  NOTE: Files listed in IGNORED_INCLUDE_FILES will be ignored if not found. See
+  reasons at definition for IGNORED_INCLUDE_FILES.
+  """
+  # Use options.source_dir to correctly resolve relative file path. Use only
+  # absolute paths in the set to avoid same-name-errors.
+  if not os.path.isabs(file_path):
+    file_path = os.path.abspath(os.path.join(source_dir, file_path))
+
+  current_dir = os.path.dirname(file_path)
+
+  # Already processed this file, bail out.
+  if file_path in include_set:
+    return include_set
+
+  include_set.add(file_path)
+
+  for line in open(file_path):
+    include_match = INCLUDE_REGEX.search(line)
+
+    if not include_match:
+      if EXOTIC_INCLUDE_REGEX.search(line):
+        print 'WARNING: Investigate whacky include line:', line
+      continue;
+
+    include_file_path = include_match.group(1)
+
+    # These may or may not be where the file lives. Just storing temps here
+    # and we'll checking their validity below.
+    include_path_in_current_dir = os.path.join(current_dir, include_file_path)
+    include_path_in_source_dir = os.path.join(source_dir, include_file_path)
+    resolved_include_path = ''
+
+    # Check if file is in current directory.
+    if os.path.isfile(include_path_in_current_dir):
+      resolved_include_path = include_path_in_current_dir;
+    # Else, check source_dir (should be FFmpeg root).
+    elif os.path.isfile(include_path_in_source_dir):
+      resolved_include_path = include_path_in_source_dir
+    # Else, we couldn't find it :(.
+    elif include_file_path in IGNORED_INCLUDE_FILES:
+      continue
+    else:
+      exit('Failed to find file', include_file_path)
+
+    # At this point we've found the file. Check if its in our ignore list which
+    # means that the list should be updated to no longer mention this file.
+    if include_file_path in IGNORED_INCLUDE_FILES:
+      print('Found %s in IGNORED_INCLUDE_FILES. Consider updating the list '
+            'to remove this file.' % str(include_file_path))
+
+    GetIncludedSources(resolved_include_path, source_dir, include_set, depth + 1)
+
+
+def CheckLicenseForSource(source, source_dir, print_licenses):
+  # Assumed to be two back from source_dir (e.g. third_party/ffmpeg/../..).
+  source_root = os.path.abspath(
+      os.path.join(source_dir, os.path.pardir, os.path.pardir))
+
+  licensecheck_path = os.path.abspath(os.path.join(
+      source_root, 'third_party', 'devscripts', 'licensecheck.pl'));
+  if not os.path.exists(licensecheck_path):
+    exit('Could not find licensecheck.pl: ' + str(licensecheck_path))
+
+  check_process = subprocess.Popen([licensecheck_path,
+                                    '-l', '100',
+                                    os.path.abspath(source)],
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE)
+  stdout, stderr = check_process.communicate()
+
+  # Get the filename and license out of the stdout. stdout is expected to be
+  # "/abspath/to/file: *No copyright* SOME LICENSE".
+  filename, license = stdout.split(':', 1)
+  license = license.replace('*No copyright*', '').strip()
+  rel_file_path = os.path.relpath(filename, os.path.abspath(source_dir))
+
+  if (license in LICENSE_WHITELIST or
+     (license == 'UNKNOWN' and rel_file_path in UNKNOWN_WHITELIST)):
+    if print_licenses:
+      print filename, ':', license
+    return True
+
+  print 'UNEXPECTED LICENSE: %s: %s' % (filename, license)
+  return False
+
+
+def CheckLicensesForStaticLinking(disjoint_sets, source_dir, print_licenses):
+  # Build up set of all sources and includes.
+  sources_to_check = set()
+  for source_set in disjoint_sets:
+    for source in source_set.sources:
+      GetIncludedSources(source, source_dir, sources_to_check)
+
+  # Check licenses for all included sources.
+  all_checks_passed = True
+  for source in sources_to_check:
+    if not CheckLicenseForSource(source, source_dir, print_licenses):
+      all_checks_passed = False
+  return all_checks_passed
+
+
+def FixObjectBasenameCollisions(disjoint_sets, all_sources):
+  """ Mac libtool warns needlessly when it encounters two object files with
+  the same basename in a given static library. See more at
+  https://code.google.com/p/gyp/issues/detail?id=384#c7
+
+  Here we hack around the issue by copying and renaming source files with the
+  same base name to avoid the collision. The original is kept to keep things
+  simple when merging from upstream ffmpeg.
+
+  If upstream changes the name such that the collision no longer exists, we
+  detect the presence of a renamed file in all_sources which is overridden and
+  warn that it should be removed."""
+
+  SourceRename = collections.namedtuple("SourceRename", "old_name, new_name")
+  known_basenames = set()
+  all_renames = set()
+
+  for source_set in disjoint_sets:
+    # Track needed adjustments to change when we're done with each SourceSet.
+    renames = set()
+
+    for source_name in source_set.sources:
+      folder, basename = os.path.split(source_name)
+
+      # Sanity check: source set should not have any renames prior to this step.
+      if RENAME_PREFIX in basename:
+        exit('Found unexpected renamed file in SourceSet: %s' % basename)
+
+      # Craft a new unique basename from the path of the colliding file
+      if basename in known_basenames:
+        name_parts = source_name.split(os.sep)
+        name_parts.insert(0, RENAME_PREFIX)
+        new_basename = '_'.join(name_parts)
+        new_source_name = os.sep.join([folder, new_basename])
+
+        renames.add(SourceRename(source_name, new_source_name))
+      else:
+        known_basenames.add(basename)
+
+    for rename in renames:
+      print "fixing basename collision: %s -> %s" % (rename.old_name, rename.new_name)
+
+      shutil.copy2(rename.old_name, rename.new_name)
+      source_set.sources.remove(rename.old_name);
+      source_set.sources.add(rename.new_name)
+      all_renames.add(rename.new_name)
+
+  # Now, with all collisions handled, walk the set of known sources and warn
+  # about any renames that were not replaced. This should indicate that an old
+  # collision is now resolved by some external/upstream change.
+  for source_name in all_sources:
+    if RENAME_PREFIX in source_name and source_name not in all_renames:
+      print "WARNING: %s no longer collides. DELETE ME!" % source_name
 
 
 def main():
@@ -644,12 +894,27 @@ def main():
         sets.append(SourceSet(s, set([arch]), set([target]), set([platform])))
 
   sets = CreatePairwiseDisjointSets(sets)
+
+  if not sets:
+    exit('ERROR: failed to find any source sets. ' +
+         'Are build_dir (%s) and/or source_dir (%s) options correct?' %
+              (options.build_dir, options.source_dir))
+
+  FixObjectBasenameCollisions(sets, source_files);
+
+  if not CheckLicensesForStaticLinking(sets, source_dir,
+                                       options.print_licenses):
+    exit ('GENERATE FAILED: invalid licenses detected.')
+  print 'License checks passed.'
+
   # Open for writing.
   if options.output_gn:
     outfile = 'ffmpeg_generated.gni'
   else:
     outfile = 'ffmpeg_generated.gypi'
   output_name = os.path.join(options.source_dir, outfile)
+  print 'Output:', output_name
+
   with open(output_name, 'w') as fd:
     if options.output_gn:
       WriteGn(fd, options.build_dir, sets)

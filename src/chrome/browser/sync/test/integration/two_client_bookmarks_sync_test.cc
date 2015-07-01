@@ -12,6 +12,7 @@
 #include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_integration_test_util.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
+#include "components/bookmarks/browser/bookmark_node.h"
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
 #include "components/policy/core/common/policy_map.h"
 #include "policy/policy_constants.h"
@@ -19,13 +20,16 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "ui/base/layout.h"
 
+using bookmarks::BookmarkNode;
 using bookmarks_helper::AddFolder;
 using bookmarks_helper::AddURL;
 using bookmarks_helper::AllModelsMatch;
 using bookmarks_helper::AllModelsMatchVerifier;
+using bookmarks_helper::CheckFaviconExpired;
 using bookmarks_helper::ContainsDuplicateBookmarks;
 using bookmarks_helper::CountBookmarksWithTitlesMatching;
 using bookmarks_helper::CreateFavicon;
+using bookmarks_helper::ExpireFavicon;
 using bookmarks_helper::GetBookmarkBarNode;
 using bookmarks_helper::GetManagedNode;
 using bookmarks_helper::GetOtherNode;
@@ -64,9 +68,9 @@ const char kValidPassphrase[] = "passphrase!";
 class TwoClientBookmarksSyncTest : public SyncTest {
  public:
   TwoClientBookmarksSyncTest() : SyncTest(TWO_CLIENT) {}
-  virtual ~TwoClientBookmarksSyncTest() {}
+  ~TwoClientBookmarksSyncTest() override {}
 
-  virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
+  void TearDownInProcessBrowserTestFixture() override {
     SyncTest::TearDownInProcessBrowserTestFixture();
     policy_provider_.Shutdown();
   }
@@ -82,7 +86,7 @@ class TwoClientBookmarksSyncTest : public SyncTest {
 class LegacyTwoClientBookmarksSyncTest : public SyncTest {
  public:
   LegacyTwoClientBookmarksSyncTest() : SyncTest(TWO_CLIENT_LEGACY) {}
-  virtual ~LegacyTwoClientBookmarksSyncTest() {}
+  ~LegacyTwoClientBookmarksSyncTest() override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(LegacyTwoClientBookmarksSyncTest);
@@ -225,6 +229,54 @@ IN_PROC_BROWSER_TEST_F(TwoClientBookmarksSyncTest, SC_SetFaviconHiDPI) {
              bookmarks_helper::FROM_UI);
   ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
   ASSERT_TRUE(AllModelsMatchVerifier());
+}
+
+// Test that if sync does not modify a favicon bitmap's data that it does not
+// modify the favicon bitmap's "last updated time" either. This is important
+// because the last updated time is used to determine whether a bookmark's
+// favicon should be redownloaded when the web when the bookmark is visited.
+// If sync prevents the "last updated time" from expiring, the favicon is
+// never redownloaded from the web. (http://crbug.com/481414)
+IN_PROC_BROWSER_TEST_F(TwoClientBookmarksSyncTest,
+                       SC_UpdatingTitleDoesNotUpdateFaviconLastUpdatedTime) {
+  ASSERT_TRUE(SetupClients()) << "SetupClients() failed.";
+
+  std::vector<ui::ScaleFactor> supported_scale_factors;
+  supported_scale_factors.push_back(ui::SCALE_FACTOR_100P);
+  ui::SetSupportedScaleFactors(supported_scale_factors);
+
+  const GURL page_url(kGenericURL);
+  const GURL icon_url("http://www.google.com/favicon.ico");
+
+  ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
+  ASSERT_TRUE(AllModelsMatchVerifier());
+
+  const BookmarkNode* bookmark0 = AddURL(0, kGenericURLTitle, page_url);
+  ASSERT_NE(bookmark0, nullptr);
+  gfx::Image favicon0 = CreateFavicon(SK_ColorBLUE);
+  ASSERT_FALSE(favicon0.IsEmpty());
+  SetFavicon(0, bookmark0, icon_url, favicon0, bookmarks_helper::FROM_UI);
+
+  // Expire the favicon (e.g. as a result of the user "clearing browsing
+  // history from the beginning of time")
+  ExpireFavicon(0, bookmark0);
+  CheckFaviconExpired(0, icon_url);
+
+  ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
+  ASSERT_TRUE(AllModelsMatchVerifier());
+
+  // Change the bookmark's title for profile 1. Changing the title will cause
+  // the bookmark's favicon data to be synced from profile 1 to profile 0 even
+  // though the favicon data did not change.
+  const std::string kNewTitle = "New Title";
+  ASSERT_NE(kNewTitle, kGenericURLTitle);
+  const BookmarkNode* bookmark1 = GetUniqueNodeByURL(1, page_url);
+  SetTitle(1, bookmark1, kNewTitle);
+  ASSERT_TRUE(GetClient(1)->AwaitMutualSyncCycleCompletion(GetClient(0)));
+  ASSERT_TRUE(AllModelsMatchVerifier());
+
+  // The favicon for profile 0 should still be expired.
+  CheckFaviconExpired(0, icon_url);
 }
 
 // Test Scribe ID - 370560.
@@ -851,7 +903,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientBookmarksSyncTest, SC_ReverseTheOrderOf10BMs) {
 
 // Test Scribe ID - 371954.
 // flaky on Windows: http://crbug.com/412169
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_MACOSX)
 #define MAYBE_SC_MovingBMsFromBMBarToBMFolder DISABLED_SC_MovingBMsFromBMBarToBMFolder
 #else
 #define MAYBE_SC_MovingBMsFromBMBarToBMFolder SC_MovingBMsFromBMBarToBMFolder
@@ -883,8 +935,8 @@ IN_PROC_BROWSER_TEST_F(TwoClientBookmarksSyncTest,
 }
 
 // Test Scribe ID - 371957.
-// flaky on Windows: http://crbug.com/412169
-#if defined(OS_WIN)
+// flaky on Windows and Mac: http://crbug.com/412169
+#if defined(OS_WIN) || defined(OS_MACOSX)
 #define MAYBE_SC_MovingBMsFromBMFoldToBMBar DISABLED_SC_MovingBMsFromBMFoldToBMBar
 #else
 #define MAYBE_SC_MovingBMsFromBMFoldToBMBar SC_MovingBMsFromBMFoldToBMBar
@@ -1141,8 +1193,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientBookmarksSyncTest,
       ASSERT_TRUE(AddURL(0, folder, i, title, url) != NULL);
     }
     std::string title = IndexedFolderName(level);
-    folder = AddFolder(
-        0, folder, folder->child_count(), title);
+    folder = AddFolder(0, folder, folder->child_count(), title);
     ASSERT_TRUE(folder != NULL);
     if (level == 5) folder_L5 = folder;
   }

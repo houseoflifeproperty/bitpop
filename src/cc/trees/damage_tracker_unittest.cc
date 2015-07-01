@@ -12,6 +12,7 @@
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/test_shared_bitmap_manager.h"
+#include "cc/test/test_task_graph_runner.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -74,7 +75,8 @@ void EmulateDrawingOneFrame(LayerImpl* root) {
 
 class DamageTrackerTest : public testing::Test {
  public:
-  DamageTrackerTest() : host_impl_(&proxy_, &shared_bitmap_manager_) {}
+  DamageTrackerTest()
+      : host_impl_(&proxy_, &shared_bitmap_manager_, &task_graph_runner_) {}
 
   scoped_ptr<LayerImpl> CreateTestTreeWithOneSurface() {
     scoped_ptr<LayerImpl> root =
@@ -86,7 +88,7 @@ class DamageTrackerTest : public testing::Test {
     root->SetBounds(gfx::Size(500, 500));
     root->SetContentBounds(gfx::Size(500, 500));
     root->SetDrawsContent(true);
-    root->CreateRenderSurface();
+    root->SetHasRenderSurface(true);
     root->render_surface()->SetContentRect(gfx::Rect(0, 0, 500, 500));
 
     child->SetPosition(gfx::PointF(100.f, 100.f));
@@ -118,7 +120,7 @@ class DamageTrackerTest : public testing::Test {
     root->SetBounds(gfx::Size(500, 500));
     root->SetContentBounds(gfx::Size(500, 500));
     root->SetDrawsContent(true);
-    root->CreateRenderSurface();
+    root->SetHasRenderSurface(true);
     root->render_surface()->SetContentRect(gfx::Rect(0, 0, 500, 500));
 
     child1->SetPosition(gfx::PointF(100.f, 100.f));
@@ -126,11 +128,9 @@ class DamageTrackerTest : public testing::Test {
     child1->SetContentBounds(gfx::Size(30, 30));
     // With a child that draws_content, opacity will cause the layer to create
     // its own RenderSurface. This layer does not draw, but is intended to
-    // create its own RenderSurface. TODO: setting opacity and
-    // ForceRenderSurface may be redundant here.
-    child1->SetOpacity(0.5f);
+    // create its own RenderSurface.
     child1->SetDrawsContent(false);
-    child1->SetForceRenderSurface(true);
+    child1->SetHasRenderSurface(true);
 
     child2->SetPosition(gfx::PointF(11.f, 11.f));
     child2->SetBounds(gfx::Size(18, 18));
@@ -178,6 +178,7 @@ class DamageTrackerTest : public testing::Test {
  protected:
   FakeImplProxy proxy_;
   TestSharedBitmapManager shared_bitmap_manager_;
+  TestTaskGraphRunner task_graph_runner_;
   FakeLayerTreeHostImpl host_impl_;
 };
 
@@ -229,7 +230,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForUpdateRects) {
   // CASE 1: Setting the update rect should cause the corresponding damage to
   //         the surface.
   ClearDamageForAllSurfaces(root.get());
-  child->SetUpdateRect(gfx::RectF(10.f, 11.f, 12.f, 13.f));
+  child->SetUpdateRect(gfx::Rect(10, 11, 12, 13));
   EmulateDrawingOneFrame(root.get());
 
   // Damage position on the surface should be: position of update_rect (10, 11)
@@ -242,7 +243,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForUpdateRects) {
   // CASE 2: The same update rect twice in a row still produces the same
   //         damage.
   ClearDamageForAllSurfaces(root.get());
-  child->SetUpdateRect(gfx::RectF(10.f, 11.f, 12.f, 13.f));
+  child->SetUpdateRect(gfx::Rect(10, 11, 12, 13));
   EmulateDrawingOneFrame(root.get());
   root_damage_rect =
           root->render_surface()->damage_tracker()->current_damage_rect();
@@ -252,7 +253,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForUpdateRects) {
   // CASE 3: Setting a different update rect should cause damage on the new
   //         update region, but no additional exposed old region.
   ClearDamageForAllSurfaces(root.get());
-  child->SetUpdateRect(gfx::RectF(20.f, 25.f, 1.f, 2.f));
+  child->SetUpdateRect(gfx::Rect(20, 25, 1, 2));
   EmulateDrawingOneFrame(root.get());
 
   // Damage position on the surface should be: position of update_rect (20, 25)
@@ -322,7 +323,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForLayerUpdateAndDamageRects) {
   // corresponding damage to the surface.
   ClearDamageForAllSurfaces(root.get());
   child->AddDamageRect(gfx::RectF(5.f, 6.f, 12.f, 13.f));
-  child->SetUpdateRect(gfx::RectF(15.f, 16.f, 14.f, 10.f));
+  child->SetUpdateRect(gfx::Rect(15, 16, 14, 10));
   EmulateDrawingOneFrame(root.get());
 
   // Damage position on the surface should be: position of unified layer
@@ -336,7 +337,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForLayerUpdateAndDamageRects) {
   // produces the same damage.
   ClearDamageForAllSurfaces(root.get());
   child->AddDamageRect(gfx::RectF(10.f, 11.f, 12.f, 13.f));
-  child->SetUpdateRect(gfx::RectF(10.f, 11.f, 14.f, 15.f));
+  child->SetUpdateRect(gfx::Rect(10, 11, 14, 15));
   EmulateDrawingOneFrame(root.get());
   root_damage_rect =
       root->render_surface()->damage_tracker()->current_damage_rect();
@@ -346,7 +347,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForLayerUpdateAndDamageRects) {
   // damage on the new damaged region, but no additional exposed old region.
   ClearDamageForAllSurfaces(root.get());
   child->AddDamageRect(gfx::RectF(20.f, 25.f, 2.f, 3.f));
-  child->SetUpdateRect(gfx::RectF(5.f, 10.f, 7.f, 8.f));
+  child->SetUpdateRect(gfx::Rect(5, 10, 7, 8));
   EmulateDrawingOneFrame(root.get());
 
   // Damage position on the surface should be: position of unified layer damage
@@ -363,7 +364,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForPropertyChanges) {
   // CASE 1: The layer's property changed flag takes priority over update rect.
   //
   ClearDamageForAllSurfaces(root.get());
-  child->SetUpdateRect(gfx::RectF(10.f, 11.f, 12.f, 13.f));
+  child->SetUpdateRect(gfx::Rect(10, 11, 12, 13));
   child->SetOpacity(0.5f);
   EmulateDrawingOneFrame(root.get());
 
@@ -511,7 +512,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForBlurredSurface) {
   // Setting the update rect should cause the corresponding damage to the
   // surface, blurred based on the size of the blur filter.
   ClearDamageForAllSurfaces(root.get());
-  child->SetUpdateRect(gfx::RectF(1.f, 2.f, 3.f, 4.f));
+  child->SetUpdateRect(gfx::Rect(1, 2, 3, 4));
   EmulateDrawingOneFrame(root.get());
 
   // Damage position on the surface should be: position of update_rect (1, 2)
@@ -542,6 +543,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForImageFilter) {
 
   // Setting the filter will damage the whole surface.
   ClearDamageForAllSurfaces(root.get());
+  child->SetHasRenderSurface(true);
   child->SetFilters(filters);
   EmulateDrawingOneFrame(root.get());
   root_damage_rect =
@@ -554,7 +556,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForImageFilter) {
 
   // CASE 1: Setting the update rect should damage the whole surface (for now)
   ClearDamageForAllSurfaces(root.get());
-  child->SetUpdateRect(gfx::RectF(1.f, 1.f));
+  child->SetUpdateRect(gfx::Rect(1, 1));
   EmulateDrawingOneFrame(root.get());
 
   root_damage_rect =
@@ -588,7 +590,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForBackgroundBlurredChild) {
   //         the surface, blurred based on the size of the child's background
   //         blur filter.
   ClearDamageForAllSurfaces(root.get());
-  root->SetUpdateRect(gfx::RectF(297.f, 297.f, 2.f, 2.f));
+  root->SetUpdateRect(gfx::Rect(297, 297, 2, 2));
   EmulateDrawingOneFrame(root.get());
 
   gfx::Rect root_damage_rect =
@@ -609,7 +611,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForBackgroundBlurredChild) {
   //         blur filter. Since the damage extends to the right/bottom outside
   //         of the blurred layer, only the left/top should end up expanded.
   ClearDamageForAllSurfaces(root.get());
-  root->SetUpdateRect(gfx::RectF(297.f, 297.f, 30.f, 30.f));
+  root->SetUpdateRect(gfx::Rect(297, 297, 30, 30));
   EmulateDrawingOneFrame(root.get());
 
   root_damage_rect =
@@ -628,7 +630,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForBackgroundBlurredChild) {
   // CASE 3: Setting this update rect outside the blurred content_bounds of the
   //         blurred child1 will not cause it to be expanded.
   ClearDamageForAllSurfaces(root.get());
-  root->SetUpdateRect(gfx::RectF(30.f, 30.f, 2.f, 2.f));
+  root->SetUpdateRect(gfx::Rect(30, 30, 2, 2));
   EmulateDrawingOneFrame(root.get());
 
   root_damage_rect =
@@ -643,7 +645,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForBackgroundBlurredChild) {
   //         outside the original content_bounds of the blurred child1 will
   //         cause it to be expanded.
   ClearDamageForAllSurfaces(root.get());
-  root->SetUpdateRect(gfx::RectF(99.f, 99.f, 1.f, 1.f));
+  root->SetUpdateRect(gfx::Rect(99, 99, 1, 1));
   EmulateDrawingOneFrame(root.get());
 
   root_damage_rect =
@@ -662,7 +664,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForBackgroundBlurredChild) {
   // CASE 5: Setting the update rect on child2, which is above child1, will
   // not get blurred by child1, so it does not need to get expanded.
   ClearDamageForAllSurfaces(root.get());
-  child2->SetUpdateRect(gfx::RectF(0.f, 0.f, 1.f, 1.f));
+  child2->SetUpdateRect(gfx::Rect(1, 1));
   EmulateDrawingOneFrame(root.get());
 
   root_damage_rect =
@@ -677,7 +679,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForBackgroundBlurredChild) {
   //         that any pixels needed for the blur are redrawn in the current
   //         frame.
   ClearDamageForAllSurfaces(root.get());
-  child1->SetUpdateRect(gfx::RectF(0.f, 0.f, 1.f, 1.f));
+  child1->SetUpdateRect(gfx::Rect(1, 1));
   EmulateDrawingOneFrame(root.get());
 
   root_damage_rect =
@@ -798,8 +800,8 @@ TEST_F(DamageTrackerTest, VerifyDamageForMultipleLayers) {
   // - child1 update rect in surface space: gfx::Rect(100, 100, 1, 2);
   // - child2 update rect in surface space: gfx::Rect(400, 380, 3, 4);
   ClearDamageForAllSurfaces(root.get());
-  child1->SetUpdateRect(gfx::RectF(0.f, 0.f, 1.f, 2.f));
-  child2->SetUpdateRect(gfx::RectF(0.f, 0.f, 3.f, 4.f));
+  child1->SetUpdateRect(gfx::Rect(1, 2));
+  child2->SetUpdateRect(gfx::Rect(3, 4));
   EmulateDrawingOneFrame(root.get());
   gfx::Rect root_damage_rect =
       root->render_surface()->damage_tracker()->current_damage_rect();
@@ -926,8 +928,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForAddingAndRemovingRenderSurfaces) {
   // CASE 1: If a descendant surface disappears, its entire old area becomes
   //         exposed.
   ClearDamageForAllSurfaces(root.get());
-  child1->SetOpacity(1.f);
-  child1->SetForceRenderSurface(false);
+  child1->SetHasRenderSurface(false);
   EmulateDrawingOneFrame(root.get());
 
   // Sanity check that there is only one surface now.
@@ -952,8 +953,8 @@ TEST_F(DamageTrackerTest, VerifyDamageForAddingAndRemovingRenderSurfaces) {
 
   // Then change the tree so that the render surface is added back.
   ClearDamageForAllSurfaces(root.get());
-  child1->SetOpacity(0.5f);
-  child1->SetForceRenderSurface(true);
+  child1->SetHasRenderSurface(true);
+
   EmulateDrawingOneFrame(root.get());
 
   // Sanity check that there is a new surface now.
@@ -1010,7 +1011,7 @@ TEST_F(DamageTrackerTest, VerifyNoDamageForUpdateRectThatDoesNotDrawContent) {
   // In our specific tree, the update rect of child1 should not cause any
   // damage to any surface because it does not actually draw content.
   ClearDamageForAllSurfaces(root.get());
-  child1->SetUpdateRect(gfx::RectF(0.f, 0.f, 1.f, 2.f));
+  child1->SetUpdateRect(gfx::Rect(1, 2));
   EmulateDrawingOneFrame(root.get());
   child_damage_rect =
           child1->render_surface()->damage_tracker()->current_damage_rect();
@@ -1056,6 +1057,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForReplica) {
     reflection.Scale3d(-1.0, 1.0, 1.0);
     grand_child1_replica->SetTransform(reflection);
     grand_child1->SetReplicaLayer(grand_child1_replica.Pass());
+    grand_child1->SetHasRenderSurface(true);
   }
   EmulateDrawingOneFrame(root.get());
 
@@ -1105,7 +1107,8 @@ TEST_F(DamageTrackerTest, VerifyDamageForReplica) {
   // CASE 3: removing the reflection should cause the entire region including
   //         reflection to damage the target surface.
   ClearDamageForAllSurfaces(root.get());
-  grand_child1->SetReplicaLayer(scoped_ptr<LayerImpl>());
+  grand_child1->SetReplicaLayer(nullptr);
+  grand_child1->SetHasRenderSurface(false);
   EmulateDrawingOneFrame(root.get());
   ASSERT_EQ(old_content_rect.width(),
             child1->render_surface()->content_rect().width());
@@ -1140,12 +1143,12 @@ TEST_F(DamageTrackerTest, VerifyDamageForMask) {
     mask_layer->SetBounds(child->bounds());
     mask_layer->SetContentBounds(child->bounds());
     child->SetMaskLayer(mask_layer.Pass());
+    child->SetHasRenderSurface(true);
   }
   LayerImpl* mask_layer = child->mask_layer();
 
   // Add opacity and a grand_child so that the render surface persists even
   // after we remove the mask.
-  child->SetOpacity(0.5f);
   {
     scoped_ptr<LayerImpl> grand_child =
             LayerImpl::Create(host_impl_.active_tree(), 4);
@@ -1157,13 +1160,10 @@ TEST_F(DamageTrackerTest, VerifyDamageForMask) {
   }
   EmulateDrawingOneFrame(root.get());
 
-  // Sanity check that a new surface was created for the child.
-  ASSERT_TRUE(child->render_surface());
-
   // CASE 1: the update_rect on a mask layer should damage the entire target
   //         surface.
   ClearDamageForAllSurfaces(root.get());
-  mask_layer->SetUpdateRect(gfx::RectF(1.f, 2.f, 3.f, 4.f));
+  mask_layer->SetUpdateRect(gfx::Rect(1, 2, 3, 4));
   EmulateDrawingOneFrame(root.get());
   gfx::Rect child_damage_rect =
       child->render_surface()->damage_tracker()->current_damage_rect();
@@ -1202,7 +1202,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForMask) {
 
   // Then test mask removal.
   ClearDamageForAllSurfaces(root.get());
-  child->SetMaskLayer(scoped_ptr<LayerImpl>());
+  child->SetMaskLayer(nullptr);
   ASSERT_TRUE(child->LayerPropertyChanged());
   EmulateDrawingOneFrame(root.get());
 
@@ -1233,6 +1233,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForReplicaMask) {
     reflection.Scale3d(-1.0, 1.0, 1.0);
     grand_child1_replica->SetTransform(reflection);
     grand_child1->SetReplicaLayer(grand_child1_replica.Pass());
+    grand_child1->SetHasRenderSurface(true);
   }
   LayerImpl* grand_child1_replica = grand_child1->replica_layer();
 
@@ -1270,7 +1271,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForReplicaMask) {
   //         target surface.
   //
   ClearDamageForAllSurfaces(root.get());
-  grand_child1_replica->SetMaskLayer(scoped_ptr<LayerImpl>());
+  grand_child1_replica->SetMaskLayer(nullptr);
   EmulateDrawingOneFrame(root.get());
 
   grand_child_damage_rect =
@@ -1310,6 +1311,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForReplicaMaskWithTransformOrigin) {
     reflection.Scale3d(-1.0, 1.0, 1.0);
     grand_child1_replica->SetTransform(reflection);
     grand_child1->SetReplicaLayer(grand_child1_replica.Pass());
+    grand_child1->SetHasRenderSurface(true);
   }
   LayerImpl* grand_child1_replica = grand_child1->replica_layer();
 
@@ -1350,7 +1352,7 @@ TEST_F(DamageTrackerTest, DamageWhenAddedExternally) {
   //         it is included with any other partial damage.
   //
   ClearDamageForAllSurfaces(root.get());
-  child->SetUpdateRect(gfx::RectF(10, 11, 12, 13));
+  child->SetUpdateRect(gfx::Rect(10, 11, 12, 13));
   root->render_surface()->damage_tracker()->AddDamageNextUpdate(
       gfx::Rect(15, 16, 32, 33));
   EmulateDrawingOneFrame(root.get());
@@ -1377,7 +1379,8 @@ TEST_F(DamageTrackerTest, VerifyDamageForEmptyLayerList) {
   // tracker does not crash when it receives an empty layer_list.
 
   scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl_.active_tree(), 1);
-  root->CreateRenderSurface();
+  root->SetHasRenderSurface(true);
+  root->draw_properties().render_target = root.get();
 
   ASSERT_TRUE(root == root->render_target());
   RenderSurfaceImpl* target_surface = root->render_surface();
@@ -1413,7 +1416,7 @@ TEST_F(DamageTrackerTest, VerifyDamageAccumulatesUntilReset) {
 
   // New damage, without having cleared the previous damage, should be unioned
   // to the previous one.
-  child->SetUpdateRect(gfx::RectF(20.f, 25.f, 1.f, 2.f));
+  child->SetUpdateRect(gfx::Rect(20, 25, 1, 2));
   EmulateDrawingOneFrame(root.get());
   root_damage_rect =
           root->render_surface()->damage_tracker()->current_damage_rect();

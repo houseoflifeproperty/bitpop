@@ -20,11 +20,10 @@ class StatsOptionsHandler : public ::options::OptionsPageUIHandler {
   StatsOptionsHandler();
 
   // OptionsPageUIHandler implementation.
-  virtual void GetLocalizedValues(
-      base::DictionaryValue* localized_strings) OVERRIDE;
+  void GetLocalizedValues(base::DictionaryValue* localized_strings) override;
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
  private:
   void HandleMetricsReportingCheckbox(const base::ListValue* args);

@@ -50,9 +50,8 @@
 
 namespace blink {
 
-PassOwnPtrWillBeRawPtr<StorageQuotaClientImpl> StorageQuotaClientImpl::create()
+StorageQuotaClientImpl::StorageQuotaClientImpl()
 {
-    return adoptPtrWillBeNoop(new StorageQuotaClientImpl());
 }
 
 StorageQuotaClientImpl::~StorageQuotaClientImpl()
@@ -66,34 +65,30 @@ void StorageQuotaClientImpl::requestQuota(ExecutionContext* executionContext, We
     if (executionContext->isDocument()) {
         Document* document = toDocument(executionContext);
         WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(document->frame());
-        OwnPtrWillBeRawPtr<StorageQuotaCallbacks> callbacks = DeprecatedStorageQuotaCallbacksImpl::create(successCallback, errorCallback);
-        webFrame->client()->requestStorageQuota(webFrame, storageType, newQuotaInBytes, callbacks.release());
+        StorageQuotaCallbacks* callbacks = DeprecatedStorageQuotaCallbacksImpl::create(successCallback, errorCallback);
+        webFrame->client()->requestStorageQuota(webFrame, storageType, newQuotaInBytes, callbacks);
     } else {
         // Requesting quota in Worker is not supported.
-        executionContext->postTask(StorageErrorCallback::CallbackTask::create(errorCallback, NotSupportedError));
+        executionContext->postTask(FROM_HERE, StorageErrorCallback::CallbackTask::create(errorCallback, NotSupportedError));
     }
 }
 
 ScriptPromise StorageQuotaClientImpl::requestPersistentQuota(ScriptState* scriptState, unsigned long long newQuotaInBytes)
 {
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
     if (scriptState->executionContext()->isDocument()) {
         Document* document = toDocument(scriptState->executionContext());
         WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(document->frame());
-        OwnPtrWillBeRawPtr<StorageQuotaCallbacks> callbacks = StorageQuotaCallbacksImpl::create(resolver);
-        webFrame->client()->requestStorageQuota(webFrame, WebStorageQuotaTypePersistent, newQuotaInBytes, callbacks.release());
+        StorageQuotaCallbacks* callbacks = StorageQuotaCallbacksImpl::create(resolver);
+        webFrame->client()->requestStorageQuota(webFrame, WebStorageQuotaTypePersistent, newQuotaInBytes, callbacks);
     } else {
         // Requesting quota in Worker is not supported.
         resolver->reject(DOMError::create(NotSupportedError));
     }
 
     return promise;
-}
-
-StorageQuotaClientImpl::StorageQuotaClientImpl()
-{
 }
 
 } // namespace blink

@@ -45,13 +45,14 @@ AudioCapturerWin::AudioCapturerWin()
 }
 
 AudioCapturerWin::~AudioCapturerWin() {
+  DCHECK(thread_checker_.CalledOnValidThread());
 }
 
 bool AudioCapturerWin::Start(const PacketCapturedCallback& callback) {
   DCHECK(!audio_capture_client_.get());
   DCHECK(!audio_client_.get());
   DCHECK(!mm_device_.get());
-  DCHECK(static_cast<PWAVEFORMATEX>(wave_format_ex_) == NULL);
+  DCHECK(static_cast<PWAVEFORMATEX>(wave_format_ex_) == nullptr);
   DCHECK(thread_checker_.CalledOnValidThread());
 
   callback_ = callback;
@@ -80,7 +81,7 @@ bool AudioCapturerWin::Start(const PacketCapturedCallback& callback) {
   // Get an audio client.
   hr = mm_device_->Activate(__uuidof(IAudioClient),
                             CLSCTX_ALL,
-                            NULL,
+                            nullptr,
                             audio_client_.ReceiveVoid());
   if (FAILED(hr)) {
     LOG(ERROR) << "Failed to get an IAudioClient. Error " << hr;
@@ -88,7 +89,7 @@ bool AudioCapturerWin::Start(const PacketCapturedCallback& callback) {
   }
 
   REFERENCE_TIME device_period;
-  hr = audio_client_->GetDevicePeriod(&device_period, NULL);
+  hr = audio_client_->GetDevicePeriod(&device_period, nullptr);
   if (FAILED(hr)) {
     LOG(ERROR) << "IAudioClient::GetDevicePeriod failed. Error " << hr;
     return false;
@@ -169,7 +170,7 @@ bool AudioCapturerWin::Start(const PacketCapturedCallback& callback) {
       k100nsPerMillisecond,
       0,
       wave_format_ex_,
-      NULL);
+      nullptr);
   if (FAILED(hr)) {
     LOG(ERROR) << "Failed to initialize IAudioClient. Error " << hr;
     return false;
@@ -200,28 +201,9 @@ bool AudioCapturerWin::Start(const PacketCapturedCallback& callback) {
   return true;
 }
 
-void AudioCapturerWin::Stop() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(IsStarted());
-
-  capture_timer_.reset();
-  mm_device_.Release();
-  audio_client_.Release();
-  audio_capture_client_.Release();
-  wave_format_ex_.Reset(NULL);
-
-  thread_checker_.DetachFromThread();
-}
-
-bool AudioCapturerWin::IsStarted() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  return capture_timer_.get() != NULL;
-}
-
 void AudioCapturerWin::DoCapture() {
   DCHECK(AudioCapturer::IsValidSampleRate(sampling_rate_));
   DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(IsStarted());
 
   // Fetch all packets from the audio capture endpoint buffer.
   HRESULT hr = S_OK;
@@ -238,15 +220,15 @@ void AudioCapturerWin::DoCapture() {
     BYTE* data;
     UINT32 frames;
     DWORD flags;
-    hr = audio_capture_client_->GetBuffer(&data, &frames, &flags, NULL, NULL);
+    hr = audio_capture_client_->GetBuffer(&data, &frames, &flags, nullptr,
+                                          nullptr);
     if (FAILED(hr))
       break;
 
     if ((flags & AUDCLNT_BUFFERFLAGS_SILENT) == 0 &&
         !silence_detector_.IsSilence(
             reinterpret_cast<const int16*>(data), frames * kChannels)) {
-      scoped_ptr<AudioPacket> packet =
-          scoped_ptr<AudioPacket>(new AudioPacket());
+      scoped_ptr<AudioPacket> packet(new AudioPacket());
       packet->add_data(data, frames * wave_format_ex_->nBlockAlign);
       packet->set_encoding(AudioPacket::ENCODING_RAW);
       packet->set_sampling_rate(sampling_rate_);
@@ -279,7 +261,7 @@ bool AudioCapturer::IsSupported() {
 }
 
 scoped_ptr<AudioCapturer> AudioCapturer::Create() {
-  return scoped_ptr<AudioCapturer>(new AudioCapturerWin());
+  return make_scoped_ptr(new AudioCapturerWin());
 }
 
 }  // namespace remoting

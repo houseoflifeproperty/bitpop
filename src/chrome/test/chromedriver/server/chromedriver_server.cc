@@ -37,7 +37,7 @@
 
 namespace {
 
-const char* kLocalHostAddress = "127.0.0.1";
+const char kLocalHostAddress[] = "127.0.0.1";
 const int kBufferSize = 100 * 1024 * 1024;  // 100 MB
 
 typedef base::Callback<
@@ -52,7 +52,7 @@ class HttpServer : public net::HttpServer::Delegate {
 
   virtual ~HttpServer() {}
 
-  bool Start(int port, bool allow_remote) {
+  bool Start(uint16 port, bool allow_remote) {
     std::string binding_ip = kLocalHostAddress;
     if (allow_remote)
       binding_ip = "0.0.0.0";
@@ -65,24 +65,23 @@ class HttpServer : public net::HttpServer::Delegate {
   }
 
   // Overridden from net::HttpServer::Delegate:
-  virtual void OnConnect(int connection_id) OVERRIDE {
+  void OnConnect(int connection_id) override {
     server_->SetSendBufferSize(connection_id, kBufferSize);
     server_->SetReceiveBufferSize(connection_id, kBufferSize);
   }
-  virtual void OnHttpRequest(int connection_id,
-                             const net::HttpServerRequestInfo& info) OVERRIDE {
+  void OnHttpRequest(int connection_id,
+                     const net::HttpServerRequestInfo& info) override {
     handle_request_func_.Run(
         info,
         base::Bind(&HttpServer::OnResponse,
                    weak_factory_.GetWeakPtr(),
                    connection_id));
   }
-  virtual void OnWebSocketRequest(
-      int connection_id,
-      const net::HttpServerRequestInfo& info) OVERRIDE {}
-  virtual void OnWebSocketMessage(int connection_id,
-                                  const std::string& data) OVERRIDE {}
-  virtual void OnClose(int connection_id) OVERRIDE {}
+  void OnWebSocketRequest(int connection_id,
+                          const net::HttpServerRequestInfo& info) override {}
+  void OnWebSocketMessage(int connection_id, const std::string& data) override {
+  }
+  void OnClose(int connection_id) override {}
 
  private:
   void OnResponse(int connection_id,
@@ -155,7 +154,7 @@ void StopServerOnIOThread() {
   delete server;
 }
 
-void StartServerOnIOThread(int port,
+void StartServerOnIOThread(uint16 port,
                            bool allow_remote,
                            const HttpRequestHandlerFunc& handle_request_func) {
   scoped_ptr<HttpServer> temp_server(new HttpServer(handle_request_func));
@@ -166,7 +165,7 @@ void StartServerOnIOThread(int port,
   lazy_tls_server.Pointer()->Set(temp_server.release());
 }
 
-void RunServer(int port,
+void RunServer(uint16 port,
                bool allow_remote,
                const std::vector<std::string>& whitelisted_ips,
                const std::string& url_base,
@@ -207,10 +206,10 @@ void RunServer(int port,
 }  // namespace
 
 int main(int argc, char *argv[]) {
-  CommandLine::Init(argc, argv);
+  base::CommandLine::Init(argc, argv);
 
   base::AtExitManager at_exit;
-  CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
 
 #if defined(OS_LINUX)
   // Select the locale from the environment by passing an empty string instead
@@ -220,7 +219,7 @@ int main(int argc, char *argv[]) {
 #endif
 
   // Parse command line flags.
-  int port = 9515;
+  uint16 port = 9515;
   int adb_port = 5037;
   bool allow_remote = false;
   std::vector<std::string> whitelisted_ips;
@@ -228,7 +227,7 @@ int main(int argc, char *argv[]) {
   scoped_ptr<PortServer> port_server;
   if (cmd_line->HasSwitch("h") || cmd_line->HasSwitch("help")) {
     std::string options;
-    const char* kOptionAndDescriptions[] = {
+    const char* const kOptionAndDescriptions[] = {
         "port=PORT", "port to listen on",
         "adb-port=PORT", "adb server port",
         "log-path=FILE", "write server log to file instead of stderr, "
@@ -254,10 +253,14 @@ int main(int argc, char *argv[]) {
     return 0;
   }
   if (cmd_line->HasSwitch("port")) {
-    if (!base::StringToInt(cmd_line->GetSwitchValueASCII("port"), &port)) {
+    int cmd_line_port;
+    if (!base::StringToInt(cmd_line->GetSwitchValueASCII("port"),
+                           &cmd_line_port) ||
+        cmd_line_port < 0 || cmd_line_port > 65535) {
       printf("Invalid port. Exiting...\n");
       return 1;
     }
+    port = static_cast<uint16>(cmd_line_port);
   }
   if (cmd_line->HasSwitch("adb-port")) {
     if (!base::StringToInt(cmd_line->GetSwitchValueASCII("adb-port"),
@@ -294,8 +297,7 @@ int main(int argc, char *argv[]) {
     base::SplitString(whitelist, ',', &whitelisted_ips);
   }
   if (!cmd_line->HasSwitch("silent")) {
-    printf(
-        "Starting ChromeDriver (v%s) on port %d\n", kChromeDriverVersion, port);
+    printf("Starting ChromeDriver %s on port %u\n", kChromeDriverVersion, port);
     if (!allow_remote) {
       printf("Only local connections are allowed.\n");
     } else if (!whitelisted_ips.empty()) {

@@ -9,14 +9,13 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/one_shot_event.h"
 
+class DeclarativeUserScriptManager;
 class Profile;
 
 namespace extensions {
 
 class ContentVerifier;
-class DeclarativeUserScriptMaster;
 class ExtensionSystemSharedFactory;
-class ExtensionWarningBadgeService;
 class NavigationObserver;
 class SharedUserScriptMaster;
 class StateStoreNotificationObserver;
@@ -29,46 +28,38 @@ class StateStoreNotificationObserver;
 class ExtensionSystemImpl : public ExtensionSystem {
  public:
   explicit ExtensionSystemImpl(Profile* profile);
-  virtual ~ExtensionSystemImpl();
+  ~ExtensionSystemImpl() override;
 
   // KeyedService implementation.
-  virtual void Shutdown() OVERRIDE;
+  void Shutdown() override;
 
-  virtual void InitForRegularProfile(bool extensions_enabled) OVERRIDE;
+  void InitForRegularProfile(bool extensions_enabled) override;
 
-  virtual ExtensionService* extension_service() OVERRIDE;  // shared
-  virtual RuntimeData* runtime_data() OVERRIDE;  // shared
-  virtual ManagementPolicy* management_policy() OVERRIDE;  // shared
-  // shared
-  virtual SharedUserScriptMaster* shared_user_script_master() OVERRIDE;
-  virtual ProcessManager* process_manager() OVERRIDE;
-  virtual StateStore* state_store() OVERRIDE;  // shared
-  virtual StateStore* rules_store() OVERRIDE;  // shared
-  virtual LazyBackgroundTaskQueue* lazy_background_task_queue()
-      OVERRIDE;  // shared
-  virtual InfoMap* info_map() OVERRIDE; // shared
-  virtual EventRouter* event_router() OVERRIDE;  // shared
-  virtual WarningService* warning_service() OVERRIDE;
-  virtual Blacklist* blacklist() OVERRIDE;  // shared
-  virtual ErrorConsole* error_console() OVERRIDE;
-  virtual InstallVerifier* install_verifier() OVERRIDE;
-  virtual QuotaService* quota_service() OVERRIDE;  // shared
+  ExtensionService* extension_service() override;  // shared
+  RuntimeData* runtime_data() override;            // shared
+  ManagementPolicy* management_policy() override;  // shared
+  SharedUserScriptMaster* shared_user_script_master() override;  // shared
+  DeclarativeUserScriptManager* declarative_user_script_manager()
+      override;                                                    // shared
+  StateStore* state_store() override;                              // shared
+  StateStore* rules_store() override;                              // shared
+  LazyBackgroundTaskQueue* lazy_background_task_queue() override;  // shared
+  InfoMap* info_map() override;                                    // shared
+  EventRouter* event_router() override;                            // shared
+  InstallVerifier* install_verifier() override;
+  QuotaService* quota_service() override;  // shared
 
-  virtual void RegisterExtensionWithRequestContexts(
-      const Extension* extension) OVERRIDE;
+  void RegisterExtensionWithRequestContexts(
+      const Extension* extension) override;
 
-  virtual void UnregisterExtensionWithRequestContexts(
+  void UnregisterExtensionWithRequestContexts(
       const std::string& extension_id,
-      const UnloadedExtensionInfo::Reason reason) OVERRIDE;
+      const UnloadedExtensionInfo::Reason reason) override;
 
-  virtual const OneShotEvent& ready() const OVERRIDE;
-  virtual ContentVerifier* content_verifier() OVERRIDE;  // shared
-  virtual scoped_ptr<ExtensionSet> GetDependentExtensions(
-      const Extension* extension) OVERRIDE;
-
-  virtual DeclarativeUserScriptMaster*
-      GetDeclarativeUserScriptMasterByExtension(
-          const ExtensionId& extension_id) OVERRIDE;  // shared
+  const OneShotEvent& ready() const override;
+  ContentVerifier* content_verifier() override;  // shared
+  scoped_ptr<ExtensionSet> GetDependentExtensions(
+      const Extension* extension) override;
 
  private:
   friend class ExtensionSystemSharedFactory;
@@ -78,7 +69,7 @@ class ExtensionSystemImpl : public ExtensionSystem {
   class Shared : public KeyedService {
    public:
     explicit Shared(Profile* profile);
-    virtual ~Shared();
+    ~Shared() override;
 
     // Initialization takes place in phases.
     virtual void InitPrefs();
@@ -87,7 +78,7 @@ class ExtensionSystemImpl : public ExtensionSystem {
     void Init(bool extensions_enabled);
 
     // KeyedService implementation.
-    virtual void Shutdown() OVERRIDE;
+    void Shutdown() override;
 
     StateStore* state_store();
     StateStore* rules_store();
@@ -95,19 +86,14 @@ class ExtensionSystemImpl : public ExtensionSystem {
     RuntimeData* runtime_data();
     ManagementPolicy* management_policy();
     SharedUserScriptMaster* shared_user_script_master();
-    Blacklist* blacklist();
+    DeclarativeUserScriptManager* declarative_user_script_manager();
     InfoMap* info_map();
     LazyBackgroundTaskQueue* lazy_background_task_queue();
     EventRouter* event_router();
-    WarningService* warning_service();
-    ErrorConsole* error_console();
     InstallVerifier* install_verifier();
     QuotaService* quota_service();
     const OneShotEvent& ready() const { return ready_; }
     ContentVerifier* content_verifier();
-
-    DeclarativeUserScriptMaster* GetDeclarativeUserScriptMasterByExtension(
-        const ExtensionId& extension_id);
 
    private:
     Profile* profile_;
@@ -126,20 +112,15 @@ class ExtensionSystemImpl : public ExtensionSystem {
     // Shared memory region manager for scripts statically declared in extension
     // manifests. This region is shared between all extensions.
     scoped_ptr<SharedUserScriptMaster> shared_user_script_master_;
-    // Shared memory region manager for programmatically declared scripts, one
-    // per extension. Managers are instantiated the first time the declarative
-    // API is used by an extension to request content scripts.
-    ScopedVector<DeclarativeUserScriptMaster> declarative_user_script_masters_;
-    scoped_ptr<Blacklist> blacklist_;
+    // Manager of a set of DeclarativeUserScript objects for programmatically
+    // declared scripts.
+    scoped_ptr<DeclarativeUserScriptManager> declarative_user_script_manager_;
     scoped_ptr<RuntimeData> runtime_data_;
     // ExtensionService depends on StateStore, Blacklist and RuntimeData.
     scoped_ptr<ExtensionService> extension_service_;
     scoped_ptr<ManagementPolicy> management_policy_;
     // extension_info_map_ needs to outlive process_manager_.
     scoped_refptr<InfoMap> extension_info_map_;
-    scoped_ptr<WarningService> warning_service_;
-    scoped_ptr<ExtensionWarningBadgeService> extension_warning_badge_service_;
-    scoped_ptr<ErrorConsole> error_console_;
     scoped_ptr<InstallVerifier> install_verifier_;
     scoped_ptr<QuotaService> quota_service_;
 
@@ -157,12 +138,6 @@ class ExtensionSystemImpl : public ExtensionSystem {
   Profile* profile_;
 
   Shared* shared_;
-
-  // |process_manager_| must be destroyed before the Profile's |io_data_|. While
-  // |process_manager_| still lives, we handle incoming resource requests from
-  // extension processes and those require access to the ResourceContext owned
-  // by |io_data_|.
-  scoped_ptr<ProcessManager> process_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionSystemImpl);
 };

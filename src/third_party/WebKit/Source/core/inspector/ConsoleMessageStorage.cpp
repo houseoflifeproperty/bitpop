@@ -5,6 +5,7 @@
 #include "config.h"
 #include "core/inspector/ConsoleMessageStorage.h"
 
+#include "core/frame/FrameHost.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/InspectorConsoleInstrumentation.h"
@@ -13,29 +14,20 @@ namespace blink {
 
 static const unsigned maxConsoleMessageCount = 1000;
 
-ConsoleMessageStorage::ConsoleMessageStorage(ExecutionContext* context)
+ConsoleMessageStorage::ConsoleMessageStorage()
     : m_expiredCount(0)
-    , m_context(context)
-    , m_frame(nullptr)
 {
 }
 
-ConsoleMessageStorage::ConsoleMessageStorage(LocalFrame* frame)
-    : m_expiredCount(0)
-    , m_context(nullptr)
-    , m_frame(frame)
-{
-}
-
-void ConsoleMessageStorage::reportMessage(PassRefPtrWillBeRawPtr<ConsoleMessage> prpMessage)
+void ConsoleMessageStorage::reportMessage(ExecutionContext* context, PassRefPtrWillBeRawPtr<ConsoleMessage> prpMessage)
 {
     RefPtrWillBeRawPtr<ConsoleMessage> message = prpMessage;
     message->collectCallStack();
 
     if (message->type() == ClearMessageType)
-        clear();
+        clear(context);
 
-    InspectorInstrumentation::addMessageToConsole(executionContext(), message.get());
+    InspectorInstrumentation::addMessageToConsole(context, message.get());
 
     ASSERT(m_messages.size() <= maxConsoleMessageCount);
     if (m_messages.size() == maxConsoleMessageCount) {
@@ -45,9 +37,9 @@ void ConsoleMessageStorage::reportMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>
     m_messages.append(message);
 }
 
-void ConsoleMessageStorage::clear()
+void ConsoleMessageStorage::clear(ExecutionContext* context)
 {
-    InspectorInstrumentation::consoleMessagesCleared(executionContext());
+    InspectorInstrumentation::consoleMessagesCleared(context);
     m_messages.clear();
     m_expiredCount = 0;
 }
@@ -89,16 +81,9 @@ int ConsoleMessageStorage::expiredCount() const
     return m_expiredCount;
 }
 
-ExecutionContext* ConsoleMessageStorage::executionContext() const
-{
-    return m_frame ? m_frame->document() : m_context;
-}
-
-void ConsoleMessageStorage::trace(Visitor* visitor)
+DEFINE_TRACE(ConsoleMessageStorage)
 {
     visitor->trace(m_messages);
-    visitor->trace(m_context);
-    visitor->trace(m_frame);
 }
 
 } // namespace blink

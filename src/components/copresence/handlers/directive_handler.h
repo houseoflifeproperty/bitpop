@@ -7,42 +7,41 @@
 
 #include <string>
 
-#include "base/callback.h"
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
-#include "components/copresence/handlers/audio/audio_directive_handler.h"
-#include "components/copresence/mediums/audio/audio_recorder.h"
+#include "components/audio_modem/public/whispernet_client.h"
 
 namespace copresence {
 
 class Directive;
 
-// The directive handler manages transmit and receive directives
-// given to it by the manager.
+// The directive handler manages transmit and receive directives.
 class DirectiveHandler {
  public:
-  DirectiveHandler();
-  virtual ~DirectiveHandler();
+  DirectiveHandler() {}
+  virtual ~DirectiveHandler() {}
 
-  // Initialize the |audio_handler_| with the appropriate callbacks.
-  // This function must be called before any others.
-  // TODO(ckehoe): Instead of this, use a static Create() method
-  //               and make the constructor private.
-  virtual void Initialize(
-      const AudioRecorder::DecodeSamplesCallback& decode_cb,
-      const AudioDirectiveHandler::EncodeTokenCallback& encode_cb);
+  // Starts processing directives with the provided Whispernet delegate.
+  // Directives will be queued until this function is called.
+  // |whispernet_client| is owned by the caller and must outlive the
+  // DirectiveHandler.
+  // |tokens_cb| is called for all audio tokens found in recorded audio.
+  // TODO(ckehoe): This is no longer needed. Merge into the constructor.
+  virtual void Start(audio_modem::WhispernetClient* whispernet_client,
+                     const audio_modem::TokensCallback& tokens_cb) = 0;
 
   // Adds a directive to handle.
-  virtual void AddDirective(const copresence::Directive& directive);
-  // Removes any directives associated with the given operation id.
-  virtual void RemoveDirectives(const std::string& op_id);
+  virtual void AddDirective(const Directive& directive) = 0;
 
-  const std::string& CurrentAudibleToken() const;
-  const std::string& CurrentInaudibleToken() const;
+  // Removes any directives associated with the given operation id.
+  virtual void RemoveDirectives(const std::string& op_id) = 0;
+
+  // TODO(ckehoe): Move the Modem to be owned by CopresenceManager.
+  // Then this will not need to be passed all the way down the tree.
+  virtual const std::string
+  GetCurrentAudioToken(audio_modem::AudioType type) const = 0;
+  virtual bool IsAudioTokenHeard(audio_modem::AudioType type) const = 0;
 
  private:
-  scoped_ptr<AudioDirectiveHandler> audio_handler_;
-
   DISALLOW_COPY_AND_ASSIGN(DirectiveHandler);
 };
 

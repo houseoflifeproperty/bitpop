@@ -8,14 +8,15 @@
 #include <cmath>
 #include <limits>
 
-#include "base/debug/trace_event_argument.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "base/values.h"
-#include "ui/gfx/quad_f.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/rect_conversions.h"
-#include "ui/gfx/rect_f.h"
+#include "ui/gfx/geometry/quad_f.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/rect_f.h"
+#include "ui/gfx/geometry/vector2d_f.h"
+#include "ui/gfx/geometry/vector3d_f.h"
 #include "ui/gfx/transform.h"
-#include "ui/gfx/vector2d_f.h"
 
 namespace cc {
 
@@ -693,7 +694,7 @@ scoped_ptr<base::Value> MathUtil::AsValue(const gfx::Size& s) {
   scoped_ptr<base::DictionaryValue> res(new base::DictionaryValue());
   res->SetDouble("width", s.width());
   res->SetDouble("height", s.height());
-  return res.PassAs<base::Value>();
+  return res.Pass();
 }
 
 scoped_ptr<base::Value> MathUtil::AsValue(const gfx::Rect& r) {
@@ -702,11 +703,11 @@ scoped_ptr<base::Value> MathUtil::AsValue(const gfx::Rect& r) {
   res->AppendInteger(r.y());
   res->AppendInteger(r.width());
   res->AppendInteger(r.height());
-  return res.PassAs<base::Value>();
+  return res.Pass();
 }
 
 bool MathUtil::FromValue(const base::Value* raw_value, gfx::Rect* out_rect) {
-  const base::ListValue* value = NULL;
+  const base::ListValue* value = nullptr;
   if (!raw_value->GetAsList(&value))
     return false;
 
@@ -730,56 +731,88 @@ scoped_ptr<base::Value> MathUtil::AsValue(const gfx::PointF& pt) {
   scoped_ptr<base::ListValue> res(new base::ListValue());
   res->AppendDouble(pt.x());
   res->AppendDouble(pt.y());
-  return res.PassAs<base::Value>();
+  return res.Pass();
 }
 
-void MathUtil::AddToTracedValue(const gfx::Size& s,
-                                base::debug::TracedValue* res) {
+void MathUtil::AddToTracedValue(const char* name,
+                                const gfx::Size& s,
+                                base::trace_event::TracedValue* res) {
+  res->BeginDictionary(name);
   res->SetDouble("width", s.width());
   res->SetDouble("height", s.height());
+  res->EndDictionary();
 }
 
-void MathUtil::AddToTracedValue(const gfx::SizeF& s,
-                                base::debug::TracedValue* res) {
+void MathUtil::AddToTracedValue(const char* name,
+                                const gfx::SizeF& s,
+                                base::trace_event::TracedValue* res) {
+  res->BeginDictionary(name);
   res->SetDouble("width", s.width());
   res->SetDouble("height", s.height());
+  res->EndDictionary();
 }
 
-void MathUtil::AddToTracedValue(const gfx::Rect& r,
-                                base::debug::TracedValue* res) {
+void MathUtil::AddToTracedValue(const char* name,
+                                const gfx::Rect& r,
+                                base::trace_event::TracedValue* res) {
+  res->BeginArray(name);
   res->AppendInteger(r.x());
   res->AppendInteger(r.y());
   res->AppendInteger(r.width());
   res->AppendInteger(r.height());
+  res->EndArray();
 }
 
-void MathUtil::AddToTracedValue(const gfx::PointF& pt,
-                                base::debug::TracedValue* res) {
+void MathUtil::AddToTracedValue(const char* name,
+                                const gfx::PointF& pt,
+                                base::trace_event::TracedValue* res) {
+  res->BeginArray(name);
   res->AppendDouble(pt.x());
   res->AppendDouble(pt.y());
+  res->EndArray();
 }
 
-void MathUtil::AddToTracedValue(const gfx::Point3F& pt,
-                                base::debug::TracedValue* res) {
+void MathUtil::AddToTracedValue(const char* name,
+                                const gfx::Point3F& pt,
+                                base::trace_event::TracedValue* res) {
+  res->BeginArray(name);
   res->AppendDouble(pt.x());
   res->AppendDouble(pt.y());
   res->AppendDouble(pt.z());
+  res->EndArray();
 }
 
-void MathUtil::AddToTracedValue(const gfx::Vector2d& v,
-                                base::debug::TracedValue* res) {
+void MathUtil::AddToTracedValue(const char* name,
+                                const gfx::Vector2d& v,
+                                base::trace_event::TracedValue* res) {
+  res->BeginArray(name);
   res->AppendInteger(v.x());
   res->AppendInteger(v.y());
+  res->EndArray();
 }
 
-void MathUtil::AddToTracedValue(const gfx::Vector2dF& v,
-                                base::debug::TracedValue* res) {
+void MathUtil::AddToTracedValue(const char* name,
+                                const gfx::Vector2dF& v,
+                                base::trace_event::TracedValue* res) {
+  res->BeginArray(name);
   res->AppendDouble(v.x());
   res->AppendDouble(v.y());
+  res->EndArray();
 }
 
-void MathUtil::AddToTracedValue(const gfx::QuadF& q,
-                                base::debug::TracedValue* res) {
+void MathUtil::AddToTracedValue(const char* name,
+                                const gfx::ScrollOffset& v,
+                                base::trace_event::TracedValue* res) {
+  res->BeginArray(name);
+  res->AppendDouble(v.x());
+  res->AppendDouble(v.y());
+  res->EndArray();
+}
+
+void MathUtil::AddToTracedValue(const char* name,
+                                const gfx::QuadF& q,
+                                base::trace_event::TracedValue* res) {
+  res->BeginArray(name);
   res->AppendDouble(q.p1().x());
   res->AppendDouble(q.p1().y());
   res->AppendDouble(q.p2().x());
@@ -788,33 +821,43 @@ void MathUtil::AddToTracedValue(const gfx::QuadF& q,
   res->AppendDouble(q.p3().y());
   res->AppendDouble(q.p4().x());
   res->AppendDouble(q.p4().y());
+  res->EndArray();
 }
 
-void MathUtil::AddToTracedValue(const gfx::RectF& rect,
-                                base::debug::TracedValue* res) {
+void MathUtil::AddToTracedValue(const char* name,
+                                const gfx::RectF& rect,
+                                base::trace_event::TracedValue* res) {
+  res->BeginArray(name);
   res->AppendDouble(rect.x());
   res->AppendDouble(rect.y());
   res->AppendDouble(rect.width());
   res->AppendDouble(rect.height());
+  res->EndArray();
 }
 
-void MathUtil::AddToTracedValue(const gfx::Transform& transform,
-                                base::debug::TracedValue* res) {
+void MathUtil::AddToTracedValue(const char* name,
+                                const gfx::Transform& transform,
+                                base::trace_event::TracedValue* res) {
+  res->BeginArray(name);
   const SkMatrix44& m = transform.matrix();
   for (int row = 0; row < 4; ++row) {
     for (int col = 0; col < 4; ++col)
       res->AppendDouble(m.getDouble(row, col));
   }
+  res->EndArray();
 }
 
-void MathUtil::AddToTracedValue(const gfx::BoxF& box,
-                                base::debug::TracedValue* res) {
+void MathUtil::AddToTracedValue(const char* name,
+                                const gfx::BoxF& box,
+                                base::trace_event::TracedValue* res) {
+  res->BeginArray(name);
   res->AppendInteger(box.x());
   res->AppendInteger(box.y());
   res->AppendInteger(box.z());
   res->AppendInteger(box.width());
   res->AppendInteger(box.height());
   res->AppendInteger(box.depth());
+  res->EndArray();
 }
 
 double MathUtil::AsDoubleSafely(double value) {
@@ -823,6 +866,18 @@ double MathUtil::AsDoubleSafely(double value) {
 
 float MathUtil::AsFloatSafely(float value) {
   return std::min(value, std::numeric_limits<float>::max());
+}
+
+gfx::Vector3dF MathUtil::GetXAxis(const gfx::Transform& transform) {
+  return gfx::Vector3dF(transform.matrix().getFloat(0, 0),
+                        transform.matrix().getFloat(1, 0),
+                        transform.matrix().getFloat(2, 0));
+}
+
+gfx::Vector3dF MathUtil::GetYAxis(const gfx::Transform& transform) {
+  return gfx::Vector3dF(transform.matrix().getFloat(0, 1),
+                        transform.matrix().getFloat(1, 1),
+                        transform.matrix().getFloat(2, 1));
 }
 
 }  // namespace cc

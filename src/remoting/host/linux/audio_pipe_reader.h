@@ -52,8 +52,8 @@ class AudioPipeReader
   void RemoveObserver(StreamObserver* observer);
 
   // MessageLoopForIO::Watcher interface.
-  virtual void OnFileCanReadWithoutBlocking(int fd) OVERRIDE;
-  virtual void OnFileCanWriteWithoutBlocking(int fd) OVERRIDE;
+  void OnFileCanReadWithoutBlocking(int fd) override;
+  void OnFileCanWriteWithoutBlocking(int fd) override;
 
  private:
   friend class base::DeleteHelper<AudioPipeReader>;
@@ -62,7 +62,7 @@ class AudioPipeReader
 
   AudioPipeReader(scoped_refptr<base::SingleThreadTaskRunner> task_runner,
                   const base::FilePath& pipe_path);
-  virtual ~AudioPipeReader();
+  ~AudioPipeReader() override;
 
   void StartOnAudioThread();
   void OnDirectoryChanged(const base::FilePath& path, bool error);
@@ -81,6 +81,12 @@ class AudioPipeReader
   base::File pipe_;
   base::RepeatingTimer<AudioPipeReader> timer_;
   scoped_refptr<ObserverListThreadSafe<StreamObserver> > observers_;
+
+  // Size of the pipe buffer.
+  int pipe_buffer_size_;
+
+  // Period between pipe reads.
+  base::TimeDelta capture_period_;
 
   // Time when capturing was started.
   base::TimeTicks started_time_;

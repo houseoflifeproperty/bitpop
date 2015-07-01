@@ -9,6 +9,7 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 #include "ui/base/cursor/cursor.h"
+#include "ui/events/event_utils.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/controls/native/native_view_host_test_base.h"
 #include "ui/views/view.h"
@@ -39,13 +40,12 @@ class NativeViewHostWindowObserver : public aura::WindowObserver {
   };
 
   NativeViewHostWindowObserver() {}
-  virtual ~NativeViewHostWindowObserver() {}
+  ~NativeViewHostWindowObserver() override {}
 
   const std::vector<EventDetails>& events() const { return events_; }
 
   // aura::WindowObserver overrides
-  virtual void OnWindowVisibilityChanged(aura::Window* window,
-                                         bool visible) OVERRIDE {
+  void OnWindowVisibilityChanged(aura::Window* window, bool visible) override {
     EventDetails event;
     event.type = visible ? EVENT_SHOWN : EVENT_HIDDEN;
     event.window = window;
@@ -57,9 +57,9 @@ class NativeViewHostWindowObserver : public aura::WindowObserver {
       events_.push_back(event);
   }
 
-  virtual void OnWindowBoundsChanged(aura::Window* window,
-                                     const gfx::Rect& old_bounds,
-                                     const gfx::Rect& new_bounds) OVERRIDE {
+  void OnWindowBoundsChanged(aura::Window* window,
+                             const gfx::Rect& old_bounds,
+                             const gfx::Rect& new_bounds) override {
     EventDetails event;
     event.type = EVENT_BOUNDS_CHANGED;
     event.window = window;
@@ -148,7 +148,7 @@ TEST_F(NativeViewHostAuraTest, CursorForNativeView) {
   toplevel()->SetCursor(ui::kCursorHand);
   child()->SetCursor(ui::kCursorWait);
   ui::MouseEvent move_event(ui::ET_MOUSE_MOVED, gfx::Point(0, 0),
-                            gfx::Point(0, 0), 0, 0);
+                            gfx::Point(0, 0), ui::EventTimeForNow(), 0, 0);
 
   EXPECT_EQ(ui::kCursorWait, host()->GetCursor(move_event).native_type());
 

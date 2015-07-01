@@ -5,6 +5,36 @@
 {
   'targets': [
     {
+      'target_name' : 'zlib_x86_simd',
+      'type': 'static_library',
+      'conditions': [
+        ['OS!="ios" and (target_arch=="ia32" or target_arch=="x64")', {
+          'cflags' : ['-msse4.2', '-mpclmul'],
+          'xcode_settings' : {
+             'OTHER_CFLAGS' : ['-msse4.2', '-mpclmul'],
+          },
+          'sources' : [
+            'crc_folding.c',
+            'fill_window_sse.c',
+          ],
+          'conditions': [
+            ['OS=="win" and clang==1', {
+              'msvs_settings': {
+                'VCCLCompilerTool': {
+                  'AdditionalOptions': [ '-msse4.2', '-mpclmul' ],
+                },
+              },
+            }],
+          ],
+        }, {
+          'sources' : [ 'simd_stub.c' ],
+        }],
+        ['OS=="android"', {
+          'toolsets': ['target', 'host'],
+        }],
+      ],
+    },
+    {
       'target_name': 'zlib',
       'type': 'static_library',
       'sources': [
@@ -31,10 +61,14 @@
         'trees.c',
         'trees.h',
         'uncompr.c',
+        'x86.h',
         'zconf.h',
         'zlib.h',
         'zutil.c',
         'zutil.h',
+      ],
+      'dependencies' : [
+        'zlib_x86_simd'
       ],
       'include_dirs': [
         '.',
@@ -45,6 +79,9 @@
         ],
       },
       'conditions': [
+        ['OS!="ios" and (target_arch=="ia32" or target_arch=="x64")', {
+          'sources' : [ 'x86.c', ],
+        }],
         ['OS!="win"', {
           'product_name': 'chrome_zlib',
         }], ['OS=="android"', {

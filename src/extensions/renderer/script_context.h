@@ -6,19 +6,23 @@
 #define EXTENSIONS_RENDERER_SCRIPT_CONTEXT_H_
 
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "extensions/common/features/feature.h"
+#include "extensions/common/permissions/api_permission_set.h"
 #include "extensions/renderer/module_system.h"
 #include "extensions/renderer/request_sender.h"
 #include "extensions/renderer/safe_builtins.h"
-#include "extensions/renderer/scoped_persistent.h"
 #include "gin/runner.h"
+#include "url/gurl.h"
 #include "v8/include/v8.h"
 
 namespace blink {
 class WebFrame;
+class WebLocalFrame;
 }
 
 namespace content {
@@ -28,28 +32,40 @@ class RenderView;
 
 namespace extensions {
 class Extension;
+class ExtensionSet;
 
 // Extensions wrapper for a v8 context.
-class ScriptContext : public RequestSender::Source, public gin::Runner {
+class ScriptContext : public RequestSender::Source {
  public:
-  ScriptContext(const v8::Handle<v8::Context>& context,
-                blink::WebFrame* frame,
+  ScriptContext(const v8::Local<v8::Context>& context,
+                blink::WebLocalFrame* frame,
                 const Extension* extension,
                 Feature::Context context_type,
                 const Extension* effective_extension,
                 Feature::Context effective_context_type);
-  virtual ~ScriptContext();
+  ~ScriptContext() override;
+
+  // Returns whether |url| from any Extension in |extension_set| is sandboxed,
+  // as declared in each Extension's manifest.
+  // TODO(kalman): Delete this when crbug.com/466373 is fixed.
+  // See comment in HasAccessOrThrowError.
+  static bool IsSandboxedPage(const ExtensionSet& extension_set,
+                              const GURL& url);
 
   // Clears the WebFrame for this contexts and invalidates the associated
   // ModuleSystem.
   void Invalidate();
 
+  // Registers |observer| to be run when this context is invalidated. Closures
+  // are run immediately when Invalidate() is called, not in a message loop.
+  void AddInvalidationObserver(const base::Closure& observer);
+
   // Returns true if this context is still valid, false if it isn't.
   // A context becomes invalid via Invalidate().
-  bool is_valid() const { return !v8_context_.IsEmpty(); }
+  bool is_valid() const { return is_valid_; }
 
-  v8::Handle<v8::Context> v8_context() const {
-    return v8_context_.NewHandle(isolate());
+  v8::Local<v8::Context> v8_context() const {
+    return v8::Local<v8::Context>::New(isolate_, v8_context_);
   }
 
   const Extension* extension() const { return extension_.get(); }
@@ -58,7 +74,7 @@ class ScriptContext : public RequestSender::Source, public gin::Runner {
     return effective_extension_.get();
   }
 
-  blink::WebFrame* web_frame() const { return web_frame_; }
+  blink::WebLocalFrame* web_frame() const { return web_frame_; }
 
   Feature::Context context_type() const { return context_type_; }
 
@@ -92,11 +108,11 @@ class ScriptContext : public RequestSender::Source, public gin::Runner {
   // must do that if they want.
   //
   // USE THIS METHOD RATHER THAN v8::Function::Call WHEREVER POSSIBLE.
-  v8::Local<v8::Value> CallFunction(v8::Handle<v8::Function> function,
+  v8::Local<v8::Value> CallFunction(v8::Local<v8::Function> function,
                                     int argc,
-                                    v8::Handle<v8::Value> argv[]) const;
+                                    v8::Local<v8::Value> argv[]) const;
 
-  void DispatchEvent(const char* event_name, v8::Handle<v8::Array> args) const;
+  void DispatchEvent(const char* event_name, v8::Local<v8::Array> args) const;
 
   // Fires the onunload event on the unload_event module.
   void DispatchOnUnloadEvent();
@@ -113,6 +129,14 @@ class ScriptContext : public RequestSender::Source, public gin::Runner {
   v8::Isolate* isolate() const { return isolate_; }
 
   // Get the URL of this context's web frame.
+  //
+  // TODO(kalman): Remove this and replace with a GetOrigin() call which reads
+  // of WebDocument::securityOrigin():
+  //  - The URL can change (e.g. pushState) but the origin cannot. Luckily it
+  //    appears as though callers don't make security decisions based on the
+  //    result of GetURL() so it's not a problem... yet.
+  //  - Origin is the correct check to be making.
+  //  - It might let us remove the about:blank resolving?
   GURL GetURL() const;
 
   // Returns whether the API |api| or any part of the API could be
@@ -133,30 +157,39 @@ class ScriptContext : public RequestSender::Source, public gin::Runner {
                                       bool match_about_blank);
 
   // RequestSender::Source implementation.
-  virtual ScriptContext* GetContext() OVERRIDE;
-  virtual void OnResponseReceived(const std::string& name,
-                                  int request_id,
-                                  bool success,
-                                  const base::ListValue& response,
-                                  const std::string& error) OVERRIDE;
+  ScriptContext* GetContext() override;
+  void OnResponseReceived(const std::string& name,
+                          int request_id,
+                          bool success,
+                          const base::ListValue& response,
+                          const std::string& error) override;
 
-  // gin::Runner overrides.
-  virtual void Run(const std::string& source,
-                   const std::string& resource_name) OVERRIDE;
-  virtual v8::Handle<v8::Value> Call(v8::Handle<v8::Function> function,
-                                     v8::Handle<v8::Value> receiver,
-                                     int argc,
-                                     v8::Handle<v8::Value> argv[]) OVERRIDE;
-  virtual gin::ContextHolder* GetContextHolder() OVERRIDE;
+  // Grants a set of content capabilities to this context.
+  void SetContentCapabilities(const APIPermissionSet& permissions);
 
- protected:
-  // The v8 context the bindings are accessible to.
-  ScopedPersistent<v8::Context> v8_context_;
+  // Indicates if this context has an effective API permission either by being
+  // a context for an extension which has that permission, or by being a web
+  // context which has been granted the corresponding capability by an
+  // extension.
+  bool HasAPIPermission(APIPermission::ID permission) const;
+
+  // Throws an Error in this context's JavaScript context, if this context does
+  // not have access to |name|. Returns true if this context has access (i.e.
+  // no exception thrown), false if it does not (i.e. an exception was thrown).
+  bool HasAccessOrThrowError(const std::string& name);
 
  private:
-  // The WebFrame associated with this context. This can be NULL because this
-  // object can outlive is destroyed asynchronously.
-  blink::WebFrame* web_frame_;
+  class Runner;
+
+  // Whether this context is valid.
+  bool is_valid_;
+
+  // The v8 context the bindings are accessible to.
+  v8::Global<v8::Context> v8_context_;
+
+  // The WebLocalFrame associated with this context. This can be NULL because
+  // this object can outlive is destroyed asynchronously.
+  blink::WebLocalFrame* web_frame_;
 
   // The extension associated with this context, or NULL if there is none. This
   // might be a hosted app in the case that this context is hosting a web URL.
@@ -179,7 +212,18 @@ class ScriptContext : public RequestSender::Source, public gin::Runner {
   // Contains safe copies of builtin objects like Function.prototype.
   SafeBuiltins safe_builtins_;
 
+  // The set of capabilities granted to this context by extensions.
+  APIPermissionSet content_capabilities_;
+
+  // A list of base::Closure instances as an observer interface for
+  // invalidation.
+  std::vector<base::Closure> invalidate_observers_;
+
   v8::Isolate* isolate_;
+
+  GURL url_;
+
+  scoped_ptr<Runner> runner_;
 
   DISALLOW_COPY_AND_ASSIGN(ScriptContext);
 };

@@ -5,34 +5,30 @@
 #ifndef CONTENT_RENDERER_BATTERY_STATUS_BATTERY_STATUS_DISPATCHER_H_
 #define CONTENT_RENDERER_BATTERY_STATUS_BATTERY_STATUS_DISPATCHER_H_
 
-#include "content/public/renderer/platform_event_observer.h"
+#include "base/compiler_specific.h"
+#include "base/macros.h"
+#include "content/common/content_export.h"
+#include "device/battery/battery_monitor.mojom.h"
 
 namespace blink {
-class WebBatteryStatus;
 class WebBatteryStatusListener;
 }
 
 namespace content {
-class RenderThread;
 
-class CONTENT_EXPORT BatteryStatusDispatcher
-    : NON_EXPORTED_BASE(
-          public PlatformEventObserver<blink::WebBatteryStatusListener>) {
+class CONTENT_EXPORT BatteryStatusDispatcher {
  public:
-  explicit BatteryStatusDispatcher(RenderThread* thread);
-  virtual ~BatteryStatusDispatcher();
-
-  // PlatformEventObserver public methods.
-  virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void SendFakeDataForTesting(void* data) OVERRIDE;
-
- protected:
-  // PlatformEventObserver protected methods.
-  virtual void SendStartMessage() OVERRIDE;
-  virtual void SendStopMessage() OVERRIDE;
+  explicit BatteryStatusDispatcher(blink::WebBatteryStatusListener* listener);
+  ~BatteryStatusDispatcher();
 
  private:
-  void OnDidChange(const blink::WebBatteryStatus& status);
+  friend class BatteryStatusDispatcherTest;
+
+  void QueryNextStatus();
+  void DidChange(device::BatteryStatusPtr battery_status);
+
+  device::BatteryMonitorPtr monitor_;
+  blink::WebBatteryStatusListener* listener_;
 
   DISALLOW_COPY_AND_ASSIGN(BatteryStatusDispatcher);
 };

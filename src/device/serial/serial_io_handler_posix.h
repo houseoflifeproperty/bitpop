@@ -6,6 +6,8 @@
 #define DEVICE_SERIAL_SERIAL_IO_HANDLER_POSIX_H_
 
 #include "base/message_loop/message_loop.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "device/serial/serial_io_handler.h"
 
 namespace device {
@@ -14,28 +16,32 @@ class SerialIoHandlerPosix : public SerialIoHandler,
                              public base::MessageLoopForIO::Watcher {
  protected:
   // SerialIoHandler impl.
-  virtual void ReadImpl() OVERRIDE;
-  virtual void WriteImpl() OVERRIDE;
-  virtual void CancelReadImpl() OVERRIDE;
-  virtual void CancelWriteImpl() OVERRIDE;
-  virtual bool Flush() const OVERRIDE;
-  virtual serial::DeviceControlSignalsPtr GetControlSignals() const OVERRIDE;
-  virtual bool SetControlSignals(
-      const serial::HostControlSignals& control_signals) OVERRIDE;
-  virtual bool ConfigurePort(const serial::ConnectionOptions& options) OVERRIDE;
-  virtual serial::ConnectionInfoPtr GetPortInfo() const OVERRIDE;
-  virtual bool PostOpen() OVERRIDE;
+  void ReadImpl() override;
+  void WriteImpl() override;
+  void CancelReadImpl() override;
+  void CancelWriteImpl() override;
+  bool ConfigurePortImpl() override;
+  bool Flush() const override;
+  serial::DeviceControlSignalsPtr GetControlSignals() const override;
+  bool SetControlSignals(
+      const serial::HostControlSignals& control_signals) override;
+  serial::ConnectionInfoPtr GetPortInfo() const override;
+  void RequestAccess(
+      const std::string& port,
+      scoped_refptr<base::SingleThreadTaskRunner> file_task_runner,
+      scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner) override;
 
  private:
   friend class SerialIoHandler;
 
   SerialIoHandlerPosix(
-      scoped_refptr<base::MessageLoopProxy> file_thread_message_loop);
-  virtual ~SerialIoHandlerPosix();
+      scoped_refptr<base::SingleThreadTaskRunner> file_thread_task_runner,
+      scoped_refptr<base::SingleThreadTaskRunner> ui_thread_task_runner);
+  ~SerialIoHandlerPosix() override;
 
   // base::MessageLoopForIO::Watcher implementation.
-  virtual void OnFileCanWriteWithoutBlocking(int fd) OVERRIDE;
-  virtual void OnFileCanReadWithoutBlocking(int fd) OVERRIDE;
+  void OnFileCanWriteWithoutBlocking(int fd) override;
+  void OnFileCanReadWithoutBlocking(int fd) override;
 
   void EnsureWatchingReads();
   void EnsureWatchingWrites();

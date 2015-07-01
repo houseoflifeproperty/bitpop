@@ -40,7 +40,7 @@ class BluetoothEventRouter : public device::BluetoothAdapter::Observer,
                              public ExtensionRegistryObserver {
  public:
   explicit BluetoothEventRouter(content::BrowserContext* context);
-  virtual ~BluetoothEventRouter();
+  ~BluetoothEventRouter() override;
 
   // Returns true if adapter_ has been initialized for testing or bluetooth
   // adapter is available for the current platform.
@@ -68,6 +68,17 @@ class BluetoothEventRouter : public device::BluetoothAdapter::Observer,
                             const base::Closure& callback,
                             const base::Closure& error_callback);
 
+  // Requests that the filter associated with discovery session that belongs
+  // to the extension with id |extension_id| be set to |discovery_filter|.
+  // Callback is called, if the filter was successfully updated.
+  // |error_callback| is called, if filter update failed.
+  void SetDiscoveryFilter(
+      scoped_ptr<device::BluetoothDiscoveryFilter> discovery_filter,
+      device::BluetoothAdapter* adapter,
+      const std::string& extension_id,
+      const base::Closure& callback,
+      const base::Closure& error_callback);
+
   // Called when a bluetooth event listener is added.
   void OnListenerAdded();
 
@@ -91,29 +102,28 @@ class BluetoothEventRouter : public device::BluetoothAdapter::Observer,
   }
 
   // Override from device::BluetoothAdapter::Observer.
-  virtual void AdapterPresentChanged(device::BluetoothAdapter* adapter,
-                                     bool present) OVERRIDE;
-  virtual void AdapterPoweredChanged(device::BluetoothAdapter* adapter,
-                                     bool has_power) OVERRIDE;
-  virtual void AdapterDiscoveringChanged(device::BluetoothAdapter* adapter,
-                                         bool discovering) OVERRIDE;
-  virtual void DeviceAdded(device::BluetoothAdapter* adapter,
-                           device::BluetoothDevice* device) OVERRIDE;
-  virtual void DeviceChanged(device::BluetoothAdapter* adapter,
-                             device::BluetoothDevice* device) OVERRIDE;
-  virtual void DeviceRemoved(device::BluetoothAdapter* adapter,
-                             device::BluetoothDevice* device) OVERRIDE;
+  void AdapterPresentChanged(device::BluetoothAdapter* adapter,
+                             bool present) override;
+  void AdapterPoweredChanged(device::BluetoothAdapter* adapter,
+                             bool has_power) override;
+  void AdapterDiscoveringChanged(device::BluetoothAdapter* adapter,
+                                 bool discovering) override;
+  void DeviceAdded(device::BluetoothAdapter* adapter,
+                   device::BluetoothDevice* device) override;
+  void DeviceChanged(device::BluetoothAdapter* adapter,
+                     device::BluetoothDevice* device) override;
+  void DeviceRemoved(device::BluetoothAdapter* adapter,
+                     device::BluetoothDevice* device) override;
 
   // Overridden from content::NotificationObserver.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // Overridden from ExtensionRegistryObserver.
-  virtual void OnExtensionUnloaded(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+  void OnExtensionUnloaded(content::BrowserContext* browser_context,
+                           const Extension* extension,
+                           UnloadedExtensionInfo::Reason reason) override;
 
   // BrowserContextKeyedAPI implementation.
   static const char* service_name() { return "BluetoothEventRouter"; }
@@ -134,6 +144,9 @@ class BluetoothEventRouter : public device::BluetoothAdapter::Observer,
       const base::Closure& callback,
       scoped_ptr<device::BluetoothDiscoverySession> discovery_session);
 
+  void OnSetDiscoveryFilter(const std::string& extension_id,
+                            const base::Closure& callback);
+
   content::BrowserContext* browser_context_;
   scoped_refptr<device::BluetoothAdapter> adapter_;
 
@@ -143,6 +156,12 @@ class BluetoothEventRouter : public device::BluetoothAdapter::Observer,
   typedef std::map<std::string, device::BluetoothDiscoverySession*>
       DiscoverySessionMap;
   DiscoverySessionMap discovery_session_map_;
+
+  typedef std::map<std::string, device::BluetoothDiscoveryFilter*>
+      PreSetFilterMap;
+
+  // Maps an extension id to it's pre-set discovery filter.
+  PreSetFilterMap pre_set_filter_map_;
 
   // Maps an extension id to its pairing delegate.
   typedef std::map<std::string, BluetoothApiPairingDelegate*>

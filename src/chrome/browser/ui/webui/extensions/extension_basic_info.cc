@@ -5,11 +5,11 @@
 #include "chrome/browser/ui/webui/extensions/extension_basic_info.h"
 
 #include "base/values.h"
-#include "chrome/common/extensions/manifest_url_handler.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_handlers/kiosk_mode_info.h"
 #include "extensions/common/manifest_handlers/offline_enabled_info.h"
 #include "extensions/common/manifest_handlers/options_page_info.h"
+#include "extensions/common/manifest_url_handlers.h"
 
 namespace {
 
@@ -43,7 +43,7 @@ void GetExtensionBasicInfo(const Extension* extension,
                    KioskModeInfo::IsKioskOnly(extension));
   info->SetBoolean(kOfflineEnabledKey,
                    OfflineEnabledInfo::IsOfflineEnabled(extension));
-  info->SetString(kVersionKey, extension->VersionString());
+  info->SetString(kVersionKey, extension->GetVersionForDisplay());
   info->SetString(kDescriptionKey, extension->description());
   info->SetString(
       kOptionsUrlKey,

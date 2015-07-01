@@ -8,11 +8,11 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
+#include "cc/playback/raster_source.h"
 #include "cc/quads/content_draw_quad_base.h"
-#include "cc/resources/picture_pile_impl.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/rect_f.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_f.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace cc {
 
@@ -20,7 +20,7 @@ namespace cc {
 class CC_EXPORT PictureDrawQuad : public ContentDrawQuadBase {
  public:
   PictureDrawQuad();
-  virtual ~PictureDrawQuad();
+  ~PictureDrawQuad() override;
 
   void SetNew(const SharedQuadState* shared_quad_state,
               const gfx::Rect& rect,
@@ -28,10 +28,11 @@ class CC_EXPORT PictureDrawQuad : public ContentDrawQuadBase {
               const gfx::Rect& visible_rect,
               const gfx::RectF& tex_coord_rect,
               const gfx::Size& texture_size,
+              bool nearest_neighbor,
               ResourceFormat texture_format,
               const gfx::Rect& content_rect,
               float contents_scale,
-              scoped_refptr<PicturePileImpl> picture_pile);
+              scoped_refptr<RasterSource> raster_source);
 
   void SetAll(const SharedQuadState* shared_quad_state,
               const gfx::Rect& rect,
@@ -40,23 +41,23 @@ class CC_EXPORT PictureDrawQuad : public ContentDrawQuadBase {
               bool needs_blending,
               const gfx::RectF& tex_coord_rect,
               const gfx::Size& texture_size,
+              bool nearest_neighbor,
               ResourceFormat texture_format,
               const gfx::Rect& content_rect,
               float contents_scale,
-              scoped_refptr<PicturePileImpl> picture_pile);
+              scoped_refptr<RasterSource> raster_source);
 
   gfx::Rect content_rect;
   float contents_scale;
-  scoped_refptr<PicturePileImpl> picture_pile;
+  scoped_refptr<RasterSource> raster_source;
   ResourceFormat texture_format;
 
-  virtual void IterateResources(const ResourceIteratorCallback& callback)
-      OVERRIDE;
+  void IterateResources(const ResourceIteratorCallback& callback) override;
 
   static const PictureDrawQuad* MaterialCast(const DrawQuad* quad);
 
  private:
-  virtual void ExtendValue(base::debug::TracedValue* value) const OVERRIDE;
+  void ExtendValue(base::trace_event::TracedValue* value) const override;
 };
 
 }  // namespace cc

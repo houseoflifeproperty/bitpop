@@ -22,8 +22,9 @@
 #ifndef CSSSelector_h
 #define CSSSelector_h
 
+#include "core/CoreExport.h"
 #include "core/dom/QualifiedName.h"
-#include "core/rendering/style/RenderStyleConstants.h"
+#include "core/style/ComputedStyleConstants.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -48,12 +49,9 @@ namespace blink {
     //   --> (relation == SubSelector)
     //     selectorText(): .b
     //
-    // Note that currently a bare selector such as ".a" has a relation() of Descendant. This is a bug - instead the relation should be
-    // "None".
-    //
     // The order of tagHistory() varies depending on the situation.
     // * Relations using combinators (http://www.w3.org/TR/css3-selectors/#combinators), such as descendant, sibling, etc., are parsed
-    //   right-to-left (in the example above, this is why .c is earlier in the tagHistory() chain than .a.b).
+    //   right-to-left (in the example above, this is why #c is earlier in the tagHistory() chain than .a.b).
     // * SubSelector relations are parsed left-to-right in most cases (such as the .a.b example above); a counter-example is the
     //   ::content pseudo-element. Most (all?) other pseudo elements and pseudo classes are parsed left-to-right.
     // * ShadowPseudo relations are parsed right-to-left. Example: summary::-webkit-details-marker is parsed as:
@@ -81,12 +79,12 @@ namespace blink {
     // It appears this is used only for pseudo elements that appear in user-agent shadow DOM. They are not exposed to author-created
     // shadow DOM.
 
-    class CSSSelector {
-        WTF_MAKE_FAST_ALLOCATED;
+    class CORE_EXPORT CSSSelector {
+        WTF_MAKE_FAST_ALLOCATED(CSSSelector);
     public:
         CSSSelector();
         CSSSelector(const CSSSelector&);
-        explicit CSSSelector(const QualifiedName&, bool tagIsForNamespaceRule = false);
+        explicit CSSSelector(const QualifiedName&, bool tagIsImplicit = false);
 
         ~CSSSelector();
 
@@ -106,35 +104,35 @@ namespace blink {
 
         /* how the attribute value has to match.... Default is Exact */
         enum Match {
-            Unknown = 0,
+            Unknown,
             Tag, // Example: div
             Id, // Example: #id
             Class, // example: .class
             PseudoClass, // Example:  :nth-child(2)
             PseudoElement, // Example: ::first-line
             PagePseudoClass, // ??
-            Exact, // Example: E[foo="bar"]
-            Set, // Example: E[foo]
-            Hyphen, // Example: E[foo|="bar"]
-            List, // Example: E[foo~="bar"]
-            Contain, // css3: E[foo*="bar"]
-            Begin, // css3: E[foo^="bar"]
-            End, // css3: E[foo$="bar"]
-            FirstAttributeSelectorMatch = Exact,
+            AttributeExact, // Example: E[foo="bar"]
+            AttributeSet, // Example: E[foo]
+            AttributeHyphen, // Example: E[foo|="bar"]
+            AttributeList, // Example: E[foo~="bar"]
+            AttributeContain, // css3: E[foo*="bar"]
+            AttributeBegin, // css3: E[foo^="bar"]
+            AttributeEnd, // css3: E[foo$="bar"]
+            FirstAttributeSelectorMatch = AttributeExact,
         };
 
         enum Relation {
-            Descendant = 0, // "Space" combinator
+            SubSelector, // No combinator
+            Descendant, // "Space" combinator
             Child, // > combinator
             DirectAdjacent, // + combinator
             IndirectAdjacent, // ~ combinator
-            SubSelector, // "No space" combinator
             ShadowPseudo, // Special case of shadow DOM pseudo elements / shadow pseudo element
             ShadowDeep // /deep/ combinator
         };
 
         enum PseudoType {
-            PseudoNotParsed = 0,
+            PseudoNotParsed,
             PseudoUnknown,
             PseudoEmpty,
             PseudoFirstChild,
@@ -180,10 +178,8 @@ namespace blink {
             PseudoRoot,
             PseudoScope,
             PseudoScrollbar,
-            PseudoScrollbarBack,
             PseudoScrollbarButton,
             PseudoScrollbarCorner,
-            PseudoScrollbarForward,
             PseudoScrollbarThumb,
             PseudoScrollbarTrack,
             PseudoScrollbarTrackPiece,
@@ -207,7 +203,6 @@ namespace blink {
             PseudoFullScreenAncestor,
             PseudoInRange,
             PseudoOutOfRange,
-            PseudoUserAgentCustomElement,
             PseudoWebKitCustomElement,
             PseudoCue,
             PseudoFutureCue,
@@ -282,7 +277,6 @@ namespace blink {
         void setAttribute(const QualifiedName&, AttributeMatchType);
         void setArgument(const AtomicString&);
         void setSelectorList(PassOwnPtr<CSSSelectorList>);
-        void setMatchUserAgentOnly();
 
         bool parseNth() const;
         bool matchNth(int count) const;
@@ -290,14 +284,15 @@ namespace blink {
         bool matchesPseudoElement() const;
         bool isCustomPseudoElement() const;
         bool isDirectAdjacentSelector() const { return m_relation == DirectAdjacent; }
+        bool isAdjacentSelector() const { return m_relation == DirectAdjacent || m_relation == IndirectAdjacent; }
+        bool isShadowSelector() const { return m_relation == ShadowPseudo || m_relation == ShadowDeep; }
         bool isSiblingSelector() const;
         bool isAttributeSelector() const;
         bool isContentPseudoElement() const;
         bool isShadowPseudoElement() const;
         bool isHostPseudoClass() const;
-
-        // FIXME: selectors with no tagHistory() get a relation() of Descendant (and sometimes even SubSelector). It should instead be
-        // None.
+        bool isTreeBoundaryCrossing() const;
+        bool isInsertionPointCrossing() const;
         Relation relation() const { return static_cast<Relation>(m_relation); }
         void setRelation(Relation relation)
         {
@@ -320,6 +315,11 @@ namespace blink {
         // http://dev.w3.org/csswg/selectors4/#compound
         bool isCompound() const;
 
+        bool isCommonPseudoClass() const;
+
+        enum LinkMatchMask { MatchLink = 1, MatchVisited = 2, MatchAll = MatchLink | MatchVisited };
+        unsigned computeLinkMatchType() const;
+
         bool isForPage() const { return m_isForPage; }
         void setForPage() { m_isForPage = true; }
 
@@ -335,7 +335,7 @@ namespace blink {
         unsigned m_isLastInTagHistory     : 1;
         unsigned m_hasRareData            : 1;
         unsigned m_isForPage              : 1;
-        unsigned m_tagIsForNamespaceRule  : 1;
+        unsigned m_tagIsImplicit          : 1;
         unsigned m_relationIsAffectedByPseudoContent  : 1;
 
         unsigned specificityForOneSelector() const;
@@ -404,7 +404,7 @@ inline bool CSSSelector::matchesPseudoElement() const
 
 inline bool CSSSelector::isCustomPseudoElement() const
 {
-    return m_match == PseudoElement && (m_pseudoType == PseudoUserAgentCustomElement || m_pseudoType == PseudoWebKitCustomElement);
+    return m_match == PseudoElement && m_pseudoType == PseudoWebKitCustomElement;
 }
 
 inline bool CSSSelector::isHostPseudoClass() const
@@ -445,6 +445,17 @@ inline bool CSSSelector::isShadowPseudoElement() const
     return m_match == PseudoElement && pseudoType() == PseudoShadow;
 }
 
+inline bool CSSSelector::isTreeBoundaryCrossing() const
+{
+    return m_match == PseudoClass && (pseudoType() == PseudoHost || pseudoType() == PseudoHostContext);
+}
+
+inline bool CSSSelector::isInsertionPointCrossing() const
+{
+    return (m_match == PseudoClass && pseudoType() == PseudoHostContext)
+        || (m_match == PseudoElement && pseudoType() == PseudoContent);
+}
+
 inline void CSSSelector::setValue(const AtomicString& value)
 {
     ASSERT(m_match != Tag);
@@ -461,7 +472,7 @@ inline void CSSSelector::setValue(const AtomicString& value)
 }
 
 inline CSSSelector::CSSSelector()
-    : m_relation(Descendant)
+    : m_relation(SubSelector)
     , m_match(Unknown)
     , m_pseudoType(PseudoNotParsed)
     , m_parsedNth(false)
@@ -469,13 +480,13 @@ inline CSSSelector::CSSSelector()
     , m_isLastInTagHistory(true)
     , m_hasRareData(false)
     , m_isForPage(false)
-    , m_tagIsForNamespaceRule(false)
+    , m_tagIsImplicit(false)
     , m_relationIsAffectedByPseudoContent(false)
 {
 }
 
-inline CSSSelector::CSSSelector(const QualifiedName& tagQName, bool tagIsForNamespaceRule)
-    : m_relation(Descendant)
+inline CSSSelector::CSSSelector(const QualifiedName& tagQName, bool tagIsImplicit)
+    : m_relation(SubSelector)
     , m_match(Tag)
     , m_pseudoType(PseudoNotParsed)
     , m_parsedNth(false)
@@ -483,7 +494,7 @@ inline CSSSelector::CSSSelector(const QualifiedName& tagQName, bool tagIsForName
     , m_isLastInTagHistory(true)
     , m_hasRareData(false)
     , m_isForPage(false)
-    , m_tagIsForNamespaceRule(tagIsForNamespaceRule)
+    , m_tagIsImplicit(tagIsImplicit)
     , m_relationIsAffectedByPseudoContent(false)
 {
     m_data.m_tagQName = tagQName.impl();
@@ -499,7 +510,7 @@ inline CSSSelector::CSSSelector(const CSSSelector& o)
     , m_isLastInTagHistory(o.m_isLastInTagHistory)
     , m_hasRareData(o.m_hasRareData)
     , m_isForPage(o.m_isForPage)
-    , m_tagIsForNamespaceRule(o.m_tagIsForNamespaceRule)
+    , m_tagIsImplicit(o.m_tagIsImplicit)
     , m_relationIsAffectedByPseudoContent(o.m_relationIsAffectedByPseudoContent)
 {
     if (o.m_match == Tag) {

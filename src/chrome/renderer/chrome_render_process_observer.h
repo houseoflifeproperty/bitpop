@@ -10,10 +10,10 @@
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/metrics/field_trial.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "content/public/renderer/render_process_observer.h"
 
-class ChromeContentRendererClient;
 class GURL;
 struct ContentSettings;
 
@@ -25,11 +25,11 @@ class ResourceDispatcherDelegate;
 // a RenderView) for Chrome specific messages that the content layer doesn't
 // happen.  If a few messages are related, they should probably have their own
 // observer.
-class ChromeRenderProcessObserver : public content::RenderProcessObserver {
+class ChromeRenderProcessObserver : public content::RenderProcessObserver,
+                                    public base::FieldTrialList::Observer {
  public:
-  explicit ChromeRenderProcessObserver(
-      ChromeContentRendererClient* client);
-  virtual ~ChromeRenderProcessObserver();
+  ChromeRenderProcessObserver();
+  ~ChromeRenderProcessObserver() override;
 
   static bool is_incognito_process() { return is_incognito_process_; }
 
@@ -39,9 +39,13 @@ class ChromeRenderProcessObserver : public content::RenderProcessObserver {
 
  private:
   // RenderProcessObserver implementation.
-  virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void WebKitInitialized() OVERRIDE;
-  virtual void OnRenderProcessShutdown() OVERRIDE;
+  bool OnControlMessageReceived(const IPC::Message& message) override;
+  void WebKitInitialized() override;
+  void OnRenderProcessShutdown() override;
+
+  // Observer implementation.
+  void OnFieldTrialGroupFinalized(const std::string& trial_name,
+                                  const std::string& group_name) override;
 
   void OnSetIsIncognitoProcess(bool is_incognito_process);
   void OnSetContentSettingsForCurrentURL(
@@ -54,9 +58,6 @@ class ChromeRenderProcessObserver : public content::RenderProcessObserver {
 
   static bool is_incognito_process_;
   scoped_ptr<content::ResourceDispatcherDelegate> resource_delegate_;
-  ChromeContentRendererClient* client_;
-  // If true, the web cache shall be cleared before the next navigation event.
-  bool clear_cache_pending_;
   RendererContentSettingRules content_setting_rules_;
 
   bool webkit_initialized_;

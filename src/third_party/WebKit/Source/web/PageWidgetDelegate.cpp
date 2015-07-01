@@ -33,13 +33,18 @@
 
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/layout/LayoutView.h"
+#include "core/layout/compositing/DeprecatedPaintLayerCompositor.h"
 #include "core/page/AutoscrollController.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
+#include "core/paint/TransformRecorder.h"
 #include "platform/Logging.h"
 #include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/paint/ClipRecorder.h"
+#include "platform/graphics/paint/DisplayItemListContextRecorder.h"
+#include "platform/graphics/paint/DrawingRecorder.h"
+#include "platform/transforms/AffineTransform.h"
 #include "public/web/WebInputEvent.h"
 #include "web/PageOverlayList.h"
 #include "web/WebInputEventConversion.h"
@@ -47,97 +52,90 @@
 
 namespace blink {
 
-static inline FrameView* rootFrameView(Page* page, LocalFrame* rootFrame)
+void PageWidgetDelegate::animate(Page& page, double monotonicFrameBeginTime, LocalFrame& root)
 {
-    if (rootFrame)
-        return rootFrame->view();
-    if (!page)
-        return 0;
-    if (!page->mainFrame()->isLocalFrame())
-        return 0;
-    return toLocalFrame(page->mainFrame())->view();
-}
-
-void PageWidgetDelegate::animate(Page* page, double monotonicFrameBeginTime, LocalFrame* rootFrame)
-{
-    RefPtr<FrameView> view = rootFrameView(page, rootFrame);
+    RefPtrWillBeRawPtr<FrameView> view = root.view();
     if (!view)
         return;
-    page->autoscrollController().animate(monotonicFrameBeginTime);
-    page->animator().serviceScriptedAnimations(monotonicFrameBeginTime);
+    page.autoscrollController().animate(monotonicFrameBeginTime);
+    page.animator().serviceScriptedAnimations(monotonicFrameBeginTime);
 }
 
-void PageWidgetDelegate::layout(Page* page, LocalFrame* rootFrame)
+void PageWidgetDelegate::layout(Page& page, LocalFrame& root)
 {
-    if (!page)
-        return;
-
-    if (!rootFrame) {
-        if (!page->mainFrame() || !page->mainFrame()->isLocalFrame())
-            return;
-        rootFrame = toLocalFrame(page->mainFrame());
-    }
-
-    page->animator().updateLayoutAndStyleForPainting(rootFrame);
+    page.animator().updateLayoutAndStyleForPainting(&root);
 }
 
-void PageWidgetDelegate::paint(Page* page, PageOverlayList* overlays, WebCanvas* canvas, const WebRect& rect, CanvasBackground background, LocalFrame* rootFrame)
+void PageWidgetDelegate::paint(Page& page, PageOverlayList* overlays, WebCanvas* canvas,
+    const WebRect& rect, LocalFrame& root)
 {
     if (rect.isEmpty())
         return;
-    GraphicsContext gc(canvas);
-    gc.setCertainlyOpaque(background == Opaque);
-    gc.applyDeviceScaleFactor(page->deviceScaleFactor());
-    gc.setDeviceScaleFactor(page->deviceScaleFactor());
-    IntRect dirtyRect(rect);
-    gc.save(); // Needed to save the canvas, not the GraphicsContext.
-    FrameView* view = rootFrameView(page, rootFrame);
-    if (view) {
-        gc.clip(dirtyRect);
-        view->paint(&gc, dirtyRect);
-        if (overlays)
-            overlays->paintWebFrame(gc);
-    } else {
-        gc.fillRect(dirtyRect, Color::white);
+
+    OwnPtr<GraphicsContext> context = GraphicsContext::deprecatedCreateWithCanvas(canvas);
+    {
+        DisplayItemListContextRecorder contextRecorder(*context);
+        GraphicsContext& paintContext = contextRecorder.context();
+
+        // FIXME: device scale factor settings are layering violations and should not
+        // be used within Blink paint code.
+        float scaleFactor = page.deviceScaleFactor();
+        paintContext.setDeviceScaleFactor(scaleFactor);
+
+        AffineTransform scale;
+        scale.scale(scaleFactor);
+        TransformRecorder scaleRecorder(paintContext, root, scale);
+
+        IntRect dirtyRect(rect);
+        FrameView* view = root.view();
+        if (view) {
+            ClipRecorder clipRecorder(paintContext, root, DisplayItem::PageWidgetDelegateClip, LayoutRect(dirtyRect));
+
+            view->paint(&paintContext, dirtyRect);
+            if (overlays)
+                overlays->paintWebFrame(paintContext);
+        } else {
+            DrawingRecorder drawingRecorder(paintContext, root, DisplayItem::PageWidgetDelegateBackgroundFallback, dirtyRect);
+            if (!drawingRecorder.canUseCachedDrawing())
+                paintContext.fillRect(dirtyRect, Color::white);
+        }
     }
-    gc.restore();
 }
 
-bool PageWidgetDelegate::handleInputEvent(Page* page, PageWidgetEventHandler& handler, const WebInputEvent& event, LocalFrame* rootFrame)
+bool PageWidgetDelegate::handleInputEvent(PageWidgetEventHandler& handler, const WebInputEvent& event, LocalFrame* root)
 {
-    LocalFrame* frame = rootFrame;
-    if (!frame)
-        frame = page && page->mainFrame()->isLocalFrame() ? toLocalFrame(page->mainFrame()) : 0;
     switch (event.type) {
 
     // FIXME: WebKit seems to always return false on mouse events processing
     // methods. For now we'll assume it has processed them (as we are only
     // interested in whether keyboard events are processed).
+    // FIXME: Why do we return true when there is no root or the root is
+    // detached?
     case WebInputEvent::MouseMove:
-        if (!frame || !frame->view())
+        if (!root || !root->view())
             return true;
-        handler.handleMouseMove(*frame, static_cast<const WebMouseEvent&>(event));
+        handler.handleMouseMove(*root, static_cast<const WebMouseEvent&>(event));
         return true;
     case WebInputEvent::MouseLeave:
-        if (!frame || !frame->view())
+        if (!root || !root->view())
             return true;
-        handler.handleMouseLeave(*frame, static_cast<const WebMouseEvent&>(event));
+        handler.handleMouseLeave(*root, static_cast<const WebMouseEvent&>(event));
         return true;
     case WebInputEvent::MouseDown:
-        if (!frame || !frame->view())
+        if (!root || !root->view())
             return true;
-        handler.handleMouseDown(*frame, static_cast<const WebMouseEvent&>(event));
+        handler.handleMouseDown(*root, static_cast<const WebMouseEvent&>(event));
         return true;
     case WebInputEvent::MouseUp:
-        if (!frame || !frame->view())
+        if (!root || !root->view())
             return true;
-        handler.handleMouseUp(*frame, static_cast<const WebMouseEvent&>(event));
+        handler.handleMouseUp(*root, static_cast<const WebMouseEvent&>(event));
         return true;
 
     case WebInputEvent::MouseWheel:
-        if (!frame || !frame->view())
+        if (!root || !root->view())
             return false;
-        return handler.handleMouseWheel(*frame, static_cast<const WebMouseWheelEvent&>(event));
+        return handler.handleMouseWheel(*root, static_cast<const WebMouseWheelEvent&>(event));
 
     case WebInputEvent::RawKeyDown:
     case WebInputEvent::KeyDown:
@@ -149,7 +147,6 @@ bool PageWidgetDelegate::handleInputEvent(Page* page, PageWidgetEventHandler& ha
     case WebInputEvent::GestureScrollBegin:
     case WebInputEvent::GestureScrollEnd:
     case WebInputEvent::GestureScrollUpdate:
-    case WebInputEvent::GestureScrollUpdateWithoutPropagation:
     case WebInputEvent::GestureFlingStart:
     case WebInputEvent::GestureFlingCancel:
     case WebInputEvent::GestureTap:
@@ -167,18 +164,15 @@ bool PageWidgetDelegate::handleInputEvent(Page* page, PageWidgetEventHandler& ha
     case WebInputEvent::TouchMove:
     case WebInputEvent::TouchEnd:
     case WebInputEvent::TouchCancel:
-        if (!frame || !frame->view())
+        if (!root || !root->view())
             return false;
-        return handler.handleTouchEvent(*frame, static_cast<const WebTouchEvent&>(event));
-
+        return handler.handleTouchEvent(*root, static_cast<const WebTouchEvent&>(event));
     case WebInputEvent::GesturePinchBegin:
     case WebInputEvent::GesturePinchEnd:
     case WebInputEvent::GesturePinchUpdate:
-        // FIXME: Once PlatformGestureEvent is updated to support pinch, this
-        // should call handleGestureEvent, just like it currently does for
-        // gesture scroll.
+        // Touchscreen pinch events are currently not handled in main thread. Once they are,
+        // these should be passed to |handleGestureEvent| similar to gesture scroll events.
         return false;
-
     default:
         return false;
     }

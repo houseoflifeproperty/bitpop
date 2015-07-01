@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "content/renderer/media/mock_data_channel_impl.h"
 #include "content/renderer/media/webrtc/mock_peer_connection_dependency_factory.h"
 
 using testing::_;
@@ -25,21 +26,17 @@ namespace content {
 
 class MockStreamCollection : public webrtc::StreamCollectionInterface {
  public:
-  virtual size_t count() OVERRIDE {
-    return streams_.size();
-  }
-  virtual MediaStreamInterface* at(size_t index) OVERRIDE {
-    return streams_[index];
-  }
-  virtual MediaStreamInterface* find(const std::string& label) OVERRIDE {
+  size_t count() override { return streams_.size(); }
+  MediaStreamInterface* at(size_t index) override { return streams_[index]; }
+  MediaStreamInterface* find(const std::string& label) override {
     for (size_t i = 0; i < streams_.size(); ++i) {
       if (streams_[i]->label() == label)
         return streams_[i];
     }
     return NULL;
   }
-  virtual webrtc::MediaStreamTrackInterface* FindAudioTrack(
-      const std::string& id) OVERRIDE {
+  webrtc::MediaStreamTrackInterface* FindAudioTrack(
+      const std::string& id) override {
     for (size_t i = 0; i < streams_.size(); ++i) {
       webrtc::MediaStreamTrackInterface* track =
           streams_.at(i)->FindAudioTrack(id);
@@ -48,8 +45,8 @@ class MockStreamCollection : public webrtc::StreamCollectionInterface {
     }
     return NULL;
   }
-  virtual webrtc::MediaStreamTrackInterface* FindVideoTrack(
-      const std::string& id) OVERRIDE {
+  webrtc::MediaStreamTrackInterface* FindVideoTrack(
+      const std::string& id) override {
     for (size_t i = 0; i < streams_.size(); ++i) {
       webrtc::MediaStreamTrackInterface* track =
           streams_.at(i)->FindVideoTrack(id);
@@ -72,89 +69,12 @@ class MockStreamCollection : public webrtc::StreamCollectionInterface {
   }
 
  protected:
-  virtual ~MockStreamCollection() {}
+  ~MockStreamCollection() override {}
 
  private:
   typedef std::vector<rtc::scoped_refptr<MediaStreamInterface> >
       StreamVector;
   StreamVector streams_;
-};
-
-class MockDataChannel : public webrtc::DataChannelInterface {
- public:
-  MockDataChannel(const std::string& label,
-                  const webrtc::DataChannelInit* config)
-      : label_(label),
-        reliable_(config->reliable),
-        state_(webrtc::DataChannelInterface::kConnecting),
-        config_(*config) {
-  }
-
-  virtual void RegisterObserver(
-      webrtc::DataChannelObserver* observer) OVERRIDE {
-  }
-
-  virtual void UnregisterObserver() OVERRIDE {
-  }
-
-  virtual std::string label() const OVERRIDE {
-    return label_;
-  }
-
-  virtual bool reliable() const OVERRIDE {
-    return reliable_;
-  }
-
-  virtual bool ordered() const OVERRIDE {
-    return config_.ordered;
-  }
-
-  virtual unsigned short maxRetransmitTime() const OVERRIDE {
-    return config_.maxRetransmitTime;
-  }
-
-  virtual unsigned short maxRetransmits() const OVERRIDE {
-    return config_.maxRetransmits;
-  }
-
-  virtual std::string protocol() const OVERRIDE {
-    return config_.protocol;
-  }
-
-  virtual bool negotiated() const OVERRIDE {
-    return config_.negotiated;
-  }
-
-  virtual int id() const OVERRIDE {
-    NOTIMPLEMENTED();
-    return 0;
-  }
-
-  virtual DataState state() const OVERRIDE {
-    return state_;
-  }
-
-  virtual uint64 buffered_amount() const OVERRIDE {
-    NOTIMPLEMENTED();
-    return 0;
-  }
-
-  virtual void Close() OVERRIDE {
-    state_ = webrtc::DataChannelInterface::kClosing;
-  }
-
-  virtual bool Send(const webrtc::DataBuffer& buffer) OVERRIDE {
-    return state_ == webrtc::DataChannelInterface::kOpen;
-  }
-
- protected:
-  virtual ~MockDataChannel() {}
-
- private:
-  std::string label_;
-  bool reliable_;
-  webrtc::DataChannelInterface::DataState state_;
-  webrtc::DataChannelInit config_;
 };
 
 class MockDtmfSender : public DtmfSenderInterface {
@@ -164,34 +84,26 @@ class MockDtmfSender : public DtmfSenderInterface {
         observer_(NULL),
         duration_(0),
         inter_tone_gap_(0) {}
-  virtual void RegisterObserver(
-      DtmfSenderObserverInterface* observer) OVERRIDE {
+  void RegisterObserver(DtmfSenderObserverInterface* observer) override {
     observer_ = observer;
   }
-  virtual void UnregisterObserver() OVERRIDE {
-    observer_ = NULL;
-  }
-  virtual bool CanInsertDtmf() OVERRIDE {
-    return true;
-  }
-  virtual bool InsertDtmf(const std::string& tones, int duration,
-                          int inter_tone_gap) OVERRIDE {
+  void UnregisterObserver() override { observer_ = NULL; }
+  bool CanInsertDtmf() override { return true; }
+  bool InsertDtmf(const std::string& tones,
+                  int duration,
+                  int inter_tone_gap) override {
     tones_ = tones;
     duration_ = duration;
     inter_tone_gap_ = inter_tone_gap;
     return true;
   }
-  virtual const AudioTrackInterface* track() const OVERRIDE {
-    return track_.get();
-  }
-  virtual std::string tones() const OVERRIDE {
-    return tones_;
-  }
-  virtual int duration() const OVERRIDE { return duration_; }
-  virtual int inter_tone_gap() const OVERRIDE { return inter_tone_gap_; }
+  const AudioTrackInterface* track() const override { return track_.get(); }
+  std::string tones() const override { return tones_; }
+  int duration() const override { return duration_; }
+  int inter_tone_gap() const override { return inter_tone_gap_; }
 
  protected:
-  virtual ~MockDtmfSender() {}
+  ~MockDtmfSender() override {}
 
  private:
   rtc::scoped_refptr<AudioTrackInterface> track_;
@@ -205,14 +117,16 @@ const char MockPeerConnectionImpl::kDummyOffer[] = "dummy offer";
 const char MockPeerConnectionImpl::kDummyAnswer[] = "dummy answer";
 
 MockPeerConnectionImpl::MockPeerConnectionImpl(
-    MockPeerConnectionDependencyFactory* factory)
+    MockPeerConnectionDependencyFactory* factory,
+    webrtc::PeerConnectionObserver* observer)
     : dependency_factory_(factory),
       local_streams_(new rtc::RefCountedObject<MockStreamCollection>),
       remote_streams_(new rtc::RefCountedObject<MockStreamCollection>),
       hint_audio_(false),
       hint_video_(false),
       getstats_result_(true),
-      sdp_mline_index_(-1) {
+      sdp_mline_index_(-1),
+      observer_(observer) {
   ON_CALL(*this, SetLocalDescription(_, _)).WillByDefault(testing::Invoke(
       this, &MockPeerConnectionImpl::SetLocalDescriptionWorker));
   ON_CALL(*this, SetRemoteDescription(_, _)).WillByDefault(testing::Invoke(
@@ -231,9 +145,7 @@ MockPeerConnectionImpl::remote_streams() {
   return remote_streams_;
 }
 
-bool MockPeerConnectionImpl::AddStream(
-    MediaStreamInterface* local_stream,
-    const MediaConstraintsInterface* constraints) {
+bool MockPeerConnectionImpl::AddStream(MediaStreamInterface* local_stream) {
   DCHECK(stream_label_.empty());
   stream_label_ = local_stream->label();
   local_streams_->AddStream(local_stream);
@@ -269,14 +181,13 @@ bool MockPeerConnectionImpl::GetStats(
     return false;
 
   DCHECK_EQ(kStatsOutputLevelStandard, level);
-  webrtc::StatsReport report1, report2;
-  report1.id = "1234";
-  report1.type = "ssrc";
-  report1.timestamp = 42;
-  report1.values.push_back(
-      webrtc::StatsReport::Value(
-          webrtc::StatsReport::kStatsValueNameFingerprint,
-          "trackvalue"));
+  webrtc::StatsReport report1(webrtc::StatsReport::NewTypedId(
+      webrtc::StatsReport::kStatsReportTypeSsrc, "1234"));
+  webrtc::StatsReport report2(webrtc::StatsReport::NewTypedId(
+      webrtc::StatsReport::kStatsReportTypeSession, "nontrack"));
+  report1.set_timestamp(42);
+  report1.AddString(webrtc::StatsReport::kStatsValueNameFingerprint,
+                    "trackvalue");
 
   webrtc::StatsReports reports;
   reports.push_back(&report1);
@@ -284,13 +195,9 @@ bool MockPeerConnectionImpl::GetStats(
   // If selector is given, we pass back one report.
   // If selector is not given, we pass back two.
   if (!track) {
-    report2.id = "nontrack";
-    report2.type = "generic";
-    report2.timestamp = 44;
-    report2.values.push_back(
-        webrtc::StatsReport::Value(
-            webrtc::StatsReport::kStatsValueNameFingerprintAlgorithm,
-            "somevalue"));
+    report2.set_timestamp(44);
+    report2.AddString(webrtc::StatsReport::kStatsValueNameFingerprintAlgorithm,
+                      "somevalue");
     reports.push_back(&report2);
   }
 

@@ -191,7 +191,7 @@ bool CertSubjectCommonNameHasNull(PCCERT_CONTEXT cert) {
   DWORD name_info_size = 0;
   BOOL rv;
   rv = CryptDecodeObjectEx(X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
-                           X509_NAME,
+                           WINCRYPT_X509_NAME,
                            cert->pCertInfo->Subject.pbData,
                            cert->pCertInfo->Subject.cbData,
                            CRYPT_DECODE_ALLOC_FLAG | CRYPT_DECODE_NOCOPY_FLAG,
@@ -559,9 +559,19 @@ bool CertVerifyProcWin::SupportsAdditionalTrustAnchors() const {
   return false;
 }
 
+bool CertVerifyProcWin::SupportsOCSPStapling() const {
+  // CERT_OCSP_RESPONSE_PROP_ID is only implemented on Vista+, but it can be
+  // set on Windows XP without error. There is some overhead from the server
+  // sending the OCSP response if it supports the extension, for the subset of
+  // XP clients who will request it but be unable to use it, but this is an
+  // acceptable trade-off for simplicity of implementation.
+  return true;
+}
+
 int CertVerifyProcWin::VerifyInternal(
     X509Certificate* cert,
     const std::string& hostname,
+    const std::string& ocsp_response,
     int flags,
     CRLSet* crl_set,
     const CertificateList& additional_trust_anchors,
@@ -633,6 +643,18 @@ int CertVerifyProcWin::VerifyInternal(
     chain_engine.reset(TestRootCerts::GetInstance()->GetChainEngine());
 
   ScopedPCCERT_CONTEXT cert_list(cert->CreateOSCertChainForCert());
+
+  if (!ocsp_response.empty()) {
+    // Attach the OCSP response to the chain.
+    CRYPT_DATA_BLOB ocsp_response_blob;
+    ocsp_response_blob.cbData = ocsp_response.size();
+    ocsp_response_blob.pbData =
+        reinterpret_cast<BYTE*>(const_cast<char*>(ocsp_response.data()));
+    CertSetCertificateContextProperty(
+        cert_list.get(), CERT_OCSP_RESPONSE_PROP_ID,
+        CERT_SET_PROPERTY_IGNORE_PERSIST_ERROR_FLAG, &ocsp_response_blob);
+  }
+
   PCCERT_CHAIN_CONTEXT chain_context;
   // IE passes a non-NULL pTime argument that specifies the current system
   // time.  IE passes CERT_CHAIN_REVOCATION_CHECK_CHAIN_EXCLUDE_ROOT as the
@@ -741,7 +763,7 @@ int CertVerifyProcWin::VerifyInternal(
   if (CertSubjectCommonNameHasNull(cert_handle))
     verify_result->cert_status |= CERT_STATUS_INVALID;
 
-  std::wstring wstr_hostname = base::ASCIIToWide(hostname);
+  base::string16 hostname16 = base::ASCIIToUTF16(hostname);
 
   SSL_EXTRA_CERT_CHAIN_POLICY_PARA extra_policy_para;
   memset(&extra_policy_para, 0, sizeof(extra_policy_para));
@@ -752,7 +774,7 @@ int CertVerifyProcWin::VerifyInternal(
   extra_policy_para.fdwChecks =
       0x00001000;  // SECURITY_FLAG_IGNORE_CERT_CN_INVALID
   extra_policy_para.pwszServerName =
-      const_cast<wchar_t*>(wstr_hostname.c_str());
+      const_cast<base::char16*>(hostname16.c_str());
 
   CERT_CHAIN_POLICY_PARA policy_para;
   memset(&policy_para, 0, sizeof(policy_para));

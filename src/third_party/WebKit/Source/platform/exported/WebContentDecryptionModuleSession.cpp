@@ -28,34 +28,12 @@
 
 namespace blink {
 
-static void ReportError(WebContentDecryptionModuleResult result)
-{
-    result.completeWithError(WebContentDecryptionModuleExceptionUnknownError, 0, "Not implemented.");
-}
-
 WebContentDecryptionModuleSession::~WebContentDecryptionModuleSession()
 {
 }
 
 WebContentDecryptionModuleSession::Client::~Client()
 {
-}
-
-// FIXME: Remove the default implementations of these methods once the new
-// methods are implemented in Chromium.
-void WebContentDecryptionModuleSession::initializeNewSession(const WebString& initDataType, const unsigned char* initData, size_t initDataLength, const WebString& sessionType, WebContentDecryptionModuleResult result)
-{
-    ReportError(result);
-}
-
-void WebContentDecryptionModuleSession::update(const unsigned char* response, size_t responseLength, WebContentDecryptionModuleResult result)
-{
-    ReportError(result);
-}
-
-void WebContentDecryptionModuleSession::release(WebContentDecryptionModuleResult result)
-{
-    ReportError(result);
 }
 
 } // namespace blink

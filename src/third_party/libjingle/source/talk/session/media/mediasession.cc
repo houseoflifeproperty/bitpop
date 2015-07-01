@@ -34,14 +34,13 @@
 
 #include "talk/media/base/constants.h"
 #include "talk/media/base/cryptoparams.h"
-#include "talk/p2p/base/constants.h"
 #include "talk/session/media/channelmanager.h"
 #include "talk/session/media/srtpfilter.h"
-#include "talk/xmpp/constants.h"
 #include "webrtc/base/helpers.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/stringutils.h"
+#include "webrtc/p2p/base/constants.h"
 
 #ifdef HAVE_SCTP
 #include "talk/media/sctp/sctpdataengine.h"
@@ -72,6 +71,8 @@ const char kMediaProtocolRtpPrefix[] = "RTP/";
 
 const char kMediaProtocolSctp[] = "SCTP";
 const char kMediaProtocolDtlsSctp[] = "DTLS/SCTP";
+const char kMediaProtocolUdpDtlsSctp[] = "UDP/DTLS/SCTP";
+const char kMediaProtocolTcpDtlsSctp[] = "TCP/DTLS/SCTP";
 
 static bool IsMediaContentOfType(const ContentInfo* content,
                                  MediaType media_type) {
@@ -223,12 +224,11 @@ static bool GenerateCname(const StreamParamsVec& params_vec,
     if (synch_label != stream_it->sync_label)
       continue;
 
-    StreamParams param;
     // groupid is empty for StreamParams generated using
     // MediaSessionDescriptionFactory.
-    if (GetStreamByIds(params_vec, "", stream_it->id,
-                       &param)) {
-      *cname = param.cname;
+    const StreamParams* param = GetStreamByIds(params_vec, "", stream_it->id);
+    if (param) {
+      *cname = param->cname;
       return true;
     }
   }
@@ -255,7 +255,7 @@ static void GenerateSsrcs(const StreamParamsVec& params_vec,
     uint32 candidate;
     do {
       candidate = rtc::CreateRandomNonZeroId();
-    } while (GetStreamBySsrc(params_vec, candidate, NULL) ||
+    } while (GetStreamBySsrc(params_vec, candidate) ||
              std::count(ssrcs->begin(), ssrcs->end(), candidate) > 0);
     ssrcs->push_back(candidate);
   }
@@ -271,7 +271,7 @@ static bool GenerateSctpSid(const StreamParamsVec& params_vec,
   }
   while (true) {
     uint32 candidate = rtc::CreateRandomNonZeroId() % kMaxSctpSid;
-    if (!GetStreamBySsrc(params_vec, candidate, NULL)) {
+    if (!GetStreamBySsrc(params_vec, candidate)) {
       *sid = candidate;
       return true;
     }
@@ -463,11 +463,11 @@ static bool AddStreamParams(
     if (stream_it->type != media_type)
       continue;  // Wrong media type.
 
-    StreamParams param;
+    const StreamParams* param =
+        GetStreamByIds(*current_streams, "", stream_it->id);
     // groupid is empty for StreamParams generated using
     // MediaSessionDescriptionFactory.
-    if (!GetStreamByIds(*current_streams, "", stream_it->id,
-                        &param)) {
+    if (!param) {
       // This is a new stream.
       // Get a CNAME. Either new or same as one of the other synched streams.
       std::string cname;
@@ -507,7 +507,7 @@ static bool AddStreamParams(
       // This is necessary so that we can use the CNAME for other media types.
       current_streams->push_back(stream_param);
     } else {
-      content_description->AddStream(param);
+      content_description->AddStream(*param);
     }
   }
   return true;
@@ -752,6 +752,24 @@ static bool CreateMediaContentOffer(
 }
 
 template <class C>
+static bool ReferencedCodecsMatch(const std::vector<C>& codecs1,
+                                  const std::string& codec1_id_str,
+                                  const std::vector<C>& codecs2,
+                                  const std::string& codec2_id_str) {
+  int codec1_id;
+  int codec2_id;
+  C codec1;
+  C codec2;
+  if (!rtc::FromString(codec1_id_str, &codec1_id) ||
+      !rtc::FromString(codec2_id_str, &codec2_id) ||
+      !FindCodecById(codecs1, codec1_id, &codec1) ||
+      !FindCodecById(codecs2, codec2_id, &codec2)) {
+    return false;
+  }
+  return codec1.Matches(codec2);
+}
+
+template <class C>
 static void NegotiateCodecs(const std::vector<C>& local_codecs,
                             const std::vector<C>& offered_codecs,
                             std::vector<C>* negotiated_codecs) {
@@ -765,15 +783,26 @@ static void NegotiateCodecs(const std::vector<C>& local_codecs,
         C negotiated = *ours;
         negotiated.IntersectFeedbackParams(*theirs);
         if (IsRtxCodec(negotiated)) {
-          // Only negotiate RTX if kCodecParamAssociatedPayloadType has been
-          // set.
-          std::string apt_value;
-          if (!theirs->GetParam(kCodecParamAssociatedPayloadType, &apt_value)) {
+          std::string offered_apt_value;
+          std::string local_apt_value;
+          if (!ours->GetParam(kCodecParamAssociatedPayloadType,
+                              &local_apt_value) ||
+              !theirs->GetParam(kCodecParamAssociatedPayloadType,
+                                &offered_apt_value)) {
             LOG(LS_WARNING) << "RTX missing associated payload type.";
             continue;
           }
-          negotiated.SetParam(kCodecParamAssociatedPayloadType, apt_value);
+          // Only negotiate RTX if kCodecParamAssociatedPayloadType has been
+          // set in local and remote codecs, and they match.
+          if (!ReferencedCodecsMatch(local_codecs, local_apt_value,
+                                     offered_codecs, offered_apt_value)) {
+            LOG(LS_WARNING) << "RTX associated codecs don't match.";
+            continue;
+          }
+          negotiated.SetParam(kCodecParamAssociatedPayloadType,
+                              offered_apt_value);
         }
+
         negotiated.id = theirs->id;
         // RFC3264: Although the answerer MAY list the formats in their desired
         // order of preference, it is RECOMMENDED that unless there is a
@@ -1075,37 +1104,33 @@ std::string MediaTypeToString(MediaType type) {
   return type_str;
 }
 
-void MediaSessionOptions::AddStream(MediaType type,
+void MediaSessionOptions::AddSendStream(MediaType type,
                                     const std::string& id,
                                     const std::string& sync_label) {
-  AddStreamInternal(type, id, sync_label, 1);
+  AddSendStreamInternal(type, id, sync_label, 1);
 }
 
-void MediaSessionOptions::AddVideoStream(
+void MediaSessionOptions::AddSendVideoStream(
     const std::string& id,
     const std::string& sync_label,
     int num_sim_layers) {
-  AddStreamInternal(MEDIA_TYPE_VIDEO, id, sync_label, num_sim_layers);
+  AddSendStreamInternal(MEDIA_TYPE_VIDEO, id, sync_label, num_sim_layers);
 }
 
-void MediaSessionOptions::AddStreamInternal(
+void MediaSessionOptions::AddSendStreamInternal(
     MediaType type,
     const std::string& id,
     const std::string& sync_label,
     int num_sim_layers) {
   streams.push_back(Stream(type, id, sync_label, num_sim_layers));
 
-  if (type == MEDIA_TYPE_VIDEO)
-    has_video = true;
-  else if (type == MEDIA_TYPE_AUDIO)
-    has_audio = true;
   // If we haven't already set the data_channel_type, and we add a
   // stream, we assume it's an RTP data stream.
-  else if (type == MEDIA_TYPE_DATA && data_channel_type == DCT_NONE)
+  if (type == MEDIA_TYPE_DATA && data_channel_type == DCT_NONE)
     data_channel_type = DCT_RTP;
 }
 
-void MediaSessionOptions::RemoveStream(MediaType type,
+void MediaSessionOptions::RemoveSendStream(MediaType type,
                                        const std::string& id) {
   Streams::iterator stream_it = streams.begin();
   for (; stream_it != streams.end(); ++stream_it) {
@@ -1115,6 +1140,16 @@ void MediaSessionOptions::RemoveStream(MediaType type,
     }
   }
   ASSERT(false);
+}
+
+bool MediaSessionOptions::HasSendMediaStream(MediaType type) const {
+  Streams::const_iterator stream_it = streams.begin();
+  for (; stream_it != streams.end(); ++stream_it) {
+    if (stream_it->type == type) {
+      return true;
+    }
+  }
+  return false;
 }
 
 MediaSessionDescriptionFactory::MediaSessionDescriptionFactory(
@@ -1185,8 +1220,14 @@ SessionDescription* MediaSessionDescriptionFactory::CreateOffer(
         }
         video_added = true;
       } else if (IsMediaContentOfType(&*it, MEDIA_TYPE_DATA)) {
-        if (!AddDataContentForOffer(options, current_description, &data_codecs,
-                                    &current_streams, offer.get())) {
+        MediaSessionOptions options_copy(options);
+        if (IsSctp(static_cast<const MediaContentDescription*>(
+                it->description))) {
+          options_copy.data_channel_type = DCT_SCTP;
+        }
+        if (!AddDataContentForOffer(options_copy, current_description,
+                                    &data_codecs, &current_streams,
+                                    offer.get())) {
           return NULL;
         }
         data_added = true;
@@ -1195,14 +1236,15 @@ SessionDescription* MediaSessionDescriptionFactory::CreateOffer(
       }
     }
   }
+
   // Append contents that are not in |current_description|.
-  if (!audio_added && options.has_audio &&
+  if (!audio_added && options.has_audio() &&
       !AddAudioContentForOffer(options, current_description,
                                audio_rtp_extensions, audio_codecs,
                                &current_streams, offer.get())) {
     return NULL;
   }
-  if (!video_added && options.has_video &&
+  if (!video_added && options.has_video() &&
       !AddVideoContentForOffer(options, current_description,
                                video_rtp_extensions, video_codecs,
                                &current_streams, offer.get())) {
@@ -1460,6 +1502,10 @@ bool MediaSessionDescriptionFactory::AddAudioContentForOffer(
   bool secure_transport = (transport_desc_factory_->secure() != SEC_DISABLED);
   SetMediaProtocol(secure_transport, audio.get());
 
+  if (!options.recv_audio) {
+    audio->set_direction(MD_SENDONLY);
+  }
+
   desc->AddContent(CN_AUDIO, NS_JINGLE_RTP, audio.release());
   if (!AddTransportOffer(CN_AUDIO, options.transport_options,
                          current_description, desc)) {
@@ -1500,6 +1546,11 @@ bool MediaSessionDescriptionFactory::AddVideoContentForOffer(
 
   bool secure_transport = (transport_desc_factory_->secure() != SEC_DISABLED);
   SetMediaProtocol(secure_transport, video.get());
+
+  if (!options.recv_video) {
+    video->set_direction(MD_SENDONLY);
+  }
+
   desc->AddContent(CN_VIDEO, NS_JINGLE_RTP, video.release());
   if (!AddTransportOffer(CN_VIDEO, options.transport_options,
                          current_description, desc)) {
@@ -1610,7 +1661,7 @@ bool MediaSessionDescriptionFactory::AddAudioContentForAnswer(
     return false;  // Fails the session setup.
   }
 
-  bool rejected = !options.has_audio || audio_content->rejected ||
+  bool rejected = !options.has_audio() || audio_content->rejected ||
       !IsMediaProtocolSupported(MEDIA_TYPE_AUDIO,
                                 audio_answer->protocol(),
                                 audio_transport->secure());
@@ -1663,7 +1714,7 @@ bool MediaSessionDescriptionFactory::AddVideoContentForAnswer(
           video_answer.get())) {
     return false;
   }
-  bool rejected = !options.has_video || video_content->rejected ||
+  bool rejected = !options.has_video() || video_content->rejected ||
       !IsMediaProtocolSupported(MEDIA_TYPE_VIDEO,
                                 video_answer->protocol(),
                                 video_transport->secure());

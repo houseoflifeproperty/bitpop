@@ -9,8 +9,22 @@
 
 namespace switches {
 
+// Media switches
+extern const char kEnableCmaMediaPipeline[];
+extern const char kHdmiSinkSupportedCodecs[];
+
+// Content-implementation switches
+extern const char kEnableLocalFileAccesses[];
+
 // Metrics switches
 extern const char kOverrideMetricsUploadUrl[];
+
+// Network switches
+extern const char kNoWifi[];
+
+// Switches to communicate app state information
+extern const char kLastLaunchedApp[];
+extern const char kPreviousApp[];
 
 }  // namespace switches
 

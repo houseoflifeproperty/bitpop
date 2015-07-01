@@ -48,11 +48,11 @@ class SpdySessionPoolTest : public ::testing::Test,
   SpdySessionPool* spdy_session_pool_;
 };
 
-INSTANTIATE_TEST_CASE_P(
-    NextProto,
-    SpdySessionPoolTest,
-    testing::Values(kProtoDeprecatedSPDY2,
-                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4));
+INSTANTIATE_TEST_CASE_P(NextProto,
+                        SpdySessionPoolTest,
+                        testing::Values(kProtoSPDY31,
+                                        kProtoSPDY4_14,
+                                        kProtoSPDY4));
 
 // A delegate that opens a new session when it is closed.
 class SessionOpeningDelegate : public SpdyStream::Delegate {
@@ -62,20 +62,20 @@ class SessionOpeningDelegate : public SpdyStream::Delegate {
       : spdy_session_pool_(spdy_session_pool),
         key_(key) {}
 
-  virtual ~SessionOpeningDelegate() {}
+  ~SessionOpeningDelegate() override {}
 
-  virtual void OnRequestHeadersSent() OVERRIDE {}
+  void OnRequestHeadersSent() override {}
 
-  virtual SpdyResponseHeadersStatus OnResponseHeadersUpdated(
-      const SpdyHeaderBlock& response_headers) OVERRIDE {
+  SpdyResponseHeadersStatus OnResponseHeadersUpdated(
+      const SpdyHeaderBlock& response_headers) override {
     return RESPONSE_HEADERS_ARE_COMPLETE;
   }
 
-  virtual void OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE {}
+  void OnDataReceived(scoped_ptr<SpdyBuffer> buffer) override {}
 
-  virtual void OnDataSent() OVERRIDE {}
+  void OnDataSent() override {}
 
-  virtual void OnClose(int status) OVERRIDE {
+  void OnClose(int status) override {
     ignore_result(CreateFakeSpdySession(spdy_session_pool_, key_));
   }
 
@@ -131,7 +131,7 @@ TEST_P(SpdySessionPoolTest, CloseCurrentSessions) {
   spdy_stream->SetDelegate(&delegate);
 
   // Close the current session.
-  spdy_session_pool_->CloseCurrentSessions(net::ERR_ABORTED);
+  spdy_session_pool_->CloseCurrentSessions(ERR_ABORTED);
 
   EXPECT_TRUE(HasSpdySession(spdy_session_pool_, test_key));
 }
@@ -339,7 +339,7 @@ void SpdySessionPoolTest::RunIPPoolingTest(
   };
 
   session_deps_.host_resolver->set_synchronous_mode(true);
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_hosts); i++) {
+  for (size_t i = 0; i < arraysize(test_hosts); i++) {
     session_deps_.host_resolver->rules()->AddIPLiteralRule(
         test_hosts[i].name, test_hosts[i].iplist, std::string());
 
@@ -520,7 +520,8 @@ TEST_P(SpdySessionPoolTest, IPAddressChanged) {
       spdy_util.ConstructSpdyGet("http://www.a.com", false, 1, MEDIUM));
   MockWrite writes[] = {CreateMockWrite(*req, 1)};
 
-  DelayedSocketData data(1, reads, arraysize(reads), writes, arraysize(writes));
+  StaticSocketDataProvider data(reads, arraysize(reads), writes,
+                                arraysize(writes));
   data.set_connect_data(connect_data);
   session_deps_.socket_factory->AddSocketDataProvider(&data);
 

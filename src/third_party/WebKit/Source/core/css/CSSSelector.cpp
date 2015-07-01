@@ -27,13 +27,14 @@
 #include "core/css/CSSSelector.h"
 
 #include "core/HTMLNames.h"
-#include "core/css/CSSOMUtils.h"
+#include "core/css/CSSMarkup.h"
 #include "core/css/CSSSelectorList.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/Assertions.h"
 #include "wtf/HashMap.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
+#include <algorithm>
 
 #ifndef NDEBUG
 #include <stdio.h>
@@ -48,7 +49,7 @@ struct SameSizeAsCSSSelector {
     void *pointers[1];
 };
 
-COMPILE_ASSERT(sizeof(CSSSelector) == sizeof(SameSizeAsCSSSelector), CSSSelectorShouldStaySmall);
+static_assert(sizeof(CSSSelector) == sizeof(SameSizeAsCSSSelector), "CSSSelector should stay small");
 
 void CSSSelector::createRareData()
 {
@@ -67,8 +68,8 @@ unsigned CSSSelector::specificity() const
     // make sure the result doesn't overflow
     static const unsigned maxValueMask = 0xffffff;
     static const unsigned idMask = 0xff0000;
-    static const unsigned classMask = 0xff00;
-    static const unsigned elementMask = 0xff;
+    static const unsigned classMask = 0x00ff00;
+    static const unsigned elementMask = 0x0000ff;
 
     if (isForPage())
         return specificityForPage() & maxValueMask;
@@ -95,31 +96,41 @@ inline unsigned CSSSelector::specificityForOneSelector() const
 {
     // FIXME: Pseudo-elements and pseudo-classes do not have the same specificity. This function
     // isn't quite correct.
+    // http://www.w3.org/TR/selectors/#specificity
     switch (m_match) {
     case Id:
-        return 0x10000;
+        return 0x010000;
     case PseudoClass:
-        if (pseudoType() == PseudoHost || pseudoType() == PseudoHostContext)
+        switch (pseudoType()) {
+        case PseudoHost:
+        case PseudoHostContext:
+            // We dynamically compute the specificity of :host and :host-context
+            // during matching.
             return 0;
-        // fall through.
-    case Exact:
-    case Class:
-    case Set:
-    case List:
-    case Hyphen:
-    case PseudoElement:
-    case Contain:
-    case Begin:
-    case End:
-        // FIXME: PseudoAny should base the specificity on the sub-selectors.
-        // See http://lists.w3.org/Archives/Public/www-style/2010Sep/0530.html
-        if (pseudoType() == PseudoNot) {
+        case PseudoNot:
             ASSERT(selectorList());
             return selectorList()->first()->specificityForOneSelector();
+        // FIXME: PseudoAny should base the specificity on the sub-selectors.
+        // See http://lists.w3.org/Archives/Public/www-style/2010Sep/0530.html
+        case PseudoAny:
+        default:
+            break;
         }
-        return 0x100;
+        return 0x000100;
+    case Class:
+    case PseudoElement:
+    case AttributeExact:
+    case AttributeSet:
+    case AttributeList:
+    case AttributeHyphen:
+    case AttributeContain:
+    case AttributeBegin:
+    case AttributeEnd:
+        return 0x000100;
     case Tag:
-        return (tagQName().localName() != starAtom) ? 1 : 0;
+        if (tagQName().localName() == starAtom)
+            return 0;
+        return 0x000001;
     case Unknown:
         return 0;
     }
@@ -226,8 +237,6 @@ PseudoId CSSSelector::pseudoId(PseudoType type)
     case PseudoNot:
     case PseudoRoot:
     case PseudoScope:
-    case PseudoScrollbarBack:
-    case PseudoScrollbarForward:
     case PseudoWindowInactive:
     case PseudoCornerPresent:
     case PseudoDecrement:
@@ -244,7 +253,6 @@ PseudoId CSSSelector::pseudoId(PseudoType type)
     case PseudoRightPage:
     case PseudoInRange:
     case PseudoOutOfRange:
-    case PseudoUserAgentCustomElement:
     case PseudoWebKitCustomElement:
     case PseudoCue:
     case PseudoFutureCue:
@@ -439,14 +447,12 @@ void CSSSelector::show() const
 
 CSSSelector::PseudoType CSSSelector::parsePseudoType(const AtomicString& name, bool hasArguments)
 {
-    CSSSelector::PseudoType pseudoType = nameToPseudoType(name, hasArguments);
+    PseudoType pseudoType = nameToPseudoType(name, hasArguments);
     if (pseudoType != PseudoUnknown)
         return pseudoType;
 
     if (name.startsWith("-webkit-"))
         return PseudoWebKitCustomElement;
-    if (name.startsWith("cue"))
-        return PseudoUserAgentCustomElement;
 
     return PseudoUnknown;
 }
@@ -465,11 +471,11 @@ void CSSSelector::extractPseudoType() const
     switch (m_pseudoType) {
     case PseudoAfter:
     case PseudoBefore:
-    case PseudoCue:
     case PseudoFirstLetter:
     case PseudoFirstLine:
         compat = true;
     case PseudoBackdrop:
+    case PseudoCue:
     case PseudoResizer:
     case PseudoScrollbar:
     case PseudoScrollbarCorner:
@@ -478,7 +484,6 @@ void CSSSelector::extractPseudoType() const
     case PseudoScrollbarTrack:
     case PseudoScrollbarTrackPiece:
     case PseudoSelection:
-    case PseudoUserAgentCustomElement:
     case PseudoWebKitCustomElement:
     case PseudoContent:
     case PseudoShadow:
@@ -522,8 +527,6 @@ void CSSSelector::extractPseudoType() const
     case PseudoLang:
     case PseudoNot:
     case PseudoRoot:
-    case PseudoScrollbarBack:
-    case PseudoScrollbarForward:
     case PseudoWindowInactive:
     case PseudoCornerPresent:
     case PseudoDecrement:
@@ -600,7 +603,7 @@ String CSSSelector::selectorText(const String& rightSide) const
 {
     StringBuilder str;
 
-    if (m_match == CSSSelector::Tag && !m_tagIsForNamespaceRule) {
+    if (m_match == Tag && !m_tagIsImplicit) {
         if (tagQName().prefix().isNull())
             str.append(tagQName().localName());
         else {
@@ -612,13 +615,13 @@ String CSSSelector::selectorText(const String& rightSide) const
 
     const CSSSelector* cs = this;
     while (true) {
-        if (cs->m_match == CSSSelector::Id) {
+        if (cs->m_match == Id) {
             str.append('#');
             serializeIdentifier(cs->value(), str);
-        } else if (cs->m_match == CSSSelector::Class) {
+        } else if (cs->m_match == Class) {
             str.append('.');
             serializeIdentifier(cs->value(), str);
-        } else if (cs->m_match == CSSSelector::PseudoClass || cs->m_match == CSSSelector::PagePseudoClass) {
+        } else if (cs->m_match == PseudoClass || cs->m_match == PagePseudoClass) {
             str.append(':');
             str.append(cs->value());
 
@@ -666,13 +669,24 @@ String CSSSelector::selectorText(const String& rightSide) const
             default:
                 break;
             }
-        } else if (cs->m_match == CSSSelector::PseudoElement) {
+        } else if (cs->m_match == PseudoElement) {
             str.appendLiteral("::");
             str.append(cs->value());
 
             if (cs->pseudoType() == PseudoContent) {
-                if (cs->relation() == CSSSelector::SubSelector && cs->tagHistory())
+                if (cs->relation() == SubSelector && cs->tagHistory())
                     return cs->tagHistory()->selectorText() + str.toString() + rightSide;
+            } else if (cs->pseudoType() == PseudoCue) {
+                if (cs->selectorList()) {
+                    str.append('(');
+                    const CSSSelector* firstSubSelector = cs->selectorList()->first();
+                    for (const CSSSelector* subSelector = firstSubSelector; subSelector; subSelector = CSSSelectorList::next(*subSelector)) {
+                        if (subSelector != firstSubSelector)
+                            str.append(',');
+                        str.append(subSelector->selectorText());
+                    }
+                    str.append(')');
+                }
             }
         } else if (cs->isAttributeSelector()) {
             str.append('[');
@@ -683,58 +697,58 @@ String CSSSelector::selectorText(const String& rightSide) const
             }
             str.append(cs->attribute().localName());
             switch (cs->m_match) {
-                case CSSSelector::Exact:
-                    str.append('=');
-                    break;
-                case CSSSelector::Set:
-                    // set has no operator or value, just the attrName
-                    str.append(']');
-                    break;
-                case CSSSelector::List:
-                    str.appendLiteral("~=");
-                    break;
-                case CSSSelector::Hyphen:
-                    str.appendLiteral("|=");
-                    break;
-                case CSSSelector::Begin:
-                    str.appendLiteral("^=");
-                    break;
-                case CSSSelector::End:
-                    str.appendLiteral("$=");
-                    break;
-                case CSSSelector::Contain:
-                    str.appendLiteral("*=");
-                    break;
-                default:
-                    break;
+            case AttributeExact:
+                str.append('=');
+                break;
+            case AttributeSet:
+                // set has no operator or value, just the attrName
+                str.append(']');
+                break;
+            case AttributeList:
+                str.appendLiteral("~=");
+                break;
+            case AttributeHyphen:
+                str.appendLiteral("|=");
+                break;
+            case AttributeBegin:
+                str.appendLiteral("^=");
+                break;
+            case AttributeEnd:
+                str.appendLiteral("$=");
+                break;
+            case AttributeContain:
+                str.appendLiteral("*=");
+                break;
+            default:
+                break;
             }
-            if (cs->m_match != CSSSelector::Set) {
+            if (cs->m_match != AttributeSet) {
                 serializeString(cs->value(), str);
                 if (cs->attributeMatchType() == CaseInsensitive)
                     str.appendLiteral(" i");
                 str.append(']');
             }
         }
-        if (cs->relation() != CSSSelector::SubSelector || !cs->tagHistory())
+        if (cs->relation() != SubSelector || !cs->tagHistory())
             break;
         cs = cs->tagHistory();
     }
 
     if (const CSSSelector* tagHistory = cs->tagHistory()) {
         switch (cs->relation()) {
-        case CSSSelector::Descendant:
+        case Descendant:
             return tagHistory->selectorText(" " + str.toString() + rightSide);
-        case CSSSelector::Child:
+        case Child:
             return tagHistory->selectorText(" > " + str.toString() + rightSide);
-        case CSSSelector::ShadowDeep:
+        case ShadowDeep:
             return tagHistory->selectorText(" /deep/ " + str.toString() + rightSide);
-        case CSSSelector::DirectAdjacent:
+        case DirectAdjacent:
             return tagHistory->selectorText(" + " + str.toString() + rightSide);
-        case CSSSelector::IndirectAdjacent:
+        case IndirectAdjacent:
             return tagHistory->selectorText(" ~ " + str.toString() + rightSide);
-        case CSSSelector::SubSelector:
+        case SubSelector:
             ASSERT_NOT_REACHED();
-        case CSSSelector::ShadowPseudo:
+        case ShadowPseudo:
             return tagHistory->selectorText(str.toString() + rightSide);
         }
     }
@@ -766,13 +780,13 @@ static bool validateSubSelector(const CSSSelector* selector)
     case CSSSelector::Tag:
     case CSSSelector::Id:
     case CSSSelector::Class:
-    case CSSSelector::Exact:
-    case CSSSelector::Set:
-    case CSSSelector::List:
-    case CSSSelector::Hyphen:
-    case CSSSelector::Contain:
-    case CSSSelector::Begin:
-    case CSSSelector::End:
+    case CSSSelector::AttributeExact:
+    case CSSSelector::AttributeSet:
+    case CSSSelector::AttributeList:
+    case CSSSelector::AttributeHyphen:
+    case CSSSelector::AttributeContain:
+    case CSSSelector::AttributeBegin:
+    case CSSSelector::AttributeEnd:
         return true;
     case CSSSelector::PseudoElement:
     case CSSSelector::Unknown:
@@ -820,7 +834,7 @@ bool CSSSelector::isCompound() const
     const CSSSelector* subSelector = tagHistory();
 
     while (subSelector) {
-        if (prevSubSelector->relation() != CSSSelector::SubSelector)
+        if (prevSubSelector->relation() != SubSelector)
             return false;
         if (!validateSubSelector(subSelector))
             return false;
@@ -830,6 +844,59 @@ bool CSSSelector::isCompound() const
     }
 
     return true;
+}
+
+bool CSSSelector::isCommonPseudoClass() const
+{
+    if (m_match != CSSSelector::PseudoClass)
+        return false;
+    CSSSelector::PseudoType pseudoType = this->pseudoType();
+    return pseudoType == CSSSelector::PseudoLink
+        || pseudoType == CSSSelector::PseudoAnyLink
+        || pseudoType == CSSSelector::PseudoVisited
+        || pseudoType == CSSSelector::PseudoFocus;
+}
+
+unsigned CSSSelector::computeLinkMatchType() const
+{
+    unsigned linkMatchType = MatchAll;
+
+    // Determine if this selector will match a link in visited, unvisited or any state, or never.
+    // :visited never matches other elements than the innermost link element.
+    for (const CSSSelector* current = this; current; current = current->tagHistory()) {
+        switch (current->pseudoType()) {
+        case PseudoNot:
+            {
+                // :not(:visited) is equivalent to :link. Parser enforces that :not can't nest.
+                ASSERT(current->selectorList());
+                for (const CSSSelector* subSelector = current->selectorList()->first(); subSelector; subSelector = subSelector->tagHistory()) {
+                    PseudoType subType = subSelector->pseudoType();
+                    if (subType == PseudoVisited)
+                        linkMatchType &= ~MatchVisited;
+                    else if (subType == PseudoLink)
+                        linkMatchType &= ~MatchLink;
+                }
+            }
+            break;
+        case PseudoLink:
+            linkMatchType &= ~MatchVisited;
+            break;
+        case PseudoVisited:
+            linkMatchType &= ~MatchLink;
+            break;
+        default:
+            // We don't support :link and :visited inside :-webkit-any.
+            break;
+        }
+        Relation relation = current->relation();
+        if (relation == SubSelector)
+            continue;
+        if (relation != Descendant && relation != Child)
+            return linkMatchType;
+        if (linkMatchType != MatchAll)
+            return linkMatchType;
+    }
+    return linkMatchType;
 }
 
 bool CSSSelector::parseNth() const

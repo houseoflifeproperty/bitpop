@@ -11,6 +11,7 @@
 #include "cc/layers/texture_layer.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/output/copy_output_result.h"
+#include "cc/output/direct_renderer.h"
 #include "cc/resources/texture_mailbox.h"
 #include "cc/test/paths.h"
 #include "cc/test/pixel_comparator.h"
@@ -28,47 +29,46 @@ namespace cc {
 
 LayerTreePixelTest::LayerTreePixelTest()
     : pixel_comparator_(new ExactPixelComparator(true)),
-      test_type_(GL_WITH_DEFAULT),
+      test_type_(PIXEL_TEST_GL),
       pending_texture_mailbox_callbacks_(0),
-      impl_side_painting_(true) {}
+      impl_side_painting_(true) {
+}
 
 LayerTreePixelTest::~LayerTreePixelTest() {}
 
-scoped_ptr<OutputSurface> LayerTreePixelTest::CreateOutputSurface(
-    bool fallback) {
+scoped_ptr<OutputSurface> LayerTreePixelTest::CreateOutputSurface() {
   gfx::Size surface_expansion_size(40, 60);
   scoped_ptr<PixelTestOutputSurface> output_surface;
 
   switch (test_type_) {
-    case SOFTWARE_WITH_DEFAULT:
-    case SOFTWARE_WITH_BITMAP: {
+    case PIXEL_TEST_SOFTWARE: {
       scoped_ptr<PixelTestSoftwareOutputDevice> software_output_device(
           new PixelTestSoftwareOutputDevice);
       software_output_device->set_surface_expansion_size(
           surface_expansion_size);
       output_surface = make_scoped_ptr(
-          new PixelTestOutputSurface(
-              software_output_device.PassAs<SoftwareOutputDevice>()));
+          new PixelTestOutputSurface(software_output_device.Pass()));
       break;
     }
-
-    case GL_WITH_DEFAULT:
-    case GL_WITH_BITMAP: {
-      output_surface = make_scoped_ptr(
-          new PixelTestOutputSurface(new TestInProcessContextProvider));
+    case PIXEL_TEST_GL: {
+      bool flipped_output_surface = false;
+      output_surface = make_scoped_ptr(new PixelTestOutputSurface(
+          new TestInProcessContextProvider, new TestInProcessContextProvider,
+          flipped_output_surface));
       break;
     }
   }
 
   output_surface->set_surface_expansion_size(surface_expansion_size);
-  return output_surface.PassAs<OutputSurface>();
+  return output_surface.Pass();
 }
 
-void LayerTreePixelTest::CommitCompleteOnThread(LayerTreeHostImpl* impl) {
-  LayerTreeImpl* commit_tree =
-      impl->pending_tree() ? impl->pending_tree() : impl->active_tree();
-  if (commit_tree->source_frame_number() != 0)
+void LayerTreePixelTest::WillActivateTreeOnThread(LayerTreeHostImpl* impl) {
+  if (impl->sync_tree()->source_frame_number() != 0)
     return;
+
+  DirectRenderer* renderer = static_cast<DirectRenderer*>(impl->renderer());
+  renderer->SetEnlargePassTextureAmountForTesting(enlarge_texture_amount_);
 
   gfx::Rect viewport = impl->DeviceViewport();
   // The viewport has a 0,0 origin without external influence.
@@ -109,7 +109,7 @@ void LayerTreePixelTest::AfterTest() {
   EXPECT_TRUE(PathService::Get(CCPaths::DIR_TEST_DATA, &test_data_dir));
   base::FilePath ref_file_path = test_data_dir.Append(ref_file_);
 
-  CommandLine* cmd = CommandLine::ForCurrentProcess();
+  base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
   if (cmd->HasSwitch(switches::kCCRebaselinePixeltests))
     EXPECT_TRUE(WritePNGFile(*result_bitmap_, ref_file_path, true));
   EXPECT_TRUE(MatchesPNGFile(*result_bitmap_,
@@ -131,8 +131,7 @@ void LayerTreePixelTest::EndTest() {
   // Drop TextureMailboxes on the main thread so that they can be cleaned up and
   // the pending callbacks will fire.
   for (size_t i = 0; i < texture_layers_.size(); ++i) {
-    texture_layers_[i]->SetTextureMailbox(TextureMailbox(),
-                                          scoped_ptr<SingleReleaseCallback>());
+    texture_layers_[i]->SetTextureMailbox(TextureMailbox(), nullptr);
   }
 
   TryEndTest();
@@ -201,7 +200,20 @@ void LayerTreePixelTest::RunPixelTest(
   content_root_ = content_root;
   readback_target_ = NULL;
   ref_file_ = file_name;
-  RunTest(true, false, impl_side_painting_);
+  bool threaded = true;
+  RunTest(threaded, false, impl_side_painting_);
+}
+
+void LayerTreePixelTest::RunSingleThreadedPixelTest(
+    PixelTestType test_type,
+    scoped_refptr<Layer> content_root,
+    base::FilePath file_name) {
+  test_type_ = test_type;
+  content_root_ = content_root;
+  readback_target_ = NULL;
+  ref_file_ = file_name;
+  bool threaded = false;
+  RunTest(threaded, false, impl_side_painting_);
 }
 
 void LayerTreePixelTest::RunPixelTestWithReadbackTarget(
@@ -229,7 +241,7 @@ scoped_ptr<SkBitmap> LayerTreePixelTest::CopyTextureMailboxToBitmap(
     const TextureMailbox& texture_mailbox) {
   DCHECK(texture_mailbox.IsTexture());
   if (!texture_mailbox.IsTexture())
-    return scoped_ptr<SkBitmap>();
+    return nullptr;
 
   scoped_ptr<gpu::GLInProcessContext> context = CreateTestInProcessContext();
   GLES2Interface* gl = context->GetImplementation();

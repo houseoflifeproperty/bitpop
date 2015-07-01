@@ -46,11 +46,11 @@ class GraphicsContext;
 typedef unsigned GLenum;
 typedef int GC3Dint;
 
-class HTMLVideoElement FINAL : public HTMLMediaElement, public CanvasImageSource {
+class HTMLVideoElement final : public HTMLMediaElement, public CanvasImageSource {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLVideoElement> create(Document&);
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
     unsigned videoWidth() const;
     unsigned videoHeight() const;
@@ -69,43 +69,43 @@ public:
     void paintCurrentFrameInContext(GraphicsContext*, const IntRect&) const;
 
     // Used by WebGL to do GPU-GPU textures copy if possible.
-    // See more details at MediaPlayer::copyVideoTextureToPlatformTexture() defined in Source/WebCore/platform/graphics/MediaPlayer.h.
     bool copyVideoTextureToPlatformTexture(WebGraphicsContext3D*, Platform3DObject texture, GC3Dint level, GLenum internalFormat, GLenum type, bool premultiplyAlpha, bool flipY);
 
-    bool shouldDisplayPosterImage() const { return displayMode() == Poster || displayMode() == PosterWaitingForVideo; }
+    bool shouldDisplayPosterImage() const { return displayMode() == Poster; }
 
     KURL posterImageURL() const;
 
+    bool hasAvailableVideoFrame() const;
+
     // FIXME: Remove this when WebMediaPlayerClientImpl::loadInternal does not depend on it.
-    virtual KURL mediaPlayerPosterURL() OVERRIDE;
+    virtual KURL mediaPlayerPosterURL() override;
 
     // CanvasImageSource implementation
-    virtual PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const OVERRIDE;
-    virtual bool isVideoElement() const OVERRIDE { return true; }
-    virtual bool wouldTaintOrigin(SecurityOrigin*) const OVERRIDE;
-    virtual FloatSize sourceSize() const OVERRIDE;
-    virtual const KURL& sourceURL() const OVERRIDE { return currentSrc(); }
+    virtual PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const override;
+    virtual bool isVideoElement() const override { return true; }
+    virtual bool wouldTaintOrigin(SecurityOrigin*) const override;
+    virtual FloatSize elementSize() const override;
+    virtual const KURL& sourceURL() const override { return currentSrc(); }
 
-    virtual bool isHTMLVideoElement() const OVERRIDE { return true; }
+    virtual bool isHTMLVideoElement() const override { return true; }
 
 private:
     HTMLVideoElement(Document&);
 
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
-    virtual bool hasVideo() const OVERRIDE { return webMediaPlayer() && webMediaPlayer()->hasVideo(); }
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    virtual void attach(const AttachContext& = AttachContext()) override;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual bool isPresentationAttribute(const QualifiedName&) const override;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
+    virtual bool hasVideo() const override { return webMediaPlayer() && webMediaPlayer()->hasVideo(); }
     bool supportsFullscreen() const;
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual const AtomicString imageSourceURL() const OVERRIDE;
+    virtual bool isURLAttribute(const Attribute&) const override;
+    virtual const AtomicString imageSourceURL() const override;
 
-    bool hasAvailableVideoFrame() const;
-    virtual void updateDisplayState() OVERRIDE;
-    virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
-    virtual void setDisplayMode(DisplayMode) OVERRIDE;
+    virtual void updateDisplayState() override;
+    virtual void didMoveToNewDocument(Document& oldDocument) override;
+    virtual void setDisplayMode(DisplayMode) override;
 
     OwnPtrWillBeMember<HTMLImageLoader> m_imageLoader;
 

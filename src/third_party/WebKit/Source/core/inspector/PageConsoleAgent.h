@@ -36,32 +36,45 @@
 
 namespace blink {
 
+class ConsoleMessage;
 class ConsoleMessageStorage;
 class InspectorDOMAgent;
-class Page;
+class InspectorPageAgent;
+class WorkerInspectorProxy;
+class WorkerGlobalScopeProxy;
 
-class PageConsoleAgent FINAL : public InspectorConsoleAgent {
+class PageConsoleAgent final : public InspectorConsoleAgent {
     WTF_MAKE_NONCOPYABLE(PageConsoleAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<PageConsoleAgent> create(InjectedScriptManager* injectedScriptManager, InspectorDOMAgent* domAgent, InspectorTimelineAgent* timelineAgent, Page* page)
+    static PassOwnPtrWillBeRawPtr<PageConsoleAgent> create(InjectedScriptManager* injectedScriptManager, InspectorDOMAgent* domAgent, InspectorPageAgent* pageAgent)
     {
-        return adoptPtrWillBeNoop(new PageConsoleAgent(injectedScriptManager, domAgent, timelineAgent, page));
+        return adoptPtrWillBeNoop(new PageConsoleAgent(injectedScriptManager, domAgent, pageAgent));
     }
     virtual ~PageConsoleAgent();
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
-    virtual bool isWorkerAgent() OVERRIDE { return false; }
+    virtual void enable(ErrorString*) override;
+    virtual void disable(ErrorString*) override;
+
+    void workerTerminated(WorkerInspectorProxy*);
+
+    void workerConsoleAgentEnabled(WorkerGlobalScopeProxy*);
 
 protected:
-    virtual ConsoleMessageStorage* messageStorage() OVERRIDE;
+    virtual ConsoleMessageStorage* messageStorage() override;
+
+    virtual void enableStackCapturingIfNeeded() override;
+    virtual void disableStackCapturingIfNeeded() override;
 
 private:
-    PageConsoleAgent(InjectedScriptManager*, InspectorDOMAgent*, InspectorTimelineAgent*, Page*);
-    virtual void clearMessages(ErrorString*) OVERRIDE;
-    virtual void addInspectedNode(ErrorString*, int nodeId) OVERRIDE;
+    PageConsoleAgent(InjectedScriptManager*, InspectorDOMAgent*, InspectorPageAgent*);
+    virtual void clearMessages(ErrorString*) override;
 
     RawPtrWillBeMember<InspectorDOMAgent> m_inspectorDOMAgent;
-    RawPtrWillBeMember<Page> m_page;
+    RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
+    HashSet<WorkerGlobalScopeProxy*> m_workersWithEnabledConsole;
+
+    static int s_enabledAgentCount;
 };
 
 } // namespace blink

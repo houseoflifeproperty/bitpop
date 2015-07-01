@@ -8,48 +8,84 @@
 #include <queue>
 
 #include "base/files/file.h"
-#include "base/message_loop/message_pump_libevent.h"
+#include "base/memory/weak_ptr.h"
 #include "device/hid/hid_connection.h"
+
+namespace base {
+class SingleThreadTaskRunner;
+}
 
 namespace device {
 
-class HidConnectionLinux : public HidConnection,
-                           public base::MessagePumpLibevent::Watcher {
+class HidConnectionLinux : public HidConnection {
  public:
-  HidConnectionLinux(HidDeviceInfo device_info, std::string dev_node);
+  HidConnectionLinux(
+      scoped_refptr<HidDeviceInfo> device_info,
+      base::File device_file,
+      scoped_refptr<base::SingleThreadTaskRunner> file_thread_runner);
 
  private:
   friend class base::RefCountedThreadSafe<HidConnectionLinux>;
-  virtual ~HidConnectionLinux();
+  class FileThreadHelper;
+
+  typedef base::Callback<void(ssize_t)> InternalWriteCallback;
+  typedef base::Callback<void(int)> IoctlCallback;
+
+  ~HidConnectionLinux() override;
 
   // HidConnection implementation.
-  virtual void PlatformClose() OVERRIDE;
-  virtual void PlatformRead(const ReadCallback& callback) OVERRIDE;
-  virtual void PlatformWrite(scoped_refptr<net::IOBuffer> buffer,
-                             size_t size,
-                             const WriteCallback& callback) OVERRIDE;
-  virtual void PlatformGetFeatureReport(uint8_t report_id,
-                                        const ReadCallback& callback) OVERRIDE;
-  virtual void PlatformSendFeatureReport(
+  void PlatformClose() override;
+  void PlatformRead(const ReadCallback& callback) override;
+  void PlatformWrite(scoped_refptr<net::IOBuffer> buffer,
+                     size_t size,
+                     const WriteCallback& callback) override;
+  void PlatformGetFeatureReport(uint8_t report_id,
+                                const ReadCallback& callback) override;
+  void PlatformSendFeatureReport(scoped_refptr<net::IOBuffer> buffer,
+                                 size_t size,
+                                 const WriteCallback& callback) override;
+
+  // Callbacks for blocking operations run on the FILE thread.
+  void FinishWrite(size_t expected_size,
+                   const WriteCallback& callback,
+                   ssize_t result);
+  void FinishGetFeatureReport(uint8_t report_id,
+                              scoped_refptr<net::IOBuffer> buffer,
+                              const ReadCallback& callback,
+                              int result);
+  void FinishSendFeatureReport(const WriteCallback& callback, int result);
+
+  // Writes to the device. This operation may block.
+  static void BlockingWrite(
+      base::PlatformFile platform_file,
       scoped_refptr<net::IOBuffer> buffer,
       size_t size,
-      const WriteCallback& callback) OVERRIDE;
+      const InternalWriteCallback& callback,
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner);
+  // Performs an ioctl on the device. This operation may block.
+  static void BlockingIoctl(
+      base::PlatformFile platform_file,
+      int request,
+      scoped_refptr<net::IOBuffer> buffer,
+      const IoctlCallback& callback,
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
-  // base::MessagePumpLibevent::Watcher implementation.
-  virtual void OnFileCanReadWithoutBlocking(int fd) OVERRIDE;
-  virtual void OnFileCanWriteWithoutBlocking(int fd) OVERRIDE;
+  // Closes the device file descriptor. Must be called on the FILE thread.
+  static void CloseDevice(base::File device_file);
 
-  void Disconnect();
-
-  void Flush();
   void ProcessInputReport(scoped_refptr<net::IOBuffer> buffer, size_t size);
   void ProcessReadQueue();
 
   base::File device_file_;
-  base::MessagePumpLibevent::FileDescriptorWatcher device_file_watcher_;
+  FileThreadHelper* helper_;
+
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> file_task_runner_;
 
   std::queue<PendingHidReport> pending_reports_;
   std::queue<PendingHidRead> pending_reads_;
+
+  base::WeakPtrFactory<HidConnectionLinux> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(HidConnectionLinux);
 };

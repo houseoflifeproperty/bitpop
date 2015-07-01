@@ -12,8 +12,9 @@ class SyncMessageFilter;
 }
 
 namespace content {
-// A class of utility functions used by RendererWebKitPlatformSupportImpl and
-// WorkerWebKitPlatformSupportImpl to handle database file accesses.
+
+// A class of utility functions used by RendererBlinkPlatformImpl to handle
+// database file accesses.
 class DatabaseUtil {
  public:
   static blink::Platform::FileHandle DatabaseOpenFile(
@@ -32,6 +33,10 @@ class DatabaseUtil {
       IPC::SyncMessageFilter* sync_message_filter);
   static long long DatabaseGetSpaceAvailable(
       const blink::WebString& origin_identifier,
+      IPC::SyncMessageFilter* sync_message_filter);
+  static bool DatabaseSetFileSize(
+      const blink::WebString& vfs_file_name,
+      int64 size,
       IPC::SyncMessageFilter* sync_message_filter);
 };
 

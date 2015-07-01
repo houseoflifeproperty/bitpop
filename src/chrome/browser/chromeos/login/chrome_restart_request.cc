@@ -10,7 +10,6 @@
 #include "base/command_line.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/path_service.h"
 #include "base/prefs/json_pref_store.h"
 #include "base/prefs/pref_service.h"
 #include "base/process/launch.h"
@@ -21,7 +20,7 @@
 #include "base/values.h"
 #include "cc/base/switches.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/boot_times_loader.h"
+#include "chrome/browser/chromeos/boot_times_recorder.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
@@ -64,14 +63,18 @@ const char kSwitchFormatString[] = " --%s=\"%s\"";
 // - Set start url if given;
 // - Append/override switches using |new_switches|;
 std::string DeriveCommandLine(const GURL& start_url,
-                              const CommandLine& base_command_line,
+                              const base::CommandLine& base_command_line,
                               const base::DictionaryValue& new_switches,
-                              CommandLine* command_line) {
+                              base::CommandLine* command_line) {
   DCHECK_NE(&base_command_line, command_line);
 
-  static const char* kForwardSwitches[] = {
+  static const char* const kForwardSwitches[] = {
+    ::switches::kBlinkSettings,
     ::switches::kDisableAccelerated2dCanvas,
+    ::switches::kDisableAcceleratedJpegDecoding,
     ::switches::kDisableAcceleratedVideoDecode,
+    ::switches::kDisableBlinkFeatures,
+    ::switches::kDisableCastStreamingHWEncoding,
     ::switches::kDisableDelegatedRenderer,
     ::switches::kDisableDistanceFieldText,
     ::switches::kDisableGpu,
@@ -82,32 +85,36 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kDisableImplSidePainting,
     ::switches::kDisableLowResTiling,
     ::switches::kDisableMediaSource,
+    ::switches::kDisableOneCopy,
     ::switches::kDisablePreferCompositingToLCDText,
     ::switches::kDisablePrefixedEncryptedMedia,
     ::switches::kDisablePanelFitting,
     ::switches::kDisableSeccompFilterSandbox,
     ::switches::kDisableSetuidSandbox,
+    ::switches::kDisableSurfaces,
+    ::switches::kDisableTextBlobs,
     ::switches::kDisableThreadedScrolling,
     ::switches::kDisableTouchDragDrop,
     ::switches::kDisableTouchEditing,
-    ::switches::kDisableZeroCopy,
-    ::switches::kEnableAcceleratedJpegDecoding,
     ::switches::kEnableBeginFrameScheduling,
-    ::switches::kEnablePreferCompositingToLCDText,
+    ::switches::kEnableBlinkFeatures,
+    ::switches::kEnableCompositorAnimationTimelines,
     ::switches::kEnableDelegatedRenderer,
     ::switches::kDisableDisplayList2dCanvas,
     ::switches::kEnableDisplayList2dCanvas,
-    ::switches::kEnableEncryptedMedia,
+    ::switches::kForceDisplayList2dCanvas,
+    ::switches::kDisableEncryptedMedia,
     ::switches::kDisableGpuSandbox,
-    ::switches::kDisableDeferredFilters,
-    ::switches::kEnableContainerCulling,
     ::switches::kEnableDistanceFieldText,
     ::switches::kEnableGpuRasterization,
-    ::switches::kEnableImplSidePainting,
+    ::switches::kEnableImageColorProfiles,
     ::switches::kEnableLogging,
     ::switches::kEnableLowResTiling,
     ::switches::kEnableOneCopy,
     ::switches::kEnablePinch,
+    ::switches::kEnablePreferCompositingToLCDText,
+    ::switches::kEnablePluginPlaceholderShadowDom,
+    ::switches::kEnableSlimmingPaint,
     ::switches::kEnableTouchDragDrop,
     ::switches::kEnableTouchEditing,
     ::switches::kEnableViewport,
@@ -116,11 +123,11 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kMainFrameResizesAreOrientationChanges,
     ::switches::kForceDeviceScaleFactor,
     ::switches::kForceGpuRasterization,
+    ::switches::kGpuRasterizationMSAASampleCount,
     ::switches::kGpuStartupDialog,
     ::switches::kGpuSandboxAllowSysVShm,
     ::switches::kGpuSandboxFailuresFatal,
     ::switches::kGpuSandboxStartEarly,
-    ::switches::kIgnoreResolutionLimitsForAcceleratedVideoDecode,
     ::switches::kNoSandbox,
     ::switches::kNumRasterThreads,
     ::switches::kPpapiFlashArgs,
@@ -128,67 +135,65 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kPpapiFlashVersion,
     ::switches::kPpapiInProcess,
     ::switches::kRendererStartupDialog,
+    ::switches::kRootLayerScrolls,
     ::switches::kEnableShareGroupAsyncTextureUpload,
     ::switches::kTabCaptureUpscaleQuality,
     ::switches::kTabCaptureDownscaleQuality,
-#if defined(USE_XI2_MT)
+#if defined(USE_X11) || defined(USE_OZONE)
     ::switches::kTouchCalibration,
 #endif
     ::switches::kTouchDevices,
     ::switches::kTouchEvents,
     ::switches::kUIDisableThreadedCompositing,
+    ::switches::kUIEnableCompositorAnimationTimelines,
     ::switches::kUIPrioritizeInGpuProcess,
 #if defined(USE_CRAS)
     ::switches::kUseCras,
 #endif
-    ::switches::kUseDiscardableMemory,
     ::switches::kUseGL,
+    ::switches::kUseNormalPriorityForTileTaskWorkerThreads,
     ::switches::kUserDataDir,
     ::switches::kV,
     ::switches::kVModule,
     ::switches::kEnableWebGLDraftExtensions,
     ::switches::kEnableWebGLImageChromium,
 #if defined(ENABLE_WEBRTC)
-    ::switches::kDisableAudioTrackProcessing,
     ::switches::kDisableWebRtcHWDecoding,
     ::switches::kDisableWebRtcHWEncoding,
-    ::switches::kEnableWebRtcHWVp8Encoding,
     ::switches::kEnableWebRtcHWH264Encoding,
 #endif
     ::switches::kDisableVaapiAcceleratedVideoEncode,
 #if defined(USE_OZONE)
+    ::switches::kOzoneInitialDisplayBounds,
+    ::switches::kOzoneInitialDisplayPhysicalSizeMm,
     ::switches::kOzonePlatform,
     ::switches::kOzoneUseSurfaceless,
 #endif
     app_list::switches::kDisableSyncAppList,
     app_list::switches::kEnableSyncAppList,
-    ash::switches::kAshDefaultWallpaperLarge,
-    ash::switches::kAshDefaultWallpaperSmall,
-    ash::switches::kAshGuestWallpaperLarge,
-    ash::switches::kAshGuestWallpaperSmall,
     ash::switches::kAshHostWindowBounds,
     ash::switches::kAshTouchHud,
     ash::switches::kAuraLegacyPowerButton,
+    chromeos::switches::kDefaultWallpaperLarge,
+    chromeos::switches::kDefaultWallpaperSmall,
+    chromeos::switches::kGuestWallpaperLarge,
+    chromeos::switches::kGuestWallpaperSmall,
     // Please keep these in alphabetical order. Non-UI Compositor switches
     // here should also be added to
     // content/browser/renderer_host/render_process_host_impl.cc.
     cc::switches::kCompositeToMailbox,
     cc::switches::kDisableCompositedAntialiasing,
     cc::switches::kDisableMainFrameBeforeActivation,
-    cc::switches::kDisableMainFrameBeforeDraw,
     cc::switches::kDisablePinchVirtualViewport,
     cc::switches::kDisableThreadedAnimation,
     cc::switches::kEnableGpuBenchmarking,
     cc::switches::kEnablePinchVirtualViewport,
+    cc::switches::kEnablePropertyTreeVerification,
     cc::switches::kEnableMainFrameBeforeActivation,
-    cc::switches::kEnableTopControlsPositionCalculation,
-    cc::switches::kMaxTilesForInterestArea,
     cc::switches::kMaxUnusedResourceMemoryUsagePercentage,
     cc::switches::kShowCompositedLayerBorders,
     cc::switches::kShowFPSCounter,
     cc::switches::kShowLayerAnimationBounds,
-    cc::switches::kShowNonOccludingRects,
-    cc::switches::kShowOccludingRects,
     cc::switches::kShowPropertyChangedRects,
     cc::switches::kShowReplicaScreenSpaceRects,
     cc::switches::kShowScreenSpaceRects,
@@ -207,7 +212,6 @@ std::string DeriveCommandLine(const GURL& start_url,
     chromeos::switches::kNaturalScrollDefault,
     chromeos::switches::kSystemInDevMode,
     policy::switches::kDeviceManagementUrl,
-    ::switches::kEnableWebkitTextSubpixelPositioning,
     wm::switches::kWindowAnimationsDisabled,
   };
   command_line->CopySwitchesFrom(base_command_line,
@@ -248,7 +252,7 @@ void ReLaunch(const std::string& command_line) {
   // This is not a proper way to get |argv| but it's good enough for debugging.
   base::SplitString(command_line, ' ', &argv);
 
-  base::LaunchProcess(argv, base::LaunchOptions(), NULL);
+  base::LaunchProcess(argv, base::LaunchOptions());
   chrome::AttemptUserExit();
 }
 
@@ -320,7 +324,7 @@ void ChromeRestartRequest::Start() {
 }
 
 void ChromeRestartRequest::RestartJob() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   DBusThreadManager::Get()->GetSessionManagerClient()->RestartJob(
       pid_, command_line_);
@@ -333,8 +337,8 @@ void ChromeRestartRequest::RestartJob() {
 std::string GetOffTheRecordCommandLine(
     const GURL& start_url,
     bool is_oobe_completed,
-    const CommandLine& base_command_line,
-    CommandLine* command_line) {
+    const base::CommandLine& base_command_line,
+    base::CommandLine* command_line) {
   base::DictionaryValue otr_switches;
   otr_switches.SetString(switches::kGuestSession, std::string());
   otr_switches.SetString(::switches::kIncognito, std::string());
@@ -358,8 +362,8 @@ std::string GetOffTheRecordCommandLine(
 }
 
 void RestartChrome(const std::string& command_line) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  BootTimesLoader::Get()->set_restart_requested();
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  BootTimesRecorder::Get()->set_restart_requested();
 
   static bool restart_requested = false;
   if (restart_requested) {

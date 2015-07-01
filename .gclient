@@ -1,1 +1,10 @@
-solutions = [{u'managed': False, u'name': u'src', u'url': u'https://chromium.googlesource.com/chromium/src.git', u'custom_deps': {}, u'deps_file': u'.DEPS.git', u'safesync_url': u''}]
+solutions = [
+  {
+    "managed": False,
+    "name": "src",
+    "url": "https://chromium.googlesource.com/chromium/src.git",
+    "custom_deps": {},
+    "deps_file": ".DEPS.git",
+    "safesync_url": "",
+  },
+]

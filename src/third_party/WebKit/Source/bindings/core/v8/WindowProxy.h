@@ -34,28 +34,28 @@
 #include "bindings/core/v8/DOMWrapperWorld.h"
 #include "bindings/core/v8/ScopedPersistent.h"
 #include "bindings/core/v8/ScriptState.h"
-#include "bindings/core/v8/WrapperTypeInfo.h"
+#include "platform/heap/Handle.h"
 #include "platform/weborigin/SecurityOrigin.h"
-#include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/AtomicString.h"
 #include <v8.h>
 
 namespace blink {
 
-class LocalDOMWindow;
-class LocalFrame;
+class Frame;
 class HTMLDocument;
 class SecurityOrigin;
 
-// WindowProxy represents all the per-global object state for a LocalFrame that
+// WindowProxy represents all the per-global object state for a Frame that
 // persist between navigations.
-class WindowProxy {
+class WindowProxy final : public NoBaseWillBeGarbageCollectedFinalized<WindowProxy> {
 public:
-    static PassOwnPtr<WindowProxy> create(LocalFrame*, DOMWrapperWorld&, v8::Isolate*);
+    static PassOwnPtrWillBeRawPtr<WindowProxy> create(v8::Isolate*, Frame*, DOMWrapperWorld&);
+
+    ~WindowProxy();
+    DECLARE_TRACE();
 
     v8::Local<v8::Context> context() const { return m_scriptState ? m_scriptState->context() : v8::Local<v8::Context>(); }
     ScriptState* scriptState() const { return m_scriptState.get(); }
@@ -74,15 +74,17 @@ public:
     bool isGlobalInitialized() { return !m_global.isEmpty(); }
 
     bool initializeIfNeeded();
-    void updateDocumentWrapper(v8::Handle<v8::Object> wrapper);
+    void updateDocumentWrapper(v8::Local<v8::Object> wrapper);
 
     void clearForNavigation();
     void clearForClose();
 
+    void takeGlobalFrom(WindowProxy*);
+
     DOMWrapperWorld& world() { return *m_world; }
 
 private:
-    WindowProxy(LocalFrame*, PassRefPtr<DOMWrapperWorld>, v8::Isolate*);
+    WindowProxy(Frame*, PassRefPtr<DOMWrapperWorld>, v8::Isolate*);
     bool initialize();
 
     enum GlobalDetachmentBehavior {
@@ -95,10 +97,8 @@ private:
 
     // The JavaScript wrapper for the document object is cached on the global
     // object for fast access. UpdateDocumentProperty sets the wrapper
-    // for the current document on the global object. ClearDocumentProperty
-    // deletes the document wrapper from the global object.
+    // for the current document on the global object.
     void updateDocumentProperty();
-    void clearDocumentProperty();
 
     // Updates Activity Logger for the current context.
     void updateActivityLogger();
@@ -106,9 +106,7 @@ private:
     void createContext();
     bool installDOMWindow();
 
-    static WindowProxy* enteredIsolatedWorldContext();
-
-    LocalFrame* m_frame;
+    RawPtrWillBeMember<Frame> m_frame;
     v8::Isolate* m_isolate;
     RefPtr<ScriptState> m_scriptState;
     RefPtr<DOMWrapperWorld> m_world;

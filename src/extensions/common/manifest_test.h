@@ -22,7 +22,7 @@ namespace extensions {
 class ManifestTest : public testing::Test {
  public:
   ManifestTest();
-  virtual ~ManifestTest();
+  ~ManifestTest() override;
 
  protected:
   // Helper class that simplifies creating methods that take either a filename
@@ -55,6 +55,10 @@ class ManifestTest : public testing::Test {
     mutable base::DictionaryValue* manifest_;
     mutable scoped_ptr<base::DictionaryValue> manifest_holder_;
   };
+
+  // Allows the test implementation to override a loaded test manifest's
+  // extension ID. Useful for testing features behind a whitelist.
+  virtual std::string GetTestExtensionID() const;
 
   // Returns the path in which to find test manifest data files, for example
   // extensions/test/data/manifest_tests.

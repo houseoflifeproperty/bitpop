@@ -5,62 +5,69 @@
 #ifndef MOJO_SERVICES_NETWORK_URL_LOADER_IMPL_H_
 #define MOJO_SERVICES_NETWORK_URL_LOADER_IMPL_H_
 
-#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "mojo/common/handle_watcher.h"
-#include "mojo/public/cpp/bindings/interface_impl.h"
-#include "mojo/services/public/interfaces/network/url_loader.mojom.h"
+#include "mojo/services/network/public/interfaces/url_loader.mojom.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/binding.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/error_handler.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_impl.h"
 
 namespace mojo {
-class NetworkContext;
 
-class URLLoaderImpl : public InterfaceImpl<URLLoader>,
+class NetworkContext;
+class NetToMojoPendingBuffer;
+
+class URLLoaderImpl : public URLLoader,
+                      public ErrorHandler,
                       public net::URLRequest::Delegate {
  public:
-  explicit URLLoaderImpl(NetworkContext* context);
-  virtual ~URLLoaderImpl();
+  URLLoaderImpl(NetworkContext* context, InterfaceRequest<URLLoader> request);
+  ~URLLoaderImpl() override;
+
+  // Called when the associated NetworkContext is going away.
+  void Cleanup();
 
  private:
-  class PendingWriteToDataPipe;
-  class DependentIOBuffer;
-
   // URLLoader methods:
-  virtual void Start(
-      URLRequestPtr request,
-      const Callback<void(URLResponsePtr)>& callback) OVERRIDE;
-  virtual void FollowRedirect(
-      const Callback<void(URLResponsePtr)>& callback) OVERRIDE;
-  virtual void QueryStatus(
-      const Callback<void(URLLoaderStatusPtr)>& callback) OVERRIDE;
+  void Start(URLRequestPtr request,
+             const Callback<void(URLResponsePtr)>& callback) override;
+  void FollowRedirect(const Callback<void(URLResponsePtr)>& callback) override;
+  void QueryStatus(const Callback<void(URLLoaderStatusPtr)>& callback) override;
+
+  // ErrorHandler methods:
+  void OnConnectionError() override;
 
   // net::URLRequest::Delegate methods:
-  virtual void OnReceivedRedirect(net::URLRequest* url_request,
-                                  const net::RedirectInfo& redirect_info,
-                                  bool* defer_redirect) OVERRIDE;
-  virtual void OnResponseStarted(net::URLRequest* url_request) OVERRIDE;
-  virtual void OnReadCompleted(net::URLRequest* url_request, int bytes_read)
-      OVERRIDE;
+  void OnReceivedRedirect(net::URLRequest* url_request,
+                          const net::RedirectInfo& redirect_info,
+                          bool* defer_redirect) override;
+  void OnResponseStarted(net::URLRequest* url_request) override;
+  void OnReadCompleted(net::URLRequest* url_request, int bytes_read) override;
 
   void SendError(
       int error,
       const Callback<void(URLResponsePtr)>& callback);
   void SendResponse(URLResponsePtr response);
   void OnResponseBodyStreamReady(MojoResult result);
-  void WaitToReadMore();
+  void OnResponseBodyStreamClosed(MojoResult result);
   void ReadMore();
   void DidRead(uint32_t num_bytes, bool completed_synchronously);
+  void ListenForPeerClosed();
+  void DeleteIfNeeded();
 
   NetworkContext* context_;
   scoped_ptr<net::URLRequest> url_request_;
   Callback<void(URLResponsePtr)> callback_;
   ScopedDataPipeProducerHandle response_body_stream_;
-  scoped_refptr<PendingWriteToDataPipe> pending_write_;
+  scoped_refptr<NetToMojoPendingBuffer> pending_write_;
   common::HandleWatcher handle_watcher_;
   uint32 response_body_buffer_size_;
   bool auto_follow_redirects_;
+  bool connected_;
+  Binding<URLLoader> binding_;
 
   base::WeakPtrFactory<URLLoaderImpl> weak_ptr_factory_;
 };

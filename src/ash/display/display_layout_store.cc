@@ -6,6 +6,8 @@
 
 #include "ash/ash_switches.h"
 #include "ash/display/display_layout_store.h"
+#include "ash/display/display_manager.h"
+#include "ash/shell.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "ui/gfx/display.h"
@@ -13,7 +15,7 @@
 namespace ash {
 
 DisplayLayoutStore::DisplayLayoutStore() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kAshSecondaryDisplayLayout)) {
     std::string value = command_line->GetSwitchValueASCII(
         switches::kAshSecondaryDisplayLayout);
@@ -37,7 +39,7 @@ DisplayLayoutStore::~DisplayLayoutStore() {
 }
 
 void DisplayLayoutStore::SetDefaultDisplayLayout(const DisplayLayout& layout) {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (!command_line->HasSwitch(switches::kAshSecondaryDisplayLayout))
     default_display_layout_ = layout;
 }
@@ -46,7 +48,13 @@ void DisplayLayoutStore::RegisterLayoutForDisplayIdPair(
     int64 id1,
     int64 id2,
     const DisplayLayout& layout) {
-  paired_layouts_[std::make_pair(id1, id2)] = layout;
+  auto key = std::make_pair(id1, id2);
+  paired_layouts_[key] = layout;
+#if defined(OS_CHROMEOS)
+  // Force disabling unified desktop if the flag is not set.
+  if (!switches::UnifiedDesktopEnabled())
+    paired_layouts_[key].default_unified = false;
+#endif
 }
 
 DisplayLayout DisplayLayoutStore::GetRegisteredDisplayLayout(
@@ -67,11 +75,13 @@ DisplayLayout DisplayLayoutStore::ComputeDisplayLayoutForDisplayIdPair(
           pair.first == layout.primary_id) ? layout : layout.Invert();
 }
 
-void DisplayLayoutStore::UpdateMirrorStatus(const DisplayIdPair& pair,
-                                            bool mirrored) {
+void DisplayLayoutStore::UpdateMultiDisplayState(const DisplayIdPair& pair,
+                                                 bool mirrored,
+                                                 bool default_unified) {
   if (paired_layouts_.find(pair) == paired_layouts_.end())
     CreateDisplayLayout(pair);
   paired_layouts_[pair].mirrored = mirrored;
+  paired_layouts_[pair].default_unified = default_unified;
 }
 
 void DisplayLayoutStore::UpdatePrimaryDisplayId(const DisplayIdPair& pair,

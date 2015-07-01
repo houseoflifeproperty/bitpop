@@ -12,12 +12,6 @@ class IntlKoThViPage(page_module.Page):
     self.user_agent_type = 'desktop'
     self.archive_data_file = 'data/intl_ko_th_vi.json'
 
-  def RunSmoothness(self, action_runner):
-    interaction = action_runner.BeginGestureInteraction(
-        'ScrollAction', is_smooth=True)
-    action_runner.ScrollPage()
-    interaction.End()
-
 
 class IntlKoThViPageSet(page_set_module.PageSet):
 
@@ -54,4 +48,4 @@ class IntlKoThViPageSet(page_set_module.PageSet):
     ]
 
     for url in urls_list:
-      self.AddPage(IntlKoThViPage(url, self))
+      self.AddUserStory(IntlKoThViPage(url, self))

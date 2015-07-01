@@ -21,22 +21,22 @@ class ASH_EXPORT AshRemoteWindowTreeHostWin
   explicit AshRemoteWindowTreeHostWin(HWND remote_hwnd);
 
  private:
-  virtual ~AshRemoteWindowTreeHostWin();
+  ~AshRemoteWindowTreeHostWin() override;
 
   // AshWindowTreeHost:
-  virtual void ToggleFullScreen() OVERRIDE;
-  virtual bool ConfineCursorToRootWindow() OVERRIDE;
-  virtual void UnConfineCursor() OVERRIDE;
-  virtual void SetRootWindowTransformer(
-      scoped_ptr<RootWindowTransformer> transformer) OVERRIDE;
-  virtual gfx::Insets GetHostInsets() const OVERRIDE;
-  virtual aura::WindowTreeHost* AsWindowTreeHost() OVERRIDE;
+  void ToggleFullScreen() override;
+  bool ConfineCursorToRootWindow() override;
+  void UnConfineCursor() override;
+  void SetRootWindowTransformer(
+      scoped_ptr<RootWindowTransformer> transformer) override;
+  gfx::Insets GetHostInsets() const override;
+  aura::WindowTreeHost* AsWindowTreeHost() override;
 
   // WindowTreeHostWin:
-  virtual gfx::Transform GetRootTransform() const OVERRIDE;
-  virtual void SetRootTransform(const gfx::Transform& transform) OVERRIDE;
-  virtual gfx::Transform GetInverseRootTransform() const OVERRIDE;
-  virtual void UpdateRootWindowSize(const gfx::Size& host_size) OVERRIDE;
+  gfx::Transform GetRootTransform() const override;
+  void SetRootTransform(const gfx::Transform& transform) override;
+  gfx::Transform GetInverseRootTransform() const override;
+  void UpdateRootWindowSize(const gfx::Size& host_size) override;
 
   TransformerHelper transformer_helper_;
 

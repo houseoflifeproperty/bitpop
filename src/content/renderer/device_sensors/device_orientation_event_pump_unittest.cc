@@ -9,7 +9,7 @@
 #include "content/common/device_sensors/device_orientation_hardware_buffer.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebDeviceOrientationListener.h"
+#include "third_party/WebKit/public/platform/modules/device_orientation/WebDeviceOrientationListener.h"
 
 namespace content {
 
@@ -22,7 +22,7 @@ class MockDeviceOrientationListener
   virtual ~MockDeviceOrientationListener() { }
 
   virtual void didChangeDeviceOrientation(
-      const blink::WebDeviceOrientationData& data) OVERRIDE {
+      const blink::WebDeviceOrientationData& data) override {
     memcpy(&data_, &data, sizeof(data));
     did_change_device_orientation_ = true;
   }
@@ -48,14 +48,14 @@ class DeviceOrientationEventPumpForTesting : public DeviceOrientationEventPump {
  public:
   DeviceOrientationEventPumpForTesting()
       : DeviceOrientationEventPump(0) { }
-  virtual ~DeviceOrientationEventPumpForTesting() { }
+  ~DeviceOrientationEventPumpForTesting() override {}
 
   void OnDidStart(base::SharedMemoryHandle renderer_handle) {
     DeviceOrientationEventPump::OnDidStart(renderer_handle);
   }
-  virtual void SendStartMessage() OVERRIDE { }
-  virtual void SendStopMessage() OVERRIDE { }
-  virtual void FireEvent() OVERRIDE {
+  void SendStartMessage() override {}
+  void SendStopMessage() override {}
+  void FireEvent() override {
     DeviceOrientationEventPump::FireEvent();
     Stop();
     base::MessageLoop::current()->QuitWhenIdle();
@@ -73,8 +73,8 @@ class DeviceOrientationEventPumpTest : public testing::Test {
   }
 
  protected:
-  virtual void SetUp() OVERRIDE {
-    const DeviceOrientationHardwareBuffer* null_buffer = NULL;
+  void SetUp() override {
+    const DeviceOrientationHardwareBuffer* null_buffer = nullptr;
     listener_.reset(new MockDeviceOrientationListener);
     orientation_pump_.reset(new DeviceOrientationEventPumpForTesting);
     buffer_ = static_cast<DeviceOrientationHardwareBuffer*>(

@@ -14,7 +14,7 @@
 #include "components/policy/policy_export.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace policy {
@@ -34,12 +34,12 @@ class POLICY_EXPORT AsyncPolicyProvider : public ConfigurationPolicyProvider,
   // should be passed later to Init().
   AsyncPolicyProvider(SchemaRegistry* registry,
                       scoped_ptr<AsyncPolicyLoader> loader);
-  virtual ~AsyncPolicyProvider();
+  ~AsyncPolicyProvider() override;
 
   // ConfigurationPolicyProvider implementation.
-  virtual void Init(SchemaRegistry* registry) OVERRIDE;
-  virtual void Shutdown() OVERRIDE;
-  virtual void RefreshPolicies() OVERRIDE;
+  void Init(SchemaRegistry* registry) override;
+  void Shutdown() override;
+  void RefreshPolicies() override;
 
  private:
   // Helper for RefreshPolicies().
@@ -50,15 +50,16 @@ class POLICY_EXPORT AsyncPolicyProvider : public ConfigurationPolicyProvider,
 
   // Callback passed to the loader that it uses to pass back the current policy
   // bundle to the provider. This is invoked on the background thread and
-  // forwards to OnLoaderReloaded() on the loop that owns the provider,
+  // forwards to OnLoaderReloaded() on the runner that owns the provider,
   // if |weak_this| is still valid.
-  static void LoaderUpdateCallback(scoped_refptr<base::MessageLoopProxy> loop,
-                                   base::WeakPtr<AsyncPolicyProvider> weak_this,
-                                   scoped_ptr<PolicyBundle> bundle);
+  static void LoaderUpdateCallback(
+                  scoped_refptr<base::SingleThreadTaskRunner> runner,
+                  base::WeakPtr<AsyncPolicyProvider> weak_this,
+                  scoped_ptr<PolicyBundle> bundle);
 
   // The |loader_| that does the platform-specific policy loading. It lives
   // on the background thread but is owned by |this|.
-  AsyncPolicyLoader* loader_;
+  scoped_ptr<AsyncPolicyLoader> loader_;
 
   // Callback used to synchronize RefreshPolicies() calls with the background
   // thread. See the implementation for the details.

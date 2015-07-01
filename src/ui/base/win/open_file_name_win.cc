@@ -85,18 +85,15 @@ OpenFileName::~OpenFileName() {
 }
 
 void OpenFileName::SetFilters(
-    const std::vector<Tuple2<base::string16, base::string16> >& filters) {
+    const std::vector<Tuple<base::string16, base::string16>>& filters) {
   openfilename_.lpstrFilter = NULL;
   filter_buffer_.clear();
   if (filters.empty())
     return;
-  for (std::vector<Tuple2<base::string16, base::string16> >::const_iterator
-           it = filters.begin();
-       it != filters.end();
-       ++it) {
-    filter_buffer_.append(it->a);
+  for (const auto& filter : filters) {
+    filter_buffer_.append(get<0>(filter));
     filter_buffer_.push_back(0);
-    filter_buffer_.append(it->b);
+    filter_buffer_.append(get<1>(filter));
     filter_buffer_.push_back(0);
   }
   filter_buffer_.push_back(0);
@@ -151,10 +148,19 @@ void OpenFileName::GetResult(base::FilePath* directory,
                              std::vector<base::FilePath>* filenames) {
   DCHECK(filenames->empty());
   const wchar_t* selection = openfilename_.lpstrFile;
-  while (*selection) {  // Empty string indicates end of list.
+  // The return value of |openfilename_.lpstrFile| is dependent on the
+  // value of the Multi-Select flag within |openfilename_|. If the flag is
+  // not set the return value will be a single null-terminated wide string.
+  // If it is set it will be more than one null-terminated wide string, itself
+  // terminated by an empty null-terminated wide string.
+  if (openfilename_.Flags & OFN_ALLOWMULTISELECT) {
+    while (*selection) {  // Empty string indicates end of list.
+      filenames->push_back(base::FilePath(selection));
+      // Skip over filename and null-terminator.
+      selection += filenames->back().value().length() + 1;
+    }
+  } else {
     filenames->push_back(base::FilePath(selection));
-    // Skip over filename and null-terminator.
-    selection += filenames->back().value().length() + 1;
   }
   if (filenames->size() == 1) {
     // When there is one file, it contains the path and filename.
@@ -196,9 +202,9 @@ void OpenFileName::SetResult(const base::FilePath& directory,
 }
 
 // static
-std::vector<Tuple2<base::string16, base::string16> > OpenFileName::GetFilters(
-    const OPENFILENAME* openfilename) {
-  std::vector<Tuple2<base::string16, base::string16> > filters;
+std::vector<Tuple<base::string16, base::string16>>
+OpenFileName::GetFilters(const OPENFILENAME* openfilename) {
+  std::vector<Tuple<base::string16, base::string16>> filters;
 
   const base::char16* display_string = openfilename->lpstrFilter;
   if (!display_string)

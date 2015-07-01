@@ -19,15 +19,14 @@ class FakeConnectionHandler : public ConnectionHandler {
   FakeConnectionHandler(
       const ConnectionHandler::ProtoReceivedCallback& read_callback,
       const ConnectionHandler::ProtoSentCallback& write_callback);
-  virtual ~FakeConnectionHandler();
+  ~FakeConnectionHandler() override;
 
   // ConnectionHandler implementation.
-  virtual void Init(const mcs_proto::LoginRequest& login_request,
-                    net::StreamSocket* socket) OVERRIDE;
-  virtual void Reset() OVERRIDE;
-  virtual bool CanSendMessage() const OVERRIDE;
-  virtual void SendMessage(const google::protobuf::MessageLite& message)
-      OVERRIDE;
+  void Init(const mcs_proto::LoginRequest& login_request,
+            net::StreamSocket* socket) override;
+  void Reset() override;
+  bool CanSendMessage() const override;
+  void SendMessage(const google::protobuf::MessageLite& message) override;
 
   // EXPECT's receipt of |message| via SendMessage(..).
   void ExpectOutgoingMessage(const MCSMessage& message);
@@ -52,6 +51,13 @@ class FakeConnectionHandler : public ConnectionHandler {
     fail_send_ = fail_send;
   }
 
+  // Whether a socket-level error was encountered or not.
+  void set_had_error(bool had_error) {
+    had_error_ = had_error;
+  }
+
+  bool initialized() const { return initialized_; }
+
  private:
   ConnectionHandler::ProtoReceivedCallback read_callback_;
   ConnectionHandler::ProtoSentCallback write_callback_;
@@ -66,6 +72,9 @@ class FakeConnectionHandler : public ConnectionHandler {
 
   // Whether a successful login has completed.
   bool initialized_;
+
+  // Whether an error was encountered after a successful login.
+  bool had_error_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeConnectionHandler);
 };

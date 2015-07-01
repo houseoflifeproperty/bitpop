@@ -7,6 +7,7 @@
 #include "net/quic/test_tools/quic_test_utils.h"
 
 using base::StringPiece;
+using std::string;
 
 namespace {
 
@@ -256,15 +257,21 @@ QuicData* DecryptWithNonce(Aes128Gcm12Decrypter* decrypter,
                            StringPiece nonce,
                            StringPiece associated_data,
                            StringPiece ciphertext) {
-  size_t plaintext_size = ciphertext.length();
-  scoped_ptr<char[]> plaintext(new char[plaintext_size]);
-
-  if (!decrypter->Decrypt(nonce, associated_data, ciphertext,
-                          reinterpret_cast<unsigned char*>(plaintext.get()),
-                          &plaintext_size)) {
-    return NULL;
+  QuicPacketSequenceNumber sequence_number;
+  StringPiece nonce_prefix(nonce.data(),
+                           nonce.size() - sizeof(sequence_number));
+  decrypter->SetNoncePrefix(nonce_prefix);
+  memcpy(&sequence_number, nonce.data() + nonce_prefix.size(),
+         sizeof(sequence_number));
+  scoped_ptr<char[]> output(new char[ciphertext.length()]);
+  size_t output_length = 0;
+  const bool success = decrypter->DecryptPacket(
+      sequence_number, associated_data, ciphertext, output.get(),
+      &output_length, ciphertext.length());
+  if (!success) {
+    return nullptr;
   }
-  return new QuicData(plaintext.release(), plaintext_size, true);
+  return new QuicData(output.release(), output_length, true);
 }
 
 TEST(Aes128Gcm12DecrypterTest, Decrypt) {
@@ -272,7 +279,7 @@ TEST(Aes128Gcm12DecrypterTest, Decrypt) {
     SCOPED_TRACE(i);
     const TestVector* test_vectors = test_group_array[i];
     const TestGroupInfo& test_info = test_group_info[i];
-    for (size_t j = 0; test_vectors[j].key != NULL; j++) {
+    for (size_t j = 0; test_vectors[j].key != nullptr; j++) {
       // If not present then decryption is expected to fail.
       bool has_pt = test_vectors[j].pt;
 
@@ -316,7 +323,8 @@ TEST(Aes128Gcm12DecrypterTest, Decrypt) {
       scoped_ptr<QuicData> decrypted(DecryptWithNonce(
           &decrypter, iv,
           // This deliberately tests that the decrypter can handle an AAD that
-          // is set to NULL, as opposed to a zero-length, non-NULL pointer.
+          // is set to nullptr, as opposed to a zero-length, non-nullptr
+          // pointer.
           aad.length() ? aad : StringPiece(), ciphertext));
       if (!decrypted.get()) {
         EXPECT_FALSE(has_pt);

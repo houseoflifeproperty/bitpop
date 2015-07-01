@@ -42,6 +42,10 @@ class ObjectAccessor {
   ObjectAccessor(PP_Var var)
       : object_var_(V8ObjectVar::FromPPVar(var).get()),
         instance_(object_var_ ? object_var_->instance() : NULL) {
+    if (instance_) {
+      converter_.reset(new V8VarConverter(instance_->pp_instance(),
+                                          V8VarConverter::kAllowObjectVars));
+    }
   }
 
   // Check if the object is valid. If it isn't, set an exception and return
@@ -59,12 +63,14 @@ class ObjectAccessor {
   }
   // Lazily grab the object so that the handle is created in the current handle
   // scope.
-  v8::Handle<v8::Object> GetObject() { return object_var_->GetHandle(); }
+  v8::Local<v8::Object> GetObject() { return object_var_->GetHandle(); }
   PepperPluginInstanceImpl* instance() { return instance_; }
+  V8VarConverter* converter() { return converter_.get(); }
 
  private:
   V8ObjectVar* object_var_;
   PepperPluginInstanceImpl* instance_;
+  scoped_ptr<V8VarConverter> converter_;
 };
 
 bool IsValidIdentifer(PP_Var identifier, PP_Var* exception) {
@@ -82,8 +88,9 @@ bool HasPropertyDeprecated(PP_Var var, PP_Var name, PP_Var* exception) {
   if (!accessor.IsValid(exception) || !IsValidIdentifer(name, exception))
     return false;
 
-  PepperTryCatchVar try_catch(accessor.instance(), exception);
-  v8::Handle<v8::Value> v8_name = try_catch.ToV8(name);
+  PepperTryCatchVar try_catch(accessor.instance(), accessor.converter(),
+                              exception);
+  v8::Local<v8::Value> v8_name = try_catch.ToV8(name);
   if (try_catch.HasException())
     return false;
 
@@ -98,8 +105,9 @@ bool HasMethodDeprecated(PP_Var var, PP_Var name, PP_Var* exception) {
   if (!accessor.IsValid(exception) || !IsValidIdentifer(name, exception))
     return false;
 
-  PepperTryCatchVar try_catch(accessor.instance(), exception);
-  v8::Handle<v8::Value> v8_name = try_catch.ToV8(name);
+  PepperTryCatchVar try_catch(accessor.instance(), accessor.converter(),
+                              exception);
+  v8::Local<v8::Value> v8_name = try_catch.ToV8(name);
   if (try_catch.HasException())
     return false;
 
@@ -115,8 +123,9 @@ PP_Var GetProperty(PP_Var var, PP_Var name, PP_Var* exception) {
   if (!accessor.IsValid(exception) || !IsValidIdentifer(name, exception))
     return PP_MakeUndefined();
 
-  PepperTryCatchVar try_catch(accessor.instance(), exception);
-  v8::Handle<v8::Value> v8_name = try_catch.ToV8(name);
+  PepperTryCatchVar try_catch(accessor.instance(), accessor.converter(),
+                              exception);
+  v8::Local<v8::Value> v8_name = try_catch.ToV8(name);
   if (try_catch.HasException())
     return PP_MakeUndefined();
 
@@ -135,7 +144,8 @@ void EnumerateProperties(PP_Var var,
   if (!accessor.IsValid(exception))
     return;
 
-  PepperTryCatchVar try_catch(accessor.instance(), exception);
+  PepperTryCatchVar try_catch(accessor.instance(), accessor.converter(),
+                              exception);
 
   *properties = NULL;
   *property_count = 0;
@@ -165,9 +175,10 @@ void SetPropertyDeprecated(PP_Var var,
   if (!accessor.IsValid(exception) || !IsValidIdentifer(name, exception))
     return;
 
-  PepperTryCatchVar try_catch(accessor.instance(), exception);
-  v8::Handle<v8::Value> v8_name = try_catch.ToV8(name);
-  v8::Handle<v8::Value> v8_value = try_catch.ToV8(value);
+  PepperTryCatchVar try_catch(accessor.instance(), accessor.converter(),
+                              exception);
+  v8::Local<v8::Value> v8_name = try_catch.ToV8(name);
+  v8::Local<v8::Value> v8_value = try_catch.ToV8(value);
 
   if (try_catch.HasException())
     return;
@@ -181,8 +192,9 @@ void DeletePropertyDeprecated(PP_Var var, PP_Var name, PP_Var* exception) {
   if (!accessor.IsValid(exception) || !IsValidIdentifer(name, exception))
     return;
 
-  PepperTryCatchVar try_catch(accessor.instance(), exception);
-  v8::Handle<v8::Value> v8_name = try_catch.ToV8(name);
+  PepperTryCatchVar try_catch(accessor.instance(), accessor.converter(),
+                              exception);
+  v8::Local<v8::Value> v8_name = try_catch.ToV8(name);
 
   if (try_catch.HasException())
     return;
@@ -208,8 +220,9 @@ PP_Var CallDeprecatedInternal(PP_Var var,
                                 StringVar::StringToPPVar(""));
   }
 
-  PepperTryCatchVar try_catch(accessor.instance(), exception);
-  v8::Handle<v8::Value> v8_method_name = try_catch.ToV8(scoped_name.get());
+  PepperTryCatchVar try_catch(accessor.instance(), accessor.converter(),
+                              exception);
+  v8::Local<v8::Value> v8_method_name = try_catch.ToV8(scoped_name.get());
   if (try_catch.HasException())
     return PP_MakeUndefined();
 
@@ -218,11 +231,12 @@ PP_Var CallDeprecatedInternal(PP_Var var,
     return PP_MakeUndefined();
   }
 
-  v8::Handle<v8::Object> function = accessor.GetObject();
-  v8::Handle<v8::Object> recv =
+  v8::Local<v8::Object> function = accessor.GetObject();
+  v8::Local<v8::Object> recv =
       accessor.instance()->GetMainWorldContext()->Global();
   if (v8_method_name.As<v8::String>()->Length() != 0) {
-    function = function->Get(v8_method_name)->ToObject();
+    function = function->Get(v8_method_name)
+                   ->ToObject(accessor.instance()->GetIsolate());
     recv = accessor.GetObject();
   }
 
@@ -234,8 +248,8 @@ PP_Var CallDeprecatedInternal(PP_Var var,
     return PP_MakeUndefined();
   }
 
-  scoped_ptr<v8::Handle<v8::Value>[] > converted_args(
-      new v8::Handle<v8::Value>[argc]);
+  scoped_ptr<v8::Local<v8::Value>[] > converted_args(
+      new v8::Local<v8::Value>[argc]);
   for (uint32_t i = 0; i < argc; ++i) {
     converted_args[i] = try_catch.ToV8(argv[i]);
     if (try_catch.HasException())
@@ -252,7 +266,7 @@ PP_Var CallDeprecatedInternal(PP_Var var,
     return PP_MakeUndefined();
   }
 
-  v8::Handle<v8::Value> result = frame->callFunctionEvenIfScriptDisabled(
+  v8::Local<v8::Value> result = frame->callFunctionEvenIfScriptDisabled(
       function.As<v8::Function>(), recv, argc, converted_args.get());
   ScopedPPVar result_var = try_catch.FromV8(result);
 
@@ -290,7 +304,7 @@ bool IsInstanceOfDeprecated(PP_Var var,
     return false;  // Not an object at all.
 
   v8::HandleScope handle_scope(object->instance()->GetIsolate());
-  v8::Handle<v8::Context> context = object->instance()->GetMainWorldContext();
+  v8::Local<v8::Context> context = object->instance()->GetMainWorldContext();
   if (context.IsEmpty())
     return false;
   v8::Context::Scope context_scope(context);

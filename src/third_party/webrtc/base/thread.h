@@ -33,6 +33,8 @@ class Thread;
 
 class ThreadManager {
  public:
+  static const int kForever = -1;
+
   ThreadManager();
   ~ThreadManager();
 
@@ -104,7 +106,7 @@ class Thread : public MessageQueue {
   // guarantee Stop() is explicitly called before the subclass is destroyed).
   // This is required to avoid a data race between the destructor modifying the
   // vtable, and the Thread::PreRun calling the virtual method Run().
-  virtual ~Thread();
+  ~Thread() override;
 
   static Thread* Current();
 
@@ -165,15 +167,18 @@ class Thread : public MessageQueue {
   // See ScopedDisallowBlockingCalls for details.
   template <class ReturnT, class FunctorT>
   ReturnT Invoke(const FunctorT& functor) {
+    InvokeBegin();
     FunctorMessageHandler<ReturnT, FunctorT> handler(functor);
     Send(&handler);
+    InvokeEnd();
     return handler.result();
   }
 
   // From MessageQueue
-  virtual void Clear(MessageHandler *phandler, uint32 id = MQID_ANY,
-                     MessageList* removed = NULL);
-  virtual void ReceiveSends();
+  void Clear(MessageHandler* phandler,
+             uint32 id = MQID_ANY,
+             MessageList* removed = NULL) override;
+  void ReceiveSends() override;
 
   // ProcessMessages will process I/O and dispatch messages until:
   //  1) cms milliseconds have elapsed (returns true)
@@ -210,10 +215,11 @@ class Thread : public MessageQueue {
   bool RunningForTest() { return running(); }
 
   // Sets the per-thread allow-blocking-calls flag and returns the previous
-  // value.
+  // value. Must be called on this thread.
   bool SetAllowBlockingCalls(bool allow);
 
- protected:
+  // These functions are public to avoid injecting test hooks. Don't call them
+  // outside of tests.
   // This method should be called when thread is created using non standard
   // method, like derived implementation of rtc::Thread and it can not be
   // started by calling Start(). This will set started flag to true and
@@ -221,6 +227,7 @@ class Thread : public MessageQueue {
   bool WrapCurrent();
   void UnwrapCurrent();
 
+ protected:
   // Same as WrapCurrent except that it never fails as it does not try to
   // acquire the synchronization access of the thread. The caller should never
   // call Stop() or Join() on this thread.
@@ -257,6 +264,10 @@ class Thread : public MessageQueue {
   // Returns true if there is such a message.
   bool PopSendMessageFromThread(const Thread* source, _SendMessage* msg);
 
+  // Used for tracking performance of Invoke calls.
+  void InvokeBegin();
+  void InvokeEnd();
+
   std::list<_SendMessage> sendlist_;
   std::string name_;
   ThreadPriority priority_;
@@ -286,7 +297,7 @@ class Thread : public MessageQueue {
 class AutoThread : public Thread {
  public:
   explicit AutoThread(SocketServer* ss = 0);
-  virtual ~AutoThread();
+  ~AutoThread() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AutoThread);

@@ -16,23 +16,20 @@ namespace autofill {
 class AutofillPopupViewViews : public AutofillPopupBaseView,
                                public AutofillPopupView {
  public:
-  // The observing widget should be the top level widget for the native
-  // view, which we need to listen to for several signals that indicate the
-  // popup should be closed.
   AutofillPopupViewViews(AutofillPopupController* controller,
-                         views::Widget* observing_widget);
+                         views::FocusManager* focus_manager);
 
  private:
-  virtual ~AutofillPopupViewViews();
+  ~AutofillPopupViewViews() override;
 
   // AutofillPopupView implementation.
-  virtual void Show() OVERRIDE;
-  virtual void Hide() OVERRIDE;
-  virtual void InvalidateRow(size_t row) OVERRIDE;
-  virtual void UpdateBoundsAndRedrawPopup() OVERRIDE;
+  void Show() override;
+  void Hide() override;
+  void InvalidateRow(size_t row) override;
+  void UpdateBoundsAndRedrawPopup() override;
 
   // views::Views implementation
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  void OnPaint(gfx::Canvas* canvas) override;
 
   // Draw the given autofill entry in |entry_rect|.
   void DrawAutofillEntry(gfx::Canvas* canvas,

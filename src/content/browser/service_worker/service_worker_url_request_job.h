@@ -8,14 +8,27 @@
 #include <map>
 #include <string>
 
+#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "content/browser/service_worker/service_worker_metrics.h"
+#include "content/browser/streams/stream_read_observer.h"
+#include "content/browser/streams/stream_register_observer.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "content/public/common/request_context_frame_type.h"
+#include "content/public/common/request_context_type.h"
+#include "content/public/common/resource_type.h"
 #include "net/http/http_byte_range.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_job.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerResponseType.h"
+#include "url/gurl.h"
+
+namespace net {
+class IOBuffer;
+}
 
 namespace storage {
 class BlobDataHandle;
@@ -24,20 +37,31 @@ class BlobStorageContext;
 
 namespace content {
 
+class ResourceContext;
 class ResourceRequestBody;
 class ServiceWorkerContextCore;
 class ServiceWorkerFetchDispatcher;
 class ServiceWorkerProviderHost;
+class ServiceWorkerVersion;
+class Stream;
 
 class CONTENT_EXPORT ServiceWorkerURLRequestJob
     : public net::URLRequestJob,
-      public net::URLRequest::Delegate {
+      public net::URLRequest::Delegate,
+      public StreamReadObserver,
+      public StreamRegisterObserver {
  public:
   ServiceWorkerURLRequestJob(
       net::URLRequest* request,
       net::NetworkDelegate* network_delegate,
       base::WeakPtr<ServiceWorkerProviderHost> provider_host,
       base::WeakPtr<storage::BlobStorageContext> blob_storage_context,
+      const ResourceContext* resource_context,
+      FetchRequestMode request_mode,
+      FetchCredentialsMode credentials_mode,
+      bool is_main_resource_load,
+      RequestContextType request_context_type,
+      RequestContextFrameType frame_type,
       scoped_refptr<ResourceRequestBody> body);
 
   // Sets the response type.
@@ -52,56 +76,63 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob
   }
 
   // net::URLRequestJob overrides:
-  virtual void Start() OVERRIDE;
-  virtual void Kill() OVERRIDE;
-  virtual net::LoadState GetLoadState() const OVERRIDE;
-  virtual bool GetCharset(std::string* charset) OVERRIDE;
-  virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
-  virtual void GetResponseInfo(net::HttpResponseInfo* info) OVERRIDE;
-  virtual void GetLoadTimingInfo(
-      net::LoadTimingInfo* load_timing_info) const OVERRIDE;
-  virtual int GetResponseCode() const OVERRIDE;
-  virtual void SetExtraRequestHeaders(
-      const net::HttpRequestHeaders& headers) OVERRIDE;
-  virtual bool ReadRawData(net::IOBuffer* buf,
-                           int buf_size,
-                           int *bytes_read) OVERRIDE;
+  void Start() override;
+  void Kill() override;
+  net::LoadState GetLoadState() const override;
+  bool GetCharset(std::string* charset) override;
+  bool GetMimeType(std::string* mime_type) const override;
+  void GetResponseInfo(net::HttpResponseInfo* info) override;
+  void GetLoadTimingInfo(net::LoadTimingInfo* load_timing_info) const override;
+  int GetResponseCode() const override;
+  void SetExtraRequestHeaders(const net::HttpRequestHeaders& headers) override;
+  bool ReadRawData(net::IOBuffer* buf, int buf_size, int* bytes_read) override;
 
   // net::URLRequest::Delegate overrides that read the blob from the
   // ServiceWorkerFetchResponse.
-  virtual void OnReceivedRedirect(net::URLRequest* request,
-                                  const net::RedirectInfo& redirect_info,
-                                  bool* defer_redirect) OVERRIDE;
-  virtual void OnAuthRequired(net::URLRequest* request,
-                              net::AuthChallengeInfo* auth_info) OVERRIDE;
-  virtual void OnCertificateRequested(
+  void OnReceivedRedirect(net::URLRequest* request,
+                          const net::RedirectInfo& redirect_info,
+                          bool* defer_redirect) override;
+  void OnAuthRequired(net::URLRequest* request,
+                      net::AuthChallengeInfo* auth_info) override;
+  void OnCertificateRequested(
       net::URLRequest* request,
-      net::SSLCertRequestInfo* cert_request_info) OVERRIDE;
-  virtual void OnSSLCertificateError(net::URLRequest* request,
-                                     const net::SSLInfo& ssl_info,
-                                     bool fatal) OVERRIDE;
-  virtual void OnBeforeNetworkStart(net::URLRequest* request,
-                                    bool* defer) OVERRIDE;
-  virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE;
-  virtual void OnReadCompleted(net::URLRequest* request,
-                               int bytes_read) OVERRIDE;
+      net::SSLCertRequestInfo* cert_request_info) override;
+  void OnSSLCertificateError(net::URLRequest* request,
+                             const net::SSLInfo& ssl_info,
+                             bool fatal) override;
+  void OnBeforeNetworkStart(net::URLRequest* request, bool* defer) override;
+  void OnResponseStarted(net::URLRequest* request) override;
+  void OnReadCompleted(net::URLRequest* request, int bytes_read) override;
 
-  const net::HttpResponseInfo* http_info() const;
+  // StreamObserver override:
+  void OnDataAvailable(Stream* stream) override;
 
-  void GetExtraResponseInfo(bool* was_fetched_via_service_worker,
-                            GURL* original_url_via_service_worker,
-                            base::TimeTicks* fetch_start_time,
-                            base::TimeTicks* fetch_ready_time,
-                            base::TimeTicks* fetch_end_time) const;
+  // StreamRegisterObserver override:
+  void OnStreamRegistered(Stream* stream) override;
+
+  void GetExtraResponseInfo(
+      bool* was_fetched_via_service_worker,
+      bool* was_fallback_required_by_service_worker,
+      GURL* original_url_via_service_worker,
+      blink::WebServiceWorkerResponseType* response_type_via_service_worker,
+      base::TimeTicks* fetch_start_time,
+      base::TimeTicks* fetch_ready_time,
+      base::TimeTicks* fetch_end_time) const;
 
  protected:
-  virtual ~ServiceWorkerURLRequestJob();
+  ~ServiceWorkerURLRequestJob() override;
 
  private:
   enum ResponseType {
     NOT_DETERMINED,
     FALLBACK_TO_NETWORK,
     FORWARD_TO_SERVICE_WORKER,
+  };
+
+  enum ResponseBodyType {
+    UNKNOWN,
+    BLOB,
+    STREAM,
   };
 
   // We start processing the request if Start() is called AND response_type_
@@ -121,7 +152,8 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob
   void DidPrepareFetchEvent();
   void DidDispatchFetchEvent(ServiceWorkerStatusCode status,
                              ServiceWorkerFetchEventResult fetch_result,
-                             const ServiceWorkerResponse& response);
+                             const ServiceWorkerResponse& response,
+                             scoped_refptr<ServiceWorkerVersion> version);
 
   // Populates |http_response_headers_|.
   void CreateResponseHeader(int status_code,
@@ -134,6 +166,16 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob
 
   // Creates and commits a response header indicating error.
   void DeliverErrorResponse();
+
+  // For UMA.
+  void SetResponseBodyType(ResponseBodyType type);
+  bool ShouldRecordResult();
+  void RecordResult(ServiceWorkerMetrics::URLRequestJobResult result);
+
+  // Releases the resources for streaming.
+  void ClearStream();
+
+  const net::HttpResponseInfo* http_info() const;
 
   base::WeakPtr<ServiceWorkerProviderHost> provider_host_;
 
@@ -153,15 +195,32 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob
   // Headers that have not yet been committed to |http_response_info_|.
   scoped_refptr<net::HttpResponseHeaders> http_response_headers_;
   GURL response_url_;
+  blink::WebServiceWorkerResponseType service_worker_response_type_;
 
   // Used when response type is FORWARD_TO_SERVICE_WORKER.
   scoped_ptr<ServiceWorkerFetchDispatcher> fetch_dispatcher_;
   base::WeakPtr<storage::BlobStorageContext> blob_storage_context_;
+  const ResourceContext* resource_context_;
   scoped_ptr<net::URLRequest> blob_request_;
+  scoped_refptr<Stream> stream_;
+  GURL waiting_stream_url_;
+  scoped_refptr<net::IOBuffer> stream_pending_buffer_;
+  int stream_pending_buffer_size_;
+
+  FetchRequestMode request_mode_;
+  FetchCredentialsMode credentials_mode_;
+  const bool is_main_resource_load_;
+  RequestContextType request_context_type_;
+  RequestContextFrameType frame_type_;
+  bool fall_back_required_;
   // ResourceRequestBody has a collection of BlobDataHandles attached to it
   // using the userdata mechanism. So we have to keep it not to free the blobs.
   scoped_refptr<ResourceRequestBody> body_;
   scoped_ptr<storage::BlobDataHandle> request_body_blob_data_handle_;
+  scoped_refptr<ServiceWorkerVersion> streaming_version_;
+
+  ResponseBodyType response_body_type_ = UNKNOWN;
+  bool did_record_result_ = false;
 
   base::WeakPtrFactory<ServiceWorkerURLRequestJob> weak_factory_;
 

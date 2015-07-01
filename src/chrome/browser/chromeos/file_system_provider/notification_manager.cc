@@ -32,22 +32,14 @@ class ProviderNotificationDelegate
       NotificationManager* notification_manager)
       : notification_manager_(notification_manager) {}
 
-  virtual void ButtonClick(int button_index) OVERRIDE {
+  void ButtonClick(int button_index) override {
     notification_manager_->OnButtonClick(button_index);
   }
 
-  virtual void Display() OVERRIDE {}
-
-  virtual void Error() OVERRIDE { notification_manager_->OnError(); }
-
-  virtual void Close(bool by_user) OVERRIDE {
-    notification_manager_->OnClose();
-  }
-
-  virtual void Click() OVERRIDE {}
+  void Close(bool by_user) override { notification_manager_->OnClose(); }
 
  private:
-  virtual ~ProviderNotificationDelegate() {}
+  ~ProviderNotificationDelegate() override {}
   NotificationManager* notification_manager_;  // Not owned.
 
   DISALLOW_COPY_AND_ASSIGN(ProviderNotificationDelegate);
@@ -58,8 +50,7 @@ class ProviderNotificationDelegate
 NotificationManager::NotificationManager(
     Profile* profile,
     const ProvidedFileSystemInfo& file_system_info)
-    : profile_(profile),
-      file_system_info_(file_system_info),
+    : file_system_info_(file_system_info),
       icon_loader_(
           new extensions::AppIconLoaderImpl(profile, kIconSize, this)) {
 }
@@ -99,10 +90,6 @@ void NotificationManager::HideUnresponsiveNotification(int id) {
 
 void NotificationManager::OnButtonClick(int button_index) {
   OnNotificationResult(ABORT);
-}
-
-void NotificationManager::OnError() {
-  OnNotificationResult(CONTINUE);
 }
 
 void NotificationManager::OnClose() {

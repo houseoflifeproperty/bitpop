@@ -14,6 +14,7 @@
 #include "components/domain_reliability/dispatcher.h"
 #include "components/domain_reliability/scheduler.h"
 #include "components/domain_reliability/test_util.h"
+#include "components/domain_reliability/uploader.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -29,6 +30,7 @@ DomainReliabilityBeacon MakeBeacon(MockableTime* time) {
   beacon.status = "ok";
   beacon.chrome_error = net::OK;
   beacon.server_ip = "127.0.0.1";
+  beacon.was_proxied = false;
   beacon.protocol = "HTTP";
   beacon.http_response_code = 200;
   beacon.elapsed = base::TimeDelta::FromMilliseconds(250);
@@ -39,7 +41,8 @@ DomainReliabilityBeacon MakeBeacon(MockableTime* time) {
 class DomainReliabilityContextTest : public testing::Test {
  protected:
   DomainReliabilityContextTest()
-      : dispatcher_(&time_),
+      : last_network_change_time_(time_.NowTicks()),
+        dispatcher_(&time_),
         params_(MakeTestSchedulerParams()),
         uploader_(base::Bind(&DomainReliabilityContextTest::OnUploadRequest,
                              base::Unretained(this))),
@@ -47,10 +50,16 @@ class DomainReliabilityContextTest : public testing::Test {
         context_(&time_,
                  params_,
                  upload_reporter_string_,
+                 &last_network_change_time_,
                  &dispatcher_,
                  &uploader_,
                  MakeTestConfig().Pass()),
-        upload_pending_(false) {}
+        upload_pending_(false) {
+    // Make sure that the last network change does not overlap requests
+    // made in test cases, which start 250ms in the past (see |MakeBeacon|).
+    last_network_change_time_ = time_.NowTicks();
+    time_.Advance(base::TimeDelta::FromSeconds(1));
+  }
 
   TimeDelta min_delay() const { return params_.minimum_upload_delay; }
   TimeDelta max_delay() const { return params_.maximum_upload_delay; }
@@ -69,9 +78,9 @@ class DomainReliabilityContextTest : public testing::Test {
     return upload_url_;
   }
 
-  void CallUploadCallback(bool success) {
+  void CallUploadCallback(DomainReliabilityUploader::UploadResult result) {
     DCHECK(upload_pending_);
-    upload_callback_.Run(success);
+    upload_callback_.Run(result);
     upload_pending_ = false;
   }
 
@@ -90,6 +99,7 @@ class DomainReliabilityContextTest : public testing::Test {
   }
 
   MockTime time_;
+  base::TimeTicks last_network_change_time_;
   DomainReliabilityDispatcher dispatcher_;
   DomainReliabilityScheduler::Params params_;
   MockUploader uploader_;
@@ -167,10 +177,11 @@ TEST_F(DomainReliabilityContextTest, ReportUpload) {
   const char* kExpectedReport = "{"
       "\"config_version\":\"1\","
       "\"entries\":[{\"domain\":\"localhost\","
-          "\"http_response_code\":200,\"protocol\":\"HTTP\","
-          "\"request_age_ms\":300250,\"request_elapsed_ms\":250,"
-          "\"resource\":\"always_report\",\"server_ip\":\"127.0.0.1\","
-          "\"status\":\"ok\"}],"
+          "\"http_response_code\":200,\"network_changed\":false,"
+          "\"protocol\":\"HTTP\",\"request_age_ms\":300250,"
+          "\"request_elapsed_ms\":250,\"resource\":\"always_report\","
+          "\"server_ip\":\"127.0.0.1\",\"status\":\"ok\","
+          "\"was_proxied\":false}],"
       "\"reporter\":\"test-reporter\","
       "\"resources\":[{\"failed_requests\":0,\"name\":\"always_report\","
           "\"successful_requests\":1}]}";
@@ -179,7 +190,51 @@ TEST_F(DomainReliabilityContextTest, ReportUpload) {
   EXPECT_TRUE(upload_pending());
   EXPECT_EQ(kExpectedReport, upload_report());
   EXPECT_EQ(GURL("https://exampleuploader/upload"), upload_url());
-  CallUploadCallback(true);
+
+  DomainReliabilityUploader::UploadResult result;
+  result.status = DomainReliabilityUploader::UploadResult::SUCCESS;
+  CallUploadCallback(result);
+
+  EXPECT_TRUE(CheckNoBeacons());
+  EXPECT_TRUE(CheckCounts(0, 0, 0));
+  EXPECT_TRUE(CheckCounts(1, 0, 0));
+}
+
+TEST_F(DomainReliabilityContextTest, ReportUpload_NetworkChanged) {
+  GURL url("http://example/always_report");
+  DomainReliabilityBeacon beacon = MakeBeacon(&time_);
+  context_.OnBeacon(url, beacon);
+
+  BeaconVector beacons;
+  context_.GetQueuedBeaconsForTesting(&beacons);
+  EXPECT_EQ(1u, beacons.size());
+  EXPECT_TRUE(CheckCounts(0, 1, 0));
+  EXPECT_TRUE(CheckCounts(1, 0, 0));
+
+  // N.B.: Assumes max_delay is 5 minutes.
+  const char* kExpectedReport = "{"
+      "\"config_version\":\"1\","
+      "\"entries\":[{\"domain\":\"localhost\","
+          "\"http_response_code\":200,\"network_changed\":true,"
+          "\"protocol\":\"HTTP\",\"request_age_ms\":300250,"
+          "\"request_elapsed_ms\":250,\"resource\":\"always_report\","
+          "\"server_ip\":\"127.0.0.1\",\"status\":\"ok\","
+          "\"was_proxied\":false}],"
+      "\"reporter\":\"test-reporter\","
+      "\"resources\":[{\"failed_requests\":0,\"name\":\"always_report\","
+          "\"successful_requests\":1}]}";
+
+  // Simulate a network change after the request but before the upload.
+  last_network_change_time_ = time_.NowTicks();
+  time_.Advance(max_delay());
+
+  EXPECT_TRUE(upload_pending());
+  EXPECT_EQ(kExpectedReport, upload_report());
+  EXPECT_EQ(GURL("https://exampleuploader/upload"), upload_url());
+
+  DomainReliabilityUploader::UploadResult result;
+  result.status = DomainReliabilityUploader::UploadResult::SUCCESS;
+  CallUploadCallback(result);
 
   EXPECT_TRUE(CheckNoBeacons());
   EXPECT_TRUE(CheckCounts(0, 0, 0));

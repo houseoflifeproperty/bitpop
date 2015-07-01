@@ -27,7 +27,8 @@ namespace precache {
 namespace {
 
 GURL GetConfigURL() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kPrecacheConfigSettingsURL)) {
     return GURL(
         command_line.GetSwitchValueASCII(switches::kPrecacheConfigSettingsURL));
@@ -43,7 +44,8 @@ GURL GetConfigURL() {
 }
 
 std::string GetManifestURLPrefix() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kPrecacheManifestURLPrefix)) {
     return command_line.GetSwitchValueASCII(
         switches::kPrecacheManifestURLPrefix);
@@ -105,8 +107,8 @@ class PrecacheFetcher::Fetcher : public net::URLFetcherDelegate {
   // the specified URL using the specified request context.
   Fetcher(net::URLRequestContextGetter* request_context, const GURL& url,
           const base::Callback<void(const URLFetcher&)>& callback);
-  virtual ~Fetcher() {}
-  virtual void OnURLFetchComplete(const URLFetcher* source) OVERRIDE;
+  ~Fetcher() override {}
+  void OnURLFetchComplete(const URLFetcher* source) override;
 
  private:
   const base::Callback<void(const URLFetcher&)> callback_;
@@ -119,9 +121,8 @@ PrecacheFetcher::Fetcher::Fetcher(
     net::URLRequestContextGetter* request_context, const GURL& url,
     const base::Callback<void(const URLFetcher&)>& callback)
     : callback_(callback) {
-  url_fetcher_.reset(URLFetcher::Create(url, URLFetcher::GET, this));
+  url_fetcher_ = URLFetcher::Create(url, URLFetcher::GET, this);
   url_fetcher_->SetRequestContext(request_context);
-  url_fetcher_->SetLoadFlags(net::LOAD_DO_NOT_PROMPT_FOR_LOGIN);
   url_fetcher_->Start();
 }
 

@@ -19,12 +19,14 @@
 #include "chrome/browser/ui/search/search_model.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/browser/ui/webui/ntp/app_launcher_handler.h"
+#include "chrome/common/instant_types.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
-
+#include "content/public/common/referrer.h"
+#include "ui/base/page_transition_types.h"
 
 // Helpers --------------------------------------------------------------------
 
@@ -74,6 +76,7 @@ bool BrowserInstantController::OpenInstant(WindowOpenDisposition disposition,
 
   const base::string16& search_terms =
       chrome::ExtractSearchTermsFromURL(profile(), url);
+  EmbeddedSearchRequestParams request_params(url);
   if (search_terms.empty())
     return false;
 
@@ -83,7 +86,7 @@ bool BrowserInstantController::OpenInstant(WindowOpenDisposition disposition,
     if (prerenderer->CanCommitQuery(GetActiveWebContents(), search_terms)) {
       // Submit query to render the prefetched results. Browser will swap the
       // prerendered contents with the active tab contents.
-      prerenderer->Commit(search_terms);
+      prerenderer->Commit(search_terms, request_params);
       return false;
     } else {
       prerenderer->Cancel();
@@ -94,8 +97,7 @@ bool BrowserInstantController::OpenInstant(WindowOpenDisposition disposition,
   // InstantController.
   if (!chrome::IsQueryExtractionAllowedForURL(profile(), url))
     return false;
-
-  return instant_.SubmitQuery(search_terms);
+  return instant_.SubmitQuery(search_terms, request_params);
 }
 
 Profile* BrowserInstantController::profile() const {
@@ -140,7 +142,8 @@ void BrowserInstantController::ModelChanged(
     instant_.InstantSupportChanged(new_state.instant_support);
 }
 
-void BrowserInstantController::DefaultSearchProviderChanged() {
+void BrowserInstantController::DefaultSearchProviderChanged(
+    bool google_base_url_domain_changed) {
   InstantService* instant_service =
       InstantServiceFactory::GetForProfile(profile());
   if (!instant_service)
@@ -157,17 +160,28 @@ void BrowserInstantController::DefaultSearchProviderChanged() {
     content::RenderProcessHost* rph = contents->GetRenderProcessHost();
     instant_service->SendSearchURLsToRenderer(rph);
 
-    // Reload the contents to ensure that it gets assigned to a non-priviledged
-    // renderer.
     if (!instant_service->IsInstantProcess(rph->GetID()))
       continue;
 
-    contents->GetController().Reload(false);
+    if (google_base_url_domain_changed &&
+        SearchTabHelper::FromWebContents(contents)->model()->mode().is_ntp()) {
+      // Replace the server NTP with the local NTP.
+      content::NavigationController::LoadURLParams
+          params(chrome::GetLocalInstantURL(profile()));
+      params.should_replace_current_entry = true;
+      params.referrer = content::Referrer();
+      params.transition_type = ui::PAGE_TRANSITION_RELOAD;
+      contents->GetController().LoadURLWithParams(params);
+    } else {
+      // Reload the contents to ensure that it gets assigned to a
+      // non-priviledged renderer.
+      contents->GetController().Reload(false);
 
-    // As the reload was not triggered by the user we don't want to close any
-    // infobars. We have to tell the InfoBarService after the reload, otherwise
-    // it would ignore this call when
-    // WebContentsObserver::DidStartNavigationToPendingEntry is invoked.
-    InfoBarService::FromWebContents(contents)->set_ignore_next_reload();
+      // As the reload was not triggered by the user we don't want to close any
+      // infobars. We have to tell the InfoBarService after the reload,
+      // otherwise it would ignore this call when
+      // WebContentsObserver::DidStartNavigationToPendingEntry is invoked.
+      InfoBarService::FromWebContents(contents)->set_ignore_next_reload();
+    }
   }
 }

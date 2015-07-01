@@ -11,8 +11,8 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/rect.h"
 
 namespace color_utils {
 
@@ -113,14 +113,13 @@ class MockKMeanImageSampler : public KMeanImageSampler {
         current_result_index_(0) {
   }
 
-  virtual ~MockKMeanImageSampler() {
-  }
+  ~MockKMeanImageSampler() override {}
 
   void AddSample(int sample) {
     prebaked_sample_results_.push_back(sample);
   }
 
-  virtual int GetSample(int width, int height) OVERRIDE {
+  int GetSample(int width, int height) override {
     if (current_result_index_ >= prebaked_sample_results_.size()) {
       current_result_index_ = 0;
     }

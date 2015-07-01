@@ -12,8 +12,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observer.h"
 #include "base/values.h"
-#include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/sync/protocol_event_observer.h"
+#include "components/sync_driver/sync_service_observer.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "sync/internal_api/public/sessions/type_debug_info_observer.h"
 #include "sync/js/js_controller.h"
@@ -24,14 +24,14 @@ class ProfileSyncService;
 // The implementation for the chrome://sync-internals page.
 class SyncInternalsMessageHandler : public content::WebUIMessageHandler,
                                     public syncer::JsEventHandler,
-                                    public ProfileSyncServiceObserver,
+                                    public sync_driver::SyncServiceObserver,
                                     public browser_sync::ProtocolEventObserver,
                                     public syncer::TypeDebugInfoObserver {
  public:
   SyncInternalsMessageHandler();
-  virtual ~SyncInternalsMessageHandler();
+  ~SyncInternalsMessageHandler() override;
 
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
   // Sets up observers to receive events and forward them to the UI.
   void HandleRegisterForEvents(const base::ListValue* args);
@@ -49,29 +49,25 @@ class SyncInternalsMessageHandler : public content::WebUIMessageHandler,
   void HandleGetAllNodes(const base::ListValue* args);
 
   // syncer::JsEventHandler implementation.
-  virtual void HandleJsEvent(
-      const std::string& name,
-      const syncer::JsEventDetails& details) OVERRIDE;
+  void HandleJsEvent(const std::string& name,
+                     const syncer::JsEventDetails& details) override;
 
   // Callback used in GetAllNodes.
   void OnReceivedAllNodes(int request_id, scoped_ptr<base::ListValue> nodes);
 
-  // ProfileSyncServiceObserver implementation.
-  virtual void OnStateChanged() OVERRIDE;
+  // sync_driver::SyncServiceObserver implementation.
+  void OnStateChanged() override;
 
   // ProtocolEventObserver implementation.
-  virtual void OnProtocolEvent(const syncer::ProtocolEvent& e) OVERRIDE;
+  void OnProtocolEvent(const syncer::ProtocolEvent& e) override;
 
   // TypeDebugInfoObserver implementation.
-  virtual void OnCommitCountersUpdated(
-      syncer::ModelType type,
-      const syncer::CommitCounters& counters) OVERRIDE;
-  virtual void OnUpdateCountersUpdated(
-      syncer::ModelType type,
-      const syncer::UpdateCounters& counters) OVERRIDE;
-  virtual void OnStatusCountersUpdated(
-      syncer::ModelType type,
-      const syncer::StatusCounters& counters) OVERRIDE;
+  void OnCommitCountersUpdated(syncer::ModelType type,
+                               const syncer::CommitCounters& counters) override;
+  void OnUpdateCountersUpdated(syncer::ModelType type,
+                               const syncer::UpdateCounters& counters) override;
+  void OnStatusCountersUpdated(syncer::ModelType type,
+                               const syncer::StatusCounters& counters) override;
 
   // Helper to emit counter updates.
   //

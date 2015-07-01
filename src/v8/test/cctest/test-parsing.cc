@@ -31,6 +31,8 @@
 
 #include "src/v8.h"
 
+#include "src/ast.h"
+#include "src/ast-numbering.h"
 #include "src/ast-value-factory.h"
 #include "src/compiler.h"
 #include "src/execution.h"
@@ -70,7 +72,6 @@ TEST(ScanKeywords) {
       i::Utf8ToUtf16CharacterStream stream(keyword, length);
       i::Scanner scanner(&unicode_cache);
       // The scanner should parse Harmony keywords for this test.
-      scanner.SetHarmonyScoping(true);
       scanner.SetHarmonyModules(true);
       scanner.SetHarmonyClasses(true);
       scanner.Initialize(&stream);
@@ -155,7 +156,11 @@ TEST(ScanHTMLEndComments) {
     i::CompleteParserRecorder log;
     i::Scanner scanner(CcTest::i_isolate()->unicode_cache());
     scanner.Initialize(&stream);
-    i::PreParser preparser(&scanner, &log, stack_limit);
+    i::Zone zone;
+    i::AstValueFactory ast_value_factory(
+        &zone, CcTest::i_isolate()->heap()->HashSeed());
+    i::PreParser preparser(&zone, &scanner, &ast_value_factory, &log,
+                           stack_limit);
     preparser.set_allow_lazy(true);
     i::PreParser::PreParseResult result = preparser.PreParseProgram();
     CHECK_EQ(i::PreParser::kPreParseSuccess, result);
@@ -169,7 +174,11 @@ TEST(ScanHTMLEndComments) {
     i::CompleteParserRecorder log;
     i::Scanner scanner(CcTest::i_isolate()->unicode_cache());
     scanner.Initialize(&stream);
-    i::PreParser preparser(&scanner, &log, stack_limit);
+    i::Zone zone;
+    i::AstValueFactory ast_value_factory(
+        &zone, CcTest::i_isolate()->heap()->HashSeed());
+    i::PreParser preparser(&zone, &scanner, &ast_value_factory, &log,
+                           stack_limit);
     preparser.set_allow_lazy(true);
     i::PreParser::PreParseResult result = preparser.PreParseProgram();
     // Even in the case of a syntax error, kPreParseSuccess is returned.
@@ -315,10 +324,14 @@ TEST(StandAlonePreParser) {
     i::Scanner scanner(CcTest::i_isolate()->unicode_cache());
     scanner.Initialize(&stream);
 
-    i::PreParser preparser(&scanner, &log, stack_limit);
+    i::Zone zone;
+    i::AstValueFactory ast_value_factory(
+        &zone, CcTest::i_isolate()->heap()->HashSeed());
+    i::PreParser preparser(&zone, &scanner, &ast_value_factory, &log,
+                           stack_limit);
     preparser.set_allow_lazy(true);
-    preparser.set_allow_natives_syntax(true);
-    preparser.set_allow_arrow_functions(true);
+    preparser.set_allow_natives(true);
+    preparser.set_allow_harmony_arrow_functions(true);
     i::PreParser::PreParseResult result = preparser.PreParseProgram();
     CHECK_EQ(i::PreParser::kPreParseSuccess, result);
     CHECK(!log.HasError());
@@ -349,7 +362,11 @@ TEST(StandAlonePreParserNoNatives) {
     scanner.Initialize(&stream);
 
     // Preparser defaults to disallowing natives syntax.
-    i::PreParser preparser(&scanner, &log, stack_limit);
+    i::Zone zone;
+    i::AstValueFactory ast_value_factory(
+        &zone, CcTest::i_isolate()->heap()->HashSeed());
+    i::PreParser preparser(&zone, &scanner, &ast_value_factory, &log,
+                           stack_limit);
     preparser.set_allow_lazy(true);
     i::PreParser::PreParseResult result = preparser.PreParseProgram();
     CHECK_EQ(i::PreParser::kPreParseSuccess, result);
@@ -373,7 +390,7 @@ TEST(PreparsingObjectLiterals) {
     v8::Local<v8::Value> result = ParserCacheCompileRun(source);
     CHECK(result->IsString());
     v8::String::Utf8Value utf8(result);
-    CHECK_EQ("foo", *utf8);
+    CHECK_EQ(0, strcmp("foo", *utf8));
   }
 
   {
@@ -381,7 +398,7 @@ TEST(PreparsingObjectLiterals) {
     v8::Local<v8::Value> result = ParserCacheCompileRun(source);
     CHECK(result->IsString());
     v8::String::Utf8Value utf8(result);
-    CHECK_EQ("foo", *utf8);
+    CHECK_EQ(0, strcmp("foo", *utf8));
   }
 
   {
@@ -389,7 +406,7 @@ TEST(PreparsingObjectLiterals) {
     v8::Local<v8::Value> result = ParserCacheCompileRun(source);
     CHECK(result->IsString());
     v8::String::Utf8Value utf8(result);
-    CHECK_EQ("foo", *utf8);
+    CHECK_EQ(0, strcmp("foo", *utf8));
   }
 }
 
@@ -414,7 +431,10 @@ TEST(RegressChromium62639) {
   i::CompleteParserRecorder log;
   i::Scanner scanner(CcTest::i_isolate()->unicode_cache());
   scanner.Initialize(&stream);
-  i::PreParser preparser(&scanner, &log,
+  i::Zone zone;
+  i::AstValueFactory ast_value_factory(&zone,
+                                       CcTest::i_isolate()->heap()->HashSeed());
+  i::PreParser preparser(&zone, &scanner, &ast_value_factory, &log,
                          CcTest::i_isolate()->stack_guard()->real_climit());
   preparser.set_allow_lazy(true);
   i::PreParser::PreParseResult result = preparser.PreParseProgram();
@@ -446,20 +466,23 @@ TEST(Regress928) {
   i::CompleteParserRecorder log;
   i::Scanner scanner(CcTest::i_isolate()->unicode_cache());
   scanner.Initialize(&stream);
-  i::PreParser preparser(&scanner, &log,
+  i::Zone zone;
+  i::AstValueFactory ast_value_factory(&zone,
+                                       CcTest::i_isolate()->heap()->HashSeed());
+  i::PreParser preparser(&zone, &scanner, &ast_value_factory, &log,
                          CcTest::i_isolate()->stack_guard()->real_climit());
   preparser.set_allow_lazy(true);
   i::PreParser::PreParseResult result = preparser.PreParseProgram();
   CHECK_EQ(i::PreParser::kPreParseSuccess, result);
   i::ScriptData* sd = log.GetScriptData();
-  i::ParseData pd(sd);
-  pd.Initialize();
+  i::ParseData* pd = i::ParseData::FromCachedData(sd);
+  pd->Initialize();
 
   int first_function =
       static_cast<int>(strstr(program, "function") - program);
   int first_lbrace = first_function + i::StrLength("function () ");
   CHECK_EQ('{', program[first_lbrace]);
-  i::FunctionEntry entry1 = pd.GetFunctionEntry(first_lbrace);
+  i::FunctionEntry entry1 = pd->GetFunctionEntry(first_lbrace);
   CHECK(!entry1.is_valid());
 
   int second_function =
@@ -467,10 +490,11 @@ TEST(Regress928) {
   int second_lbrace =
       second_function + i::StrLength("function () ");
   CHECK_EQ('{', program[second_lbrace]);
-  i::FunctionEntry entry2 = pd.GetFunctionEntry(second_lbrace);
+  i::FunctionEntry entry2 = pd->GetFunctionEntry(second_lbrace);
   CHECK(entry2.is_valid());
   CHECK_EQ('}', program[entry2.end_pos() - 1]);
   delete sd;
+  delete pd;
 }
 
 
@@ -494,9 +518,13 @@ TEST(PreParseOverflow) {
   i::Scanner scanner(CcTest::i_isolate()->unicode_cache());
   scanner.Initialize(&stream);
 
-  i::PreParser preparser(&scanner, &log, stack_limit);
+  i::Zone zone;
+  i::AstValueFactory ast_value_factory(&zone,
+                                       CcTest::i_isolate()->heap()->HashSeed());
+  i::PreParser preparser(&zone, &scanner, &ast_value_factory, &log,
+                         stack_limit);
   preparser.set_allow_lazy(true);
-  preparser.set_allow_arrow_functions(true);
+  preparser.set_allow_harmony_arrow_functions(true);
   i::PreParser::PreParseResult result = preparser.PreParseProgram();
   CHECK_EQ(i::PreParser::kPreParseStackOverflow, result);
 }
@@ -671,18 +699,22 @@ TEST(Utf8CharacterStream) {
   char buffer[kAllUtf8CharsSizeU];
   unsigned cursor = 0;
   for (int i = 0; i <= kMaxUC16Char; i++) {
-    cursor += unibrow::Utf8::Encode(buffer + cursor,
-                                    i,
-                                    unibrow::Utf16::kNoPreviousCharacter);
+    cursor += unibrow::Utf8::Encode(buffer + cursor, i,
+                                    unibrow::Utf16::kNoPreviousCharacter, true);
   }
   DCHECK(cursor == kAllUtf8CharsSizeU);
 
   i::Utf8ToUtf16CharacterStream stream(reinterpret_cast<const i::byte*>(buffer),
                                        kAllUtf8CharsSizeU);
+  int32_t bad = unibrow::Utf8::kBadChar;
   for (int i = 0; i <= kMaxUC16Char; i++) {
     CHECK_EQU(i, stream.pos());
     int32_t c = stream.Advance();
-    CHECK_EQ(i, c);
+    if (i >= 0xd800 && i <= 0xdfff) {
+      CHECK_EQ(bad, c);
+    } else {
+      CHECK_EQ(i, c);
+    }
     CHECK_EQU(i + 1, stream.pos());
   }
   for (int i = kMaxUC16Char; i >= 0; i--) {
@@ -693,10 +725,12 @@ TEST(Utf8CharacterStream) {
   int i = 0;
   while (stream.pos() < kMaxUC16CharU) {
     CHECK_EQU(i, stream.pos());
-    unsigned progress = stream.SeekForward(12);
+    int progress = static_cast<int>(stream.SeekForward(12));
     i += progress;
     int32_t c = stream.Advance();
-    if (i <= kMaxUC16Char) {
+    if (i >= 0xd800 && i <= 0xdfff) {
+      CHECK_EQ(bad, c);
+    } else if (i <= kMaxUC16Char) {
       CHECK_EQ(i, c);
     } else {
       CHECK_EQ(-1, c);
@@ -802,7 +836,7 @@ void TestScanRegExp(const char* re_source, const char* expected) {
   CHECK(start == i::Token::DIV || start == i::Token::ASSIGN_DIV);
   CHECK(scanner.ScanRegExpPattern(start == i::Token::ASSIGN_DIV));
   scanner.Next();  // Current token is now the regexp literal.
-  i::Zone zone(CcTest::i_isolate());
+  i::Zone zone;
   i::AstValueFactory ast_value_factory(&zone,
                                        CcTest::i_isolate()->heap()->HashSeed());
   ast_value_factory.Internalize(CcTest::i_isolate());
@@ -885,6 +919,15 @@ static int Utf8LengthHelper(const char* s) {
           // Record a single kBadChar for the first byte and continue.
           continue;
         }
+        if (c == 0xed) {
+          unsigned char d = s[i + 1];
+          if ((d < 0x80) || (d > 0x9f)) {
+            // This 3 byte sequence is part of a surrogate pair which is not
+            // supported by UTF-8. Record a single kBadChar for the first byte
+            // and continue.
+            continue;
+          }
+        }
         input_offset = 2;
         // 3 bytes of UTF-8 turn into 1 UTF-16 code unit.
         output_adjust = 2;
@@ -917,9 +960,145 @@ static int Utf8LengthHelper(const char* s) {
 }
 
 
-TEST(ScopePositions) {
-  v8::internal::FLAG_harmony_scoping = true;
+TEST(ScopeUsesArgumentsSuperThis) {
+  static const struct {
+    const char* prefix;
+    const char* suffix;
+  } surroundings[] = {
+    { "function f() {", "}" },
+    { "var f = () => {", "};" },
+    { "class C { constructor() {", "} }" },
+  };
 
+  enum Expected {
+    NONE = 0,
+    ARGUMENTS = 1,
+    SUPER_PROPERTY = 1 << 1,
+    THIS = 1 << 2,
+    INNER_ARGUMENTS = 1 << 3,
+    INNER_SUPER_PROPERTY = 1 << 4,
+    INNER_THIS = 1 << 5
+  };
+
+  static const struct {
+    const char* body;
+    int expected;
+  } source_data[] = {
+    {"", NONE},
+    {"return this", THIS},
+    {"return arguments", ARGUMENTS},
+    {"return super.x", SUPER_PROPERTY},
+    {"return arguments[0]", ARGUMENTS},
+    {"return this + arguments[0]", ARGUMENTS | THIS},
+    {"return this + arguments[0] + super.x",
+     ARGUMENTS | SUPER_PROPERTY | THIS},
+    {"return x => this + x", INNER_THIS},
+    {"return x => super.f() + x", INNER_SUPER_PROPERTY},
+    {"this.foo = 42;", THIS},
+    {"this.foo();", THIS},
+    {"if (foo()) { this.f() }", THIS},
+    {"if (foo()) { super.f() }", SUPER_PROPERTY},
+    {"if (arguments.length) { this.f() }", ARGUMENTS | THIS},
+    {"while (true) { this.f() }", THIS},
+    {"while (true) { super.f() }", SUPER_PROPERTY},
+    {"if (true) { while (true) this.foo(arguments) }", ARGUMENTS | THIS},
+    // Multiple nesting levels must work as well.
+    {"while (true) { while (true) { while (true) return this } }", THIS},
+    {"while (true) { while (true) { while (true) return super.f() } }",
+     SUPER_PROPERTY},
+    {"if (1) { return () => { while (true) new this() } }", INNER_THIS},
+    // Note that propagation of the inner_uses_this() value does not
+    // cross boundaries of normal functions onto parent scopes.
+    {"return function (x) { return this + x }", NONE},
+    {"return { m(x) { return super.m() + x } }", NONE},
+    {"var x = function () { this.foo = 42 };", NONE},
+    {"var x = { m() { super.foo = 42 } };", NONE},
+    {"if (1) { return function () { while (true) new this() } }", NONE},
+    {"if (1) { return { m() { while (true) super.m() } } }", NONE},
+    {"return function (x) { return () => this }", NONE},
+    {"return { m(x) { return () => super.m() } }", NONE},
+    // Flags must be correctly set when using block scoping.
+    {"\"use strict\"; while (true) { let x; this, arguments; }",
+     INNER_ARGUMENTS | INNER_THIS},
+    {"\"use strict\"; while (true) { let x; this, super.f(), arguments; }",
+     INNER_ARGUMENTS | INNER_SUPER_PROPERTY | INNER_THIS},
+    {"\"use strict\"; if (foo()) { let x; this.f() }", INNER_THIS},
+    {"\"use strict\"; if (foo()) { let x; super.f() }",
+     INNER_SUPER_PROPERTY},
+    {"\"use strict\"; if (1) {"
+     "  let x; return { m() { return this + super.m() + arguments } }"
+     "}",
+     NONE},
+  };
+
+  i::Isolate* isolate = CcTest::i_isolate();
+  i::Factory* factory = isolate->factory();
+
+  v8::HandleScope handles(CcTest::isolate());
+  v8::Handle<v8::Context> context = v8::Context::New(CcTest::isolate());
+  v8::Context::Scope context_scope(context);
+
+  isolate->stack_guard()->SetStackLimit(i::GetCurrentStackPosition() -
+                                        128 * 1024);
+
+  for (unsigned j = 0; j < arraysize(surroundings); ++j) {
+    for (unsigned i = 0; i < arraysize(source_data); ++i) {
+      // Super property is only allowed in constructor and method.
+      if (((source_data[i].expected & SUPER_PROPERTY) ||
+           (source_data[i].expected & INNER_SUPER_PROPERTY) ||
+           (source_data[i].expected == NONE)) && j != 2) {
+        continue;
+      }
+      int kProgramByteSize = i::StrLength(surroundings[j].prefix) +
+                             i::StrLength(surroundings[j].suffix) +
+                             i::StrLength(source_data[i].body);
+      i::ScopedVector<char> program(kProgramByteSize + 1);
+      i::SNPrintF(program, "%s%s%s", surroundings[j].prefix,
+                  source_data[i].body, surroundings[j].suffix);
+      i::Handle<i::String> source =
+          factory->NewStringFromUtf8(i::CStrVector(program.start()))
+              .ToHandleChecked();
+      i::Handle<i::Script> script = factory->NewScript(source);
+      i::Zone zone;
+      i::ParseInfo info(&zone, script);
+      i::Parser parser(&info);
+      parser.set_allow_harmony_arrow_functions(true);
+      parser.set_allow_harmony_classes(true);
+      parser.set_allow_harmony_object_literals(true);
+      parser.set_allow_harmony_sloppy(true);
+      info.set_global();
+      CHECK(parser.Parse(&info));
+      CHECK(i::Rewriter::Rewrite(&info));
+      CHECK(i::Scope::Analyze(&info));
+      CHECK(info.function() != NULL);
+
+      i::Scope* script_scope = info.function()->scope();
+      CHECK(script_scope->is_script_scope());
+      CHECK_EQ(1, script_scope->inner_scopes()->length());
+
+      i::Scope* scope = script_scope->inner_scopes()->at(0);
+      // Adjust for constructor scope.
+      if (j == 2) {
+        CHECK_EQ(1, scope->inner_scopes()->length());
+        scope = scope->inner_scopes()->at(0);
+      }
+      CHECK_EQ((source_data[i].expected & ARGUMENTS) != 0,
+               scope->uses_arguments());
+      CHECK_EQ((source_data[i].expected & SUPER_PROPERTY) != 0,
+               scope->uses_super_property());
+      CHECK_EQ((source_data[i].expected & THIS) != 0, scope->uses_this());
+      CHECK_EQ((source_data[i].expected & INNER_ARGUMENTS) != 0,
+               scope->inner_uses_arguments());
+      CHECK_EQ((source_data[i].expected & INNER_SUPER_PROPERTY) != 0,
+               scope->inner_uses_super_property());
+      CHECK_EQ((source_data[i].expected & INNER_THIS) != 0,
+               scope->inner_uses_this());
+    }
+  }
+}
+
+
+TEST(ScopePositions) {
   // Test the parser for correctly setting the start and end positions
   // of a scope. We check the scope positions of exactly one scope
   // nested in the global scope of a program. 'inner source' is the
@@ -931,7 +1110,7 @@ TEST(ScopePositions) {
     const char* inner_source;
     const char* outer_suffix;
     i::ScopeType scope_type;
-    i::StrictMode strict_mode;
+    i::LanguageMode language_mode;
   };
 
   const SourceData source_data[] = {
@@ -974,11 +1153,10 @@ TEST(ScopePositions) {
       "    infunction;\n"
       "  }", "\n"
       "  more;", i::FUNCTION_SCOPE, i::SLOPPY },
-    // TODO(aperez): Change to use i::ARROW_SCOPE when implemented
     { "  start;\n", "(a,b) => a + b", "; more;",
-      i::FUNCTION_SCOPE, i::SLOPPY },
+      i::ARROW_SCOPE, i::SLOPPY },
     { "  start;\n", "(a,b) => { return a+b; }", "\nmore;",
-      i::FUNCTION_SCOPE, i::SLOPPY },
+      i::ARROW_SCOPE, i::SLOPPY },
     { "  start;\n"
       "  (function fun", "(a,b) { infunction; }", ")();",
       i::FUNCTION_SCOPE, i::SLOPPY },
@@ -1130,22 +1308,19 @@ TEST(ScopePositions) {
         i::CStrVector(program.start())).ToHandleChecked();
     CHECK_EQ(source->length(), kProgramSize);
     i::Handle<i::Script> script = factory->NewScript(source);
-    i::CompilationInfoWithZone info(script);
-    i::Parser::ParseInfo parse_info = {isolate->stack_guard()->real_climit(),
-                                       isolate->heap()->HashSeed(),
-                                       isolate->unicode_cache()};
-    i::Parser parser(&info, &parse_info);
+    i::Zone zone;
+    i::ParseInfo info(&zone, script);
+    i::Parser parser(&info);
     parser.set_allow_lazy(true);
-    parser.set_allow_harmony_scoping(true);
-    parser.set_allow_arrow_functions(true);
-    info.MarkAsGlobal();
-    info.SetStrictMode(source_data[i].strict_mode);
-    parser.Parse();
+    parser.set_allow_harmony_arrow_functions(true);
+    info.set_global();
+    info.set_language_mode(source_data[i].language_mode);
+    parser.Parse(&info);
     CHECK(info.function() != NULL);
 
     // Check scope types and positions.
     i::Scope* scope = info.function()->scope();
-    CHECK(scope->is_global_scope());
+    CHECK(scope->is_script_scope());
     CHECK_EQ(scope->start_position(), 0);
     CHECK_EQ(scope->end_position(), kProgramSize);
     CHECK_EQ(scope->inner_scopes()->length(), 1);
@@ -1196,8 +1371,9 @@ i::Handle<i::String> FormatMessage(i::Vector<unsigned> data) {
   }
 
   i::Handle<i::JSObject> builtins(isolate->js_builtins_object());
-  i::Handle<i::Object> format_fun = i::Object::GetProperty(
-      isolate, builtins, "FormatMessage").ToHandleChecked();
+  i::Handle<i::Object> format_fun =
+      i::Object::GetProperty(isolate, builtins, "$formatMessage")
+          .ToHandleChecked();
   i::Handle<i::Object> arg_handles[] = { format, args_array };
   i::Handle<i::Object> result = i::Execution::Call(
       isolate, format_fun, builtins, 2, arg_handles).ToHandleChecked();
@@ -1211,13 +1387,18 @@ i::Handle<i::String> FormatMessage(i::Vector<unsigned> data) {
 
 enum ParserFlag {
   kAllowLazy,
-  kAllowNativesSyntax,
-  kAllowHarmonyScoping,
-  kAllowModules,
-  kAllowHarmonyNumericLiterals,
-  kAllowArrowFunctions,
-  kAllowClasses,
-  kAllowHarmonyObjectLiterals
+  kAllowNatives,
+  kAllowHarmonyModules,
+  kAllowHarmonyArrowFunctions,
+  kAllowHarmonyClasses,
+  kAllowHarmonyObjectLiterals,
+  kAllowHarmonyRestParameters,
+  kAllowHarmonySloppy,
+  kAllowHarmonyUnicode,
+  kAllowHarmonyComputedPropertyNames,
+  kAllowHarmonySpreadCalls,
+  kAllowHarmonyDestructuring,
+  kAllowStrongMode
 };
 
 
@@ -1231,15 +1412,24 @@ template <typename Traits>
 void SetParserFlags(i::ParserBase<Traits>* parser,
                     i::EnumSet<ParserFlag> flags) {
   parser->set_allow_lazy(flags.Contains(kAllowLazy));
-  parser->set_allow_natives_syntax(flags.Contains(kAllowNativesSyntax));
-  parser->set_allow_harmony_scoping(flags.Contains(kAllowHarmonyScoping));
-  parser->set_allow_modules(flags.Contains(kAllowModules));
-  parser->set_allow_harmony_numeric_literals(
-      flags.Contains(kAllowHarmonyNumericLiterals));
+  parser->set_allow_natives(flags.Contains(kAllowNatives));
+  parser->set_allow_harmony_modules(flags.Contains(kAllowHarmonyModules));
   parser->set_allow_harmony_object_literals(
       flags.Contains(kAllowHarmonyObjectLiterals));
-  parser->set_allow_arrow_functions(flags.Contains(kAllowArrowFunctions));
-  parser->set_allow_classes(flags.Contains(kAllowClasses));
+  parser->set_allow_harmony_arrow_functions(
+      flags.Contains(kAllowHarmonyArrowFunctions));
+  parser->set_allow_harmony_classes(flags.Contains(kAllowHarmonyClasses));
+  parser->set_allow_harmony_rest_params(
+      flags.Contains(kAllowHarmonyRestParameters));
+  parser->set_allow_harmony_spreadcalls(
+      flags.Contains(kAllowHarmonySpreadCalls));
+  parser->set_allow_harmony_sloppy(flags.Contains(kAllowHarmonySloppy));
+  parser->set_allow_harmony_unicode(flags.Contains(kAllowHarmonyUnicode));
+  parser->set_allow_harmony_computed_property_names(
+      flags.Contains(kAllowHarmonyComputedPropertyNames));
+  parser->set_allow_harmony_destructuring(
+      flags.Contains(kAllowHarmonyDestructuring));
+  parser->set_allow_strong_mode(flags.Contains(kAllowStrongMode));
 }
 
 
@@ -1250,16 +1440,23 @@ void TestParserSyncWithFlags(i::Handle<i::String> source,
   i::Factory* factory = isolate->factory();
 
   uintptr_t stack_limit = isolate->stack_guard()->real_climit();
+  int preparser_materialized_literals = -1;
+  int parser_materialized_literals = -2;
 
   // Preparse the data.
   i::CompleteParserRecorder log;
   {
     i::Scanner scanner(isolate->unicode_cache());
     i::GenericStringUtf16CharacterStream stream(source, 0, source->length());
-    i::PreParser preparser(&scanner, &log, stack_limit);
+    i::Zone zone;
+    i::AstValueFactory ast_value_factory(
+        &zone, CcTest::i_isolate()->heap()->HashSeed());
+    i::PreParser preparser(&zone, &scanner, &ast_value_factory, &log,
+                           stack_limit);
     SetParserFlags(&preparser, flags);
     scanner.Initialize(&stream);
-    i::PreParser::PreParseResult result = preparser.PreParseProgram();
+    i::PreParser::PreParseResult result = preparser.PreParseProgram(
+        &preparser_materialized_literals);
     CHECK_EQ(i::PreParser::kPreParseSuccess, result);
   }
 
@@ -1269,15 +1466,16 @@ void TestParserSyncWithFlags(i::Handle<i::String> source,
   i::FunctionLiteral* function;
   {
     i::Handle<i::Script> script = factory->NewScript(source);
-    i::CompilationInfoWithZone info(script);
-    i::Parser::ParseInfo parse_info = {isolate->stack_guard()->real_climit(),
-                                       isolate->heap()->HashSeed(),
-                                       isolate->unicode_cache()};
-    i::Parser parser(&info, &parse_info);
+    i::Zone zone;
+    i::ParseInfo info(&zone, script);
+    i::Parser parser(&info);
     SetParserFlags(&parser, flags);
-    info.MarkAsGlobal();
-    parser.Parse();
+    info.set_global();
+    parser.Parse(&info);
     function = info.function();
+    if (function) {
+      parser_materialized_literals = function->materialized_literal_count();
+    }
   }
 
   // Check that preparsing fails iff parsing fails.
@@ -1343,6 +1541,15 @@ void TestParserSyncWithFlags(i::Handle<i::String> source,
         "However, parser and preparser succeeded",
         source->ToCString().get());
     CHECK(false);
+  } else if (preparser_materialized_literals != parser_materialized_literals) {
+    v8::base::OS::Print(
+        "Preparser materialized literals (%d) differ from Parser materialized "
+        "literals (%d) on:\n"
+        "\t%s\n"
+        "However, parser and preparser succeeded",
+        preparser_materialized_literals, parser_materialized_literals,
+        source->ToCString().get());
+    CHECK(false);
   }
 }
 
@@ -1352,7 +1559,9 @@ void TestParserSync(const char* source,
                     size_t varying_flags_length,
                     ParserSyncTestResult result = kSuccessOrError,
                     const ParserFlag* always_true_flags = NULL,
-                    size_t always_true_flags_length = 0) {
+                    size_t always_true_flags_length = 0,
+                    const ParserFlag* always_false_flags = NULL,
+                    size_t always_false_flags_length = 0) {
   i::Handle<i::String> str =
       CcTest::i_isolate()->factory()->NewStringFromAsciiChecked(source);
   for (int bits = 0; bits < (1 << varying_flags_length); bits++) {
@@ -1364,6 +1573,10 @@ void TestParserSync(const char* source,
     for (size_t flag_index = 0; flag_index < always_true_flags_length;
          ++flag_index) {
       flags.Add(always_true_flags[flag_index]);
+    }
+    for (size_t flag_index = 0; flag_index < always_false_flags_length;
+         ++flag_index) {
+      flags.Remove(always_false_flags[flag_index]);
     }
     TestParserSyncWithFlags(str, flags, result);
   }
@@ -1399,7 +1612,7 @@ TEST(ParserSync) {
     "if (false) {} else ;",
     "if (false) {} else {}",
     "if (false) {} else 12",
-    "if (false) ;"
+    "if (false) ;",
     "if (false) {}",
     "if (false) 12",
     "do {} while (false)",
@@ -1419,8 +1632,8 @@ TEST(ParserSync) {
     "with ({}) ;",
     "with ({}) {}",
     "with ({}) 12",
-    "switch ({}) { default: }"
-    "label3: "
+    "switch ({}) { default: }",
+    "label3: ",
     "throw",
     "throw  12",
     "throw\n12",
@@ -1447,16 +1660,6 @@ TEST(ParserSync) {
   CcTest::i_isolate()->stack_guard()->SetStackLimit(
       i::GetCurrentStackPosition() - 128 * 1024);
 
-  static const ParserFlag flags1[] = {
-    kAllowArrowFunctions,
-    kAllowClasses,
-    kAllowHarmonyNumericLiterals,
-    kAllowHarmonyObjectLiterals,
-    kAllowHarmonyScoping,
-    kAllowLazy,
-    kAllowModules,
-  };
-
   for (int i = 0; context_data[i][0] != NULL; ++i) {
     for (int j = 0; statement_data[j] != NULL; ++j) {
       for (int k = 0; termination_data[k] != NULL; ++k) {
@@ -1476,7 +1679,7 @@ TEST(ParserSync) {
             termination_data[k],
             context_data[i][1]);
         CHECK(length == kProgramSize);
-        TestParserSync(program.start(), flags1, arraysize(flags1));
+        TestParserSync(program.start(), NULL, 0);
       }
     }
   }
@@ -1484,11 +1687,10 @@ TEST(ParserSync) {
   // Neither Harmony numeric literals nor our natives syntax have any
   // interaction with the flags above, so test these separately to reduce
   // the combinatorial explosion.
-  static const ParserFlag flags2[] = { kAllowHarmonyNumericLiterals };
-  TestParserSync("0o1234", flags2, arraysize(flags2));
-  TestParserSync("0b1011", flags2, arraysize(flags2));
+  TestParserSync("0o1234", NULL, 0);
+  TestParserSync("0b1011", NULL, 0);
 
-  static const ParserFlag flags3[] = { kAllowNativesSyntax };
+  static const ParserFlag flags3[] = { kAllowNatives };
   TestParserSync("%DebugPrint(123)", flags3, arraysize(flags3));
 }
 
@@ -1511,8 +1713,9 @@ TEST(StrictOctal) {
   v8::Script::Compile(v8::String::NewFromUtf8(CcTest::isolate(), script));
   CHECK(try_catch.HasCaught());
   v8::String::Utf8Value exception(try_catch.Exception());
-  CHECK_EQ("SyntaxError: Octal literals are not allowed in strict mode.",
-           *exception);
+  CHECK_EQ(0,
+           strcmp("SyntaxError: Octal literals are not allowed in strict mode.",
+                  *exception));
 }
 
 
@@ -1522,7 +1725,9 @@ void RunParserSyncTest(const char* context_data[][2],
                        const ParserFlag* flags = NULL,
                        int flags_len = 0,
                        const ParserFlag* always_true_flags = NULL,
-                       int always_true_flags_len = 0) {
+                       int always_true_len = 0,
+                       const ParserFlag* always_false_flags = NULL,
+                       int always_false_len = 0) {
   v8::HandleScope handles(CcTest::isolate());
   v8::Handle<v8::Context> context = v8::Context::New(CcTest::isolate());
   v8::Context::Scope context_scope(context);
@@ -1530,36 +1735,32 @@ void RunParserSyncTest(const char* context_data[][2],
   CcTest::i_isolate()->stack_guard()->SetStackLimit(
       i::GetCurrentStackPosition() - 128 * 1024);
 
+  // Experimental feature flags should not go here; pass the flags as
+  // always_true_flags if the test needs them.
   static const ParserFlag default_flags[] = {
-    kAllowArrowFunctions,
-    kAllowClasses,
-    kAllowHarmonyNumericLiterals,
-    kAllowHarmonyObjectLiterals,
-    kAllowHarmonyScoping,
     kAllowLazy,
-    kAllowModules,
-    kAllowNativesSyntax,
+    kAllowNatives,
   };
   ParserFlag* generated_flags = NULL;
   if (flags == NULL) {
     flags = default_flags;
     flags_len = arraysize(default_flags);
-    if (always_true_flags != NULL) {
-      // Remove always_true_flags from default_flags.
-      CHECK(always_true_flags_len < flags_len);
-      generated_flags = new ParserFlag[flags_len - always_true_flags_len];
+    if (always_true_flags != NULL || always_false_flags != NULL) {
+      // Remove always_true/false_flags from default_flags (if present).
+      CHECK((always_true_flags != NULL) == (always_true_len > 0));
+      CHECK((always_false_flags != NULL) == (always_false_len > 0));
+      generated_flags = new ParserFlag[flags_len + always_true_len];
       int flag_index = 0;
       for (int i = 0; i < flags_len; ++i) {
         bool use_flag = true;
-        for (int j = 0; j < always_true_flags_len; ++j) {
-          if (flags[i] == always_true_flags[j]) {
-            use_flag = false;
-            break;
-          }
+        for (int j = 0; use_flag && j < always_true_len; ++j) {
+          if (flags[i] == always_true_flags[j]) use_flag = false;
+        }
+        for (int j = 0; use_flag && j < always_false_len; ++j) {
+          if (flags[i] == always_false_flags[j]) use_flag = false;
         }
         if (use_flag) generated_flags[flag_index++] = flags[i];
       }
-      CHECK(flag_index == flags_len - always_true_flags_len);
       flags_len = flag_index;
       flags = generated_flags;
     }
@@ -1584,7 +1785,9 @@ void RunParserSyncTest(const char* context_data[][2],
                      flags_len,
                      result,
                      always_true_flags,
-                     always_true_flags_len);
+                     always_true_len,
+                     always_false_flags,
+                     always_false_len);
     }
   }
   delete[] generated_flags;
@@ -1597,10 +1800,11 @@ TEST(ErrorsEvalAndArguments) {
   // ok to use "eval" or "arguments" as identifiers. With the strict mode, it
   // isn't.
   const char* context_data[][2] = {
-    { "\"use strict\";", "" },
-    { "var eval; function test_func() {\"use strict\"; ", "}"},
-    { NULL, NULL }
-  };
+      {"\"use strict\";", ""},
+      {"\"use strong\";", ""},
+      {"var eval; function test_func() {\"use strict\"; ", "}"},
+      {"var eval; function test_func() {\"use strong\"; ", "}"},
+      {NULL, NULL}};
 
   const char* statement_data[] = {
     "var eval;",
@@ -1630,7 +1834,9 @@ TEST(ErrorsEvalAndArguments) {
     NULL
   };
 
-  RunParserSyncTest(context_data, statement_data, kError);
+  static const ParserFlag always_flags[] = {kAllowStrongMode};
+  RunParserSyncTest(context_data, statement_data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
 }
 
 
@@ -1691,10 +1897,44 @@ TEST(NoErrorsEvalAndArgumentsStrict) {
     NULL
   };
 
-  static const ParserFlag always_flags[] = {kAllowArrowFunctions};
+  static const ParserFlag always_flags[] = {kAllowHarmonyArrowFunctions};
   RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
                     always_flags, arraysize(always_flags));
 }
+
+
+#define FUTURE_STRICT_RESERVED_WORDS(V) \
+  V(implements)                         \
+  V(interface)                          \
+  V(let)                                \
+  V(package)                            \
+  V(private)                            \
+  V(protected)                          \
+  V(public)                             \
+  V(static)                             \
+  V(yield)
+
+
+#define LIMITED_FUTURE_STRICT_RESERVED_WORDS(V) \
+  V(implements)                                 \
+  V(let)                                        \
+  V(static)                                     \
+  V(yield)
+
+
+#define FUTURE_STRICT_RESERVED_STATEMENTS(NAME) \
+  "var " #NAME ";",                             \
+  "var foo, " #NAME ";",                        \
+  "try { } catch (" #NAME ") { }",              \
+  "function " #NAME "() { }",                   \
+  "(function " #NAME "() { })",                 \
+  "function foo(" #NAME ") { }",                \
+  "function foo(bar, " #NAME ") { }",           \
+  #NAME " = 1;",                                \
+  #NAME " += 1;",                               \
+  "var foo = " #NAME " = 1;",                   \
+  "++" #NAME ";",                               \
+  #NAME " ++;",
 
 
 TEST(ErrorsFutureStrictReservedWords) {
@@ -1703,31 +1943,26 @@ TEST(ErrorsFutureStrictReservedWords) {
   // it's ok to use future strict reserved words as identifiers. With the strict
   // mode, it isn't.
   const char* context_data[][2] = {
-    { "\"use strict\";", "" },
-    { "function test_func() {\"use strict\"; ", "}"},
-    { "() => { \"use strict\"; ", "}" },
-    { NULL, NULL }
-  };
+      {"function test_func() {\"use strict\"; ", "}"},
+      {"() => { \"use strict\"; ", "}"},
+      {"function test_func() {\"use strong\"; ", "}"},
+      {"() => { \"use strong\"; ", "}"},
+      {NULL, NULL}};
 
-  const char* statement_data[] = {
-    "var interface;",
-    "var foo, interface;",
-    "try { } catch (interface) { }",
-    "function interface() { }",
-    "function foo(interface) { }",
-    "function foo(bar, interface) { }",
-    "interface = 1;",
-    "var foo = interface = 1;",
-    "++interface;",
-    "interface++;",
-    "var yield = 13;",
+  const char* statement_data[] {
+    LIMITED_FUTURE_STRICT_RESERVED_WORDS(FUTURE_STRICT_RESERVED_STATEMENTS)
     NULL
   };
 
-  static const ParserFlag always_flags[] = {kAllowArrowFunctions};
+  static const ParserFlag always_flags[] = {kAllowStrongMode};
+  RunParserSyncTest(context_data, statement_data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
   RunParserSyncTest(context_data, statement_data, kError, NULL, 0, always_flags,
                     arraysize(always_flags));
 }
+
+
+#undef LIMITED_FUTURE_STRICT_RESERVED_WORDS
 
 
 TEST(NoErrorsFutureStrictReservedWords) {
@@ -1739,23 +1974,18 @@ TEST(NoErrorsFutureStrictReservedWords) {
   };
 
   const char* statement_data[] = {
-    "var interface;",
-    "var foo, interface;",
-    "try { } catch (interface) { }",
-    "function interface() { }",
-    "function foo(interface) { }",
-    "function foo(bar, interface) { }",
-    "interface = 1;",
-    "var foo = interface = 1;",
-    "++interface;",
-    "interface++;",
-    "var yield = 13;",
+    FUTURE_STRICT_RESERVED_WORDS(FUTURE_STRICT_RESERVED_STATEMENTS)
     NULL
   };
 
-  static const ParserFlag always_flags[] = {kAllowArrowFunctions};
+  static const ParserFlag always_flags[] = {kAllowHarmonyArrowFunctions};
   RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
                     always_flags, arraysize(always_flags));
+
+  static const ParserFlag classes_flags[] = {kAllowHarmonyArrowFunctions,
+                                             kAllowHarmonyClasses};
+  RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
+                    classes_flags, arraysize(classes_flags));
 }
 
 
@@ -1906,15 +2136,21 @@ TEST(NoErrorsYieldSloppyGeneratorsEnabled) {
 
 TEST(ErrorsYieldStrict) {
   const char* context_data[][2] = {
-    { "\"use strict\";", "" },
-    { "\"use strict\"; function not_gen() {", "}" },
-    { "function test_func() {\"use strict\"; ", "}"},
-    { "\"use strict\"; function * gen() { function not_gen() {", "} }" },
-    { "\"use strict\"; (function not_gen() {", "})" },
-    { "\"use strict\"; (function * gen() { (function not_gen() {", "}) })" },
-    { "() => {\"use strict\"; ", "}" },
-    { NULL, NULL }
-  };
+      {"\"use strict\";", ""},
+      {"\"use strict\"; function not_gen() {", "}"},
+      {"function test_func() {\"use strict\"; ", "}"},
+      {"\"use strict\"; function * gen() { function not_gen() {", "} }"},
+      {"\"use strict\"; (function not_gen() {", "})"},
+      {"\"use strict\"; (function * gen() { (function not_gen() {", "}) })"},
+      {"() => {\"use strict\"; ", "}"},
+      {"\"use strong\";", ""},
+      {"\"use strong\"; function not_gen() {", "}"},
+      {"function test_func() {\"use strong\"; ", "}"},
+      {"\"use strong\"; function * gen() { function not_gen() {", "} }"},
+      {"\"use strong\"; (function not_gen() {", "})"},
+      {"\"use strong\"; (function * gen() { (function not_gen() {", "}) })"},
+      {"() => {\"use strong\"; ", "}"},
+      {NULL, NULL}};
 
   const char* statement_data[] = {
     "var yield;",
@@ -1934,7 +2170,9 @@ TEST(ErrorsYieldStrict) {
     NULL
   };
 
-  RunParserSyncTest(context_data, statement_data, kError);
+  static const ParserFlag always_flags[] = {kAllowStrongMode};
+  RunParserSyncTest(context_data, statement_data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
 }
 
 
@@ -2052,8 +2290,10 @@ TEST(ErrorsNameOfStrictFunction) {
   const char* context_data[][2] = {
     { "function ", ""},
     { "\"use strict\"; function", ""},
+    { "\"use strong\"; function", ""},
     { "function * ", ""},
     { "\"use strict\"; function * ", ""},
+    { "\"use strong\"; function * ", ""},
     { NULL, NULL }
   };
 
@@ -2063,12 +2303,14 @@ TEST(ErrorsNameOfStrictFunction) {
     "interface() {\"use strict\";}",
     "yield() {\"use strict\";}",
     // Future reserved words are always illegal
-    "function super() { }",
-    "function super() {\"use strict\";}",
+    "super() { }",
+    "super() {\"use strict\";}",
     NULL
   };
 
-  RunParserSyncTest(context_data, statement_data, kError);
+  static const ParserFlag always_flags[] = {kAllowStrongMode};
+  RunParserSyncTest(context_data, statement_data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
 }
 
 
@@ -2129,20 +2371,25 @@ TEST(ErrorsIllegalWordsAsLabelsSloppy) {
 TEST(ErrorsIllegalWordsAsLabelsStrict) {
   // Tests that illegal tokens as labels produce the correct errors.
   const char* context_data[][2] = {
-    { "\"use strict\";", "" },
-    { "function test_func() {\"use strict\"; ", "}"},
-    { "() => {\"use strict\"; ", "}" },
-    { NULL, NULL }
-  };
+      {"\"use strict\";", ""},
+      {"function test_func() {\"use strict\"; ", "}"},
+      {"() => {\"use strict\"; ", "}"},
+      {"\"use strong\";", ""},
+      {"function test_func() {\"use strong\"; ", "}"},
+      {"() => {\"use strong\"; ", "}"},
+      {NULL, NULL}};
 
+#define LABELLED_WHILE(NAME) #NAME ": while (true) { break " #NAME "; }",
   const char* statement_data[] = {
     "super: while(true) { break super; }",
-    "interface: while(true) { break interface; }",
-    "yield: while(true) { break yield; }",
+    FUTURE_STRICT_RESERVED_WORDS(LABELLED_WHILE)
     NULL
   };
+#undef LABELLED_WHILE
 
-  RunParserSyncTest(context_data, statement_data, kError);
+  static const ParserFlag always_flags[] = {kAllowStrongMode};
+  RunParserSyncTest(context_data, statement_data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
 }
 
 
@@ -2165,7 +2412,28 @@ TEST(NoErrorsIllegalWordsAsLabels) {
     NULL
   };
 
-  static const ParserFlag always_flags[] = {kAllowArrowFunctions};
+  static const ParserFlag always_flags[] = {kAllowHarmonyArrowFunctions};
+  RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(NoErrorsFutureStrictReservedAsLabelsSloppy) {
+  const char* context_data[][2] = {
+    { "", ""},
+    { "function test_func() {", "}" },
+    { "() => {", "}" },
+    { NULL, NULL }
+  };
+
+#define LABELLED_WHILE(NAME) #NAME ": while (true) { break " #NAME "; }",
+  const char* statement_data[] {
+    FUTURE_STRICT_RESERVED_WORDS(LABELLED_WHILE)
+    NULL
+  };
+#undef LABELLED_WHILE
+
+  static const ParserFlag always_flags[] = {kAllowHarmonyArrowFunctions};
   RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
                     always_flags, arraysize(always_flags));
 }
@@ -2198,10 +2466,13 @@ TEST(NoErrorsParenthesizedDirectivePrologue) {
 
   const char* statement_data[] = {
     "(\"use strict\"); var eval;",
+    "(\"use strong\"); var eval;",
     NULL
   };
 
-  RunParserSyncTest(context_data, statement_data, kSuccess);
+  static const ParserFlag always_flags[] = {kAllowStrongMode};
+  RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
 }
 
 
@@ -2265,7 +2536,8 @@ TEST(DontRegressPreParserDataSizes) {
     // No functions.
     {"var x = 42;", 0},
     // Functions.
-    {"function foo() {}", 1}, {"function foo() {} function bar() {}", 2},
+    {"function foo() {}", 1},
+    {"function foo() {} function bar() {}", 2},
     // Getter / setter functions are recorded as functions if they're on the top
     // level.
     {"var x = {get foo(){} };", 1},
@@ -2281,21 +2553,25 @@ TEST(DontRegressPreParserDataSizes) {
     i::Handle<i::String> source =
         factory->NewStringFromUtf8(i::CStrVector(program)).ToHandleChecked();
     i::Handle<i::Script> script = factory->NewScript(source);
-    i::CompilationInfoWithZone info(script);
+    i::Zone zone;
+    i::ParseInfo info(&zone, script);
     i::ScriptData* sd = NULL;
-    info.SetCachedData(&sd, v8::ScriptCompiler::kProduceParserCache);
-    i::Parser::Parse(&info, true);
-    i::ParseData pd(sd);
+    info.set_cached_data(&sd);
+    info.set_compile_options(v8::ScriptCompiler::kProduceParserCache);
+    info.set_allow_lazy_parsing();
+    i::Parser::ParseStatic(&info);
+    i::ParseData* pd = i::ParseData::FromCachedData(sd);
 
-    if (pd.FunctionCount() != test_cases[i].functions) {
+    if (pd->FunctionCount() != test_cases[i].functions) {
       v8::base::OS::Print(
           "Expected preparse data for program:\n"
           "\t%s\n"
           "to contain %d functions, however, received %d functions.\n",
-          program, test_cases[i].functions, pd.FunctionCount());
+          program, test_cases[i].functions, pd->FunctionCount());
       CHECK(false);
     }
     delete sd;
+    delete pd;
   }
 }
 
@@ -2324,6 +2600,7 @@ TEST(FunctionDeclaresItselfStrict) {
 
   const char* strict_statement_data[] = {
     "\"use strict\";",
+    "\"use strong\";",
     NULL
   };
 
@@ -2332,8 +2609,11 @@ TEST(FunctionDeclaresItselfStrict) {
     NULL
   };
 
-  RunParserSyncTest(context_data, strict_statement_data, kError);
-  RunParserSyncTest(context_data, non_strict_statement_data, kSuccess);
+  static const ParserFlag always_flags[] = {kAllowStrongMode};
+  RunParserSyncTest(context_data, strict_statement_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(context_data, non_strict_statement_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
 }
 
 
@@ -2416,9 +2696,9 @@ TEST(Intrinsics) {
     NULL
   };
 
-  // This test requires kAllowNativesSyntax to succeed.
+  // This test requires kAllowNatives to succeed.
   static const ParserFlag always_true_flags[] = {
-    kAllowNativesSyntax
+    kAllowNatives
   };
 
   RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
@@ -2485,12 +2765,9 @@ TEST(ErrorsNewExpression) {
 
 
 TEST(StrictObjectLiteralChecking) {
-  const char* strict_context_data[][2] = {
+  const char* context_data[][2] = {
     {"\"use strict\"; var myobject = {", "};"},
     {"\"use strict\"; var myobject = {", ",};"},
-    { NULL, NULL }
-  };
-  const char* non_strict_context_data[][2] = {
     {"var myobject = {", "};"},
     {"var myobject = {", ",};"},
     { NULL, NULL }
@@ -2508,8 +2785,7 @@ TEST(StrictObjectLiteralChecking) {
     NULL
   };
 
-  RunParserSyncTest(non_strict_context_data, statement_data, kSuccess);
-  RunParserSyncTest(strict_context_data, statement_data, kError);
+  RunParserSyncTest(context_data, statement_data, kSuccess);
 }
 
 
@@ -2521,36 +2797,17 @@ TEST(ErrorsObjectLiteralChecking) {
   };
 
   const char* statement_data[] = {
-      ",",
-      "foo: 1, get foo() {}",
-      "foo: 1, set foo(v) {}",
-      "\"foo\": 1, get \"foo\"() {}",
-      "\"foo\": 1, set \"foo\"(v) {}",
-      "1: 1, get 1() {}",
-      "1: 1, set 1() {}",
-      "get foo() {}, get foo() {}",
-      "set foo(_) {}, set foo(_) {}",
-      // It's counter-intuitive, but these collide too (even in classic
-      // mode). Note that we can have "foo" and foo as properties in classic
-      // mode,
-      // but we cannot have "foo" and get foo, or foo and get "foo".
-      "foo: 1, get \"foo\"() {}",
-      "foo: 1, set \"foo\"(v) {}",
-      "\"foo\": 1, get foo() {}",
-      "\"foo\": 1, set foo(v) {}",
-      "1: 1, get \"1\"() {}",
-      "1: 1, set \"1\"() {}",
-      "\"1\": 1, get 1() {}"
-      "\"1\": 1, set 1(v) {}"
-      // Wrong number of parameters
-      "get bar(x) {}",
-      "get bar(x, y) {}",
-      "set bar() {}",
-      "set bar(x, y) {}",
-      // Parsing FunctionLiteral for getter or setter fails
-      "get foo( +",
-      "get foo() \"error\"",
-      NULL};
+    ",",
+    // Wrong number of parameters
+    "get bar(x) {}",
+    "get bar(x, y) {}",
+    "set bar() {}",
+    "set bar(x, y) {}",
+    // Parsing FunctionLiteral for getter or setter fails
+    "get foo( +",
+    "get foo() \"error\"",
+    NULL
+  };
 
   RunParserSyncTest(context_data, statement_data, kError);
 }
@@ -2566,6 +2823,22 @@ TEST(NoErrorsObjectLiteralChecking) {
   };
 
   const char* statement_data[] = {
+    "foo: 1, get foo() {}",
+    "foo: 1, set foo(v) {}",
+    "\"foo\": 1, get \"foo\"() {}",
+    "\"foo\": 1, set \"foo\"(v) {}",
+    "1: 1, get 1() {}",
+    "1: 1, set 1(v) {}",
+    "get foo() {}, get foo() {}",
+    "set foo(_) {}, set foo(v) {}",
+    "foo: 1, get \"foo\"() {}",
+    "foo: 1, set \"foo\"(v) {}",
+    "\"foo\": 1, get foo() {}",
+    "\"foo\": 1, set foo(v) {}",
+    "1: 1, get \"1\"() {}",
+    "1: 1, set \"1\"(v) {}",
+    "\"1\": 1, get 1() {}",
+    "\"1\": 1, set 1(v) {}",
     "foo: 1, bar: 2",
     "\"foo\": 1, \"bar\": 2",
     "1: 1, 2: 2",
@@ -2630,6 +2903,11 @@ TEST(TooManyArguments) {
 
 TEST(StrictDelete) {
   // "delete <Identifier>" is not allowed in strict mode.
+  const char* strong_context_data[][2] = {
+    {"\"use strong\"; ", ""},
+    { NULL, NULL }
+  };
+
   const char* strict_context_data[][2] = {
     {"\"use strict\"; ", ""},
     { NULL, NULL }
@@ -2671,14 +2949,57 @@ TEST(StrictDelete) {
     NULL
   };
 
-  RunParserSyncTest(strict_context_data, sloppy_statement_data, kError);
-  RunParserSyncTest(sloppy_context_data, sloppy_statement_data, kSuccess);
+  static const ParserFlag always_flags[] = {kAllowStrongMode};
+  RunParserSyncTest(strong_context_data, sloppy_statement_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strict_context_data, sloppy_statement_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(sloppy_context_data, sloppy_statement_data, kSuccess, NULL,
+                    0, always_flags, arraysize(always_flags));
 
-  RunParserSyncTest(strict_context_data, good_statement_data, kSuccess);
-  RunParserSyncTest(sloppy_context_data, good_statement_data, kSuccess);
+  RunParserSyncTest(strong_context_data, good_statement_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strict_context_data, good_statement_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(sloppy_context_data, good_statement_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
 
-  RunParserSyncTest(strict_context_data, bad_statement_data, kError);
-  RunParserSyncTest(sloppy_context_data, bad_statement_data, kError);
+  RunParserSyncTest(strong_context_data, bad_statement_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strict_context_data, bad_statement_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(sloppy_context_data, bad_statement_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(NoErrorsDeclsInCase) {
+  const char* context_data[][2] = {
+    {"'use strict'; switch(x) { case 1:", "}"},
+    {"function foo() {'use strict'; switch(x) { case 1:", "}}"},
+    {"'use strict'; switch(x) { case 1: case 2:", "}"},
+    {"function foo() {'use strict'; switch(x) { case 1: case 2:", "}}"},
+    {"'use strict'; switch(x) { default:", "}"},
+    {"function foo() {'use strict'; switch(x) { default:", "}}"},
+    {"'use strict'; switch(x) { case 1: default:", "}"},
+    {"function foo() {'use strict'; switch(x) { case 1: default:", "}}"},
+    { nullptr, nullptr }
+  };
+
+  const char* statement_data[] = {
+    "function f() { }",
+    "class C { }",
+    "class C extends Q {}",
+    "function f() { } class C {}",
+    "function f() { }; class C {}",
+    "class C {}; function f() {}",
+    nullptr
+  };
+
+  static const ParserFlag always_flags[] = {kAllowHarmonyClasses};
+
+  RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
 }
 
 
@@ -2894,7 +3215,7 @@ TEST(SerializationOfMaybeAssignmentFlag) {
   i::Handle<i::String> source = factory->InternalizeUtf8String(program.start());
   source->PrintOn(stdout);
   printf("\n");
-  i::Zone zone(isolate);
+  i::Zone zone;
   v8::Local<v8::Value> v = CompileRun(src);
   i::Handle<i::Object> o = v8::Utils::OpenHandle(*v);
   i::Handle<i::JSFunction> f = i::Handle<i::JSFunction>::cast(o);
@@ -2904,11 +3225,12 @@ TEST(SerializationOfMaybeAssignmentFlag) {
   const i::AstRawString* name = avf.GetOneByteString("result");
   i::Handle<i::String> str = name->string();
   CHECK(str->IsInternalizedString());
-  i::Scope* global_scope =
-      new (&zone) i::Scope(NULL, i::GLOBAL_SCOPE, &avf, &zone);
-  global_scope->Initialize();
-  i::Scope* s = i::Scope::DeserializeScopeChain(context, global_scope, &zone);
-  DCHECK(s != global_scope);
+  i::Scope* script_scope =
+      new (&zone) i::Scope(&zone, NULL, i::SCRIPT_SCOPE, &avf);
+  script_scope->Initialize();
+  i::Scope* s =
+      i::Scope::DeserializeScopeChain(isolate, &zone, context, script_scope);
+  DCHECK(s != script_scope);
   DCHECK(name != NULL);
 
   // Get result from h's function context (that is f's context)
@@ -2943,7 +3265,7 @@ TEST(IfArgumentsArrayAccessedThenParametersMaybeAssigned) {
   i::Handle<i::String> source = factory->InternalizeUtf8String(program.start());
   source->PrintOn(stdout);
   printf("\n");
-  i::Zone zone(isolate);
+  i::Zone zone;
   v8::Local<v8::Value> v = CompileRun(src);
   i::Handle<i::Object> o = v8::Utils::OpenHandle(*v);
   i::Handle<i::JSFunction> f = i::Handle<i::JSFunction>::cast(o);
@@ -2951,80 +3273,18 @@ TEST(IfArgumentsArrayAccessedThenParametersMaybeAssigned) {
   i::AstValueFactory avf(&zone, isolate->heap()->HashSeed());
   avf.Internalize(isolate);
 
-  i::Scope* global_scope =
-      new (&zone) i::Scope(NULL, i::GLOBAL_SCOPE, &avf, &zone);
-  global_scope->Initialize();
-  i::Scope* s = i::Scope::DeserializeScopeChain(context, global_scope, &zone);
-  DCHECK(s != global_scope);
+  i::Scope* script_scope =
+      new (&zone) i::Scope(&zone, NULL, i::SCRIPT_SCOPE, &avf);
+  script_scope->Initialize();
+  i::Scope* s =
+      i::Scope::DeserializeScopeChain(isolate, &zone, context, script_scope);
+  DCHECK(s != script_scope);
   const i::AstRawString* name_x = avf.GetOneByteString("x");
 
   // Get result from f's function context (that is g's outer context)
   i::Variable* var_x = s->Lookup(name_x);
   CHECK(var_x != NULL);
   CHECK(var_x->maybe_assigned() == i::kMaybeAssigned);
-}
-
-
-TEST(ExportsMaybeAssigned) {
-  i::FLAG_use_strict = true;
-  i::FLAG_harmony_scoping = true;
-  i::FLAG_harmony_modules = true;
-
-  i::Isolate* isolate = CcTest::i_isolate();
-  i::Factory* factory = isolate->factory();
-  i::HandleScope scope(isolate);
-  LocalContext env;
-
-  const char* src =
-      "module A {"
-      "  export var x = 1;"
-      "  export function f() { return x };"
-      "  export const y = 2;"
-      "  module B {}"
-      "  export module C {}"
-      "};"
-      "A.f";
-
-  i::ScopedVector<char> program(Utf8LengthHelper(src) + 1);
-  i::SNPrintF(program, "%s", src);
-  i::Handle<i::String> source = factory->InternalizeUtf8String(program.start());
-  source->PrintOn(stdout);
-  printf("\n");
-  i::Zone zone(isolate);
-  v8::Local<v8::Value> v = CompileRun(src);
-  i::Handle<i::Object> o = v8::Utils::OpenHandle(*v);
-  i::Handle<i::JSFunction> f = i::Handle<i::JSFunction>::cast(o);
-  i::Context* context = f->context();
-  i::AstValueFactory avf(&zone, isolate->heap()->HashSeed());
-  avf.Internalize(isolate);
-
-  i::Scope* global_scope =
-      new (&zone) i::Scope(NULL, i::GLOBAL_SCOPE, &avf, &zone);
-  global_scope->Initialize();
-  i::Scope* s = i::Scope::DeserializeScopeChain(context, global_scope, &zone);
-  DCHECK(s != global_scope);
-  const i::AstRawString* name_x = avf.GetOneByteString("x");
-  const i::AstRawString* name_f = avf.GetOneByteString("f");
-  const i::AstRawString* name_y = avf.GetOneByteString("y");
-  const i::AstRawString* name_B = avf.GetOneByteString("B");
-  const i::AstRawString* name_C = avf.GetOneByteString("C");
-
-  // Get result from h's function context (that is f's context)
-  i::Variable* var_x = s->Lookup(name_x);
-  CHECK(var_x != NULL);
-  CHECK(var_x->maybe_assigned() == i::kMaybeAssigned);
-  i::Variable* var_f = s->Lookup(name_f);
-  CHECK(var_f != NULL);
-  CHECK(var_f->maybe_assigned() == i::kMaybeAssigned);
-  i::Variable* var_y = s->Lookup(name_y);
-  CHECK(var_y != NULL);
-  CHECK(var_y->maybe_assigned() == i::kNotAssigned);
-  i::Variable* var_B = s->Lookup(name_B);
-  CHECK(var_B != NULL);
-  CHECK(var_B->maybe_assigned() == i::kNotAssigned);
-  i::Variable* var_C = s->Lookup(name_C);
-  CHECK(var_C != NULL);
-  CHECK(var_C->maybe_assigned() == i::kNotAssigned);
 }
 
 
@@ -3149,15 +3409,11 @@ TEST(InnerAssignment) {
           printf("\n");
 
           i::Handle<i::Script> script = factory->NewScript(source);
-          i::CompilationInfoWithZone info(script);
-          i::Parser::ParseInfo parse_info = {
-              isolate->stack_guard()->real_climit(),
-              isolate->heap()->HashSeed(), isolate->unicode_cache()};
-          i::Parser parser(&info, &parse_info);
-          parser.set_allow_harmony_scoping(true);
-          CHECK(parser.Parse());
-          CHECK(i::Rewriter::Rewrite(&info));
-          CHECK(i::Scope::Analyze(&info));
+          i::Zone zone;
+          i::ParseInfo info(&zone, script);
+          i::Parser parser(&info);
+          CHECK(parser.Parse(&info));
+          CHECK(i::Compiler::Analyze(&info));
           CHECK(info.function() != NULL);
 
           i::Scope* scope = info.function()->scope();
@@ -3199,7 +3455,28 @@ TEST(UseAsmUseCount) {
              "var foo = 1;\n"
              "\"use asm\";\n"  // Only the first one counts.
              "function bar() { \"use asm\"; var baz = 1; }");
-  CHECK_EQ(2, use_counts[v8::Isolate::kUseAsm]);
+  // Optimizing will double-count because the source is parsed twice.
+  CHECK_EQ(i::FLAG_always_opt ? 4 : 2, use_counts[v8::Isolate::kUseAsm]);
+}
+
+
+TEST(UseConstLegacyCount) {
+  i::Isolate* isolate = CcTest::i_isolate();
+  i::HandleScope scope(isolate);
+  LocalContext env;
+  int use_counts[v8::Isolate::kUseCounterFeatureCount] = {};
+  global_use_counts = use_counts;
+  CcTest::isolate()->SetUseCounterCallback(MockUseCounterCallback);
+  CompileRun(
+      "const x = 1;\n"
+      "var foo = 1;\n"
+      "const y = 1;\n"
+      "function bar() {\n"
+      "    const z = 1; var baz = 1;\n"
+      "    function q() { const k = 42; }\n"
+      "}");
+  // Optimizing will double-count because the source is parsed twice.
+  CHECK_EQ(i::FLAG_always_opt ? 8 : 4, use_counts[v8::Isolate::kLegacyConst]);
 }
 
 
@@ -3244,20 +3521,23 @@ TEST(ErrorsArrowFunctions) {
     "(x, (y, z)) => 0",
     "((x, y), z) => 0",
 
-    // Parameter lists are always validated as strict, so those are errors.
-    "eval => {}",
-    "arguments => {}",
-    "yield => {}",
-    "interface => {}",
-    "(eval) => {}",
-    "(arguments) => {}",
-    "(yield) => {}",
-    "(interface) => {}",
-    "(eval, bar) => {}",
-    "(bar, eval) => {}",
-    "(bar, arguments) => {}",
-    "(bar, yield) => {}",
-    "(bar, interface) => {}",
+    // Arrow function formal parameters are parsed as StrictFormalParameters,
+    // which confusingly only implies that there are no duplicates.  Words
+    // reserved in strict mode, and eval or arguments, are indeed valid in
+    // sloppy mode.
+    "eval => { 'use strict'; 0 }",
+    "arguments => { 'use strict'; 0 }",
+    "yield => { 'use strict'; 0 }",
+    "interface => { 'use strict'; 0 }",
+    "(eval) => { 'use strict'; 0 }",
+    "(arguments) => { 'use strict'; 0 }",
+    "(yield) => { 'use strict'; 0 }",
+    "(interface) => { 'use strict'; 0 }",
+    "(eval, bar) => { 'use strict'; 0 }",
+    "(bar, eval) => { 'use strict'; 0 }",
+    "(bar, arguments) => { 'use strict'; 0 }",
+    "(bar, yield) => { 'use strict'; 0 }",
+    "(bar, interface) => { 'use strict'; 0 }",
     // TODO(aperez): Detecting duplicates does not work in PreParser.
     // "(bar, bar) => {}",
 
@@ -3303,8 +3583,8 @@ TEST(ErrorsArrowFunctions) {
   };
 
   // The test is quite slow, so run it with a reduced set of flags.
-  static const ParserFlag flags[] = {kAllowLazy, kAllowHarmonyScoping};
-  static const ParserFlag always_flags[] = { kAllowArrowFunctions };
+  static const ParserFlag flags[] = {kAllowLazy};
+  static const ParserFlag always_flags[] = { kAllowHarmonyArrowFunctions };
   RunParserSyncTest(context_data, statement_data, kError, flags,
                     arraysize(flags), always_flags, arraysize(always_flags));
 }
@@ -3358,51 +3638,290 @@ TEST(NoErrorsArrowFunctions) {
     NULL
   };
 
-  static const ParserFlag always_flags[] = {kAllowArrowFunctions};
+  static const ParserFlag always_flags[] = {kAllowHarmonyArrowFunctions};
   RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
                     always_flags, arraysize(always_flags));
 }
 
 
-TEST(NoErrorsSuper) {
+TEST(ArrowFunctionsSloppyParameterNames) {
+  const char* strong_context_data[][2] = {
+    {"'use strong'; ", ";"},
+    {"'use strong'; bar ? (", ") : baz;"},
+    {"'use strong'; bar ? baz : (", ");"},
+    {"'use strong'; bar, ", ";"},
+    {"'use strong'; ", ", bar;"},
+    {NULL, NULL}
+  };
+
+  const char* strict_context_data[][2] = {
+    {"'use strict'; ", ";"},
+    {"'use strict'; bar ? (", ") : baz;"},
+    {"'use strict'; bar ? baz : (", ");"},
+    {"'use strict'; bar, ", ";"},
+    {"'use strict'; ", ", bar;"},
+    {NULL, NULL}
+  };
+
+  const char* sloppy_context_data[][2] = {
+    {"", ";"},
+    {"bar ? (", ") : baz;"},
+    {"bar ? baz : (", ");"},
+    {"bar, ", ";"},
+    {"", ", bar;"},
+    {NULL, NULL}
+  };
+
+  const char* statement_data[] = {
+    "eval => {}",
+    "arguments => {}",
+    "yield => {}",
+    "interface => {}",
+    "(eval) => {}",
+    "(arguments) => {}",
+    "(yield) => {}",
+    "(interface) => {}",
+    "(eval, bar) => {}",
+    "(bar, eval) => {}",
+    "(bar, arguments) => {}",
+    "(bar, yield) => {}",
+    "(bar, interface) => {}",
+    "(interface, eval) => {}",
+    "(interface, arguments) => {}",
+    "(eval, interface) => {}",
+    "(arguments, interface) => {}",
+    NULL
+  };
+
+  static const ParserFlag always_flags[] = { kAllowHarmonyArrowFunctions,
+                                             kAllowStrongMode};
+  RunParserSyncTest(strong_context_data, statement_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strict_context_data, statement_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(sloppy_context_data, statement_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(SuperNoErrors) {
   // Tests that parser and preparser accept 'super' keyword in right places.
-  const char* context_data[][2] = {{"", ";"},
-                                   {"k = ", ";"},
-                                   {"foo(", ");"},
-                                   {NULL, NULL}};
+  const char* context_data[][2] = {
+    {"class C { m() { ", "; } }"},
+    {"class C { m() { k = ", "; } }"},
+    {"class C { m() { foo(", "); } }"},
+    {"class C { m() { () => ", "; } }"},
+    {NULL, NULL}
+  };
 
   const char* statement_data[] = {
     "super.x",
     "super[27]",
+    "new super.x",
+    "new super.x()",
+    "new super[27]",
+    "new super[27]()",
+    "z.super",  // Ok, property lookup.
+    NULL
+  };
+
+  static const ParserFlag always_flags[] = {
+    kAllowHarmonyArrowFunctions,
+    kAllowHarmonyClasses,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy
+  };
+  RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(SuperErrors) {
+  const char* context_data[][2] = {
+    {"class C { m() { ", "; } }"},
+    {"class C { m() { k = ", "; } }"},
+    {"class C { m() { foo(", "); } }"},
+    {"class C { m() { () => ", "; } }"},
+    {NULL, NULL}
+  };
+
+  const char* expression_data[] = {
+    "super",
+    "super = x",
+    "y = super",
+    "f(super)",
     "new super",
     "new super()",
     "new super(12, 45)",
     "new new super",
     "new new super()",
     "new new super()()",
-    "z.super",  // Ok, property lookup.
-    NULL};
+    NULL
+  };
 
-  static const ParserFlag always_flags[] = {kAllowClasses};
-  RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
+  static const ParserFlag always_flags[] = {
+    kAllowHarmonyClasses,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy
+  };
+  RunParserSyncTest(context_data, expression_data, kError, NULL, 0,
                     always_flags, arraysize(always_flags));
 }
 
 
-TEST(ErrorsSuper) {
-  // Tests that parser and preparser generate same errors for 'super'.
-  const char* context_data[][2] = {{"", ";"},
-                                   {"k = ", ";"},
-                                   {"foo(", ");"},
+TEST(SuperCall) {
+  const char* context_data[][2] = {{"", ""},
                                    {NULL, NULL}};
 
+  const char* success_data[] = {
+    "class C extends B { constructor() { super(); } }",
+    "class C extends B { constructor() { () => super(); } }",
+    NULL
+  };
+
+  static const ParserFlag always_flags[] = {
+    kAllowHarmonyArrowFunctions,
+    kAllowHarmonyClasses,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy
+  };
+  RunParserSyncTest(context_data, success_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+
+  const char* error_data[] = {
+    "class C { constructor() { super(); } }",
+    "class C { method() { super(); } }",
+    "class C { method() { () => super(); } }",
+    "class C { *method() { super(); } }",
+    "class C { get x() { super(); } }",
+    "class C { set x(_) { super(); } }",
+    "({ method() { super(); } })",
+    "({ *method() { super(); } })",
+    "({ get x() { super(); } })",
+    "({ set x(_) { super(); } })",
+    "({ f: function() { super(); } })",
+    "(function() { super(); })",
+    "var f = function() { super(); }",
+    "({ f: function*() { super(); } })",
+    "(function*() { super(); })",
+    "var f = function*() { super(); }",
+    NULL
+  };
+
+  RunParserSyncTest(context_data, error_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(SuperNewNoErrors) {
+  const char* context_data[][2] = {
+    {"class C { constructor() { ", " } }"},
+    {"class C { *method() { ", " } }"},
+    {"class C { get x() { ", " } }"},
+    {"class C { set x(_) { ", " } }"},
+    {"({ method() { ", " } })"},
+    {"({ *method() { ", " } })"},
+    {"({ get x() { ", " } })"},
+    {"({ set x(_) { ", " } })"},
+    {NULL, NULL}
+  };
+
+  const char* expression_data[] = {
+    "new super.x;",
+    "new super.x();",
+    "() => new super.x;",
+    "() => new super.x();",
+    NULL
+  };
+
+  static const ParserFlag always_flags[] = {
+    kAllowHarmonyArrowFunctions,
+    kAllowHarmonyClasses,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy
+  };
+  RunParserSyncTest(context_data, expression_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(SuperNewErrors) {
+  const char* context_data[][2] = {
+    {"class C { method() { ", " } }"},
+    {"class C { *method() { ", " } }"},
+    {"class C { get x() { ", " } }"},
+    {"class C { set x(_) { ", " } }"},
+    {"({ method() { ", " } })"},
+    {"({ *method() { ", " } })"},
+    {"({ get x() { ", " } })"},
+    {"({ set x(_) { ", " } })"},
+    {"({ f: function() { ", " } })"},
+    {"(function() { ", " })"},
+    {"var f = function() { ", " }"},
+    {"({ f: function*() { ", " } })"},
+    {"(function*() { ", " })"},
+    {"var f = function*() { ", " }"},
+    {NULL, NULL}
+  };
+
   const char* statement_data[] = {
+    "new super;",
+    "new super();",
+    "() => new super;",
+    "() => new super();",
+    NULL
+  };
+
+  static const ParserFlag always_flags[] = {
+    kAllowHarmonyArrowFunctions,
+    kAllowHarmonyClasses,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy
+  };
+  RunParserSyncTest(context_data, statement_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(SuperErrorsNonMethods) {
+  // super is only allowed in methods, accessors and constructors.
+  const char* context_data[][2] = {
+    {"", ";"},
+    {"k = ", ";"},
+    {"foo(", ");"},
+    {"if (", ") {}"},
+    {"if (true) {", "}"},
+    {"if (false) {} else {", "}"},
+    {"while (true) {", "}"},
+    {"function f() {", "}"},
+    {"class C extends (", ") {}"},
+    {"class C { m() { function f() {", "} } }"},
+    {"({ m() { function f() {", "} } })"},
+    {NULL, NULL}
+  };
+
+  const char* statement_data[] = {
+    "super",
     "super = x",
     "y = super",
     "f(super)",
-    NULL};
+    "super.x",
+    "super[27]",
+    "super.x()",
+    "super[27]()",
+    "super()",
+    "new super.x",
+    "new super.x()",
+    "new super[27]",
+    "new super[27]()",
+    NULL
+  };
 
-  static const ParserFlag always_flags[] = {kAllowClasses};
+  static const ParserFlag always_flags[] = {
+    kAllowHarmonyClasses,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy
+  };
   RunParserSyncTest(context_data, statement_data, kError, NULL, 0,
                     always_flags, arraysize(always_flags));
 }
@@ -3516,8 +4035,6 @@ TEST(MethodDefinitionStrictFormalParamereters) {
   const char* params_data[] = {
     "x, x",
     "x, y, x",
-    "eval",
-    "arguments",
     "var",
     "const",
     NULL
@@ -3529,9 +4046,58 @@ TEST(MethodDefinitionStrictFormalParamereters) {
 }
 
 
+TEST(MethodDefinitionEvalArguments) {
+  const char* strict_context_data[][2] =
+      {{"'use strict'; ({method(", "){}});"},
+       {"'use strict'; ({*method(", "){}});"},
+       {NULL, NULL}};
+  const char* sloppy_context_data[][2] =
+      {{"({method(", "){}});"},
+       {"({*method(", "){}});"},
+       {NULL, NULL}};
+
+  const char* data[] = {
+      "eval",
+      "arguments",
+      NULL};
+
+  static const ParserFlag always_flags[] = {kAllowHarmonyObjectLiterals};
+
+  // Fail in strict mode
+  RunParserSyncTest(strict_context_data, data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
+
+  // OK in sloppy mode
+  RunParserSyncTest(sloppy_context_data, data, kSuccess, NULL, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(MethodDefinitionDuplicateEvalArguments) {
+  const char* context_data[][2] =
+      {{"'use strict'; ({method(", "){}});"},
+       {"'use strict'; ({*method(", "){}});"},
+       {"({method(", "){}});"},
+       {"({*method(", "){}});"},
+       {NULL, NULL}};
+
+  const char* data[] = {
+      "eval, eval",
+      "eval, a, eval",
+      "arguments, arguments",
+      "arguments, a, arguments",
+      NULL};
+
+  static const ParserFlag always_flags[] = {kAllowHarmonyObjectLiterals};
+
+  // In strict mode, the error is using "eval" or "arguments" as parameter names
+  // In sloppy mode, the error is that eval / arguments are duplicated
+  RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
 TEST(MethodDefinitionDuplicateProperty) {
-  // Duplicate properties are allowed in ES6 but we haven't removed that check
-  // yet.
   const char* context_data[][2] = {{"'use strict'; ({", "});"},
                                    {NULL, NULL}};
 
@@ -3562,7 +4128,7 @@ TEST(MethodDefinitionDuplicateProperty) {
   };
 
   static const ParserFlag always_flags[] = {kAllowHarmonyObjectLiterals};
-  RunParserSyncTest(context_data, params_data, kError, NULL, 0,
+  RunParserSyncTest(context_data, params_data, kSuccess, NULL, 0,
                     always_flags, arraysize(always_flags));
 }
 
@@ -3585,16 +4151,17 @@ TEST(ClassExpressionNoErrors) {
     "class name extends class base {} {}",
     NULL};
 
-  static const ParserFlag always_flags[] = {kAllowClasses};
+  static const ParserFlag always_flags[] = {
+      kAllowHarmonyClasses, kAllowHarmonySloppy};
   RunParserSyncTest(context_data, class_data, kSuccess, NULL, 0,
                     always_flags, arraysize(always_flags));
 }
 
 
 TEST(ClassDeclarationNoErrors) {
-  const char* context_data[][2] = {{"", ""},
-                                   {"{", "}"},
-                                   {"if (true) {", "}"},
+  const char* context_data[][2] = {{"'use strict'; ", ""},
+                                   {"'use strict'; {", "}"},
+                                   {"'use strict'; if (true) {", "}"},
                                    {NULL, NULL}};
   const char* statement_data[] = {
     "class name {}",
@@ -3604,7 +4171,7 @@ TEST(ClassDeclarationNoErrors) {
     "class name extends class base {} {}",
     NULL};
 
-  static const ParserFlag always_flags[] = {kAllowClasses};
+  static const ParserFlag always_flags[] = {kAllowHarmonyClasses};
   RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
                     always_flags, arraysize(always_flags));
 }
@@ -3648,8 +4215,9 @@ TEST(ClassBodyNoErrors) {
     NULL};
 
   static const ParserFlag always_flags[] = {
-    kAllowClasses,
-    kAllowHarmonyObjectLiterals
+    kAllowHarmonyClasses,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy
   };
   RunParserSyncTest(context_data, class_body_data, kSuccess, NULL, 0,
                     always_flags, arraysize(always_flags));
@@ -3706,8 +4274,9 @@ TEST(ClassPropertyNameNoErrors) {
     NULL};
 
   static const ParserFlag always_flags[] = {
-    kAllowClasses,
-    kAllowHarmonyObjectLiterals
+    kAllowHarmonyClasses,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy
   };
   RunParserSyncTest(context_data, name_data, kSuccess, NULL, 0,
                     always_flags, arraysize(always_flags));
@@ -3737,8 +4306,9 @@ TEST(ClassExpressionErrors) {
     NULL};
 
   static const ParserFlag always_flags[] = {
-    kAllowClasses,
-    kAllowHarmonyObjectLiterals
+    kAllowHarmonyClasses,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy
   };
   RunParserSyncTest(context_data, class_data, kError, NULL, 0,
                     always_flags, arraysize(always_flags));
@@ -3774,8 +4344,8 @@ TEST(ClassDeclarationErrors) {
     NULL};
 
   static const ParserFlag always_flags[] = {
-    kAllowClasses,
-    kAllowHarmonyNumericLiterals
+    kAllowHarmonyClasses,
+    kAllowHarmonySloppy
   };
   RunParserSyncTest(context_data, class_data, kError, NULL, 0,
                     always_flags, arraysize(always_flags));
@@ -3804,8 +4374,9 @@ TEST(ClassNameErrors) {
     NULL};
 
   static const ParserFlag always_flags[] = {
-    kAllowClasses,
-    kAllowHarmonyObjectLiterals
+    kAllowHarmonyClasses,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy
   };
   RunParserSyncTest(context_data, class_name, kError, NULL, 0,
                     always_flags, arraysize(always_flags));
@@ -3837,8 +4408,9 @@ TEST(ClassGetterParamNameErrors) {
     NULL};
 
   static const ParserFlag always_flags[] = {
-    kAllowClasses,
-    kAllowHarmonyObjectLiterals
+    kAllowHarmonyClasses,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy
   };
   RunParserSyncTest(context_data, class_name, kError, NULL, 0,
                     always_flags, arraysize(always_flags));
@@ -3855,11 +4427,19 @@ TEST(ClassStaticPrototypeErrors) {
     "static get prototype() {}",
     "static set prototype(_) {}",
     "static *prototype() {}",
+    "static 'prototype'() {}",
+    "static *'prototype'() {}",
+    "static prot\\u006ftype() {}",
+    "static 'prot\\u006ftype'() {}",
+    "static get 'prot\\u006ftype'() {}",
+    "static set 'prot\\u006ftype'(_) {}",
+    "static *'prot\\u006ftype'() {}",
     NULL};
 
   static const ParserFlag always_flags[] = {
-    kAllowClasses,
-    kAllowHarmonyObjectLiterals
+    kAllowHarmonyClasses,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy
   };
   RunParserSyncTest(context_data, class_body_data, kError, NULL, 0,
                     always_flags, arraysize(always_flags));
@@ -3875,11 +4455,19 @@ TEST(ClassSpecialConstructorErrors) {
     "get constructor() {}",
     "get constructor(_) {}",
     "*constructor() {}",
+    "get 'constructor'() {}",
+    "*'constructor'() {}",
+    "get c\\u006fnstructor() {}",
+    "*c\\u006fnstructor() {}",
+    "get 'c\\u006fnstructor'() {}",
+    "get 'c\\u006fnstructor'(_) {}",
+    "*'c\\u006fnstructor'() {}",
     NULL};
 
   static const ParserFlag always_flags[] = {
-    kAllowClasses,
-    kAllowHarmonyObjectLiterals
+    kAllowHarmonyClasses,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy
   };
   RunParserSyncTest(context_data, class_body_data, kError, NULL, 0,
                     always_flags, arraysize(always_flags));
@@ -3900,8 +4488,9 @@ TEST(ClassConstructorNoErrors) {
     NULL};
 
   static const ParserFlag always_flags[] = {
-    kAllowClasses,
-    kAllowHarmonyObjectLiterals
+    kAllowHarmonyClasses,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy
   };
   RunParserSyncTest(context_data, class_body_data, kSuccess, NULL, 0,
                     always_flags, arraysize(always_flags));
@@ -3909,9 +4498,6 @@ TEST(ClassConstructorNoErrors) {
 
 
 TEST(ClassMultipleConstructorErrors) {
-  // We currently do not allow any duplicate properties in class bodies. This
-  // test ensures that when we change that we still throw on duplicate
-  // constructors.
   const char* context_data[][2] = {{"class C {", "}"},
                                    {"(class {", "});"},
                                    {NULL, NULL}};
@@ -3921,17 +4507,16 @@ TEST(ClassMultipleConstructorErrors) {
     NULL};
 
   static const ParserFlag always_flags[] = {
-    kAllowClasses,
-    kAllowHarmonyObjectLiterals
+    kAllowHarmonyClasses,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy
   };
   RunParserSyncTest(context_data, class_body_data, kError, NULL, 0,
                     always_flags, arraysize(always_flags));
 }
 
 
-// TODO(arv): We should allow duplicate property names.
-// https://code.google.com/p/v8/issues/detail?id=3570
-DISABLED_TEST(ClassMultiplePropertyNamesNoErrors) {
+TEST(ClassMultiplePropertyNamesNoErrors) {
   const char* context_data[][2] = {{"class C {", "}"},
                                    {"(class {", "});"},
                                    {NULL, NULL}};
@@ -3940,11 +4525,14 @@ DISABLED_TEST(ClassMultiplePropertyNamesNoErrors) {
     "constructor() {}; static constructor() {}",
     "m() {}; static m() {}",
     "m() {}; m() {}",
+    "static m() {}; static m() {}",
+    "get m() {}; set m(_) {}; get m() {}; set m(_) {};",
     NULL};
 
   static const ParserFlag always_flags[] = {
-    kAllowClasses,
-    kAllowHarmonyObjectLiterals
+    kAllowHarmonyClasses,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy
   };
   RunParserSyncTest(context_data, class_body_data, kSuccess, NULL, 0,
                     always_flags, arraysize(always_flags));
@@ -3963,9 +4551,1942 @@ TEST(ClassesAreStrictErrors) {
     NULL};
 
   static const ParserFlag always_flags[] = {
-    kAllowClasses,
-    kAllowHarmonyObjectLiterals
+    kAllowHarmonyClasses,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy
   };
   RunParserSyncTest(context_data, class_body_data, kError, NULL, 0,
                     always_flags, arraysize(always_flags));
+}
+
+
+TEST(ObjectLiteralPropertyShorthandKeywordsError) {
+  const char* context_data[][2] = {{"({", "});"},
+                                   {"'use strict'; ({", "});"},
+                                   {NULL, NULL}};
+
+  const char* name_data[] = {
+    "break",
+    "case",
+    "catch",
+    "class",
+    "const",
+    "continue",
+    "debugger",
+    "default",
+    "delete",
+    "do",
+    "else",
+    "enum",
+    "export",
+    "extends",
+    "false",
+    "finally",
+    "for",
+    "function",
+    "if",
+    "import",
+    "in",
+    "instanceof",
+    "new",
+    "null",
+    "return",
+    "super",
+    "switch",
+    "this",
+    "throw",
+    "true",
+    "try",
+    "typeof",
+    "var",
+    "void",
+    "while",
+    "with",
+    NULL
+  };
+
+  static const ParserFlag always_flags[] = {kAllowHarmonyObjectLiterals};
+  RunParserSyncTest(context_data, name_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(ObjectLiteralPropertyShorthandStrictKeywords) {
+  const char* context_data[][2] = {{"({", "});"},
+                                   {NULL, NULL}};
+
+  const char* name_data[] = {
+    "implements",
+    "interface",
+    "let",
+    "package",
+    "private",
+    "protected",
+    "public",
+    "static",
+    "yield",
+    NULL
+  };
+
+  static const ParserFlag always_flags[] = {kAllowHarmonyObjectLiterals};
+  RunParserSyncTest(context_data, name_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+
+  const char* context_strict_data[][2] = {{"'use strict'; ({", "});"},
+                                          {NULL, NULL}};
+  RunParserSyncTest(context_strict_data, name_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(ObjectLiteralPropertyShorthandError) {
+  const char* context_data[][2] = {{"({", "});"},
+                                   {"'use strict'; ({", "});"},
+                                   {NULL, NULL}};
+
+  const char* name_data[] = {
+    "1",
+    "1.2",
+    "0",
+    "0.1",
+    "1.0",
+    "1e1",
+    "0x1",
+    "\"s\"",
+    "'s'",
+    NULL
+  };
+
+  static const ParserFlag always_flags[] = {kAllowHarmonyObjectLiterals};
+  RunParserSyncTest(context_data, name_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(ObjectLiteralPropertyShorthandYieldInGeneratorError) {
+  const char* context_data[][2] = {{"", ""},
+                                   {NULL, NULL}};
+
+  const char* name_data[] = {
+    "function* g() { ({yield}); }",
+    NULL
+  };
+
+  static const ParserFlag always_flags[] = {kAllowHarmonyObjectLiterals};
+  RunParserSyncTest(context_data, name_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(ConstParsingInForIn) {
+  const char* context_data[][2] = {{"'use strict';", ""},
+                                   {"function foo(){ 'use strict';", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for(const x = 1; ; ) {}",
+      "for(const x = 1, y = 2;;){}",
+      "for(const x in [1,2,3]) {}",
+      "for(const x of [1,2,3]) {}",
+      NULL};
+  RunParserSyncTest(context_data, data, kSuccess, nullptr, 0, nullptr, 0);
+}
+
+
+TEST(ConstParsingInForInError) {
+  const char* context_data[][2] = {{"'use strict';", ""},
+                                   {"function foo(){ 'use strict';", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for(const x,y = 1; ; ) {}",
+      "for(const x = 4 in [1,2,3]) {}",
+      "for(const x = 4, y in [1,2,3]) {}",
+      "for(const x = 4 of [1,2,3]) {}",
+      "for(const x = 4, y of [1,2,3]) {}",
+      "for(const x = 1, y = 2 in []) {}",
+      "for(const x,y in []) {}",
+      "for(const x = 1, y = 2 of []) {}",
+      "for(const x,y of []) {}",
+      NULL};
+  RunParserSyncTest(context_data, data, kError, nullptr, 0, nullptr, 0);
+}
+
+
+TEST(InitializedDeclarationsInStrictForInError) {
+  const char* context_data[][2] = {{"'use strict';", ""},
+                                   {"function foo(){ 'use strict';", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for (var i = 1 in {}) {}",
+      "for (var i = void 0 in [1, 2, 3]) {}",
+      "for (let i = 1 in {}) {}",
+      "for (let i = void 0 in [1, 2, 3]) {}",
+      "for (const i = 1 in {}) {}",
+      "for (const i = void 0 in [1, 2, 3]) {}",
+      NULL};
+  RunParserSyncTest(context_data, data, kError);
+}
+
+
+TEST(InitializedDeclarationsInStrictForOfError) {
+  const char* context_data[][2] = {{"'use strict';", ""},
+                                   {"function foo(){ 'use strict';", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for (var i = 1 of {}) {}",
+      "for (var i = void 0 of [1, 2, 3]) {}",
+      "for (let i = 1 of {}) {}",
+      "for (let i = void 0 of [1, 2, 3]) {}",
+      "for (const i = 1 of {}) {}",
+      "for (const i = void 0 of [1, 2, 3]) {}",
+      NULL};
+  RunParserSyncTest(context_data, data, kError);
+}
+
+
+TEST(InitializedDeclarationsInSloppyForInError) {
+  const char* context_data[][2] = {{"", ""},
+                                   {"function foo(){", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for (var i = 1 in {}) {}",
+      "for (var i = void 0 in [1, 2, 3]) {}",
+      NULL};
+  // TODO(caitp): This should be an error in sloppy mode.
+  RunParserSyncTest(context_data, data, kSuccess);
+}
+
+
+TEST(InitializedDeclarationsInSloppyForOfError) {
+  const char* context_data[][2] = {{"", ""},
+                                   {"function foo(){", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for (var i = 1 of {}) {}",
+      "for (var i = void 0 of [1, 2, 3]) {}",
+      NULL};
+  RunParserSyncTest(context_data, data, kError);
+}
+
+
+TEST(ForInMultipleDeclarationsError) {
+  const char* context_data[][2] = {{"", ""},
+                                   {"function foo(){", "}"},
+                                   {"'use strict';", ""},
+                                   {"function foo(){ 'use strict';", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for (var i, j in {}) {}",
+      "for (var i, j in [1, 2, 3]) {}",
+      "for (var i, j = 1 in {}) {}",
+      "for (var i, j = void 0 in [1, 2, 3]) {}",
+
+      "for (let i, j in {}) {}",
+      "for (let i, j in [1, 2, 3]) {}",
+      "for (let i, j = 1 in {}) {}",
+      "for (let i, j = void 0 in [1, 2, 3]) {}",
+
+      "for (const i, j in {}) {}",
+      "for (const i, j in [1, 2, 3]) {}",
+      "for (const i, j = 1 in {}) {}",
+      "for (const i, j = void 0 in [1, 2, 3]) {}",
+      NULL};
+  static const ParserFlag always_flags[] = {kAllowHarmonySloppy};
+  RunParserSyncTest(context_data, data, kError, nullptr, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(ForOfMultipleDeclarationsError) {
+  const char* context_data[][2] = {{"", ""},
+                                   {"function foo(){", "}"},
+                                   {"'use strict';", ""},
+                                   {"function foo(){ 'use strict';", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for (var i, j of {}) {}",
+      "for (var i, j of [1, 2, 3]) {}",
+      "for (var i, j = 1 of {}) {}",
+      "for (var i, j = void 0 of [1, 2, 3]) {}",
+
+      "for (let i, j of {}) {}",
+      "for (let i, j of [1, 2, 3]) {}",
+      "for (let i, j = 1 of {}) {}",
+      "for (let i, j = void 0 of [1, 2, 3]) {}",
+
+      "for (const i, j of {}) {}",
+      "for (const i, j of [1, 2, 3]) {}",
+      "for (const i, j = 1 of {}) {}",
+      "for (const i, j = void 0 of [1, 2, 3]) {}",
+      NULL};
+  static const ParserFlag always_flags[] = {kAllowHarmonySloppy};
+  RunParserSyncTest(context_data, data, kError, nullptr, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(ForInNoDeclarationsError) {
+  const char* context_data[][2] = {{"", ""},
+                                   {"function foo(){", "}"},
+                                   {"'use strict';", ""},
+                                   {"function foo(){ 'use strict';", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for (var in {}) {}",
+      "for (const in {}) {}",
+      NULL};
+  static const ParserFlag always_flags[] = {kAllowHarmonySloppy};
+  RunParserSyncTest(context_data, data, kError, nullptr, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(ForOfNoDeclarationsError) {
+  const char* context_data[][2] = {{"", ""},
+                                   {"function foo(){", "}"},
+                                   {"'use strict';", ""},
+                                   {"function foo(){ 'use strict';", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for (var of [1, 2, 3]) {}",
+      "for (const of [1, 2, 3]) {}",
+      NULL};
+  static const ParserFlag always_flags[] = {kAllowHarmonySloppy};
+  RunParserSyncTest(context_data, data, kError, nullptr, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(InvalidUnicodeEscapes) {
+  const char* context_data[][2] = {{"", ""},
+                                   {"'use strict';", ""},
+                                   {NULL, NULL}};
+  const char* data[] = {
+    "var foob\\u123r = 0;",
+    "var \\u123roo = 0;",
+    "\"foob\\u123rr\"",
+    // No escapes allowed in regexp flags
+    "/regex/\\u0069g",
+    "/regex/\\u006g",
+    // Braces gone wrong
+    "var foob\\u{c481r = 0;",
+    "var foob\\uc481}r = 0;",
+    "var \\u{0052oo = 0;",
+    "var \\u0052}oo = 0;",
+    "\"foob\\u{c481r\"",
+    "var foob\\u{}ar = 0;",
+    // Too high value for the unicode escape
+    "\"\\u{110000}\"",
+    // Not an unicode escape
+    "var foob\\v1234r = 0;",
+    "var foob\\U1234r = 0;",
+    "var foob\\v{1234}r = 0;",
+    "var foob\\U{1234}r = 0;",
+    NULL};
+  static const ParserFlag always_flags[] = {kAllowHarmonyUnicode};
+  RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(UnicodeEscapes) {
+  const char* context_data[][2] = {{"", ""},
+                                   {"'use strict';", ""},
+                                   {NULL, NULL}};
+  const char* data[] = {
+    // Identifier starting with escape
+    "var \\u0052oo = 0;",
+    "var \\u{0052}oo = 0;",
+    "var \\u{52}oo = 0;",
+    "var \\u{00000000052}oo = 0;",
+    // Identifier with an escape but not starting with an escape
+    "var foob\\uc481r = 0;",
+    "var foob\\u{c481}r = 0;",
+    // String with an escape
+    "\"foob\\uc481r\"",
+    "\"foob\\{uc481}r\"",
+    // This character is a valid unicode character, representable as a surrogate
+    // pair, not representable as 4 hex digits.
+    "\"foo\\u{10e6d}\"",
+    // Max value for the unicode escape
+    "\"\\u{10ffff}\"",
+    NULL};
+  static const ParserFlag always_flags[] = {kAllowHarmonyUnicode};
+  RunParserSyncTest(context_data, data, kSuccess, NULL, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(ScanTemplateLiterals) {
+  const char* context_data[][2] = {{"'use strict';", ""},
+                                   {"function foo(){ 'use strict';"
+                                    "  var a, b, c; return ", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "``",
+      "`no-subst-template`",
+      "`template-head${a}`",
+      "`${a}`",
+      "`${a}template-tail`",
+      "`template-head${a}template-tail`",
+      "`${a}${b}${c}`",
+      "`a${a}b${b}c${c}`",
+      "`${a}a${b}b${c}c`",
+      "`foo\n\nbar\r\nbaz`",
+      "`foo\n\n${  bar  }\r\nbaz`",
+      "`foo${a /* comment */}`",
+      "`foo${a // comment\n}`",
+      "`foo${a \n}`",
+      "`foo${a \r\n}`",
+      "`foo${a \r}`",
+      "`foo${/* comment */ a}`",
+      "`foo${// comment\na}`",
+      "`foo${\n a}`",
+      "`foo${\r\n a}`",
+      "`foo${\r a}`",
+      "`foo${'a' in a}`",
+      NULL};
+  RunParserSyncTest(context_data, data, kSuccess, NULL, 0, NULL, 0);
+}
+
+
+TEST(ScanTaggedTemplateLiterals) {
+  const char* context_data[][2] = {{"'use strict';", ""},
+                                   {"function foo(){ 'use strict';"
+                                    "  function tag() {}"
+                                    "  var a, b, c; return ", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "tag ``",
+      "tag `no-subst-template`",
+      "tag`template-head${a}`",
+      "tag `${a}`",
+      "tag `${a}template-tail`",
+      "tag   `template-head${a}template-tail`",
+      "tag\n`${a}${b}${c}`",
+      "tag\r\n`a${a}b${b}c${c}`",
+      "tag    `${a}a${b}b${c}c`",
+      "tag\t`foo\n\nbar\r\nbaz`",
+      "tag\r`foo\n\n${  bar  }\r\nbaz`",
+      "tag`foo${a /* comment */}`",
+      "tag`foo${a // comment\n}`",
+      "tag`foo${a \n}`",
+      "tag`foo${a \r\n}`",
+      "tag`foo${a \r}`",
+      "tag`foo${/* comment */ a}`",
+      "tag`foo${// comment\na}`",
+      "tag`foo${\n a}`",
+      "tag`foo${\r\n a}`",
+      "tag`foo${\r a}`",
+      "tag`foo${'a' in a}`",
+      NULL};
+  RunParserSyncTest(context_data, data, kSuccess, NULL, 0, NULL, 0);
+}
+
+
+TEST(TemplateMaterializedLiterals) {
+  const char* context_data[][2] = {
+    {
+      "'use strict';\n"
+      "function tag() {}\n"
+      "var a, b, c;\n"
+      "(", ")"
+    },
+    {NULL, NULL}
+  };
+
+  const char* data[] = {
+    "tag``",
+    "tag`a`",
+    "tag`a${1}b`",
+    "tag`a${1}b${2}c`",
+    "``",
+    "`a`",
+    "`a${1}b`",
+    "`a${1}b${2}c`",
+    NULL
+  };
+
+  RunParserSyncTest(context_data, data, kSuccess, NULL, 0, NULL, 0);
+}
+
+
+TEST(ScanUnterminatedTemplateLiterals) {
+  const char* context_data[][2] = {{"'use strict';", ""},
+                                   {"function foo(){ 'use strict';"
+                                    "  var a, b, c; return ", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "`no-subst-template",
+      "`template-head${a}",
+      "`${a}template-tail",
+      "`template-head${a}template-tail",
+      "`${a}${b}${c}",
+      "`a${a}b${b}c${c}",
+      "`${a}a${b}b${c}c",
+      "`foo\n\nbar\r\nbaz",
+      "`foo\n\n${  bar  }\r\nbaz",
+      "`foo${a /* comment } */`",
+      "`foo${a /* comment } `*/",
+      "`foo${a // comment}`",
+      "`foo${a \n`",
+      "`foo${a \r\n`",
+      "`foo${a \r`",
+      "`foo${/* comment */ a`",
+      "`foo${// commenta}`",
+      "`foo${\n a`",
+      "`foo${\r\n a`",
+      "`foo${\r a`",
+      "`foo${fn(}`",
+      "`foo${1 if}`",
+      NULL};
+  RunParserSyncTest(context_data, data, kError, NULL, 0, NULL, 0);
+}
+
+
+TEST(TemplateLiteralsIllegalTokens) {
+  const char* context_data[][2] = {{"'use strict';", ""},
+                                   {"function foo(){ 'use strict';"
+                                    "  var a, b, c; return ", "}"},
+                                   {NULL, NULL}};
+  const char* data[] = {
+      "`hello\\x`",
+      "`hello\\x${1}`",
+      "`hello${1}\\x`",
+      "`hello${1}\\x${2}`",
+      "`hello\\x\n`",
+      "`hello\\x\n${1}`",
+      "`hello${1}\\x\n`",
+      "`hello${1}\\x\n${2}`",
+      NULL};
+
+  RunParserSyncTest(context_data, data, kError, NULL, 0, NULL, 0);
+}
+
+
+TEST(ParseRestParameters) {
+  const char* context_data[][2] = {{"'use strict';(function(",
+                                    "){ return args;})(1, [], /regexp/, 'str',"
+                                    "function(){});"},
+                                   {"(function(", "){ return args;})(1, [],"
+                                    "/regexp/, 'str', function(){});"},
+                                  {NULL, NULL}};
+
+  const char* data[] = {
+    "...args",
+    "a, ...args",
+    "...   args",
+    "a, ...   args",
+    "...\targs",
+    "a, ...\targs",
+    "...\r\nargs",
+    "a, ...\r\nargs",
+    "...\rargs",
+    "a, ...\rargs",
+    "...\t\n\t\t\n  args",
+    "a, ...  \n  \n  args",
+    NULL};
+  static const ParserFlag always_flags[] = {kAllowHarmonyRestParameters};
+  RunParserSyncTest(context_data, data, kSuccess, NULL, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(ParseRestParametersErrors) {
+  const char* context_data[][2] = {{"'use strict';(function(",
+                                    "){ return args;}(1, [], /regexp/, 'str',"
+                                    "function(){});"},
+                                   {"(function(", "){ return args;}(1, [],"
+                                    "/regexp/, 'str', function(){});"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "...args, b",
+      "a, ...args, b",
+      "...args,   b",
+      "a, ...args,   b",
+      "...args,\tb",
+      "a,...args\t,b",
+      "...args\r\n, b",
+      "a, ... args,\r\nb",
+      "...args\r,b",
+      "a, ... args,\rb",
+      "...args\t\n\t\t\n,  b",
+      "a, ... args,  \n  \n  b",
+      "a, a, ...args",
+      "a,\ta, ...args",
+      "a,\ra, ...args",
+      "a,\na, ...args",
+      NULL};
+  static const ParserFlag always_flags[] = {kAllowHarmonyRestParameters};
+  RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(RestParametersEvalArguments) {
+  const char* strict_context_data[][2] =
+      {{"'use strict';(function(",
+        "){ return;})(1, [], /regexp/, 'str',function(){});"},
+       {NULL, NULL}};
+  const char* sloppy_context_data[][2] =
+      {{"(function(",
+        "){ return;})(1, [],/regexp/, 'str', function(){});"},
+       {NULL, NULL}};
+
+  const char* data[] = {
+      "...eval",
+      "eval, ...args",
+      "...arguments",
+      "arguments, ...args",
+      NULL};
+
+  static const ParserFlag always_flags[] = {kAllowHarmonyRestParameters};
+
+  // Fail in strict mode
+  RunParserSyncTest(strict_context_data, data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
+
+  // OK in sloppy mode
+  RunParserSyncTest(sloppy_context_data, data, kSuccess, NULL, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(RestParametersDuplicateEvalArguments) {
+  const char* context_data[][2] =
+      {{"'use strict';(function(",
+        "){ return;})(1, [], /regexp/, 'str',function(){});"},
+       {"(function(",
+        "){ return;})(1, [],/regexp/, 'str', function(){});"},
+       {NULL, NULL}};
+
+  const char* data[] = {
+      "eval, ...eval",
+      "eval, eval, ...args",
+      "arguments, ...arguments",
+      "arguments, arguments, ...args",
+      NULL};
+
+  static const ParserFlag always_flags[] = {kAllowHarmonyRestParameters};
+
+  // In strict mode, the error is using "eval" or "arguments" as parameter names
+  // In sloppy mode, the error is that eval / arguments are duplicated
+  RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(SpreadCall) {
+  const char* context_data[][2] = {{"function fn() { 'use strict';} fn(", ");"},
+                                   {"function fn() {} fn(", ");"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "...([1, 2, 3])", "...'123', ...'456'", "...new Set([1, 2, 3]), 4",
+      "1, ...[2, 3], 4", "...Array(...[1,2,3,4])", "...NaN",
+      "0, 1, ...[2, 3, 4], 5, 6, 7, ...'89'",
+      "0, 1, ...[2, 3, 4], 5, 6, 7, ...'89', 10",
+      "...[0, 1, 2], 3, 4, 5, 6, ...'7', 8, 9",
+      "...[0, 1, 2], 3, 4, 5, 6, ...'7', 8, 9, ...[10]", NULL};
+
+  static const ParserFlag always_flags[] = {kAllowHarmonySpreadCalls};
+
+  RunParserSyncTest(context_data, data, kSuccess, NULL, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(SpreadCallErrors) {
+  const char* context_data[][2] = {{"function fn() { 'use strict';} fn(", ");"},
+                                   {"function fn() {} fn(", ");"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {"(...[1, 2, 3])", "......[1,2,3]", NULL};
+
+  static const ParserFlag always_flags[] = {kAllowHarmonySpreadCalls};
+
+  RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(BadRestSpread) {
+  const char* context_data[][2] = {{"function fn() { 'use strict';", "} fn();"},
+                                   {"function fn() { ", "} fn();"},
+                                   {NULL, NULL}};
+  const char* data[] = {"return ...[1,2,3];",     "var ...x = [1,2,3];",
+                        "var [...x,] = [1,2,3];", "var [...x, y] = [1,2,3];",
+                        "var {...x} = [1,2,3];",  "var { x } = {x: ...[1,2,3]}",
+                        NULL};
+  RunParserSyncTest(context_data, data, kError, NULL, 0, NULL, 0);
+}
+
+
+TEST(LexicalScopingSloppyMode) {
+  const char* context_data[][2] = {
+      {"", ""},
+      {"function f() {", "}"},
+      {"{", "}"},
+      {NULL, NULL}};
+  const char* bad_data[] = {
+    "let x = 1;",
+    "for(let x = 1;;){}",
+    "for(let x of []){}",
+    "for(let x in []){}",
+    "class C {}",
+    "class C extends D {}",
+    "(class {})",
+    "(class extends D {})",
+    "(class C {})",
+    "(class C extends D {})",
+    NULL};
+  static const ParserFlag always_true_flags[] = {kAllowHarmonyClasses};
+  static const ParserFlag always_false_flags[] = {kAllowHarmonySloppy};
+  RunParserSyncTest(context_data, bad_data, kError, NULL, 0,
+                    always_true_flags, arraysize(always_true_flags),
+                    always_false_flags, arraysize(always_false_flags));
+
+  const char* good_data[] = {
+    "let = 1;",
+    "for(let = 1;;){}",
+    NULL};
+  RunParserSyncTest(context_data, good_data, kSuccess, NULL, 0,
+                    always_true_flags, arraysize(always_true_flags),
+                    always_false_flags, arraysize(always_false_flags));
+}
+
+
+TEST(ComputedPropertyName) {
+  const char* context_data[][2] = {{"({[", "]: 1});"},
+                                   {"({get [", "]() {}});"},
+                                   {"({set [", "](_) {}});"},
+                                   {"({[", "]() {}});"},
+                                   {"({*[", "]() {}});"},
+                                   {"(class {get [", "]() {}});"},
+                                   {"(class {set [", "](_) {}});"},
+                                   {"(class {[", "]() {}});"},
+                                   {"(class {*[", "]() {}});"},
+                                   {NULL, NULL}};
+  const char* error_data[] = {
+    "1, 2",
+    "var name",
+    NULL};
+
+  static const ParserFlag always_flags[] = {
+    kAllowHarmonyClasses,
+    kAllowHarmonyComputedPropertyNames,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy,
+  };
+  RunParserSyncTest(context_data, error_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+
+  const char* name_data[] = {
+    "1",
+    "1 + 2",
+    "'name'",
+    "\"name\"",
+    "[]",
+    "{}",
+    NULL};
+
+  RunParserSyncTest(context_data, name_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(ComputedPropertyNameShorthandError) {
+  const char* context_data[][2] = {{"({", "});"},
+                                   {NULL, NULL}};
+  const char* error_data[] = {
+    "a: 1, [2]",
+    "[1], a: 1",
+    NULL};
+
+  static const ParserFlag always_flags[] = {
+    kAllowHarmonyClasses,
+    kAllowHarmonyComputedPropertyNames,
+    kAllowHarmonyObjectLiterals,
+    kAllowHarmonySloppy,
+  };
+  RunParserSyncTest(context_data, error_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(BasicImportExportParsing) {
+  const char* kSources[] = {
+      "export let x = 0;",
+      "export var y = 0;",
+      "export const z = 0;",
+      "export function func() { };",
+      "export class C { };",
+      "export { };",
+      "function f() {}; f(); export { f };",
+      "var a, b, c; export { a, b as baz, c };",
+      "var d, e; export { d as dreary, e, };",
+      "export default function f() {}",
+      "export default class C {}",
+      "export default 42",
+      "var x; export default x = 7",
+      "export { Q } from 'somemodule.js';",
+      "export * from 'somemodule.js';",
+      "var foo; export { foo as for };",
+      "export { arguments } from 'm.js';",
+      "export { for } from 'm.js';",
+      "export { yield } from 'm.js'",
+      "export { static } from 'm.js'",
+      "export { let } from 'm.js'",
+      "var a; export { a as b, a as c };",
+
+      "import 'somemodule.js';",
+      "import { } from 'm.js';",
+      "import { a } from 'm.js';",
+      "import { a, b as d, c, } from 'm.js';",
+      "import * as thing from 'm.js';",
+      "import thing from 'm.js';",
+      "import thing, * as rest from 'm.js';",
+      "import thing, { a, b, c } from 'm.js';",
+      "import { arguments as a } from 'm.js';",
+      "import { for as f } from 'm.js';",
+      "import { yield as y } from 'm.js';",
+      "import { static as s } from 'm.js';",
+      "import { let as l } from 'm.js';",
+  };
+
+  i::Isolate* isolate = CcTest::i_isolate();
+  i::Factory* factory = isolate->factory();
+
+  v8::HandleScope handles(CcTest::isolate());
+  v8::Handle<v8::Context> context = v8::Context::New(CcTest::isolate());
+  v8::Context::Scope context_scope(context);
+
+  isolate->stack_guard()->SetStackLimit(i::GetCurrentStackPosition() -
+                                        128 * 1024);
+
+  for (unsigned i = 0; i < arraysize(kSources); ++i) {
+    i::Handle<i::String> source =
+        factory->NewStringFromAsciiChecked(kSources[i]);
+
+    // Show that parsing as a module works
+    {
+      i::Handle<i::Script> script = factory->NewScript(source);
+      i::Zone zone;
+      i::ParseInfo info(&zone, script);
+      i::Parser parser(&info);
+      parser.set_allow_harmony_classes(true);
+      parser.set_allow_harmony_modules(true);
+      info.set_module();
+      if (!parser.Parse(&info)) {
+        i::Handle<i::JSObject> exception_handle(
+            i::JSObject::cast(isolate->pending_exception()));
+        i::Handle<i::String> message_string =
+            i::Handle<i::String>::cast(i::Object::GetProperty(
+                  isolate, exception_handle, "message").ToHandleChecked());
+
+        v8::base::OS::Print(
+            "Parser failed on:\n"
+            "\t%s\n"
+            "with error:\n"
+            "\t%s\n"
+            "However, we expected no error.",
+            source->ToCString().get(), message_string->ToCString().get());
+        CHECK(false);
+      }
+    }
+
+    // And that parsing a script does not.
+    {
+      i::Handle<i::Script> script = factory->NewScript(source);
+      i::Zone zone;
+      i::ParseInfo info(&zone, script);
+      i::Parser parser(&info);
+      parser.set_allow_harmony_classes(true);
+      parser.set_allow_harmony_modules(true);
+      info.set_global();
+      CHECK(!parser.Parse(&info));
+    }
+  }
+}
+
+
+TEST(ImportExportParsingErrors) {
+  const char* kErrorSources[] = {
+      "export {",
+      "var a; export { a",
+      "var a; export { a,",
+      "var a; export { a, ;",
+      "var a; export { a as };",
+      "var a, b; export { a as , b};",
+      "export }",
+      "var foo, bar; export { foo bar };",
+      "export { foo };",
+      "export { , };",
+      "export default;",
+      "export default var x = 7;",
+      "export default let x = 7;",
+      "export default const x = 7;",
+      "export *;",
+      "export * from;",
+      "export { Q } from;",
+      "export default from 'module.js';",
+      "export { for }",
+      "export { for as foo }",
+      "export { arguments }",
+      "export { arguments as foo }",
+      "var a; export { a, a };",
+      "var a, b; export { a as b, b };",
+      "var a, b; export { a as c, b as c };",
+      "export default function f(){}; export default class C {};",
+      "export default function f(){}; var a; export { a as default };",
+
+      "import from;",
+      "import from 'm.js';",
+      "import { };",
+      "import {;",
+      "import };",
+      "import { , };",
+      "import { , } from 'm.js';",
+      "import { a } from;",
+      "import { a } 'm.js';",
+      "import , from 'm.js';",
+      "import a , from 'm.js';",
+      "import a { b, c } from 'm.js';",
+      "import arguments from 'm.js';",
+      "import eval from 'm.js';",
+      "import { arguments } from 'm.js';",
+      "import { eval } from 'm.js';",
+      "import { a as arguments } from 'm.js';",
+      "import { for } from 'm.js';",
+      "import { y as yield } from 'm.js'",
+      "import { s as static } from 'm.js'",
+      "import { l as let } from 'm.js'",
+      "import { x }, def from 'm.js';",
+      "import def, def2 from 'm.js';",
+      "import * as x, def from 'm.js';",
+      "import * as x, * as y from 'm.js';",
+      "import {x}, {y} from 'm.js';",
+      "import * as x, {y} from 'm.js';",
+
+      // TODO(ES6): These two forms should be supported
+      "export default function() {};",
+      "export default class {};"
+  };
+
+  i::Isolate* isolate = CcTest::i_isolate();
+  i::Factory* factory = isolate->factory();
+
+  v8::HandleScope handles(CcTest::isolate());
+  v8::Handle<v8::Context> context = v8::Context::New(CcTest::isolate());
+  v8::Context::Scope context_scope(context);
+
+  isolate->stack_guard()->SetStackLimit(i::GetCurrentStackPosition() -
+                                        128 * 1024);
+
+  for (unsigned i = 0; i < arraysize(kErrorSources); ++i) {
+    i::Handle<i::String> source =
+        factory->NewStringFromAsciiChecked(kErrorSources[i]);
+
+    i::Handle<i::Script> script = factory->NewScript(source);
+    i::Zone zone;
+    i::ParseInfo info(&zone, script);
+    i::Parser parser(&info);
+    parser.set_allow_harmony_classes(true);
+    parser.set_allow_harmony_modules(true);
+    info.set_module();
+    CHECK(!parser.Parse(&info));
+  }
+}
+
+
+TEST(ModuleParsingInternals) {
+  i::FLAG_harmony_modules = true;
+
+  i::Isolate* isolate = CcTest::i_isolate();
+  i::Factory* factory = isolate->factory();
+  v8::HandleScope handles(CcTest::isolate());
+  v8::Handle<v8::Context> context = v8::Context::New(CcTest::isolate());
+  v8::Context::Scope context_scope(context);
+  isolate->stack_guard()->SetStackLimit(i::GetCurrentStackPosition() -
+                                        128 * 1024);
+
+  static const char kSource[] =
+      "let x = 5;"
+      "export { x as y };"
+      "import { q as z } from 'm.js';"
+      "import n from 'n.js';"
+      "export { a as b } from 'm.js';"
+      "export * from 'p.js';"
+      "import 'q.js'";
+  i::Handle<i::String> source = factory->NewStringFromAsciiChecked(kSource);
+  i::Handle<i::Script> script = factory->NewScript(source);
+  i::Zone zone;
+  i::ParseInfo info(&zone, script);
+  i::Parser parser(&info);
+  parser.set_allow_harmony_modules(true);
+  info.set_module();
+  CHECK(parser.Parse(&info));
+  CHECK(i::Compiler::Analyze(&info));
+  i::FunctionLiteral* func = info.function();
+  i::Scope* module_scope = func->scope();
+  i::Scope* outer_scope = module_scope->outer_scope();
+  CHECK(outer_scope->is_script_scope());
+  CHECK_NULL(outer_scope->outer_scope());
+  CHECK_EQ(1, outer_scope->num_modules());
+  CHECK(module_scope->is_module_scope());
+  CHECK_NOT_NULL(module_scope->module_var());
+  CHECK_EQ(i::INTERNAL, module_scope->module_var()->mode());
+  i::ModuleDescriptor* descriptor = module_scope->module();
+  CHECK_NOT_NULL(descriptor);
+  CHECK_EQ(1, descriptor->Length());
+  const i::AstRawString* export_name =
+      info.ast_value_factory()->GetOneByteString("y");
+  const i::AstRawString* local_name =
+      descriptor->LookupLocalExport(export_name, &zone);
+  CHECK_NOT_NULL(local_name);
+  CHECK(local_name->IsOneByteEqualTo("x"));
+  i::ZoneList<i::Declaration*>* declarations = module_scope->declarations();
+  CHECK_EQ(3, declarations->length());
+  CHECK(declarations->at(0)->proxy()->raw_name()->IsOneByteEqualTo("x"));
+  i::ImportDeclaration* import_decl =
+      declarations->at(1)->AsImportDeclaration();
+  CHECK(import_decl->import_name()->IsOneByteEqualTo("q"));
+  CHECK(import_decl->proxy()->raw_name()->IsOneByteEqualTo("z"));
+  CHECK(import_decl->module_specifier()->IsOneByteEqualTo("m.js"));
+  import_decl = declarations->at(2)->AsImportDeclaration();
+  CHECK(import_decl->import_name()->IsOneByteEqualTo("default"));
+  CHECK(import_decl->proxy()->raw_name()->IsOneByteEqualTo("n"));
+  CHECK(import_decl->module_specifier()->IsOneByteEqualTo("n.js"));
+  // TODO(adamk): Add test for indirect exports once they're fully implemented.
+  // TODO(adamk): Add test for star exports once they're fully implemented.
+  const i::ZoneList<const i::AstRawString*>& requested_modules =
+      descriptor->requested_modules();
+  CHECK_EQ(4, requested_modules.length());
+  CHECK(requested_modules[0]->IsOneByteEqualTo("m.js"));
+  CHECK(requested_modules[1]->IsOneByteEqualTo("n.js"));
+  CHECK(requested_modules[2]->IsOneByteEqualTo("p.js"));
+  CHECK(requested_modules[3]->IsOneByteEqualTo("q.js"));
+}
+
+
+TEST(DuplicateProtoError) {
+  const char* context_data[][2] = {
+    {"({", "});"},
+    {"'use strict'; ({", "});"},
+    {NULL, NULL}
+  };
+  const char* error_data[] = {
+    "__proto__: {}, __proto__: {}",
+    "__proto__: {}, \"__proto__\": {}",
+    "__proto__: {}, \"__\x70roto__\": {}",
+    "__proto__: {}, a: 1, __proto__: {}",
+    NULL
+  };
+
+  RunParserSyncTest(context_data, error_data, kError);
+}
+
+
+TEST(DuplicateProtoNoError) {
+  const char* context_data[][2] = {
+    {"({", "});"},
+    {"'use strict'; ({", "});"},
+    {NULL, NULL}
+  };
+  const char* error_data[] = {
+    "__proto__: {}, ['__proto__']: {}",
+    "__proto__: {}, __proto__() {}",
+    "__proto__: {}, get __proto__() {}",
+    "__proto__: {}, set __proto__(v) {}",
+    "__proto__: {}, __proto__",
+    NULL
+  };
+
+  static const ParserFlag always_flags[] = {
+    kAllowHarmonyComputedPropertyNames,
+    kAllowHarmonyObjectLiterals,
+  };
+  RunParserSyncTest(context_data, error_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(DeclarationsError) {
+  const char* context_data[][2] = {{"'use strict'; if (true)", ""},
+                                   {"'use strict'; if (false) {} else", ""},
+                                   {"'use strict'; while (false)", ""},
+                                   {"'use strict'; for (;;)", ""},
+                                   {"'use strict'; for (x in y)", ""},
+                                   {"'use strict'; do ", " while (false)"},
+                                   {"'use strong'; if (true)", ""},
+                                   {"'use strong'; if (false) {} else", ""},
+                                   {"'use strong'; while (false)", ""},
+                                   {"'use strong'; for (;;)", ""},
+                                   {"'use strong'; for (x in y)", ""},
+                                   {"'use strong'; do ", " while (false)"},
+                                   {NULL, NULL}};
+
+  const char* statement_data[] = {
+    "let x = 1;",
+    "const x = 1;",
+    "class C {}",
+    NULL};
+
+  static const ParserFlag always_flags[] = {kAllowHarmonyClasses,
+                                            kAllowStrongMode};
+  RunParserSyncTest(context_data, statement_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+void TestLanguageMode(const char* source,
+                      i::LanguageMode expected_language_mode) {
+  i::Isolate* isolate = CcTest::i_isolate();
+  i::Factory* factory = isolate->factory();
+  v8::HandleScope handles(CcTest::isolate());
+  v8::Handle<v8::Context> context = v8::Context::New(CcTest::isolate());
+  v8::Context::Scope context_scope(context);
+  isolate->stack_guard()->SetStackLimit(i::GetCurrentStackPosition() -
+                                        128 * 1024);
+
+  i::Handle<i::Script> script =
+      factory->NewScript(factory->NewStringFromAsciiChecked(source));
+  i::Zone zone;
+  i::ParseInfo info(&zone, script);
+  i::Parser parser(&info);
+  parser.set_allow_strong_mode(true);
+  info.set_global();
+  parser.Parse(&info);
+  CHECK(info.function() != NULL);
+  CHECK_EQ(expected_language_mode, info.function()->language_mode());
+}
+
+
+TEST(LanguageModeDirectives) {
+  TestLanguageMode("\"use nothing\"", i::SLOPPY);
+  TestLanguageMode("\"use strict\"", i::STRICT);
+  TestLanguageMode("\"use strong\"", i::STRONG);
+
+  TestLanguageMode("var x = 1; \"use strict\"", i::SLOPPY);
+  TestLanguageMode("var x = 1; \"use strong\"", i::SLOPPY);
+
+  // Test that multiple directives ("use strict" / "use strong") put the parser
+  // into the correct mode.
+  TestLanguageMode("\"use strict\"; \"use strong\";", i::STRONG);
+  TestLanguageMode("\"use strong\"; \"use strict\";", i::STRONG);
+
+  TestLanguageMode("\"use some future directive\"; \"use strict\";", i::STRICT);
+  TestLanguageMode("\"use some future directive\"; \"use strong\";", i::STRONG);
+}
+
+
+TEST(PropertyNameEvalArguments) {
+  const char* context_data[][2] = {{"'use strict';", ""},
+                                   {"'use strong';", ""},
+                                   {NULL, NULL}};
+
+  const char* statement_data[] = {
+      "({eval: 1})",
+      "({arguments: 1})",
+      "({eval() {}})",
+      "({arguments() {}})",
+      "({*eval() {}})",
+      "({*arguments() {}})",
+      "({get eval() {}})",
+      "({get arguments() {}})",
+      "({set eval(_) {}})",
+      "({set arguments(_) {}})",
+
+      "class C {eval() {}}",
+      "class C {arguments() {}}",
+      "class C {*eval() {}}",
+      "class C {*arguments() {}}",
+      "class C {get eval() {}}",
+      "class C {get arguments() {}}",
+      "class C {set eval(_) {}}",
+      "class C {set arguments(_) {}}",
+
+      "class C {static eval() {}}",
+      "class C {static arguments() {}}",
+      "class C {static *eval() {}}",
+      "class C {static *arguments() {}}",
+      "class C {static get eval() {}}",
+      "class C {static get arguments() {}}",
+      "class C {static set eval(_) {}}",
+      "class C {static set arguments(_) {}}",
+
+      NULL};
+
+  static const ParserFlag always_flags[] = {
+      kAllowHarmonyClasses, kAllowHarmonyObjectLiterals, kAllowStrongMode};
+  RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(FunctionLiteralDuplicateParameters) {
+  const char* strict_context_data[][2] =
+      {{"'use strict';(function(", "){})();"},
+       {"(function(", ") { 'use strict'; })();"},
+       {"'use strict'; function fn(", ") {}; fn();"},
+       {"function fn(", ") { 'use strict'; }; fn();"},
+       {"'use strong';(function(", "){})();"},
+       {"(function(", ") { 'use strong'; })();"},
+       {"'use strong'; function fn(", ") {}; fn();"},
+       {"function fn(", ") { 'use strong'; }; fn();"},
+       {NULL, NULL}};
+
+  const char* sloppy_context_data[][2] =
+      {{"(function(", "){})();"},
+       {"(function(", ") {})();"},
+       {"function fn(", ") {}; fn();"},
+       {"function fn(", ") {}; fn();"},
+       {NULL, NULL}};
+
+  const char* data[] = {
+      "a, a",
+      "a, a, a",
+      "b, a, a",
+      "a, b, c, c",
+      "a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, w",
+      NULL};
+
+  static const ParserFlag always_flags[] = { kAllowStrongMode };
+  RunParserSyncTest(strict_context_data, data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
+  RunParserSyncTest(sloppy_context_data, data, kSuccess, NULL, 0, NULL, 0);
+}
+
+
+TEST(VarForbiddenInStrongMode) {
+  const char* strong_context_data[][2] =
+      {{"'use strong'; ", ""},
+       {"function f() {'use strong'; ", "}"},
+       {"function f() {'use strong';  while (true) { ", "} }"},
+       {NULL, NULL}};
+
+  const char* strict_context_data[][2] =
+      {{"'use strict'; ", ""},
+       {"function f() {'use strict'; ", "}"},
+       {"function f() {'use strict'; while (true) { ", "} }"},
+       {NULL, NULL}};
+
+  const char* sloppy_context_data[][2] =
+      {{"", ""},
+       {"function f() { ", "}"},
+       {NULL, NULL}};
+
+  const char* var_declarations[] = {
+    "var x = 0;",
+    "for (var i = 0; i < 10; i++) { }",
+    NULL};
+
+  const char* let_declarations[] = {
+    "let x = 0;",
+    "for (let i = 0; i < 10; i++) { }",
+    NULL};
+
+  const char* const_declarations[] = {
+    "const x = 0;",
+    NULL};
+
+  static const ParserFlag always_flags[] = {kAllowStrongMode};
+  RunParserSyncTest(strong_context_data, var_declarations, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strong_context_data, let_declarations, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strong_context_data, const_declarations, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+
+  RunParserSyncTest(strict_context_data, var_declarations, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strict_context_data, let_declarations, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+
+  RunParserSyncTest(sloppy_context_data, var_declarations, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  // At the moment, let declarations are only available in strict mode.
+  RunParserSyncTest(sloppy_context_data, let_declarations, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(StrongEmptySubStatements) {
+  const char* sloppy_context_data[][2] = {{"", ""}, {NULL}};
+  const char* strict_context_data[][2] = {{"'use strict';", ""}, {NULL}};
+  const char* strong_context_data[][2] = {{"'use strong';", ""}, {NULL}};
+
+  const char* data_error[] = {
+      "if (1);",
+      "if (1) {} else;",
+      "while (1);",
+      "do; while (1);",
+      "for (;;);",
+      "for (x in []);",
+      "for (x of []);",
+      "for (const x = 0;;);",
+      "for (const x in []);",
+      "for (const x of []);",
+      NULL};
+
+  const char* data_success[] =  {
+      "if (1) {} else {}",
+      "switch(1) {}",
+      "1+1;;",
+      "1+1; ;",
+      NULL};
+
+  static const ParserFlag always_flags[] = {
+      kAllowStrongMode,
+  };
+  RunParserSyncTest(sloppy_context_data, data_error, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strict_context_data, data_error, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strong_context_data, data_error, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strong_context_data, data_success, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(StrongForIn) {
+  const char* sloppy_context_data[][2] = {{"", ""}, {NULL}};
+  const char* strict_context_data[][2] = {{"'use strict';", ""}, {NULL}};
+  const char* strong_context_data[][2] = {{"'use strong';", ""}, {NULL}};
+
+  const char* data[] = {
+      "for (x in []) {}",
+      "for (const x in []) {}",
+      NULL};
+
+  static const ParserFlag always_flags[] = {
+      kAllowStrongMode,
+  };
+  RunParserSyncTest(sloppy_context_data, data, kSuccess, NULL, 0, always_flags,
+                    arraysize(always_flags));
+  RunParserSyncTest(strict_context_data, data, kSuccess, NULL, 0, always_flags,
+                    arraysize(always_flags));
+  RunParserSyncTest(strong_context_data, data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(StrongConstructorThis) {
+  const char* sloppy_context_data[][2] = {{"", ""}, {NULL}};
+  const char* strict_context_data[][2] = {{"'use strict';", ""}, {NULL}};
+  const char* strong_context_data[][2] = {{"'use strong';", ""}, {NULL}};
+
+  const char* error_data[] = {
+      "class C { constructor() { this; } }",
+      "class C { constructor() { this.a; } }",
+      "class C { constructor() { this['a']; } }",
+      "class C { constructor() { (this); } }",
+      "class C { constructor() { this(); } }",
+      // TODO(rossberg): arrow functions not handled yet.
+      // "class C { constructor() { () => this; } }",
+      "class C { constructor() { this.a = 0, 0; } }",
+      "class C { constructor() { (this.a = 0); } }",
+      // "class C { constructor() { (() => this.a = 0)(); } }",
+      "class C { constructor() { { this.a = 0; } } }",
+      "class C { constructor() { if (1) this.a = 0; } }",
+      "class C { constructor() { label: this.a = 0; } }",
+      "class C { constructor() { this.a = this.b; } }",
+      "class C { constructor() { this.a = {b: 1}; this.a.b } }",
+      "class C { constructor() { this.a = {b: 1}; this.a.b = 0 } }",
+      "class C { constructor() { this.a = function(){}; this.a() } }",
+      NULL};
+
+  const char* success_data[] = {
+      "class C { constructor() { this.a = 0; } }",
+      "class C { constructor() { label: 0; this.a = 0; this.b = 6; } }",
+      NULL};
+
+  static const ParserFlag always_flags[] = {
+      kAllowStrongMode, kAllowHarmonyClasses, kAllowHarmonyObjectLiterals,
+      kAllowHarmonyArrowFunctions
+  };
+  RunParserSyncTest(sloppy_context_data, error_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strict_context_data, error_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strong_context_data, error_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+
+  RunParserSyncTest(sloppy_context_data, success_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strict_context_data, success_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strong_context_data, success_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(StrongConstructorSuper) {
+  const char* sloppy_context_data[][2] = {{"", ""}, {NULL}};
+  const char* strict_context_data[][2] = {{"'use strict';", ""}, {NULL}};
+  const char* strong_context_data[][2] = {{"'use strong';", ""}, {NULL}};
+
+  const char* error_data[] = {
+      "class C extends Object { constructor() {} }",
+      "class C extends Object { constructor() { super.a; } }",
+      "class C extends Object { constructor() { super['a']; } }",
+      "class C extends Object { constructor() { super.a = 0; } }",
+      "class C extends Object { constructor() { (super.a); } }",
+      // TODO(rossberg): arrow functions do not handle super yet.
+      // "class C extends Object { constructor() { () => super.a; } }",
+      "class C extends Object { constructor() { super(), 0; } }",
+      "class C extends Object { constructor() { (super()); } }",
+      // "class C extends Object { constructor() { (() => super())(); } }",
+      "class C extends Object { constructor() { { super(); } } }",
+      "class C extends Object { constructor() { if (1) super(); } }",
+      "class C extends Object { constructor() { label: super(); } }",
+      "class C extends Object { constructor() { super(), super(); } }",
+      "class C extends Object { constructor() { super(); super(); } }",
+      "class C extends Object { constructor() { super(); (super()); } }",
+      "class C extends Object { constructor() { super(); { super() } } }",
+      "class C extends Object { constructor() { this.a = 0, super(); } }",
+      "class C extends Object { constructor() { this.a = 0; super(); } }",
+      "class C extends Object { constructor() { super(this.a = 0); } }",
+      "class C extends Object { constructor() { super().a; } }",
+      NULL};
+
+  const char* success_data[] = {
+      "class C extends Object { constructor() { super(); } }",
+      "class C extends Object { constructor() { label: 66; super(); } }",
+      "class C extends Object { constructor() { super(3); this.x = 0; } }",
+      "class C extends Object { constructor() { 3; super(3); this.x = 0; } }",
+      NULL};
+
+  static const ParserFlag always_flags[] = {
+      kAllowStrongMode, kAllowHarmonyClasses, kAllowHarmonyObjectLiterals,
+      kAllowHarmonyArrowFunctions
+  };
+  RunParserSyncTest(sloppy_context_data, error_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strict_context_data, error_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strong_context_data, error_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+
+  RunParserSyncTest(sloppy_context_data, success_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strict_context_data, success_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strong_context_data, success_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(StrongConstructorReturns) {
+  const char* sloppy_context_data[][2] = {{"", ""}, {NULL}};
+  const char* strict_context_data[][2] = {{"'use strict';", ""}, {NULL}};
+  const char* strong_context_data[][2] = {{"'use strong';", ""}, {NULL}};
+
+  const char* error_data[] = {
+      "class C extends Object { constructor() { super(); return {}; } }",
+      "class C extends Object { constructor() { super(); { return {}; } } }",
+      "class C extends Object { constructor() { super(); if (1) return {}; } }",
+      "class C extends Object { constructor() { return; super(); } }",
+      "class C extends Object { constructor() { { return; } super(); } }",
+      "class C extends Object { constructor() { if (0) return; super(); } }",
+      "class C { constructor() { return; this.a = 0; } }",
+      "class C { constructor() { { return; } this.a = 0; } }",
+      "class C { constructor() { if (0) return; this.a = 0; } }",
+      "class C { constructor() { this.a = 0; if (0) return; this.b = 0; } }",
+      NULL};
+
+  const char* success_data[] = {
+      "class C extends Object { constructor() { super(); return; } }",
+      "class C extends Object { constructor() { super(); { return } } }",
+      "class C extends Object { constructor() { super(); if (1) return; } }",
+      "class C { constructor() { this.a = 0; return; } }",
+      "class C { constructor() { this.a = 0; { return; }  } }",
+      "class C { constructor() { this.a = 0; if (0) return; 65; } }",
+      "class C extends Array { constructor() { super(); this.a = 9; return } }",
+      NULL};
+
+  static const ParserFlag always_flags[] = {
+      kAllowStrongMode, kAllowHarmonyClasses, kAllowHarmonyObjectLiterals
+  };
+  RunParserSyncTest(sloppy_context_data, error_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strict_context_data, error_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strong_context_data, error_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+
+  RunParserSyncTest(sloppy_context_data, success_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strict_context_data, success_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strong_context_data, success_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(StrongUndefinedLocal) {
+  const char* context_data[][2] = {{"", ""}, {NULL}};
+
+  const char* data[] = {
+      "function undefined() {'use strong';}",
+      "function* undefined() {'use strong';}",
+      "(function undefined() {'use strong';});",
+      "{foo: (function undefined(){'use strong';})};",
+      "(function* undefined() {'use strong';})",
+      "{foo: (function* undefined(){'use strong';})};",
+      "function foo(a, b, undefined, c, d) {'use strong';}",
+      "function* foo(a, b, undefined, c, d) {'use strong';}",
+      "(function foo(a, b, undefined, c, d) {'use strong';})",
+      "{foo: (function foo(a, b, undefined, c, d) {'use strong';})};",
+      "(function* foo(a, b, undefined, c, d) {'use strong';})",
+      "{foo: (function* foo(a, b, undefined, c, d) {'use strong';})};",
+      "class C { foo(a, b, undefined, c, d) {'use strong';} }",
+      "class C { *foo(a, b, undefined, c, d) {'use strong';} }",
+      "({ foo(a, b, undefined, c, d) {'use strong';} });",
+      "{ *foo(a, b, undefined, c, d) {'use strong';} });",
+      "class undefined {'use strong'}",
+      "(class undefined {'use strong'});",
+      NULL};
+
+  static const ParserFlag always_flags[] = {
+      kAllowStrongMode, kAllowHarmonySloppy
+  };
+
+  RunParserSyncTest(context_data, data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(StrongUndefinedArrow) {
+  const char* sloppy_context_data[][2] = {{"", ""}, {NULL}};
+  const char* strict_context_data[][2] = {{"'use strict';", ""}, {NULL}};
+  const char* strong_context_data[][2] = {{"'use strong';", ""}, {NULL}};
+
+  const char* data[] = {
+      "(undefined => {return});",
+      "((undefined, b, c) => {return});",
+      "((a, undefined, c) => {return});",
+      "((a, b, undefined) => {return});",
+      NULL};
+
+  const char* local_strong[] = {
+      "(undefined => {'use strong';});",
+      "((undefined, b, c) => {'use strong';});",
+      "((a, undefined, c) => {'use strong';});",
+      "((a, b, undefined) => {'use strong';});",
+      NULL};
+
+  static const ParserFlag always_flags[] = {
+      kAllowStrongMode, kAllowHarmonyArrowFunctions
+  };
+  RunParserSyncTest(sloppy_context_data, data, kSuccess, NULL, 0, always_flags,
+                    arraysize(always_flags));
+  RunParserSyncTest(strict_context_data, data, kSuccess, NULL, 0, always_flags,
+                    arraysize(always_flags));
+  RunParserSyncTest(strong_context_data, data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
+  RunParserSyncTest(sloppy_context_data, local_strong, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(StrongDirectEval) {
+  const char* sloppy_context_data[][2] = {{"", ""}, {NULL}};
+  const char* strong_context_data[][2] = {{"'use strong';", ""}, {NULL}};
+
+  const char* error_data[] = {
+      "eval();",
+      "eval([]);",
+      "(eval)();",
+      "(((eval)))();",
+      "eval('function f() {}');",
+      "function f() {eval()}",
+      NULL};
+
+  const char* success_data[] = {
+      "eval;",
+      "eval`foo`;",
+      "let foo = eval; foo();",
+      "(1, eval)();",
+      NULL};
+
+  static const ParserFlag always_flags[] = {
+      kAllowStrongMode
+  };
+
+  RunParserSyncTest(sloppy_context_data, error_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strong_context_data, error_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strong_context_data, success_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(StrongSwitchFallthrough) {
+  const char* sloppy_context_data[][2] = {
+      {"function f() { foo:for(;;) { switch(1) {", "};}}"},
+      {NULL, NULL}
+  };
+  const char* strong_context_data[][2] = {
+      {"function f() { 'use strong'; foo:for(;;) { switch(1) {", "};}}"},
+      {NULL, NULL}
+  };
+
+  const char* data_success[] = {
+      "",
+      "case 1:",
+      "case 1: case 2:",
+      "case 1: break;",
+      "default: throw new TypeError();",
+      "case 1: case 2: null",
+      "case 1: case 2: default: 1+1",
+      "case 1: break; case 2: return; default:",
+      "case 1: break foo; case 2: return; default:",
+      "case 1: case 2: break; case 3: continue; case 4: default:",
+      "case 1: case 2: break; case 3: continue foo; case 4: default:",
+      "case 1: case 2: {{return;}} case 3: default:",
+      "case 1: case 2: case 3: default: {1+1;{continue;}}",
+      "case 1: case 2: {1+1;{1+1;{continue;}}} case 3: default:",
+      "case 1: if (1) break; else continue; case 2: case 3: default:",
+      "case 1: case 2: if (1) {{break;}} else break; case 3: default:",
+      "case 1: if (1) break; else {if (1) break; else break;} case 2: default:",
+      "case 1: if (1) {if (1) break; else break;} else break; case 2: default:",
+      NULL};
+
+  const char* data_error[] = {
+      "case 1: case 2: (function(){return}); default:",
+      "case 1: 1+1; case 2:",
+      "case 1: bar: break bar; case 2: break;",
+      "case 1: bar:return; case 2:",
+      "case 1: bar:{ continue;} case 2:",
+      "case 1: break; case 2: bar:{ throw new TypeError() } default:",
+      "case 1: case 2: { bar:{ { break;} } } default: break;",
+      "case 1: if (1) break; else {}; case 2: default:",
+      "case 1: case 2: if (1) break; default:",
+      "case 1: case 2: if (1) break; else 0; default:",
+      "case 1: case 2: if (1) 0; else break; default:",
+      "case 1: case 2: case 3: if (1) {} default:",
+      "case 1: bar:if (1) break; else continue; case 2: case 3: default:",
+      NULL};
+
+  static const ParserFlag always_flags[] = {
+      kAllowStrongMode
+  };
+  RunParserSyncTest(strong_context_data, data_success, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(sloppy_context_data, data_error, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strong_context_data, data_error, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(ArrowFunctionASIErrors) {
+  const char* context_data[][2] = {{"'use strict';", ""}, {"", ""},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "(a\n=> a)(1)",
+      "(a/*\n*/=> a)(1)",
+      "((a)\n=> a)(1)",
+      "((a)/*\n*/=> a)(1)",
+      "((a, b)\n=> a + b)(1, 2)",
+      "((a, b)/*\n*/=> a + b)(1, 2)",
+      NULL};
+  static const ParserFlag always_flags[] = {kAllowHarmonyArrowFunctions};
+  RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(StrongModeFreeVariablesDeclaredByPreviousScript) {
+  i::FLAG_strong_mode = true;
+  v8::V8::Initialize();
+  v8::HandleScope scope(CcTest::isolate());
+  v8::Context::Scope context_scope(v8::Context::New(CcTest::isolate()));
+  v8::TryCatch try_catch;
+
+  // Introduce a bunch of variables, in all language modes.
+  const char* script1 =
+      "var my_var1 = 0;        \n"
+      "function my_func1() { } \n"
+      "const my_const1 = 0;    \n";
+  CompileRun(v8_str(script1));
+  CHECK(!try_catch.HasCaught());
+
+  const char* script2 =
+      "\"use strict\";         \n"
+      "let my_var2 = 0;        \n"
+      "function my_func2() { } \n"
+      "const my_const2 = 0     \n";
+  CompileRun(v8_str(script2));
+  CHECK(!try_catch.HasCaught());
+
+  const char* script3 =
+      "\"use strong\";         \n"
+      "let my_var3 = 0;        \n"
+      "function my_func3() { } \n"
+      "const my_const3 = 0;    \n";
+  CompileRun(v8_str(script3));
+  CHECK(!try_catch.HasCaught());
+
+  // Sloppy eval introduces variables in the surrounding scope.
+  const char* script4 =
+      "eval('var my_var4 = 0;')        \n"
+      "eval('function my_func4() { }') \n"
+      "eval('const my_const4 = 0;')    \n";
+  CompileRun(v8_str(script4));
+  CHECK(!try_catch.HasCaught());
+
+  // Test that referencing these variables work.
+  const char* script5 =
+      "\"use strong\";         \n"
+      "my_var1;                \n"
+      "my_func1;               \n"
+      "my_const1;              \n"
+      "my_var2;                \n"
+      "my_func2;               \n"
+      "my_const2;              \n"
+      "my_var3;                \n"
+      "my_func3;               \n"
+      "my_const3;              \n"
+      "my_var4;                \n"
+      "my_func4;               \n"
+      "my_const4;              \n";
+  CompileRun(v8_str(script5));
+  CHECK(!try_catch.HasCaught());
+}
+
+
+TEST(StrongModeFreeVariablesDeclaredByLanguage) {
+  i::FLAG_strong_mode = true;
+  v8::V8::Initialize();
+  v8::HandleScope scope(CcTest::isolate());
+  v8::Context::Scope context_scope(v8::Context::New(CcTest::isolate()));
+  v8::TryCatch try_catch;
+
+  const char* script1 =
+      "\"use strong\";         \n"
+      "Math;                   \n"
+      "RegExp;                 \n";
+  CompileRun(v8_str(script1));
+  CHECK(!try_catch.HasCaught());
+}
+
+
+TEST(StrongModeFreeVariablesDeclaredInGlobalPrototype) {
+  i::FLAG_strong_mode = true;
+  v8::V8::Initialize();
+  v8::HandleScope scope(CcTest::isolate());
+  v8::Context::Scope context_scope(v8::Context::New(CcTest::isolate()));
+  v8::TryCatch try_catch;
+
+  const char* script1 = "this.__proto__.my_var = 0;\n";
+  CompileRun(v8_str(script1));
+  CHECK(!try_catch.HasCaught());
+
+  const char* script2 =
+      "\"use strong\";         \n"
+      "my_var;                 \n";
+  CompileRun(v8_str(script2));
+  CHECK(!try_catch.HasCaught());
+}
+
+
+TEST(StrongModeFreeVariablesNotDeclared) {
+  i::FLAG_strong_mode = true;
+  v8::V8::Initialize();
+  v8::HandleScope scope(CcTest::isolate());
+  v8::Context::Scope context_scope(v8::Context::New(CcTest::isolate()));
+  v8::TryCatch try_catch;
+
+  // Test that referencing unintroduced variables in sloppy mode is ok.
+  const char* script1 =
+      "if (false) {            \n"
+      "  not_there1;           \n"
+      "}                       \n";
+  CompileRun(v8_str(script1));
+  CHECK(!try_catch.HasCaught());
+
+  // But not in strong mode.
+  {
+    const char* script2 =
+        "\"use strong\";         \n"
+        "if (false) {            \n"
+        "  not_there2;           \n"
+        "}                       \n";
+    v8::TryCatch try_catch2;
+    v8::Script::Compile(v8_str(script2));
+    CHECK(try_catch2.HasCaught());
+    v8::String::Utf8Value exception(try_catch2.Exception());
+    CHECK_EQ(0,
+             strcmp(
+                 "ReferenceError: In strong mode, using an undeclared global "
+                 "variable 'not_there2' is not allowed",
+                 *exception));
+  }
+
+  // Check that the variable reference is detected inside a strong function too,
+  // even if the script scope is not strong.
+  {
+    const char* script3 =
+        "(function not_lazy() {  \n"
+        "  \"use strong\";       \n"
+        "  if (false) {          \n"
+        "    not_there3;         \n"
+        "  }                     \n"
+        "})();                   \n";
+    v8::TryCatch try_catch2;
+    v8::Script::Compile(v8_str(script3));
+    CHECK(try_catch2.HasCaught());
+    v8::String::Utf8Value exception(try_catch2.Exception());
+    CHECK_EQ(0,
+             strcmp(
+                 "ReferenceError: In strong mode, using an undeclared global "
+                 "variable 'not_there3' is not allowed",
+                 *exception));
+  }
+}
+
+
+TEST(DestructuringPositiveTests) {
+  i::FLAG_harmony_destructuring = true;
+
+  const char* context_data[][2] = {{"'use strict'; let ", " = {};"},
+                                   {"var ", " = {};"},
+                                   {"'use strict'; const ", " = {};"},
+                                   {NULL, NULL}};
+
+  // clang-format off
+  const char* data[] = {
+    "a",
+    "{ x : y }",
+    "[a]",
+    "[a,b,c]",
+    "{ x : x, y : y }",
+    "[]",
+    "{}",
+    "[{x:x, y:y}, [a,b,c]]",
+    "[a,,b]",
+    "{42 : x}",
+    "{42e-2 : x}",
+    "{'hi' : x}",
+    "{var: x}",
+    NULL};
+  // clang-format on
+  static const ParserFlag always_flags[] = {kAllowHarmonyDestructuring};
+  RunParserSyncTest(context_data, data, kSuccess, NULL, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(DestructuringNegativeTests) {
+  i::FLAG_harmony_destructuring = true;
+  static const ParserFlag always_flags[] = {kAllowHarmonyDestructuring};
+
+  {  // All modes.
+    const char* context_data[][2] = {{"'use strict'; let ", " = {};"},
+                                     {"var ", " = {};"},
+                                     {"'use strict'; const ", " = {};"},
+                                     {NULL, NULL}};
+
+    // clang-format off
+    const char* data[] = {
+        "a++",
+        "++a",
+        "delete a",
+        "void a",
+        "typeof a",
+        "--a",
+        "+a",
+        "-a",
+        "~a",
+        "!a",
+        "{ x : y++ }",
+        "[a++]",
+        "(x => y)",
+        "a[i]", "a()",
+        "a.b",
+        "new a",
+        "a + a",
+        "a - a",
+        "a * a",
+        "a / a",
+        "a == a",
+        "a != a",
+        "a > a",
+        "a < a",
+        "a <<< a",
+        "a >>> a",
+        "function a() {}",
+        "a`bcd`",
+        "x => x",
+        "this",
+        "null",
+        "true",
+        "false",
+        "1",
+        "'abc'",
+        "class {}",
+        "() => x",
+        "{+2 : x}",
+        "{-2 : x}",
+        "var",
+        "[var]",
+        "{x : {y : var}}",
+        NULL};
+    // clang-format on
+    RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,
+                      arraysize(always_flags));
+  }
+
+  {  // Strict mode.
+    const char* context_data[][2] = {{"'use strict'; let ", " = {};"},
+                                     {"'use strict'; const ", " = {};"},
+                                     {NULL, NULL}};
+
+    // clang-format off
+    const char* data[] = {
+      "[eval]",
+      "{ a : arguments }",
+      "[public]",
+      "{ x : private }",
+      NULL};
+    // clang-format on
+    RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,
+                      arraysize(always_flags));
+  }
+
+  {  // 'yield' in generators.
+    const char* context_data[][2] = {
+        {"function*() { var ", " = {};"},
+        {"function*() { 'use strict'; let ", " = {};"},
+        {"function*() { 'use strict'; const ", " = {};"},
+        {NULL, NULL}};
+
+    // clang-format off
+    const char* data[] = {
+      "yield",
+      "[yield]",
+      "{ x : yield }",
+      NULL};
+    // clang-format on
+    RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,
+                      arraysize(always_flags));
+  }
 }

@@ -261,7 +261,7 @@ class STORAGE_EXPORT QuotaManager
   static int64 kSyncableStorageDefaultHostQuota;
 
  protected:
-  virtual ~QuotaManager();
+  ~QuotaManager() override;
 
  private:
   friend class base::DeleteHelper<QuotaManager>;
@@ -297,6 +297,12 @@ class STORAGE_EXPORT QuotaManager
       DumpQuotaTableCallback;
   typedef base::Callback<void(const OriginInfoTableEntries&)>
       DumpOriginInfoTableCallback;
+
+  typedef CallbackQueue<base::Closure> ClosureQueue;
+  typedef CallbackQueue<AvailableSpaceCallback, QuotaStatusCode, int64>
+      AvailableSpaceCallbackQueue;
+  typedef CallbackQueueMap<QuotaCallback, std::string, QuotaStatusCode, int64>
+      HostQuotaCallbackMap;
 
   struct EvictionContext {
     EvictionContext();
@@ -356,15 +362,13 @@ class STORAGE_EXPORT QuotaManager
                                                int64 unlimited_usage);
 
   // QuotaEvictionHandler.
-  virtual void GetLRUOrigin(
-      StorageType type,
-      const GetLRUOriginCallback& callback) OVERRIDE;
-  virtual void EvictOriginData(
-      const GURL& origin,
-      StorageType type,
-      const EvictOriginDataCallback& callback) OVERRIDE;
-  virtual void GetUsageAndQuotaForEviction(
-      const UsageAndQuotaCallback& callback) OVERRIDE;
+  void GetLRUOrigin(StorageType type,
+                    const GetLRUOriginCallback& callback) override;
+  void EvictOriginData(const GURL& origin,
+                       StorageType type,
+                       const EvictOriginDataCallback& callback) override;
+  void GetUsageAndQuotaForEviction(
+      const UsageAndQuotaCallback& callback) override;
 
   void DidSetTemporaryGlobalOverrideQuota(const QuotaCallback& callback,
                                           const int64* new_quota,
@@ -420,7 +424,6 @@ class STORAGE_EXPORT QuotaManager
 
   ClosureQueue db_initialization_callbacks_;
   AvailableSpaceCallbackQueue available_space_callbacks_;
-  GlobalQuotaCallbackQueue temporary_global_quota_callbacks_;
   HostQuotaCallbackMap persistent_host_quota_callbacks_;
 
   bool temporary_quota_initialized_;

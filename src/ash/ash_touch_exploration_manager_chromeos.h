@@ -26,19 +26,19 @@ class ASH_EXPORT AshTouchExplorationManager
  public:
   explicit AshTouchExplorationManager(
       RootWindowController* root_window_controller);
-  virtual ~AshTouchExplorationManager();
+  ~AshTouchExplorationManager() override;
 
   // AccessibilityObserver overrides:
-  virtual void OnAccessibilityModeChanged(
-      AccessibilityNotificationVisibility notify) OVERRIDE;
+  void OnAccessibilityModeChanged(
+      ui::AccessibilityNotificationVisibility notify) override;
 
   // TouchExplorationControllerDelegate overrides:
-  virtual void SetOutputLevel(int volume) OVERRIDE;
-  virtual void SilenceSpokenFeedback() OVERRIDE;
-  virtual void PlayVolumeAdjustEarcon() OVERRIDE;
-  virtual void PlayPassthroughEarcon() OVERRIDE;
-  virtual void PlayExitScreenEarcon() OVERRIDE;
-  virtual void PlayEnterScreenEarcon() OVERRIDE;
+  void SetOutputLevel(int volume) override;
+  void SilenceSpokenFeedback() override;
+  void PlayVolumeAdjustEarcon() override;
+  void PlayPassthroughEarcon() override;
+  void PlayExitScreenEarcon() override;
+  void PlayEnterScreenEarcon() override;
 
  private:
   void UpdateTouchExplorationState();

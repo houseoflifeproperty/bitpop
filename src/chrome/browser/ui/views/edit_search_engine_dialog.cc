@@ -10,8 +10,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/browser/ui/search_engines/edit_search_engine_controller.h"
-#include "chrome/browser/ui/views/constrained_window_views.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/constrained_window/constrained_window_views.h"
 #include "components/search_engines/template_url.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -62,7 +62,7 @@ void EditSearchEngineDialog::Show(gfx::NativeWindow parent,
       new EditSearchEngineDialog(template_url, delegate, profile);
   // Window interprets an empty rectangle as needing to query the content for
   // the size as well as centering relative to the parent.
-  CreateBrowserModalDialogViews(contents, parent);
+  constrained_window::CreateBrowserModalDialogViews(contents, parent);
   contents->GetWidget()->Show();
   contents->GetDialogClientView()->UpdateDialogButtons();
   contents->title_tf_->SelectAll(true);

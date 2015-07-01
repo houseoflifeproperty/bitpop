@@ -29,15 +29,15 @@ class FastUnloadController::DetachedWebContentsDelegate
     : public content::WebContentsDelegate {
  public:
   DetachedWebContentsDelegate() { }
-  virtual ~DetachedWebContentsDelegate() { }
+  ~DetachedWebContentsDelegate() override {}
 
  private:
   // WebContentsDelegate implementation.
-  virtual bool ShouldSuppressDialogs() OVERRIDE {
+  bool ShouldSuppressDialogs(content::WebContents* source) override {
     return true;  // Return true so dialogs are suppressed.
   }
 
-  virtual void CloseContents(content::WebContents* source) OVERRIDE {
+  void CloseContents(content::WebContents* source) override {
     // Finished detached close.
     // FastUnloadController will observe
     // |NOTIFICATION_WEB_CONTENTS_DISCONNECTED|.
@@ -422,7 +422,7 @@ void FastUnloadController::ProcessPendingTabs() {
             CoreTabHelper::FromWebContents(contents);
         core_tab_helper->OnUnloadStarted();
         DetachWebContents(contents);
-        contents->GetRenderViewHost()->ClosePage();
+        contents->ClosePage();
       }
     }
 

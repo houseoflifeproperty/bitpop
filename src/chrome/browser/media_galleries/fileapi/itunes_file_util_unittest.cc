@@ -11,7 +11,9 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "chrome/browser/media_galleries/fileapi/itunes_data_provider.h"
 #include "chrome/browser/media_galleries/fileapi/itunes_file_util.h"
@@ -71,13 +73,13 @@ class TestITunesDataProvider : public ITunesDataProvider {
     EXPECT_TRUE(fake_auto_add_dir_.CreateUniqueTempDir());
   }
 
-  virtual ~TestITunesDataProvider() {}
+  ~TestITunesDataProvider() override {}
 
-  virtual void RefreshData(const ReadyCallback& ready_callback) OVERRIDE {
+  void RefreshData(const ReadyCallback& ready_callback) override {
     ready_callback.Run(true /* success */);
   }
 
-  virtual const base::FilePath& auto_add_path() const OVERRIDE {
+  const base::FilePath& auto_add_path() const override {
     return fake_auto_add_dir_.path();
   }
 
@@ -101,12 +103,10 @@ class TestITunesFileUtil : public ITunesFileUtil {
       : ITunesFileUtil(media_path_filter),
         data_provider_(data_provider) {
   }
-  virtual ~TestITunesFileUtil() {}
+  ~TestITunesFileUtil() override {}
 
  private:
-  virtual ITunesDataProvider* GetDataProvider() OVERRIDE {
-    return data_provider_;
-  }
+  ITunesDataProvider* GetDataProvider() override { return data_provider_; }
 
   ITunesDataProvider* data_provider_;
 };
@@ -120,8 +120,8 @@ class TestMediaFileSystemBackend : public MediaFileSystemBackend {
             MediaFileSystemBackend::MediaTaskRunner().get()),
         test_file_util_(itunes_file_util) {}
 
-  virtual storage::AsyncFileUtil* GetAsyncFileUtil(
-      storage::FileSystemType type) OVERRIDE {
+  storage::AsyncFileUtil* GetAsyncFileUtil(
+      storage::FileSystemType type) override {
     if (type != storage::kFileSystemTypeItunes)
       return NULL;
 
@@ -137,7 +137,6 @@ class ItunesFileUtilTest : public testing::Test {
   ItunesFileUtilTest()
       : io_thread_(content::BrowserThread::IO, &message_loop_) {
   }
-  virtual ~ItunesFileUtilTest() {}
 
   void SetUpDataProvider() {
     ASSERT_TRUE(fake_library_dir_.CreateUniqueTempDir());
@@ -152,7 +151,7 @@ class ItunesFileUtilTest : public testing::Test {
         new TestITunesDataProvider(fake_library_dir_.path()));
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(profile_dir_.CreateUniqueTempDir());
     ImportedMediaGalleryRegistry::GetInstance()->Initialize();
 
@@ -178,8 +177,8 @@ class ItunesFileUtilTest : public testing::Test {
                                itunes_data_provider_.get())));
 
     file_system_context_ = new storage::FileSystemContext(
-        base::MessageLoopProxy::current().get(),
-        base::MessageLoopProxy::current().get(),
+        base::ThreadTaskRunnerHandle::Get().get(),
+        base::ThreadTaskRunnerHandle::Get().get(),
         storage::ExternalMountPoints::CreateRefCounted().get(),
         storage_policy.get(),
         NULL,

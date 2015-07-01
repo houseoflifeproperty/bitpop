@@ -18,7 +18,7 @@ namespace policy {
 
 class UserNetworkConfigurationUpdater;
 
- // Factory to create UserNetworkConfigurationUpdater.
+// Factory to create UserNetworkConfigurationUpdater.
 class UserNetworkConfigurationUpdaterFactory
     : public BrowserContextKeyedServiceFactory {
  public:
@@ -33,15 +33,15 @@ class UserNetworkConfigurationUpdaterFactory
   friend struct DefaultSingletonTraits<UserNetworkConfigurationUpdaterFactory>;
 
   UserNetworkConfigurationUpdaterFactory();
-  virtual ~UserNetworkConfigurationUpdaterFactory();
+  ~UserNetworkConfigurationUpdaterFactory() override;
 
   // BrowserContextKeyedServiceFactory:
-  virtual content::BrowserContext* GetBrowserContextToUse(
-      content::BrowserContext* context) const OVERRIDE;
-  virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
-  virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* context) const OVERRIDE;
+  content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const override;
+  bool ServiceIsCreatedWithBrowserContext() const override;
+  bool ServiceIsNULLWhileTesting() const override;
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* context) const override;
 
   DISALLOW_COPY_AND_ASSIGN(UserNetworkConfigurationUpdaterFactory);
 };

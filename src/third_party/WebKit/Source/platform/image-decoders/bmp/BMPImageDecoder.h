@@ -41,17 +41,19 @@ class PLATFORM_EXPORT BMPImageDecoder : public ImageDecoder {
 public:
     BMPImageDecoder(ImageSource::AlphaOption, ImageSource::GammaAndColorProfileOption, size_t maxDecodedBytes);
 
-    // ImageDecoder
-    virtual String filenameExtension() const OVERRIDE { return "bmp"; }
-    virtual void setData(SharedBuffer*, bool allDataReceived) OVERRIDE;
-    virtual bool isSizeAvailable() OVERRIDE;
-    virtual ImageFrame* frameBufferAtIndex(size_t) OVERRIDE;
+    // ImageDecoder:
+    virtual String filenameExtension() const override { return "bmp"; }
+    virtual void setData(SharedBuffer*, bool allDataReceived) override;
     // CAUTION: setFailed() deletes |m_reader|.  Be careful to avoid
     // accessing deleted memory, especially when calling this from inside
     // BMPImageReader!
-    virtual bool setFailed() OVERRIDE;
+    virtual bool setFailed() override;
 
 private:
+    // ImageDecoder:
+    virtual void decodeSize() override { decode(true); }
+    virtual void decode(size_t) override { decode(false); }
+
     inline uint32_t readUint32(int offset) const
     {
         return BMPImageReader::readUint32(m_data.get(), m_decodedOffset + offset);

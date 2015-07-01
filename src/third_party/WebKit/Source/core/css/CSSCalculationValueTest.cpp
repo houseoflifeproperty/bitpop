@@ -34,8 +34,8 @@
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSToLengthConversionData.h"
 #include "core/css/StylePropertySet.h"
-#include "core/rendering/style/RenderStyle.h"
-#include "core/rendering/style/StyleInheritedData.h"
+#include "core/style/ComputedStyle.h"
+#include "core/style/StyleInheritedData.h"
 
 #include <gtest/gtest.h>
 
@@ -89,9 +89,9 @@ bool lengthArraysEqual(CSSLengthArray& a, CSSLengthArray& b)
 
 TEST(CSSCalculationValue, AccumulatePixelsAndPercent)
 {
-    RefPtr<RenderStyle> style = RenderStyle::createDefaultStyle();
+    RefPtr<ComputedStyle> style = ComputedStyle::create();
     style->setEffectiveZoom(5);
-    CSSToLengthConversionData conversionData(style.get(), style.get(), 0);
+    CSSToLengthConversionData conversionData(style.get(), style.get(), nullptr, style->effectiveZoom());
 
     testAccumulatePixelsAndPercent(conversionData,
         CSSCalcValue::createExpressionNode(CSSPrimitiveValue::create(10, CSSPrimitiveValue::CSS_PX), true),
@@ -179,20 +179,20 @@ TEST(CSSCalculationValue, AddToLengthUnitValues)
 
     expectation.at(CSSPrimitiveValue::UnitTypePixels) = 0;
     expectation.at(CSSPrimitiveValue::UnitTypePercentage) = 20;
-    EXPECT_TRUE(lengthArraysEqual(expectation, setLengthArray(actual, "20%%")));
+    EXPECT_TRUE(lengthArraysEqual(expectation, setLengthArray(actual, "20%")));
 
     expectation.at(CSSPrimitiveValue::UnitTypePixels) = 30;
     expectation.at(CSSPrimitiveValue::UnitTypePercentage) = -40;
-    EXPECT_TRUE(lengthArraysEqual(expectation, setLengthArray(actual, "calc(30px - 40%%)")));
+    EXPECT_TRUE(lengthArraysEqual(expectation, setLengthArray(actual, "calc(30px - 40%)")));
 
     expectation.at(CSSPrimitiveValue::UnitTypePixels) = 90;
     expectation.at(CSSPrimitiveValue::UnitTypePercentage) = 10;
-    EXPECT_TRUE(lengthArraysEqual(expectation, setLengthArray(actual, "calc(1in + 10%% - 6px)")));
+    EXPECT_TRUE(lengthArraysEqual(expectation, setLengthArray(actual, "calc(1in + 10% - 6px)")));
 
     expectation.at(CSSPrimitiveValue::UnitTypePixels) = 15;
     expectation.at(CSSPrimitiveValue::UnitTypeFontSize) = 20;
     expectation.at(CSSPrimitiveValue::UnitTypePercentage) = -40;
-    EXPECT_TRUE(lengthArraysEqual(expectation, setLengthArray(actual, "calc((1 * 2) * (5px + 20em / 2) - 80%% / (3 - 1) + 5px)")));
+    EXPECT_TRUE(lengthArraysEqual(expectation, setLengthArray(actual, "calc((1 * 2) * (5px + 20em / 2) - 80% / (3 - 1) + 5px)")));
 }
 
 }

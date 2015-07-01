@@ -34,8 +34,10 @@ class Operand(object):
       def_format.OperandReadWriteMode.READ_WRITE)
   arg_type_regex = '|'.join(def_format.ALL_OPERAND_TYPES)
   size_regex = (
-      r'|2|7|b|d|do|dq|fq|o|p|pb|pd|pdw|pdwx|pdx|ph|phx|pi|pj|pjx|pk|pkx|'
-      r'pq|pqw|pqwx|pqx|ps|psx|pw|q|r|s|sb|sd|se|si|sq|sr|ss|st|sw|sx|'
+      r'|2|7|b|d|do|dq|fq|o|'
+      r'p|pb|pbx|pd|pdw|pdwx|pdx|ph|phx|pi|pix|'
+      r'pj|pjx|pk|pkx|pq|pqw|pqwx|pqx|ps|psx|pw|pwx|'
+      r'q|r|s|sb|sd|se|si|sq|sr|ss|st|sw|sx|'
       r'v|w|x|y|z')
   implicit_mark_regex = r'\*?'
 
@@ -1279,12 +1281,15 @@ def SplitL(instruction):
 
   splits = {
       'x': ('x-xmm', 'x-ymm'),
+      'pbx': ('pb', 'pb-ymm'),
       'pdx': ('pd', 'pd-ymm'),
       'phx': ('ph', 'ph-ymm'),
+      'pix': ('pi', 'pi-ymm'),
       'pjx': ('pj', 'pj-ymm'),
       'pkx': ('pk', 'pk-ymm'),
       'pqx': ('pq', 'pq-ymm'),
       'psx': ('ps', 'ps-ymm'),
+      'pwx': ('pw', 'pw-ymm'),
       'pdwx': ('pdw', 'pdw-ymm'),
       'pqwx': ('pqw', 'pqw-ymm')}
 
@@ -1309,6 +1314,11 @@ def SplitL(instruction):
 
   instr_xmm.opcodes[2] = third_vex_byte.replace('.L.', '.0.')
   instr_ymm.opcodes[2] = third_vex_byte.replace('.L.', '.1.')
+
+  if Attribute('CPUFeature_AVX_Lis2') in instruction.attributes:
+    index = instruction.attributes.index(Attribute('CPUFeature_AVX_Lis2'))
+    instr_xmm.attributes[index] = Attribute('CPUFeature_AVX')
+    instr_ymm.attributes[index] = Attribute('CPUFeature_AVX2')
 
   if not has_explicit_operand_size:
     instr_xmm.attributes.append(Attribute('att-show-name-suffix-x'))
@@ -1455,17 +1465,7 @@ def main():
         if (options.bitness == 64 and
             Attribute('nacl-amd64-forbidden') in instruction.attributes):
           continue
-
-        # TODO(shcherbina): Remove it once compilation time problem
-        # (https://code.google.com/p/nativeclient/issues/detail?id=3327)
-        # is resolved.
-        if Attribute('CPUFeature_AVX') in instruction.attributes:
-          continue
-        if Attribute('CPUFeature_FMA') in instruction.attributes:
-          continue
-        if Attribute('CPUFeature_FMA4') in instruction.attributes:
-          continue
-        if Attribute('CPUFeature_XOP') in instruction.attributes:
+        if Attribute('disabled_untested') in instruction.attributes:
           continue
 
       instruction_names.add((instruction.GetNameAsIdentifier(),

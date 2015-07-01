@@ -7,7 +7,7 @@
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/input_method_observer.h"
 #include "ui/events/event.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
@@ -21,19 +21,15 @@ namespace views {
 class InputMethodBridge::HostObserver : public ui::InputMethodObserver {
  public:
   explicit HostObserver(InputMethodBridge* bridge);
-  virtual ~HostObserver();
+  ~HostObserver() override;
 
-  virtual void OnTextInputTypeChanged(
-      const ui::TextInputClient* client) OVERRIDE {}
-  virtual void OnFocus() OVERRIDE {}
-  virtual void OnBlur() OVERRIDE {}
-  virtual void OnCaretBoundsChanged(
-      const ui::TextInputClient* client) OVERRIDE {}
-  virtual void OnTextInputStateChanged(
-      const ui::TextInputClient* client) OVERRIDE {}
-  virtual void OnInputMethodDestroyed(
-      const ui::InputMethod* input_method) OVERRIDE;
-  virtual void OnShowImeIfNeeded() OVERRIDE {}
+  void OnTextInputTypeChanged(const ui::TextInputClient* client) override {}
+  void OnFocus() override {}
+  void OnBlur() override {}
+  void OnCaretBoundsChanged(const ui::TextInputClient* client) override {}
+  void OnTextInputStateChanged(const ui::TextInputClient* client) override {}
+  void OnInputMethodDestroyed(const ui::InputMethod* input_method) override;
+  void OnShowImeIfNeeded() override {}
 
  private:
   InputMethodBridge* bridge_;
@@ -226,6 +222,11 @@ ui::TextInputMode InputMethodBridge::GetTextInputMode() const {
   return client ? client->GetTextInputMode() : ui::TEXT_INPUT_MODE_DEFAULT;
 }
 
+int InputMethodBridge::GetTextInputFlags() const {
+  TextInputClient* client = GetTextInputClient();
+  return client ? client->GetTextInputFlags() : 0;
+}
+
 bool InputMethodBridge::CanComposeInline() const {
   TextInputClient* client = GetTextInputClient();
   return client ? client->CanComposeInline() : true;
@@ -319,11 +320,15 @@ void InputMethodBridge::OnCandidateWindowUpdated() {
 void InputMethodBridge::OnCandidateWindowHidden() {
 }
 
-bool InputMethodBridge::IsEditingCommandEnabled(int command_id) {
-  return false;
+bool InputMethodBridge::IsEditCommandEnabled(int command_id) {
+  TextInputClient* client = GetTextInputClient();
+  return client ? client->IsEditCommandEnabled(command_id) : false;
 }
 
-void InputMethodBridge::ExecuteEditingCommand(int command_id) {
+void InputMethodBridge::SetEditCommandForNextKeyEvent(int command_id) {
+  TextInputClient* client = GetTextInputClient();
+  if (client)
+    client->SetEditCommandForNextKeyEvent(command_id);
 }
 
 // Overridden from FocusChangeListener.

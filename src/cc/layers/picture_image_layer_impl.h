@@ -12,25 +12,24 @@ namespace cc {
 class CC_EXPORT PictureImageLayerImpl : public PictureLayerImpl {
  public:
   static scoped_ptr<PictureImageLayerImpl> Create(LayerTreeImpl* tree_impl,
-                                                  int id) {
-    return make_scoped_ptr(new PictureImageLayerImpl(tree_impl, id));
+                                                  int id,
+                                                  bool is_mask) {
+    return make_scoped_ptr(new PictureImageLayerImpl(tree_impl, id, is_mask));
   }
-  virtual ~PictureImageLayerImpl();
+  ~PictureImageLayerImpl() override;
 
   // LayerImpl overrides.
-  virtual const char* LayerTypeAsString() const OVERRIDE;
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(
-      LayerTreeImpl* tree_impl) OVERRIDE;
+  const char* LayerTypeAsString() const override;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
 
  protected:
-  PictureImageLayerImpl(LayerTreeImpl* tree_impl, int id);
+  PictureImageLayerImpl(LayerTreeImpl* tree_impl, int id, bool is_mask);
 
-  virtual bool ShouldAdjustRasterScale() const OVERRIDE;
-  virtual void RecalculateRasterScales() OVERRIDE;
-  virtual void GetDebugBorderProperties(
-      SkColor* color, float* width) const OVERRIDE;
+  bool ShouldAdjustRasterScale() const override;
+  void RecalculateRasterScales() override;
+  void GetDebugBorderProperties(SkColor* color, float* width) const override;
 
-  virtual void UpdateIdealScales() OVERRIDE;
+  void UpdateIdealScales() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(PictureImageLayerImpl);

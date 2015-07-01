@@ -18,18 +18,20 @@
 #include "chrome/browser/chromeos/login/supervised/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/ui/webui_login_view.h"
+#include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
+#include "chrome/browser/chromeos/login/users/supervised_user_manager_impl.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_test_impl.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
 #include "chrome/browser/profiles/profile_impl.h"
+#include "chrome/browser/supervised_user/legacy/supervised_user_registration_utility.h"
+#include "chrome/browser/supervised_user/legacy/supervised_user_registration_utility_stub.h"
+#include "chrome/browser/supervised_user/legacy/supervised_user_shared_settings_service.h"
+#include "chrome/browser/supervised_user/legacy/supervised_user_shared_settings_service_factory.h"
+#include "chrome/browser/supervised_user/legacy/supervised_user_sync_service.h"
+#include "chrome/browser/supervised_user/legacy/supervised_user_sync_service_factory.h"
 #include "chrome/browser/supervised_user/supervised_user_constants.h"
-#include "chrome/browser/supervised_user/supervised_user_registration_utility.h"
-#include "chrome/browser/supervised_user/supervised_user_registration_utility_stub.h"
-#include "chrome/browser/supervised_user/supervised_user_shared_settings_service.h"
-#include "chrome/browser/supervised_user/supervised_user_shared_settings_service_factory.h"
-#include "chrome/browser/supervised_user/supervised_user_sync_service.h"
-#include "chrome/browser/supervised_user/supervised_user_sync_service_factory.h"
 #include "chromeos/cryptohome/mock_async_method_caller.h"
 #include "chromeos/cryptohome/mock_homedir_methods.h"
 #include "chromeos/login/auth/key.h"
@@ -219,6 +221,10 @@ void SupervisedUserTestBase::JSEval(const std::string& script) {
   EXPECT_TRUE(content::ExecuteScript(web_contents(), script)) << script;
 }
 
+void SupervisedUserTestBase::JSEvalOrExitBrowser(const std::string& script) {
+  ignore_result(content::ExecuteScript(web_contents(), script));
+}
+
 void SupervisedUserTestBase::JSExpectAsync(const std::string& function) {
   bool result;
   EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
@@ -289,6 +295,7 @@ void SupervisedUserTestBase::StartFlowLoginAsManager() {
   // Next button is now enabled.
   JSExpect("!$('supervised-user-creation-next-button').disabled");
   UserContext user_context(kTestManager);
+  user_context.SetGaiaID(GetGaiaIDForUserID(kTestManager));
   user_context.SetKey(Key(kTestManagerPassword));
   SetExpectedCredentials(user_context);
   content::WindowedNotificationObserver login_observer(
@@ -344,7 +351,7 @@ void SupervisedUserTestBase::StartUserCreation(
   content::RunAllBlockingPoolTasksUntilIdle();
 
   JSExpect(StringPrintf("%s == 'created'", kCurrentPage));
-  JSEval("$('supervised-user-creation-gotit-button').click()");
+  JSEvalOrExitBrowser("$('supervised-user-creation-gotit-button').click()");
 }
 
 void SupervisedUserTestBase::SigninAsSupervisedUser(
@@ -361,6 +368,12 @@ void SupervisedUserTestBase::SigninAsSupervisedUser(
   const user_manager::User* user =
       user_manager::UserManager::Get()->GetUsers().at(user_index);
   ASSERT_EQ(base::UTF8ToUTF16(expected_display_name), user->display_name());
+
+  // Clean first run flag before logging in.
+  static_cast<SupervisedUserManagerImpl*>(
+      ChromeUserManager::Get()->GetSupervisedUserManager())
+      ->CheckForFirstRun(user->email());
+
   LoginUser(user->email());
   if (check_homedir_calls)
     ::testing::Mock::VerifyAndClearExpectations(mock_homedir_methods_);

@@ -16,18 +16,20 @@ namespace sandbox {
 class SyncDispatcher : public Dispatcher {
  public:
   explicit SyncDispatcher(PolicyBase* policy_base);
-  ~SyncDispatcher() {}
+  ~SyncDispatcher() override {}
 
   // Dispatcher interface.
-  virtual bool SetupService(InterceptionManager* manager, int service);
+  bool SetupService(InterceptionManager* manager, int service) override;
 
 private:
   // Processes IPC requests coming from calls to CreateEvent in the target.
-  bool CreateEvent(IPCInfo* ipc, base::string16* name, DWORD event_type,
-                   DWORD initial_state);
+  bool CreateEvent(IPCInfo* ipc,
+                   base::string16* name,
+                   uint32 event_type,
+                   uint32 initial_state);
 
   // Processes IPC requests coming from calls to OpenEvent in the target.
-  bool OpenEvent(IPCInfo* ipc, base::string16* name, DWORD desired_access);
+  bool OpenEvent(IPCInfo* ipc, base::string16* name, uint32 desired_access);
 
   PolicyBase* policy_base_;
   DISALLOW_COPY_AND_ASSIGN(SyncDispatcher);

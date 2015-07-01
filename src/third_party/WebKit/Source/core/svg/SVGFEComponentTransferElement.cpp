@@ -40,34 +40,26 @@ inline SVGFEComponentTransferElement::SVGFEComponentTransferElement(Document& do
     addToPropertyMap(m_in1);
 }
 
-DEFINE_NODE_FACTORY(SVGFEComponentTransferElement)
-
-bool SVGFEComponentTransferElement::isSupportedAttribute(const QualifiedName& attrName)
+DEFINE_TRACE(SVGFEComponentTransferElement)
 {
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty())
-        supportedAttributes.add(SVGNames::inAttr);
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
+    visitor->trace(m_in1);
+    SVGFilterPrimitiveStandardAttributes::trace(visitor);
 }
 
-void SVGFEComponentTransferElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+DEFINE_NODE_FACTORY(SVGFEComponentTransferElement)
+
+void SVGFEComponentTransferElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGFilterPrimitiveStandardAttributes::parseAttribute(name, value);
+    if (attrName == SVGNames::inAttr) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
+        invalidate();
         return;
     }
 
-    SVGParsingError parseError = NoError;
-
-    if (name == SVGNames::inAttr)
-        m_in1->setBaseValueAsString(value, parseError);
-    else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    SVGFilterPrimitiveStandardAttributes::svgAttributeChanged(attrName);
 }
 
-PassRefPtr<FilterEffect> SVGFEComponentTransferElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
+PassRefPtrWillBeRawPtr<FilterEffect> SVGFEComponentTransferElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
 {
     FilterEffect* input1 = filterBuilder->getEffectById(AtomicString(m_in1->currentValue()->value()));
 
@@ -90,7 +82,7 @@ PassRefPtr<FilterEffect> SVGFEComponentTransferElement::build(SVGFilterBuilder* 
             alpha = toSVGFEFuncAElement(*element).transferFunction();
     }
 
-    RefPtr<FilterEffect> effect = FEComponentTransfer::create(filter, red, green, blue, alpha);
+    RefPtrWillBeRawPtr<FilterEffect> effect = FEComponentTransfer::create(filter, red, green, blue, alpha);
     effect->inputEffects().append(input1);
     return effect.release();
 }

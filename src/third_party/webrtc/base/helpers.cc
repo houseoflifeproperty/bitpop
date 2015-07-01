@@ -47,36 +47,15 @@ class RandomGenerator {
 };
 
 #if defined(SSL_USE_OPENSSL)
-// The OpenSSL RNG. Need to make sure it doesn't run out of entropy.
+// The OpenSSL RNG.
 class SecureRandomGenerator : public RandomGenerator {
  public:
-  SecureRandomGenerator() : inited_(false) {
-  }
-  ~SecureRandomGenerator() {
-  }
-  virtual bool Init(const void* seed, size_t len) {
-    // By default, seed from the system state.
-    if (!inited_) {
-      if (RAND_poll() <= 0) {
-        return false;
-      }
-      inited_ = true;
-    }
-    // Allow app data to be mixed in, if provided.
-    if (seed) {
-      RAND_seed(seed, len);
-    }
-    return true;
-  }
-  virtual bool Generate(void* buf, size_t len) {
-    if (!inited_ && !Init(NULL, 0)) {
-      return false;
-    }
+  SecureRandomGenerator() {}
+  ~SecureRandomGenerator() override {}
+  bool Init(const void* seed, size_t len) override { return true; }
+  bool Generate(void* buf, size_t len) override {
     return (RAND_bytes(reinterpret_cast<unsigned char*>(buf), len) > 0);
   }
-
- private:
-  bool inited_;
 };
 
 #elif defined(SSL_USE_NSS_RNG)
@@ -84,11 +63,9 @@ class SecureRandomGenerator : public RandomGenerator {
 class SecureRandomGenerator : public RandomGenerator {
  public:
   SecureRandomGenerator() {}
-  ~SecureRandomGenerator() {}
-  virtual bool Init(const void* seed, size_t len) {
-    return true;
-  }
-  virtual bool Generate(void* buf, size_t len) {
+  ~SecureRandomGenerator() override {}
+  bool Init(const void* seed, size_t len) override { return true; }
+  bool Generate(void* buf, size_t len) override {
     return (PK11_GenerateRandom(reinterpret_cast<unsigned char*>(buf),
                                 static_cast<int>(len)) == SECSuccess);
   }
@@ -172,12 +149,10 @@ class TestRandomGenerator : public RandomGenerator {
  public:
   TestRandomGenerator() : seed_(7) {
   }
-  ~TestRandomGenerator() {
+  ~TestRandomGenerator() override {
   }
-  virtual bool Init(const void* seed, size_t len) {
-    return true;
-  }
-  virtual bool Generate(void* buf, size_t len) {
+  bool Init(const void* seed, size_t len) override { return true; }
+  bool Generate(void* buf, size_t len) override {
     for (size_t i = 0; i < len; ++i) {
       static_cast<uint8*>(buf)[i] = static_cast<uint8>(GetRandom());
     }

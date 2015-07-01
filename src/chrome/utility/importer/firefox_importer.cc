@@ -15,9 +15,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/common/importer/firefox_importer_utils.h"
-#include "chrome/common/importer/firefox_importer_utils.h"
 #include "chrome/common/importer/imported_bookmark_entry.h"
-#include "chrome/common/importer/imported_favicon_usage.h"
 #include "chrome/common/importer/importer_autofill_form_data_entry.h"
 #include "chrome/common/importer/importer_bridge.h"
 #include "chrome/common/importer/importer_url_row.h"
@@ -51,10 +49,12 @@ void LoadDefaultBookmarks(const base::FilePath& app_path,
   urls->clear();
 
   std::vector<ImportedBookmarkEntry> bookmarks;
+  std::vector<importer::SearchEngineInfo> search_engines;
   bookmark_html_reader::ImportBookmarksFile(base::Callback<bool(void)>(),
                                             base::Callback<bool(const GURL&)>(),
                                             file,
                                             &bookmarks,
+                                            &search_engines,
                                             NULL);
   for (size_t i = 0; i < bookmarks.size(); ++i)
     urls->insert(bookmarks[i].url);
@@ -163,11 +163,12 @@ void FirefoxImporter::ImportHistory() {
   // redirects, since we don't want them to appear in history.
   // Firefox transition types are defined in:
   //   toolkit/components/places/public/nsINavHistoryService.idl
-  const char* query = "SELECT h.url, h.title, h.visit_count, "
-                      "h.hidden, h.typed, v.visit_date "
-                      "FROM moz_places h JOIN moz_historyvisits v "
-                      "ON h.id = v.place_id "
-                      "WHERE v.visit_type <= 3";
+  const char query[] =
+      "SELECT h.url, h.title, h.visit_count, "
+      "h.hidden, h.typed, v.visit_date "
+      "FROM moz_places h JOIN moz_historyvisits v "
+      "ON h.id = v.place_id "
+      "WHERE v.visit_type <= 3";
 
   sql::Statement s(db.GetUniqueStatement(query));
 
@@ -225,13 +226,14 @@ void FirefoxImporter::ImportBookmarks() {
     GetWholeBookmarkFolder(&db, &list, i, NULL);
 
   std::vector<ImportedBookmarkEntry> bookmarks;
-  std::vector<importer::URLKeywordInfo> url_keywords;
+  std::vector<importer::SearchEngineInfo> search_engines;
   FaviconMap favicon_map;
 
   // TODO(jcampan): http://b/issue?id=1196285 we do not support POST based
   //                keywords yet.  We won't include them in the list.
   std::set<int> post_keyword_ids;
-  const char* query = "SELECT b.id FROM moz_bookmarks b "
+  const char query[] =
+      "SELECT b.id FROM moz_bookmarks b "
       "INNER JOIN moz_items_annos ia ON ia.item_id = b.id "
       "INNER JOIN moz_anno_attributes aa ON ia.anno_attribute_id = aa.id "
       "WHERE aa.name = 'bookmarkProperties/POSTData'";
@@ -246,81 +248,87 @@ void FirefoxImporter::ImportBookmarks() {
   for (size_t i = 0; i < list.size(); ++i) {
     BookmarkItem* item = list[i];
 
-    if (item->type == TYPE_FOLDER) {
-      // Folders are added implicitly on adding children, so we only explicitly
-      // add empty folders.
-      if (!item->empty_folder)
+    // Folders are added implicitly on adding children, so we only explicitly
+    // add empty folders.
+    if (item->type != TYPE_BOOKMARK &&
+        ((item->type != TYPE_FOLDER) || !item->empty_folder))
+      continue;
+
+    if (CanImportURL(item->url)) {
+      // Skip the default bookmarks and unwanted URLs.
+      if (default_urls.find(item->url) != default_urls.end() ||
+          post_keyword_ids.find(item->id) != post_keyword_ids.end())
         continue;
-    } else if (item->type == TYPE_BOOKMARK) {
-      // Import only valid bookmarks
-      if (!CanImportURL(item->url))
+
+      // Find the bookmark path by tracing their links to parent folders.
+      std::vector<base::string16> path;
+      BookmarkItem* child = item;
+      bool found_path = false;
+      bool is_in_toolbar = false;
+      while (child->parent >= 0) {
+        BookmarkItem* parent = list[child->parent];
+        if (livemark_id.find(parent->id) != livemark_id.end()) {
+          // Don't import live bookmarks.
+          break;
+        }
+
+        if (parent->id != menu_folder_id) {
+          // To avoid excessive nesting, omit the name for the bookmarks menu
+          // folder.
+          path.insert(path.begin(), parent->title);
+        }
+
+        if (parent->id == toolbar_folder_id)
+          is_in_toolbar = true;
+
+        if (parent->id == toolbar_folder_id ||
+            parent->id == menu_folder_id ||
+            parent->id == unsorted_folder_id) {
+          // We've reached a root node, hooray!
+          found_path = true;
+          break;
+        }
+
+        child = parent;
+      }
+
+      if (!found_path)
         continue;
-    } else {
-      continue;
+
+      ImportedBookmarkEntry entry;
+      entry.creation_time = item->date_added;
+      entry.title = item->title;
+      entry.url = item->url;
+      entry.path = path;
+      entry.in_toolbar = is_in_toolbar;
+      entry.is_folder = item->type == TYPE_FOLDER;
+
+      bookmarks.push_back(entry);
     }
-
-    // Skip the default bookmarks and unwanted URLs.
-    if (default_urls.find(item->url) != default_urls.end() ||
-        post_keyword_ids.find(item->id) != post_keyword_ids.end())
-      continue;
-
-    // Find the bookmark path by tracing their links to parent folders.
-    std::vector<base::string16> path;
-    BookmarkItem* child = item;
-    bool found_path = false;
-    bool is_in_toolbar = false;
-    while (child->parent >= 0) {
-      BookmarkItem* parent = list[child->parent];
-      if (livemark_id.find(parent->id) != livemark_id.end()) {
-        // Don't import live bookmarks.
-        break;
-      }
-
-      if (parent->id != menu_folder_id) {
-        // To avoid excessive nesting, omit the name for the bookmarks menu
-        // folder.
-        path.insert(path.begin(), parent->title);
-      }
-
-      if (parent->id == toolbar_folder_id)
-        is_in_toolbar = true;
-
-      if (parent->id == toolbar_folder_id ||
-          parent->id == menu_folder_id ||
-          parent->id == unsorted_folder_id) {
-        // We've reached a root node, hooray!
-        found_path = true;
-        break;
-      }
-
-      child = parent;
-    }
-
-    if (!found_path)
-      continue;
-
-    ImportedBookmarkEntry entry;
-    entry.creation_time = item->date_added;
-    entry.title = item->title;
-    entry.url = item->url;
-    entry.path = path;
-    entry.in_toolbar = is_in_toolbar;
-    entry.is_folder = item->type == TYPE_FOLDER;
-
-    bookmarks.push_back(entry);
 
     if (item->type == TYPE_BOOKMARK) {
       if (item->favicon)
         favicon_map[item->favicon].insert(item->url);
 
-      // This bookmark has a keyword, we should import it.
-      if (!item->keyword.empty() && item->url.is_valid()) {
-        importer::URLKeywordInfo url_keyword_info;
-        url_keyword_info.url = item->url;
-        url_keyword_info.keyword.assign(base::UTF8ToUTF16(item->keyword));
-        url_keyword_info.display_name = item->title;
-        url_keywords.push_back(url_keyword_info);
-      }
+      // Import this bookmark as a search engine if it has a keyword and its URL
+      // is usable as a search engine URL. (Even if the URL doesn't allow
+      // substitution, importing as a "search engine" allows users to trigger
+      // the bookmark by entering its keyword in the omnibox.)
+      if (item->keyword.empty())
+        continue;
+      importer::SearchEngineInfo search_engine_info;
+      std::string search_engine_url;
+      if (item->url.is_valid())
+        search_engine_info.url = base::UTF8ToUTF16(item->url.spec());
+      else if (bookmark_html_reader::CanImportURLAsSearchEngine(
+                   item->url,
+                   &search_engine_url))
+        search_engine_info.url = base::UTF8ToUTF16(search_engine_url);
+      else
+        continue;
+      search_engine_info.keyword = base::UTF8ToUTF16(item->keyword);
+      search_engine_info.display_name = item->title;
+      search_engines.push_back(search_engine_info);
     }
   }
 
@@ -332,11 +340,11 @@ void FirefoxImporter::ImportBookmarks() {
         bridge_->GetLocalizedString(IDS_BOOKMARK_GROUP_FROM_FIREFOX);
     bridge_->AddBookmarks(bookmarks, first_folder_name);
   }
-  if (!url_keywords.empty() && !cancelled()) {
-    bridge_->SetKeywords(url_keywords, false);
+  if (!search_engines.empty() && !cancelled()) {
+    bridge_->SetKeywords(search_engines, false);
   }
   if (!favicon_map.empty() && !cancelled()) {
-    std::vector<ImportedFaviconUsage> favicons;
+    favicon_base::FaviconUsageDataList favicons;
     LoadFavicons(&db, favicon_map, &favicons);
     bridge_->SetFavicons(favicons);
   }
@@ -369,7 +377,11 @@ void FirefoxImporter::ImportPasswords() {
 
   if (!cancelled()) {
     for (size_t i = 0; i < forms.size(); ++i) {
-      bridge_->SetPasswordForm(forms[i]);
+      if (!forms[i].username_value.empty() ||
+          !forms[i].password_value.empty() ||
+          forms[i].blacklisted_by_user) {
+        bridge_->SetPasswordForm(forms[i]);
+      }
     }
   }
 }
@@ -437,11 +449,12 @@ void FirefoxImporter::GetSearchEnginesXMLData(
   if (!db.Open(file))
     return;
 
-  const char* query = "SELECT engineid FROM engine_data "
-                      "WHERE engineid NOT IN "
-                      "(SELECT engineid FROM engine_data "
-                      "WHERE name='hidden') "
-                      "ORDER BY value ASC";
+  const char query[] =
+      "SELECT engineid FROM engine_data "
+      "WHERE engineid NOT IN "
+      "(SELECT engineid FROM engine_data "
+      "WHERE name='hidden') "
+      "ORDER BY value ASC";
 
   sql::Statement s(db.GetUniqueStatement(query));
   if (!s.is_valid())
@@ -525,9 +538,9 @@ void FirefoxImporter::GetSearchEnginesXMLDataFromJSON(
   // file exists only if the user has set keywords for search engines.
   base::FilePath search_metadata_json_file =
       source_path_.AppendASCII("search-metadata.json");
-  JSONFileValueSerializer metadata_serializer(search_metadata_json_file);
+  JSONFileValueDeserializer metadata_deserializer(search_metadata_json_file);
   scoped_ptr<base::Value> metadata_root(
-      metadata_serializer.Deserialize(NULL, NULL));
+      metadata_deserializer.Deserialize(NULL, NULL));
   const base::DictionaryValue* search_metadata_root = NULL;
   if (metadata_root)
     metadata_root->GetAsDictionary(&search_metadata_root);
@@ -537,8 +550,8 @@ void FirefoxImporter::GetSearchEnginesXMLDataFromJSON(
   if (!base::PathExists(search_json_file))
     return;
 
-  JSONFileValueSerializer serializer(search_json_file);
-  scoped_ptr<base::Value> root(serializer.Deserialize(NULL, NULL));
+  JSONFileValueDeserializer deserializer(search_json_file);
+  scoped_ptr<base::Value> root(deserializer.Deserialize(NULL, NULL));
   const base::DictionaryValue* search_root = NULL;
   if (!root || !root->GetAsDictionary(&search_root))
     return;
@@ -635,11 +648,11 @@ void FirefoxImporter::LoadRootNodeID(sql::Connection* db,
                                       int* toolbar_folder_id,
                                       int* menu_folder_id,
                                       int* unsorted_folder_id) {
-  static const char* kToolbarFolderName = "toolbar";
-  static const char* kMenuFolderName = "menu";
-  static const char* kUnsortedFolderName = "unfiled";
+  static const char kToolbarFolderName[] = "toolbar";
+  static const char kMenuFolderName[] = "menu";
+  static const char kUnsortedFolderName[] = "unfiled";
 
-  const char* query = "SELECT root_name, folder_id FROM moz_bookmarks_roots";
+  const char query[] = "SELECT root_name, folder_id FROM moz_bookmarks_roots";
   sql::Statement s(db->GetUniqueStatement(query));
 
   while (s.Step()) {
@@ -656,13 +669,14 @@ void FirefoxImporter::LoadRootNodeID(sql::Connection* db,
 
 void FirefoxImporter::LoadLivemarkIDs(sql::Connection* db,
                                        std::set<int>* livemark) {
-  static const char* kFeedAnnotation = "livemark/feedURI";
+  static const char kFeedAnnotation[] = "livemark/feedURI";
   livemark->clear();
 
-  const char* query = "SELECT b.item_id "
-                      "FROM moz_anno_attributes a "
-                      "JOIN moz_items_annos b ON a.id = b.anno_attribute_id "
-                      "WHERE a.name = ? ";
+  const char query[] =
+      "SELECT b.item_id "
+      "FROM moz_anno_attributes a "
+      "JOIN moz_items_annos b ON a.id = b.anno_attribute_id "
+      "WHERE a.name = ? ";
   sql::Statement s(db->GetUniqueStatement(query));
   s.BindString(0, kFeedAnnotation);
 
@@ -673,10 +687,11 @@ void FirefoxImporter::LoadLivemarkIDs(sql::Connection* db,
 void FirefoxImporter::GetTopBookmarkFolder(sql::Connection* db,
                                             int folder_id,
                                             BookmarkList* list) {
-  const char* query = "SELECT b.title "
-                     "FROM moz_bookmarks b "
-                     "WHERE b.type = 2 AND b.id = ? "
-                     "ORDER BY b.position";
+  const char query[] =
+      "SELECT b.title "
+      "FROM moz_bookmarks b "
+      "WHERE b.type = 2 AND b.id = ? "
+      "ORDER BY b.position";
   sql::Statement s(db->GetUniqueStatement(query));
   s.BindInt(0, folder_id);
 
@@ -701,13 +716,14 @@ void FirefoxImporter::GetWholeBookmarkFolder(sql::Connection* db,
     return;
   }
 
-  const char* query = "SELECT b.id, h.url, COALESCE(b.title, h.title), "
-         "b.type, k.keyword, b.dateAdded, h.favicon_id "
-         "FROM moz_bookmarks b "
-         "LEFT JOIN moz_places h ON b.fk = h.id "
-         "LEFT JOIN moz_keywords k ON k.id = b.keyword_id "
-         "WHERE b.type IN (1,2) AND b.parent = ? "
-         "ORDER BY b.position";
+  const char query[] =
+      "SELECT b.id, h.url, COALESCE(b.title, h.title), "
+      "b.type, k.keyword, b.dateAdded, h.favicon_id "
+      "FROM moz_bookmarks b "
+      "LEFT JOIN moz_places h ON b.fk = h.id "
+      "LEFT JOIN moz_keywords k ON k.id = b.keyword_id "
+      "WHERE b.type IN (1,2) AND b.parent = ? "
+      "ORDER BY b.position";
   sql::Statement s(db->GetUniqueStatement(query));
   s.BindInt(0, (*list)[position]->id);
 
@@ -742,8 +758,8 @@ void FirefoxImporter::GetWholeBookmarkFolder(sql::Connection* db,
 void FirefoxImporter::LoadFavicons(
     sql::Connection* db,
     const FaviconMap& favicon_map,
-    std::vector<ImportedFaviconUsage>* favicons) {
-  const char* query = "SELECT url, data FROM moz_favicons WHERE id=?";
+    favicon_base::FaviconUsageDataList* favicons) {
+  const char query[] = "SELECT url, data FROM moz_favicons WHERE id=?";
   sql::Statement s(db->GetUniqueStatement(query));
 
   if (!s.is_valid())
@@ -753,7 +769,7 @@ void FirefoxImporter::LoadFavicons(
        i != favicon_map.end(); ++i) {
     s.BindInt64(0, i->first);
     if (s.Step()) {
-      ImportedFaviconUsage usage;
+      favicon_base::FaviconUsageData usage;
 
       usage.favicon_url = GURL(s.ColumnString(0));
       if (!usage.favicon_url.is_valid())

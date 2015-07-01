@@ -36,8 +36,8 @@ void ShellCrashReporterClient::GetProductNameAndVersion(
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_IOS)
 void ShellCrashReporterClient::GetProductNameAndVersion(
-    std::string* product_name,
-    std::string* version) {
+    const char** product_name,
+    const char** version) {
   *product_name = "content_shell";
   *version = CONTENT_SHELL_VERSION;
 }
@@ -48,9 +48,10 @@ base::FilePath ShellCrashReporterClient::GetReporterLogFilename() {
 #endif
 
 bool ShellCrashReporterClient::GetCrashDumpLocation(base::FilePath* crash_dir) {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kCrashDumpsDir))
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kCrashDumpsDir))
     return false;
-  *crash_dir = CommandLine::ForCurrentProcess()->GetSwitchValuePath(
+  *crash_dir = base::CommandLine::ForCurrentProcess()->GetSwitchValuePath(
       switches::kCrashDumpsDir);
   return true;
 }

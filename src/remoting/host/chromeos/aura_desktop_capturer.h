@@ -25,11 +25,11 @@ namespace remoting {
 class AuraDesktopCapturer : public webrtc::DesktopCapturer {
  public:
   AuraDesktopCapturer();
-  virtual ~AuraDesktopCapturer();
+  ~AuraDesktopCapturer() override;
 
   // webrtc::DesktopCapturer implementation.
-  virtual void Start(webrtc::DesktopCapturer::Callback* callback) OVERRIDE;
-  virtual void Capture(const webrtc::DesktopRegion& region) OVERRIDE;
+  void Start(webrtc::DesktopCapturer::Callback* callback) override;
+  void Capture(const webrtc::DesktopRegion& region) override;
 
  private:
   friend class AuraDesktopCapturerTest;

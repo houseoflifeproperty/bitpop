@@ -41,19 +41,20 @@ class RTCErrorCallback;
 class RTCPeerConnection;
 class VoidCallback;
 
-class RTCVoidRequestImpl FINAL : public RTCVoidRequest, public ActiveDOMObject {
+class RTCVoidRequestImpl final : public RTCVoidRequest, public ActiveDOMObject {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(RTCVoidRequestImpl);
 public:
     static RTCVoidRequestImpl* create(ExecutionContext*, RTCPeerConnection*, VoidCallback*, RTCErrorCallback*);
     virtual ~RTCVoidRequestImpl();
 
     // RTCVoidRequest
-    virtual void requestSucceeded() OVERRIDE;
-    virtual void requestFailed(const String& error) OVERRIDE;
+    virtual void requestSucceeded() override;
+    virtual void requestFailed(const String& error) override;
 
     // ActiveDOMObject
-    virtual void stop() OVERRIDE;
+    virtual void stop() override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     RTCVoidRequestImpl(ExecutionContext*, RTCPeerConnection*, VoidCallback*, RTCErrorCallback*);

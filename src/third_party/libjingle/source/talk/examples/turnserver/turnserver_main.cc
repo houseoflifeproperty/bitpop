@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -27,8 +27,8 @@
 
 #include <iostream>  // NOLINT
 
-#include "talk/p2p/base/basicpacketsocketfactory.h"
-#include "talk/p2p/base/turnserver.h"
+#include "webrtc/p2p/base/basicpacketsocketfactory.h"
+#include "webrtc/p2p/base/turnserver.h"
 #include "webrtc/base/asyncudpsocket.h"
 #include "webrtc/base/optionsfile.h"
 #include "webrtc/base/stringencode.h"

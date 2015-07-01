@@ -22,7 +22,7 @@
 #include "remoting/host/chromoting_host.h"
 #include "remoting/host/chromoting_host_context.h"
 #include "remoting/host/fake_desktop_environment.h"
-#include "remoting/host/video_scheduler.h"
+#include "remoting/host/video_frame_pump.h"
 #include "remoting/protocol/jingle_session_manager.h"
 #include "remoting/protocol/libjingle_transport_factory.h"
 #include "remoting/protocol/me2me_host_authenticator_factory.h"
@@ -64,11 +64,10 @@ struct NetworkPerformanceParams {
 class FakeCursorShapeStub : public protocol::CursorShapeStub {
  public:
   FakeCursorShapeStub() {}
-  virtual ~FakeCursorShapeStub() {}
+  ~FakeCursorShapeStub() override {}
 
   // protocol::CursorShapeStub interface.
-  virtual void SetCursorShape(
-      const protocol::CursorShapeInfo& cursor_shape) OVERRIDE {};
+  void SetCursorShape(const protocol::CursorShapeInfo& cursor_shape) override{};
 };
 
 class ProtocolPerfTest
@@ -76,13 +75,14 @@ class ProtocolPerfTest
       public testing::WithParamInterface<NetworkPerformanceParams>,
       public ClientUserInterface,
       public VideoRenderer,
+      public protocol::VideoStub,
       public HostStatusObserver {
  public:
   ProtocolPerfTest()
       : host_thread_("host"),
         capture_thread_("capture"),
         encode_thread_("encode") {
-    VideoScheduler::EnableTimestampsForTests();
+    VideoFramePump::EnableTimestampsForTests();
     host_thread_.StartWithOptions(
         base::Thread::Options(base::MessageLoop::TYPE_IO, 0));
     capture_thread_.Start();
@@ -97,35 +97,34 @@ class ProtocolPerfTest
   }
 
   // ClientUserInterface interface.
-  virtual void OnConnectionState(protocol::ConnectionToHost::State state,
-                                 protocol::ErrorCode error) OVERRIDE {
+  void OnConnectionState(protocol::ConnectionToHost::State state,
+                         protocol::ErrorCode error) override {
     if (state == protocol::ConnectionToHost::CONNECTED) {
       client_connected_ = true;
       if (host_connected_)
         connecting_loop_->Quit();
     }
   }
-  virtual void OnConnectionReady(bool ready) OVERRIDE {}
-  virtual void OnRouteChanged(const std::string& channel_name,
-                              const protocol::TransportRoute& route) OVERRIDE {
-  }
-  virtual void SetCapabilities(const std::string& capabilities) OVERRIDE {}
-  virtual void SetPairingResponse(
-      const protocol::PairingResponse& pairing_response) OVERRIDE {}
-  virtual void DeliverHostMessage(
-      const protocol::ExtensionMessage& message) OVERRIDE {}
-  virtual protocol::ClipboardStub* GetClipboardStub() OVERRIDE {
-    return NULL;
-  }
-  virtual protocol::CursorShapeStub* GetCursorShapeStub() OVERRIDE {
+  void OnConnectionReady(bool ready) override {}
+  void OnRouteChanged(const std::string& channel_name,
+                      const protocol::TransportRoute& route) override {}
+  void SetCapabilities(const std::string& capabilities) override {}
+  void SetPairingResponse(
+      const protocol::PairingResponse& pairing_response) override {}
+  void DeliverHostMessage(const protocol::ExtensionMessage& message) override {}
+  protocol::ClipboardStub* GetClipboardStub() override { return nullptr; }
+  protocol::CursorShapeStub* GetCursorShapeStub() override {
     return &cursor_shape_stub_;
   }
 
   // VideoRenderer interface.
-  virtual void Initialize(const protocol::SessionConfig& config) OVERRIDE {}
-  virtual ChromotingStats* GetStats() OVERRIDE { return NULL; }
-  virtual void ProcessVideoPacket(scoped_ptr<VideoPacket> video_packet,
-                                  const base::Closure& done) OVERRIDE {
+  void OnSessionConfig(const protocol::SessionConfig& config) override {}
+  ChromotingStats* GetStats() override { return nullptr; }
+  protocol::VideoStub* GetVideoStub() override { return this; }
+
+  // protocol::VideoStub interface.
+  void ProcessVideoPacket(scoped_ptr<VideoPacket> video_packet,
+                          const base::Closure& done) override {
     if (video_packet->data().empty()) {
       // Ignore keep-alive packets
       done.Run();
@@ -141,7 +140,7 @@ class ProtocolPerfTest
   }
 
   // HostStatusObserver interface.
-  virtual void OnClientConnected(const std::string& jid) OVERRIDE {
+  void OnClientConnected(const std::string& jid) override {
     message_loop_.PostTask(
         FROM_HERE,
         base::Bind(&ProtocolPerfTest::OnHostConnectedMainThread,
@@ -236,9 +235,8 @@ class ProtocolPerfTest
         GetParam().out_of_order_rate);
     scoped_ptr<protocol::TransportFactory> host_transport_factory(
         new protocol::LibjingleTransportFactory(
-            host_signaling_.get(),
-            port_allocator.PassAs<cricket::HttpPortAllocatorBase>(),
-            network_settings));
+            host_signaling_.get(), port_allocator.Pass(), network_settings,
+            protocol::TransportRole::SERVER));
 
     scoped_ptr<protocol::SessionManager> session_manager(
         new protocol::JingleSessionManager(host_transport_factory.Pass()));
@@ -275,7 +273,7 @@ class ProtocolPerfTest
     host_secret.value = "123456";
     scoped_ptr<protocol::AuthenticatorFactory> auth_factory =
         protocol::Me2MeHostAuthenticatorFactory::CreateWithSharedSecret(
-            true, kHostOwner, host_cert, key_pair, host_secret, NULL);
+            true, kHostOwner, host_cert, key_pair, host_secret, nullptr);
     host_->SetAuthenticatorFactory(auth_factory.Pass());
 
     host_->AddStatusObserver(this);
@@ -307,9 +305,8 @@ class ProtocolPerfTest
         GetParam().out_of_order_rate);
     scoped_ptr<protocol::TransportFactory> client_transport_factory(
         new protocol::LibjingleTransportFactory(
-            client_signaling_.get(),
-            port_allocator.PassAs<cricket::HttpPortAllocatorBase>(),
-            network_settings));
+            client_signaling_.get(), port_allocator.Pass(), network_settings,
+            protocol::TransportRole::CLIENT));
 
     std::vector<protocol::AuthenticationMethod> auth_methods;
     auth_methods.push_back(protocol::AuthenticationMethod::Spake2(
@@ -320,10 +317,10 @@ class ProtocolPerfTest
             std::string(),  // client_pairing_secret
             std::string(),  // authentication_tag
             base::Bind(&ProtocolPerfTest::FetchPin, base::Unretained(this)),
-            scoped_ptr<protocol::ThirdPartyClientAuthenticator::TokenFetcher>(),
+            nullptr,
             auth_methods));
-    client_.reset(new ChromotingClient(
-        client_context_.get(), this, this, scoped_ptr<AudioPlayer>()));
+    client_.reset(
+        new ChromotingClient(client_context_.get(), this, this, nullptr));
     client_->SetProtocolConfigForTests(protocol_config_->Clone());
     client_->Start(
         client_signaling_.get(), client_authenticator.Pass(),
@@ -366,6 +363,7 @@ class ProtocolPerfTest
 
   scoped_ptr<VideoPacket> last_video_packet_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(ProtocolPerfTest);
 };
 
@@ -410,7 +408,7 @@ TEST_P(ProtocolPerfTest, StreamFrameRate) {
 
   ReceiveFrame(&latency);
   LOG(INFO) << "First frame latency: " << latency.InMillisecondsF() << "ms";
-  ReceiveFrames(20, NULL);
+  ReceiveFrames(20, nullptr);
 
   base::TimeTicks started = base::TimeTicks::Now();
   ReceiveFrames(40, &latency);
@@ -470,7 +468,7 @@ TEST_P(ProtocolPerfTest, IntermittentChanges) {
   StartHostAndClient(protocol::ChannelConfig::CODEC_VERBATIM);
   ASSERT_NO_FATAL_FAILURE(WaitConnected());
 
-  ReceiveFrame(NULL);
+  ReceiveFrame(nullptr);
 
   base::TimeDelta expected = GetParam().latency_average;
   if (GetParam().bandwidth > 0) {

@@ -58,7 +58,20 @@ static inline struct linux_user_desc create_linux_user_desc(
   return desc;
 }
 
-#endif
+#endif  /* __i386__ */
+
+/*
+ * The ABI for linux's getdents64 is different from the one for getdents
+ * for 32 bits. The biggest difference is the position of d_type.
+ * cf) https://github.com/torvalds/linux/blob/master/include/linux/dirent.h
+ */
+struct linux_abi_dirent64 {
+  uint64_t d_ino;
+  uint64_t d_off;
+  uint16_t d_reclen;
+  uint8_t d_type;
+  char d_name[256];
+};
 
 typedef struct {
   int si_signo;
@@ -66,16 +79,19 @@ typedef struct {
   int si_code;
 } linux_siginfo_t;
 
+/*
+ * newlib's sigset_t is 32 bits, whereas kernel's sigset_t is 64
+ * bits (or on MIPS, 128 bits).
+ */
+typedef struct {
+  uint32_t sig[2];
+} linux_sigset_t;
+
 struct linux_sigaction {
   void (*sa_sigaction)(int, linux_siginfo_t *, void *);
-  int sa_flags;
-  void *sa_restorer;
-  /*
-   * Though newlib's sigset_t is bigger than linux kernel's, their
-   * layout is compatible. We do not define linux_sigset_t and helper
-   * functions such as sigaddset by ourselves.
-   */
-  sigset_t sa_mask;
+  int32_t sa_flags;
+  void (*sa_restorer)(void);
+  linux_sigset_t sa_mask;
 };
 
 #endif

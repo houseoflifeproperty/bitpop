@@ -23,8 +23,7 @@ namespace {
 
 class EmptySurfaceFactoryClient : public SurfaceFactoryClient {
  public:
-  virtual void ReturnResources(
-      const ReturnedResourceArray& resources) OVERRIDE {}
+  void ReturnResources(const ReturnedResourceArray& resources) override {}
 };
 
 class SurfacesPixelTest : public RendererPixelTest<GLRenderer> {
@@ -86,8 +85,9 @@ TEST_F(SurfacesPixelTest, DrawSimpleFrame) {
   root_frame->delegated_frame_data = delegated_frame_data.Pass();
 
   SurfaceId root_surface_id = allocator_.GenerateId();
-  factory_.Create(root_surface_id, device_viewport_size_);
-  factory_.SubmitFrame(root_surface_id, root_frame.Pass(), base::Closure());
+  factory_.Create(root_surface_id);
+  factory_.SubmitFrame(root_surface_id, root_frame.Pass(),
+                       SurfaceFactory::DrawCallback());
 
   SurfaceAggregator aggregator(&manager_, resource_provider_.get());
   scoped_ptr<CompositorFrame> aggregated_frame =
@@ -108,8 +108,8 @@ TEST_F(SurfacesPixelTest, DrawSimpleAggregatedFrame) {
   gfx::Size child_size(200, 100);
   SurfaceId child_surface_id = allocator_.GenerateId();
   SurfaceId root_surface_id = allocator_.GenerateId();
-  factory_.Create(child_surface_id, child_size);
-  factory_.Create(root_surface_id, device_viewport_size_);
+  factory_.Create(child_surface_id);
+  factory_.Create(root_surface_id);
   {
     gfx::Rect rect(device_viewport_size_);
     RenderPassId id(1, 1);
@@ -141,7 +141,8 @@ TEST_F(SurfacesPixelTest, DrawSimpleAggregatedFrame) {
     scoped_ptr<CompositorFrame> root_frame(new CompositorFrame);
     root_frame->delegated_frame_data = delegated_frame_data.Pass();
 
-    factory_.SubmitFrame(root_surface_id, root_frame.Pass(), base::Closure());
+    factory_.SubmitFrame(root_surface_id, root_frame.Pass(),
+                         SurfaceFactory::DrawCallback());
   }
 
   {
@@ -168,7 +169,8 @@ TEST_F(SurfacesPixelTest, DrawSimpleAggregatedFrame) {
     scoped_ptr<CompositorFrame> child_frame(new CompositorFrame);
     child_frame->delegated_frame_data = delegated_frame_data.Pass();
 
-    factory_.SubmitFrame(child_surface_id, child_frame.Pass(), base::Closure());
+    factory_.SubmitFrame(child_surface_id, child_frame.Pass(),
+                         SurfaceFactory::DrawCallback());
   }
 
   SurfaceAggregator aggregator(&manager_, resource_provider_.get());
@@ -200,9 +202,9 @@ TEST_F(SurfacesPixelTest, DrawAggregatedFrameWithSurfaceTransforms) {
   SurfaceId left_child_id = allocator_.GenerateId();
   SurfaceId right_child_id = allocator_.GenerateId();
   SurfaceId root_surface_id = allocator_.GenerateId();
-  factory_.Create(left_child_id, child_size);
-  factory_.Create(right_child_id, child_size);
-  factory_.Create(root_surface_id, device_viewport_size_);
+  factory_.Create(left_child_id);
+  factory_.Create(right_child_id);
+  factory_.Create(root_surface_id);
 
   {
     gfx::Rect rect(device_viewport_size_);
@@ -238,7 +240,8 @@ TEST_F(SurfacesPixelTest, DrawAggregatedFrameWithSurfaceTransforms) {
     scoped_ptr<CompositorFrame> root_frame(new CompositorFrame);
     root_frame->delegated_frame_data = delegated_frame_data.Pass();
 
-    factory_.SubmitFrame(root_surface_id, root_frame.Pass(), base::Closure());
+    factory_.SubmitFrame(root_surface_id, root_frame.Pass(),
+                         SurfaceFactory::DrawCallback());
   }
 
   {
@@ -273,7 +276,8 @@ TEST_F(SurfacesPixelTest, DrawAggregatedFrameWithSurfaceTransforms) {
     scoped_ptr<CompositorFrame> child_frame(new CompositorFrame);
     child_frame->delegated_frame_data = delegated_frame_data.Pass();
 
-    factory_.SubmitFrame(left_child_id, child_frame.Pass(), base::Closure());
+    factory_.SubmitFrame(left_child_id, child_frame.Pass(),
+                         SurfaceFactory::DrawCallback());
   }
 
   {
@@ -308,7 +312,8 @@ TEST_F(SurfacesPixelTest, DrawAggregatedFrameWithSurfaceTransforms) {
     scoped_ptr<CompositorFrame> child_frame(new CompositorFrame);
     child_frame->delegated_frame_data = delegated_frame_data.Pass();
 
-    factory_.SubmitFrame(right_child_id, child_frame.Pass(), base::Closure());
+    factory_.SubmitFrame(right_child_id, child_frame.Pass(),
+                         SurfaceFactory::DrawCallback());
   }
 
   SurfaceAggregator aggregator(&manager_, resource_provider_.get());

@@ -134,12 +134,12 @@ class CloudPrintURLFetcher
                         const std::string& additional_headers);
 
   // net::URLFetcherDelegate implementation.
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
 
  protected:
   CloudPrintURLFetcher();
   friend class base::RefCountedThreadSafe<CloudPrintURLFetcher>;
-  virtual ~CloudPrintURLFetcher();
+  ~CloudPrintURLFetcher() override;
 
   // Virtual for testing.
   virtual net::URLRequestContextGetter* GetRequestContextGetter();
@@ -159,7 +159,6 @@ class CloudPrintURLFetcher
   scoped_ptr<net::URLFetcher> request_;
   Delegate* delegate_;
   int num_retries_;
-  net::URLFetcher::RequestType request_type_;
   std::string additional_headers_;
   std::string post_data_mime_type_;
   std::string post_data_;

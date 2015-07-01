@@ -27,22 +27,22 @@ class TrueTypeFontSingletonResource
       public thunk::PPB_TrueTypeFont_Singleton_API {
  public:
   TrueTypeFontSingletonResource(Connection connection, PP_Instance instance);
-  virtual ~TrueTypeFontSingletonResource();
+  ~TrueTypeFontSingletonResource() override;
 
   // Resource override.
-  virtual thunk::PPB_TrueTypeFont_Singleton_API*
-      AsPPB_TrueTypeFont_Singleton_API() OVERRIDE;
+  thunk::PPB_TrueTypeFont_Singleton_API* AsPPB_TrueTypeFont_Singleton_API()
+      override;
 
   // thunk::PPB_TrueTypeFont_Singleton_API implementation.
-  virtual int32_t GetFontFamilies(
+  int32_t GetFontFamilies(
       PP_Instance instance,
       const PP_ArrayOutput& output,
-      const scoped_refptr<TrackedCallback>& callback) OVERRIDE;
-  virtual int32_t GetFontsInFamily(
+      const scoped_refptr<TrackedCallback>& callback) override;
+  int32_t GetFontsInFamily(
       PP_Instance instance,
       PP_Var family,
       const PP_ArrayOutput& output,
-      const scoped_refptr<TrackedCallback>& callback) OVERRIDE;
+      const scoped_refptr<TrackedCallback>& callback) override;
 
  private:
   void OnPluginMsgGetFontFamiliesComplete(

@@ -33,24 +33,14 @@ class LoginTestWidgetDelegate : public views::WidgetDelegate {
  public:
   explicit LoginTestWidgetDelegate(views::Widget* widget) : widget_(widget) {
   }
-  virtual ~LoginTestWidgetDelegate() {}
+  ~LoginTestWidgetDelegate() override {}
 
   // Overridden from WidgetDelegate:
-  virtual void DeleteDelegate() OVERRIDE {
-    delete this;
-  }
-  virtual views::Widget* GetWidget() OVERRIDE {
-    return widget_;
-  }
-  virtual const views::Widget* GetWidget() const OVERRIDE {
-    return widget_;
-  }
-  virtual bool CanActivate() const OVERRIDE {
-    return true;
-  }
-  virtual bool ShouldAdvanceFocusToTopLevelWidget() const OVERRIDE {
-    return true;
-  }
+  void DeleteDelegate() override { delete this; }
+  views::Widget* GetWidget() override { return widget_; }
+  const views::Widget* GetWidget() const override { return widget_; }
+  bool CanActivate() const override { return true; }
+  bool ShouldAdvanceFocusToTopLevelWidget() const override { return true; }
 
  private:
   views::Widget* widget_;
@@ -62,16 +52,16 @@ class LoginTestWidgetDelegate : public views::WidgetDelegate {
 
 class LockLayoutManagerTest : public AshTestBase {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // Allow a virtual keyboard (and initialize it per default).
-    CommandLine::ForCurrentProcess()->AppendSwitch(
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
         keyboard::switches::kEnableVirtualKeyboard);
     AshTestBase::SetUp();
     Shell::GetPrimaryRootWindowController()->ActivateKeyboard(
         keyboard::KeyboardController::GetInstance());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     Shell::GetPrimaryRootWindowController()->DeactivateKeyboard(
         keyboard::KeyboardController::GetInstance());
     AshTestBase::TearDown();
@@ -103,8 +93,8 @@ class LockLayoutManagerTest : public AshTestBase {
       keyboard->ShowKeyboard(true);
       if (keyboard->proxy()->GetKeyboardWindow()->bounds().height() == 0) {
         keyboard->proxy()->GetKeyboardWindow()->SetBounds(
-            keyboard::KeyboardBoundsFromWindowBounds(
-                keyboard->GetContainerWindow()->bounds(),
+            keyboard::FullWidthKeyboardBoundsFromRootBounds(
+                Shell::GetPrimaryRootWindow()->bounds(),
                 kVirtualKeyboardHeight));
       }
     } else {
@@ -222,12 +212,14 @@ TEST_F(LockLayoutManagerTest, KeyboardBounds) {
   ash::DisplayManager* display_manager =
       Shell::GetInstance()->display_manager();
   display_manager->SetDisplayRotation(primary_display.id(),
-                                      gfx::Display::ROTATE_90);
+                                      gfx::Display::ROTATE_90,
+                                      gfx::Display::ROTATION_SOURCE_ACTIVE);
   primary_display = Shell::GetScreen()->GetPrimaryDisplay();
   screen_bounds = primary_display.bounds();
   EXPECT_EQ(screen_bounds.ToString(), window->GetBoundsInScreen().ToString());
   display_manager->SetDisplayRotation(primary_display.id(),
-                                      gfx::Display::ROTATE_0);
+                                      gfx::Display::ROTATE_0,
+                                      gfx::Display::ROTATION_SOURCE_ACTIVE);
 
   // When virtual keyboard overscroll is disabled keyboard bounds do
   // affect window bounds.

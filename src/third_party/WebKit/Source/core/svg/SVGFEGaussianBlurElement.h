@@ -24,10 +24,11 @@
 #include "core/svg/SVGAnimatedNumberOptionalNumber.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FEGaussianBlur.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
-class SVGFEGaussianBlurElement FINAL : public SVGFilterPrimitiveStandardAttributes {
+class SVGFEGaussianBlurElement final : public SVGFilterPrimitiveStandardAttributes {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGFEGaussianBlurElement);
@@ -38,16 +39,16 @@ public:
     SVGAnimatedNumber* stdDeviationY() { return m_stdDeviation->secondNumber(); }
     SVGAnimatedString* in1() { return m_in1.get(); }
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
     explicit SVGFEGaussianBlurElement(Document&);
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual PassRefPtrWillBeRawPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
-    RefPtr<SVGAnimatedNumberOptionalNumber> m_stdDeviation;
-    RefPtr<SVGAnimatedString> m_in1;
+    RefPtrWillBeMember<SVGAnimatedNumberOptionalNumber> m_stdDeviation;
+    RefPtrWillBeMember<SVGAnimatedString> m_in1;
 };
 
 } // namespace blink

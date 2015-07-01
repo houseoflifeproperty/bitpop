@@ -2,6 +2,38 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+cr.exportPath('print_preview');
+
+/**
+ * The CDD (Cloud Device Description) describes the capabilities of a print
+ * destination.
+ *
+ * @typedef {{
+ *   version: string,
+ *   printer: {
+ *     vendor_capability: !Array<{Object}>,
+ *     collate: ({default: (boolean|undefined)}|undefined),
+ *     color: ({
+ *       option: !Array<{
+ *         type: (string|undefined),
+ *         vendor_id: (string|undefined),
+ *         custom_display_name: (string|undefined),
+ *         is_default: (boolean|undefined)
+ *       }>
+ *     }|undefined),
+ *     copies: ({default: (number|undefined),
+ *               max: (number|undefined)}|undefined),
+ *     duplex: ({option: !Array<{type: (string|undefined),
+ *                               is_default: (boolean|undefined)}>}|undefined),
+ *     page_orientation: ({
+ *       option: !Array<{type: (string|undefined),
+ *                        is_default: (boolean|undefined)}>
+ *     }|undefined)
+ *   }
+ * }}
+ */
+print_preview.Cdd;
+
 cr.define('print_preview', function() {
   'use strict';
 
@@ -16,14 +48,16 @@ cr.define('print_preview', function() {
    * @param {boolean} isRecent Whether the destination has been used recently.
    * @param {!print_preview.Destination.ConnectionStatus} connectionStatus
    *     Connection status of the print destination.
-   * @param {{tags: Array.<string>,
-   *          isOwned: ?boolean,
-   *          account: ?string,
-   *          lastAccessTime: ?number,
-   *          isTosAccepted: ?boolean,
-   *          cloudID: ?string,
-   *          description: ?string}=} opt_params Optional parameters for the
-   *     destination.
+   * @param {{tags: (Array<string>|undefined),
+   *          isOwned: (boolean|undefined),
+   *          account: (string|undefined),
+   *          lastAccessTime: (number|undefined),
+   *          isTosAccepted: (boolean|undefined),
+   *          cloudID: (string|undefined),
+   *          extensionId: (string|undefined),
+   *          extensionName: (string|undefined),
+   *          description: (string|undefined)}=} opt_params Optional parameters
+   *     for the destination.
    * @constructor
    */
   function Destination(id, type, origin, displayName, isRecent,
@@ -60,13 +94,13 @@ cr.define('print_preview', function() {
 
     /**
      * Tags associated with the destination.
-     * @private {!Array.<string>}
+     * @private {!Array<string>}
      */
     this.tags_ = (opt_params && opt_params.tags) || [];
 
     /**
      * Print capabilities of the destination.
-     * @private {print_preview.Cdd}
+     * @private {?print_preview.Cdd}
      */
     this.capabilities_ = null;
 
@@ -114,18 +148,30 @@ cr.define('print_preview', function() {
      * {@code null} if terms-of-service does not apply to the print destination.
      * @private {?boolean}
      */
-    this.isTosAccepted_ = opt_params && opt_params.isTosAccepted;
+    this.isTosAccepted_ = !!(opt_params && opt_params.isTosAccepted);
 
     /**
      * Cloud ID for Privet printers.
      * @private {string}
      */
     this.cloudID_ = (opt_params && opt_params.cloudID) || '';
+
+    /**
+     * Extension ID for extension managed printers.
+     * @private {string}
+     */
+    this.extensionId_ = (opt_params && opt_params.extensionId) || '';
+
+    /**
+     * Extension name for extension managed printers.
+     * @private {string}
+     */
+    this.extensionName_ = (opt_params && opt_params.extensionName) || '';
   };
 
   /**
    * Prefix of the location destination tag.
-   * @type {!Array.<string>}
+   * @type {!Array<string>}
    * @const
    */
   Destination.LOCATION_TAG_PREFIXES = [
@@ -149,6 +195,7 @@ cr.define('print_preview', function() {
    */
   Destination.Type = {
     GOOGLE: 'google',
+    GOOGLE_PROMOTED: 'google_promoted',
     LOCAL: 'local',
     MOBILE: 'mobile'
   };
@@ -162,7 +209,8 @@ cr.define('print_preview', function() {
     COOKIES: 'cookies',
     PROFILE: 'profile',
     DEVICE: 'device',
-    PRIVET: 'privet'
+    PRIVET: 'privet',
+    EXTENSION: 'extension'
   };
 
   /**
@@ -247,6 +295,7 @@ cr.define('print_preview', function() {
     /** @return {boolean} Whether the destination is local or cloud-based. */
     get isLocal() {
       return this.origin_ == Destination.Origin.LOCAL ||
+             this.origin_ == Destination.Origin.EXTENSION ||
              (this.origin_ == Destination.Origin.PRIVET &&
               this.connectionStatus_ !=
               Destination.ConnectionStatus.UNREGISTERED);
@@ -255,6 +304,14 @@ cr.define('print_preview', function() {
     /** @return {boolean} Whether the destination is a Privet local printer */
     get isPrivet() {
       return this.origin_ == Destination.Origin.PRIVET;
+    },
+
+    /**
+     * @return {boolean} Whether the destination is an extension managed
+     *     printer.
+     */
+    get isExtension() {
+      return this.origin_ == Destination.Origin.EXTENSION;
     },
 
     /**
@@ -293,10 +350,10 @@ cr.define('print_preview', function() {
           this.id_ == Destination.GooglePromotedId.FEDEX) {
         return this.account_;
       }
-      return this.location || this.description;
+      return this.location || this.extensionName || this.description;
     },
 
-    /** @return {!Array.<string>} Tags associated with the destination. */
+    /** @return {!Array<string>} Tags associated with the destination. */
     get tags() {
       return this.tags_.slice(0);
     },
@@ -306,7 +363,23 @@ cr.define('print_preview', function() {
       return this.cloudID_;
     },
 
-    /** @return {print_preview.Cdd} Print capabilities of the destination. */
+    /**
+     * @return {string} Extension ID associated with the destination. Non-empty
+     *     only for extension managed printers.
+     */
+    get extensionId() {
+      return this.extensionId_;
+    },
+
+    /**
+     * @return {string} Extension name associated with the destination.
+     *     Non-empty only for extension managed printers.
+     */
+    get extensionName() {
+      return this.extensionName_;
+    },
+
+    /** @return {?print_preview.Cdd} Print capabilities of the destination. */
     get capabilities() {
       return this.capabilities_;
     },
@@ -409,7 +482,7 @@ cr.define('print_preview', function() {
     },
 
     /**
-     * @return {!Array.<string>} Properties (besides display name) to match
+     * @return {!Array<string>} Properties (besides display name) to match
      *     search queries against.
      */
     get extraPropertiesToMatch() {
@@ -423,43 +496,16 @@ cr.define('print_preview', function() {
      *     {@code false} otherwise.
      */
     matches: function(query) {
-      return this.displayName_.match(query) ||
+      return !!this.displayName_.match(query) ||
+          !!this.extensionName_.match(query) ||
           this.extraPropertiesToMatch.some(function(property) {
             return property.match(query);
           });
     }
   };
 
-  /**
-   * The CDD (Cloud Device Description) describes the capabilities of a print
-   * destination.
-   *
-   * @typedef {{
-   *   version: string,
-   *   printer: {
-   *     vendor_capability: !Array.<{Object}>,
-   *     collate: {default: boolean=}=,
-   *     color: {
-   *       option: !Array.<{
-   *         type: string=,
-   *         vendor_id: string=,
-   *         custom_display_name: string=,
-   *         is_default: boolean=
-   *       }>
-   *     }=,
-   *     copies: {default: number=, max: number=}=,
-   *     duplex: {option: !Array.<{type: string=, is_default: boolean=}>}=,
-   *     page_orientation: {
-   *       option: !Array.<{type: string=, is_default: boolean=}>
-   *     }=
-   *   }
-   * }}
-   */
-  var Cdd = Object;
-
   // Export
   return {
     Destination: Destination,
-    Cdd: Cdd
   };
 });

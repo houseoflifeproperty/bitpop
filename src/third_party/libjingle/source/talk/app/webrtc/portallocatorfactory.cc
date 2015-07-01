@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2004--2011, Google Inc.
+ * Copyright 2004--2011 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -27,8 +27,8 @@
 
 #include "talk/app/webrtc/portallocatorfactory.h"
 
-#include "talk/p2p/base/basicpacketsocketfactory.h"
-#include "talk/p2p/client/basicportallocator.h"
+#include "webrtc/p2p/base/basicpacketsocketfactory.h"
+#include "webrtc/p2p/client/basicportallocator.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/network.h"
 #include "webrtc/base/thread.h"
@@ -51,6 +51,10 @@ PortAllocatorFactory::PortAllocatorFactory(rtc::Thread* worker_thread)
 }
 
 PortAllocatorFactory::~PortAllocatorFactory() {}
+
+void PortAllocatorFactory::SetNetworkIgnoreMask(int network_ignore_mask) {
+  network_manager_->set_network_ignore_mask(network_ignore_mask);
+}
 
 cricket::PortAllocator* PortAllocatorFactory::CreatePortAllocator(
     const std::vector<StunConfiguration>& stun,

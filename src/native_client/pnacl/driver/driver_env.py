@@ -23,11 +23,12 @@ INITIAL_ENV = {
   'BASE_NACL'       : '${@FindBaseNaCl}',      # Absolute path of native_client/
   'BASE_TOOLCHAIN'  : '${@FindBaseToolchain}', # Absolute path to toolchain/OS_ARCH/
   'BASE'            : '${@FindBasePNaCl}',     # Absolute path to PNaCl
-  'BUILD_OS'        : '${@GetBuildOS}',        # "linux", "darwin" or "windows"
+  'BUILD_OS'        : '${@GetBuildOS}',        # "linux", "nacl", "darwin"
+                                               # or "windows"
   'BUILD_ARCH'      : '${@GetBuildArch}',      # "x86_64" or "i686" or "i386"
 
   # Directories
-  'CLANG_VER'       : '3.4', # Included in path to compiler-owned libs/headers.
+  'CLANG_VER'       : '3.6.0', # Included in path to compiler-owned libs/headers
   'BPREFIXES'       : '', # Prefixes specified using the -B flag.
   'BASE_LLVM'       : '${@FindBaseHost:clang}',
   'BASE_BINUTILS'   : '${@FindBaseHost:le32-nacl-ar}',
@@ -38,12 +39,12 @@ INITIAL_ENV = {
   'BASE_SDK'        : '${BASE}/sdk',
   'BASE_LIB'        : '${BASE}/lib/clang/${CLANG_VER}/lib/le32-nacl',
   'BASE_USR_ARCH'   : '${BASE_USR_%BCLIB_ARCH%}',
-  'BASE_USR_X8632'  : '${BASE}/x86-32_bc-nacl',
-  'BASE_USR_X8664'  : '${BASE}/x86-64_bc-nacl',
+  'BASE_USR_X8632'  : '${BASE}/i686_bc-nacl',
+  'BASE_USR_X8664'  : '${BASE}/x86_64_bc-nacl',
   'BASE_USR_ARM'    : '${BASE}/arm_bc-nacl',
   'BASE_LIB_ARCH'   : '${BASE_LIB_%BCLIB_ARCH%}',
-  'BASE_LIB_X8632'  : '${BASE}/lib/clang/${CLANG_VER}/lib/x86-32_bc-nacl',
-  'BASE_LIB_X8664'  : '${BASE}/lib/clang/${CLANG_VER}/lib/x86-64_bc-nacl',
+  'BASE_LIB_X8632'  : '${BASE}/lib/clang/${CLANG_VER}/lib/i686_bc-nacl',
+  'BASE_LIB_X8664'  : '${BASE}/lib/clang/${CLANG_VER}/lib/x86_64_bc-nacl',
   'BASE_LIB_ARM'    : '${BASE}/lib/clang/${CLANG_VER}/lib/arm_bc-nacl',
 
   'LIBS_NATIVE_ARCH' : '${LIBS_NATIVE_%ARCH%}',
@@ -100,21 +101,25 @@ INITIAL_ENV = {
   'SO_EXT'          : '${SO_EXT_%BUILD_OS%}',
   'SO_EXT_darwin'   : '.dylib',
   'SO_EXT_linux'    : '.so',
+  'SO_EXT_nacl'     : '.so',
   'SO_EXT_windows'  : '.dll',
 
   'SO_DIR'          : '${SO_DIR_%BUILD_OS%}',
   'SO_DIR_darwin'   : 'lib',
   'SO_DIR_linux'    : 'lib',
+  'SO_DIR_nacl'     : 'lib',
   'SO_DIR_windows'  : 'bin',  # On Windows, DLLs are placed in bin/
                               # because the dynamic loader searches %PATH%
 
   'EXEC_EXT'        : '${EXEC_EXT_%BUILD_OS%}',
   'EXEC_EXT_darwin' : '',
   'EXEC_EXT_linux'  : '',
+  'EXEC_EXT_nacl'   : '',
   'EXEC_EXT_windows': '.exe',
 
   'SCONS_OS'            : '${SCONS_OS_%BUILD_OS%}',
   'SCONS_OS_linux'      : 'linux',
+  'SCONS_OS_nacl'       : 'nacl',
   'SCONS_OS_darwin'     : 'mac',
   'SCONS_OS_windows'    : 'win',
 
@@ -130,11 +135,15 @@ INITIAL_ENV = {
   'SEL_UNIVERSAL_PREFIX': '${USE_EMULATOR ? ${EMULATOR}}',
   'SEL_UNIVERSAL'       : '${SCONS_STAGING}/sel_universal${EXEC_EXT}',
   # NOTE: -Q skips sel_ldr qualification tests, -c -c skips validation
-  # NOTE: We are not using -B to load the IRT, since the translators do not
-  # use the IRT.
   'SEL_UNIVERSAL_FLAGS' : '--abort_on_error ' +
-                          '--uses_reverse_service ' +
                           '${USE_EMULATOR ? -Q -c -c --command_prefix ${EMULATOR}}',
+
+  'IRT_STAGING'         : '${IRT_STAGING_%ARCH%}',
+  'IRT_STAGING_X8632'   : '${SCONS_OUT}/nacl_irt-x86-32/staging',
+  'IRT_STAGING_X8664'   : '${SCONS_OUT}/nacl_irt-x86-64/staging',
+  'IRT_STAGING_ARM'     : '${SCONS_OUT}/nacl_irt-arm/staging',
+  'IRT_STAGING_MIPS32'  : '${SCONS_OUT}/nacl_irt-mips32/staging',
+  'IRT_BLOB'            : '${IRT_STAGING}/irt_core.nexe',
 
   'EMULATOR'            : '${EMULATOR_%ARCH%}',
   'EMULATOR_X8632'      : '',
@@ -148,10 +157,12 @@ INITIAL_ENV = {
   'SEL_LDR'       : '${SCONS_STAGING}/sel_ldr${EXEC_EXT}',
   'BOOTSTRAP_LDR' : '${SCONS_STAGING}/nacl_helper_bootstrap${EXEC_EXT}',
 
-  # sandboxed llvm backend
+  # sandboxed LLVM backend
   'LLC_SB'      : '${TRANSLATOR_BIN}/pnacl-llc.nexe',
   # sandboxed linker (gold based)
   'LD_SB'       : '${TRANSLATOR_BIN}/ld.nexe',
+  # sandboxed Subzero backend
+  'PNACL_SZ_SB'      : '${TRANSLATOR_BIN}/pnacl-sz.nexe',
 
   # Bitcode LLVM tools
   'CLANG'         : '${BASE_LLVM_BIN}/clang${EXEC_EXT}',
@@ -168,6 +179,7 @@ INITIAL_ENV = {
 
   # Native LLVM tools
   'LLVM_PNACL_LLC': '${BASE_LLVM_BIN}/pnacl-llc${EXEC_EXT}',
+  'LLVM_PNACL_SZ':  '${BASE_LLVM_BIN}/pnacl-sz${EXEC_EXT}',
   # llvm-mc is llvm's native assembler
   'LLVM_MC'       : '${BASE_LLVM_BIN}/llvm-mc${EXEC_EXT}',
 

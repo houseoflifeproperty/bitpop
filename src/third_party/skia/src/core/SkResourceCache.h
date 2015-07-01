@@ -9,7 +9,10 @@
 #define SkResourceCache_DEFINED
 
 #include "SkBitmap.h"
+#include "SkMessageBus.h"
+#include "SkTDArray.h"
 
+class SkCachedData;
 class SkDiscardableMemory;
 class SkMipMap;
 
@@ -30,8 +33,13 @@ public:
         void* writableContents() { return this + 1; }
 
         // must call this after your private data has been written.
+        // nameSpace must be unique per Key subclass.
+        // sharedID == 0 means ignore this field : does not support group purging.
         // length must be a multiple of 4
-        void init(size_t length);
+        void init(void* nameSpace, uint64_t sharedID, size_t length);
+
+        void* getNamespace() const { return fNamespace; }
+        uint64_t getSharedID() const { return ((uint64_t)fSharedID_hi << 32) | fSharedID_lo; }
 
         // This is only valid after having called init().
         uint32_t hash() const { return fHash; }
@@ -39,7 +47,7 @@ public:
         bool operator==(const Key& other) const {
             const uint32_t* a = this->as32();
             const uint32_t* b = other.as32();
-            for (int i = 0; i < fCount32; ++i) {
+            for (int i = 0; i < fCount32; ++i) {  // (This checks fCount == other.fCount first.)
                 if (a[i] != b[i]) {
                     return false;
                 }
@@ -48,13 +56,15 @@ public:
         }
 
     private:
-        // store fCount32 first, so we don't consider it in operator<
-        int32_t  fCount32;  // 2 + user contents count32
+        int32_t  fCount32;   // local + user contents count32
         uint32_t fHash;
+        // split uint64_t into hi and lo so we don't force ourselves to pad on 32bit machines.
+        uint32_t fSharedID_lo;
+        uint32_t fSharedID_hi;
+        void*    fNamespace; // A unique namespace tag. This is hashed.
         /* uint32_t fContents32[] */
 
         const uint32_t* as32() const { return (const uint32_t*)this; }
-        const uint32_t* as32SkipCount() const { return this->as32() + 1; }
     };
 
     struct Rec {
@@ -79,6 +89,13 @@ public:
         friend class SkResourceCache;
     };
 
+    // Used with SkMessageBus
+    struct PurgeSharedIDMessage {
+        PurgeSharedIDMessage(uint64_t sharedID) : fSharedID(sharedID) {}
+
+        uint64_t    fSharedID;
+    };
+
     typedef const Rec* ID;
 
     /**
@@ -91,7 +108,7 @@ public:
      *  true, then the Rec is considered "valid". If false is returned, the Rec will be considered
      *  "stale" and will be purged from the cache.
      */
-    typedef bool (*VisitorProc)(const Rec&, void* context);
+    typedef bool (*FindVisitor)(const Rec&, void* context);
 
     /**
      *  Returns a locked/pinned SkDiscardableMemory instance for the specified
@@ -108,12 +125,12 @@ public:
      *  Returns true if the visitor was called on a matching Key, and the visitor returned true.
      *
      *  Find() will search the cache for the specified Key. If no match is found, return false and
-     *  do not call the VisitorProc. If a match is found, return whatever the visitor returns.
+     *  do not call the FindVisitor. If a match is found, return whatever the visitor returns.
      *  Its return value is interpreted to mean:
      *      true  : Rec is valid
      *      false : Rec is "stale" -- the cache will purge it.
      */
-    static bool Find(const Key& key, VisitorProc, void* context);
+    static bool Find(const Key& key, FindVisitor, void* context);
     static void Add(Rec*);
 
     static size_t GetTotalBytesUsed();
@@ -122,6 +139,7 @@ public:
 
     static size_t SetSingleAllocationByteLimit(size_t);
     static size_t GetSingleAllocationByteLimit();
+    static size_t GetEffectiveSingleAllocationByteLimit();
 
     static void PurgeAll();
 
@@ -135,6 +153,10 @@ public:
      * Returns NULL if the ResourceCache has not been initialized with a DiscardableFactory.
      */
     static SkBitmap::Allocator* GetAllocator();
+
+    static SkCachedData* NewCachedData(size_t bytes);
+
+    static void PostPurgeSharedID(uint64_t sharedID);
 
     /**
      *  Call SkDebugf() with diagnostic information about the state of the cache
@@ -165,12 +187,12 @@ public:
      *  Returns true if the visitor was called on a matching Key, and the visitor returned true.
      *
      *  find() will search the cache for the specified Key. If no match is found, return false and
-     *  do not call the VisitorProc. If a match is found, return whatever the visitor returns.
+     *  do not call the FindVisitor. If a match is found, return whatever the visitor returns.
      *  Its return value is interpreted to mean:
      *      true  : Rec is valid
      *      false : Rec is "stale" -- the cache will purge it.
      */
-    bool find(const Key&, VisitorProc, void* context);
+    bool find(const Key&, FindVisitor, void* context);
     void add(Rec*);
 
     size_t getTotalBytesUsed() const { return fTotalBytesUsed; }
@@ -183,6 +205,10 @@ public:
      */
     size_t setSingleAllocationByteLimit(size_t maximumAllocationSize);
     size_t getSingleAllocationByteLimit() const;
+    // returns the logical single allocation size (pinning against the budget when the cache
+    // is not backed by discardable memory.
+    size_t getEffectiveSingleAllocationByteLimit() const;
+
     /**
      *  Set the maximum number of bytes available to this cache. If the current
      *  cache exceeds this new value, it will be purged to try to fit within
@@ -190,12 +216,16 @@ public:
      */
     size_t setTotalByteLimit(size_t newLimit);
 
+    void purgeSharedID(uint64_t sharedID);
+
     void purgeAll() {
         this->purgeAsNeeded(true);
     }
 
     DiscardableFactory discardableFactory() const { return fDiscardableFactory; }
     SkBitmap::Allocator* allocator() const { return fAllocator; };
+
+    SkCachedData* newCachedData(size_t bytes);
 
     /**
      *  Call SkDebugf() with diagnostic information about the state of the cache
@@ -218,6 +248,9 @@ private:
     size_t  fSingleAllocationByteLimit;
     int     fCount;
 
+    SkMessageBus<PurgeSharedIDMessage>::Inbox fPurgeSharedIDInbox;
+
+    void checkMessages();
     void purgeAsNeeded(bool forcePurge = false);
 
     // linklist management

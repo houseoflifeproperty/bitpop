@@ -191,14 +191,14 @@ const Settings* LoaderImpl::GetToolchainSettings(const Label& label) const {
   ToolchainRecordMap::const_iterator found_toolchain;
   if (label.is_null()) {
     if (default_toolchain_label_.is_null())
-      return NULL;
+      return nullptr;
     found_toolchain = toolchain_records_.find(default_toolchain_label_);
   } else {
     found_toolchain = toolchain_records_.find(label);
   }
 
   if (found_toolchain == toolchain_records_.end())
-    return NULL;
+    return nullptr;
   return &found_toolchain->second->settings;
 }
 
@@ -265,8 +265,10 @@ void LoaderImpl::BackgroundLoadFile(const Settings* settings,
     g_scheduler->FailWithError(err);
 
   // Pass all of the items that were defined off to the builder.
-  for (size_t i = 0; i < collected_items.size(); i++)
-    settings->build_settings()->ItemDefined(collected_items[i]->Pass());
+  for (auto& item : collected_items) {
+    settings->build_settings()->ItemDefined(make_scoped_ptr(item));
+    item = nullptr;
+  }
 
   trace.Done();
 
@@ -300,9 +302,8 @@ void LoaderImpl::BackgroundLoadBuildConfig(
       settings->build_settings()->build_config_file().value());
   trace.SetToolchain(settings->toolchain_label());
 
-  const BlockNode* root_block = root->AsBlock();
   Err err;
-  root_block->ExecuteBlockInScope(base_config, &err);
+  root->Execute(base_config, &err);
 
   // Clear all private variables left in the scope. We want the root build
   // config to be like a .gni file in that variables beginning with an
@@ -342,7 +343,7 @@ void LoaderImpl::DidLoadBuildConfig(const Label& label) {
   // Do not return early, we must call DecrementPendingLoads() at the bottom.
 
   ToolchainRecordMap::iterator found_toolchain = toolchain_records_.find(label);
-  ToolchainRecord* record = NULL;
+  ToolchainRecord* record = nullptr;
   if (found_toolchain == toolchain_records_.end()) {
     // When loading the default build config, we'll insert it into the record
     // map with an empty label since we don't yet know what to call it.
@@ -371,14 +372,13 @@ void LoaderImpl::DidLoadBuildConfig(const Label& label) {
     // is OK.
     LoadIDSet old_loads;
     invocations_.swap(old_loads);
-    for (LoadIDSet::iterator i = old_loads.begin();
-         i != old_loads.end(); ++i) {
-      if (i->toolchain_name.is_null()) {
+    for (const auto& load : old_loads) {
+      if (load.toolchain_name.is_null()) {
         // Fix up toolchain label
-        invocations_.insert(LoadID(i->file, label));
+        invocations_.insert(LoadID(load.file, label));
       } else {
         // Can keep the old one.
-        invocations_.insert(*i);
+        invocations_.insert(load);
       }
     }
   } else {
@@ -390,10 +390,8 @@ void LoaderImpl::DidLoadBuildConfig(const Label& label) {
   record->is_config_loaded = true;
 
   // Schedule all waiting file loads.
-  for (size_t i = 0; i < record->waiting_on_me.size(); i++) {
-    ScheduleLoadFile(&record->settings, record->waiting_on_me[i].origin,
-                     record->waiting_on_me[i].file);
-  }
+  for (const auto& waiting : record->waiting_on_me)
+    ScheduleLoadFile(&record->settings, waiting.origin, waiting.file);
   record->waiting_on_me.clear();
 
   DecrementPendingLoads();

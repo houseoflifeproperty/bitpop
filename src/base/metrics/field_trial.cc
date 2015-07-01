@@ -67,6 +67,7 @@ const int FieldTrial::kDefaultGroupNumber = 0;
 bool FieldTrial::enable_benchmarking_ = false;
 
 const char FieldTrialList::kPersistentStringSeparator('/');
+const char FieldTrialList::kActivationMarker('*');
 int FieldTrialList::kNoExpirationYear = 0;
 
 //------------------------------------------------------------------------------
@@ -222,6 +223,20 @@ bool FieldTrial::GetActiveGroup(ActiveGroup* active_group) const {
   return true;
 }
 
+bool FieldTrial::GetState(FieldTrialState* field_trial_state) const {
+  if (!enable_field_trial_)
+    return false;
+  field_trial_state->trial_name = trial_name_;
+  // If the group name is empty (hasn't been finalized yet), use the default
+  // group name instead.
+  if (!group_name_.empty())
+    field_trial_state->group_name = group_name_;
+  else
+    field_trial_state->group_name = default_group_name_;
+  field_trial_state->activated = group_reported_;
+  return true;
+}
+
 //------------------------------------------------------------------------------
 // FieldTrialList methods and members.
 
@@ -320,8 +335,11 @@ FieldTrial* FieldTrialList::FactoryGetFieldTrialWithRandomizationSeed(
 
   double entropy_value;
   if (randomization_type == FieldTrial::ONE_TIME_RANDOMIZED) {
-    entropy_value = GetEntropyProviderForOneTimeRandomization()->
-          GetEntropyForTrial(trial_name, randomization_seed);
+    const FieldTrial::EntropyProvider* entropy_provider =
+        GetEntropyProviderForOneTimeRandomization();
+    CHECK(entropy_provider);
+    entropy_value = entropy_provider->GetEntropyForTrial(trial_name,
+                                                         randomization_seed);
   } else {
     DCHECK_EQ(FieldTrial::SESSION_RANDOMIZED, randomization_type);
     DCHECK_EQ(0U, randomization_seed);
@@ -383,6 +401,29 @@ void FieldTrialList::StatesToString(std::string* output) {
 }
 
 // static
+void FieldTrialList::AllStatesToString(std::string* output) {
+  if (!global_)
+    return;
+  AutoLock auto_lock(global_->lock_);
+
+  for (const auto& registered : global_->registered_) {
+    FieldTrial::FieldTrialState trial;
+    if (!registered.second->GetState(&trial))
+      continue;
+    DCHECK_EQ(std::string::npos,
+              trial.trial_name.find(kPersistentStringSeparator));
+    DCHECK_EQ(std::string::npos,
+              trial.group_name.find(kPersistentStringSeparator));
+    if (trial.activated)
+      output->append(1, kActivationMarker);
+    output->append(trial.trial_name);
+    output->append(1, kPersistentStringSeparator);
+    output->append(trial.group_name);
+    output->append(1, kPersistentStringSeparator);
+  }
+}
+
+// static
 void FieldTrialList::GetActiveFieldTrialGroups(
     FieldTrial::ActiveGroups* active_groups) {
   DCHECK(active_groups->empty());
@@ -418,7 +459,18 @@ bool FieldTrialList::CreateTrialsFromString(
       return false;
     if (group_name_end == trials_string.npos)
       group_name_end = trials_string.length();
-    std::string name(trials_string, next_item, name_end - next_item);
+
+    // Verify if the trial should be activated or not.
+    std::string name;
+    bool force_activation = false;
+    if (trials_string[next_item] == kActivationMarker) {
+      // Name cannot be only the indicator.
+      if (name_end - next_item == 1)
+        return false;
+      next_item++;
+      force_activation = true;
+    }
+    name.append(trials_string, next_item, name_end - next_item);
     std::string group_name(trials_string, name_end + 1,
                            group_name_end - name_end - 1);
     next_item = group_name_end + 1;
@@ -429,7 +481,7 @@ bool FieldTrialList::CreateTrialsFromString(
     FieldTrial* trial = CreateFieldTrial(name, group_name);
     if (!trial)
       return false;
-    if (mode == ACTIVATE_TRIALS) {
+    if (mode == ACTIVATE_TRIALS || force_activation) {
       // Call |group()| to mark the trial as "used" and notify observers, if
       // any. This is useful to ensure that field trials created in child
       // processes are properly reported in crash reports.
@@ -495,9 +547,8 @@ void FieldTrialList::NotifyFieldTrialGroupSelection(FieldTrial* field_trial) {
     return;
 
   global_->observer_list_->Notify(
-      &FieldTrialList::Observer::OnFieldTrialGroupFinalized,
-      field_trial->trial_name(),
-      field_trial->group_name_internal());
+      FROM_HERE, &FieldTrialList::Observer::OnFieldTrialGroupFinalized,
+      field_trial->trial_name(), field_trial->group_name_internal());
 }
 
 // static

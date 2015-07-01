@@ -30,8 +30,8 @@ class EchoPrivateGetRegistrationCodeFunction
   EchoPrivateGetRegistrationCodeFunction();
 
  protected:
-  virtual ~EchoPrivateGetRegistrationCodeFunction();
-  virtual bool RunSync() OVERRIDE;
+  ~EchoPrivateGetRegistrationCodeFunction() override;
+  bool RunSync() override;
 
  private:
   void GetRegistrationCode(const std::string& type);
@@ -45,8 +45,8 @@ class EchoPrivateGetOobeTimestampFunction
   EchoPrivateGetOobeTimestampFunction();
 
  protected:
-  virtual ~EchoPrivateGetOobeTimestampFunction();
-  virtual bool RunAsync() OVERRIDE;
+  ~EchoPrivateGetOobeTimestampFunction() override;
+  bool RunAsync() override;
 
  private:
   bool GetOobeTimestampOnFileThread();
@@ -59,8 +59,8 @@ class EchoPrivateSetOfferInfoFunction : public ChromeSyncExtensionFunction {
   EchoPrivateSetOfferInfoFunction();
 
  protected:
-  virtual ~EchoPrivateSetOfferInfoFunction();
-  virtual bool RunSync() OVERRIDE;
+  ~EchoPrivateSetOfferInfoFunction() override;
+  bool RunSync() override;
 
  private:
   DECLARE_EXTENSION_FUNCTION("echoPrivate.setOfferInfo",
@@ -72,8 +72,8 @@ class EchoPrivateGetOfferInfoFunction : public ChromeSyncExtensionFunction {
   EchoPrivateGetOfferInfoFunction();
 
  protected:
-  virtual ~EchoPrivateGetOfferInfoFunction();
-  virtual bool RunSync() OVERRIDE;
+  ~EchoPrivateGetOfferInfoFunction() override;
+  bool RunSync() override;
 
  private:
   DECLARE_EXTENSION_FUNCTION("echoPrivate.getOfferInfo",
@@ -100,15 +100,15 @@ class EchoPrivateGetUserConsentFunction : public ChromeAsyncExtensionFunction,
       const DialogShownTestCallback& dialog_shown_callback);
 
  protected:
-  virtual ~EchoPrivateGetUserConsentFunction();
+  ~EchoPrivateGetUserConsentFunction() override;
 
-  virtual bool RunAsync() OVERRIDE;
+  bool RunAsync() override;
 
  private:
   // chromeos::EchoDialogListener overrides.
-  virtual void OnAccept() OVERRIDE;
-  virtual void OnCancel() OVERRIDE;
-  virtual void OnMoreInfoLinkClicked() OVERRIDE;
+  void OnAccept() override;
+  void OnCancel() override;
+  void OnMoreInfoLinkClicked() override;
 
   // Checks whether "allow redeem ChromeOS registration offers" setting is
   // disabled in cros settings. It may be asynchronous if the needed settings

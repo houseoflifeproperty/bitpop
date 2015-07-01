@@ -23,23 +23,20 @@
 #ifndef FEMerge_h
 #define FEMerge_h
 
-#include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/FilterEffect.h"
 
 namespace blink {
 
 class PLATFORM_EXPORT FEMerge : public FilterEffect {
 public:
-    static PassRefPtr<FEMerge> create(Filter*);
+    static PassRefPtrWillBeRawPtr<FEMerge> create(Filter*);
 
-    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
+    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
 
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const override;
 
 private:
-    FEMerge(Filter*);
-
-    virtual void applySoftware() OVERRIDE;
+    explicit FEMerge(Filter*);
 };
 
 } // namespace blink

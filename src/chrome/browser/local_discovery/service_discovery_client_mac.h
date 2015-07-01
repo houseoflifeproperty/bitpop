@@ -5,10 +5,13 @@
 #ifndef CHROME_BROWSER_LOCAL_DISCOVERY_SERVICE_DISCOVERY_CLIENT_MAC_H_
 #define CHROME_BROWSER_LOCAL_DISCOVERY_SERVICE_DISCOVERY_CLIENT_MAC_H_
 
+#import <Foundation/Foundation.h>
 #include <string>
 
 #include "base/mac/scoped_nsobject.h"
 #include "base/memory/weak_ptr.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "chrome/browser/local_discovery/service_discovery_shared_client.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -32,19 +35,19 @@ class ServiceDiscoveryClientMac : public ServiceDiscoverySharedClient {
   ServiceDiscoveryClientMac();
 
  private:
-  virtual ~ServiceDiscoveryClientMac();
+  ~ServiceDiscoveryClientMac() override;
 
   // ServiceDiscoveryClient implementation.
-  virtual scoped_ptr<ServiceWatcher> CreateServiceWatcher(
+  scoped_ptr<ServiceWatcher> CreateServiceWatcher(
       const std::string& service_type,
-      const ServiceWatcher::UpdatedCallback& callback) OVERRIDE;
-  virtual scoped_ptr<ServiceResolver> CreateServiceResolver(
+      const ServiceWatcher::UpdatedCallback& callback) override;
+  scoped_ptr<ServiceResolver> CreateServiceResolver(
       const std::string& service_name,
-      const ServiceResolver::ResolveCompleteCallback& callback) OVERRIDE;
-  virtual scoped_ptr<LocalDomainResolver> CreateLocalDomainResolver(
+      const ServiceResolver::ResolveCompleteCallback& callback) override;
+  scoped_ptr<LocalDomainResolver> CreateLocalDomainResolver(
       const std::string& domain,
       net::AddressFamily address_family,
-      const LocalDomainResolver::IPAddressCallback& callback) OVERRIDE;
+      const LocalDomainResolver::IPAddressCallback& callback) override;
 
   void StartThreadIfNotStarted();
 
@@ -60,7 +63,7 @@ class ServiceWatcherImplMac : public ServiceWatcher {
     NetServiceBrowserContainer(
         const std::string& service_type,
         const ServiceWatcher::UpdatedCallback& callback,
-        scoped_refptr<base::MessageLoopProxy> service_discovery_runner);
+        scoped_refptr<base::SingleThreadTaskRunner> service_discovery_runner);
     ~NetServiceBrowserContainer();
 
     void Start();
@@ -76,15 +79,15 @@ class ServiceWatcherImplMac : public ServiceWatcher {
     void DiscoverOnDiscoveryThread();
 
     bool IsOnServiceDiscoveryThread() {
-      return base::MessageLoopProxy::current() ==
+      return base::ThreadTaskRunnerHandle::Get() ==
              service_discovery_runner_.get();
     }
 
     std::string service_type_;
     ServiceWatcher::UpdatedCallback callback_;
 
-    scoped_refptr<base::MessageLoopProxy> callback_runner_;
-    scoped_refptr<base::MessageLoopProxy> service_discovery_runner_;
+    scoped_refptr<base::SingleThreadTaskRunner> callback_runner_;
+    scoped_refptr<base::SingleThreadTaskRunner> service_discovery_runner_;
 
     base::scoped_nsobject<id> delegate_;
     base::scoped_nsobject<NSNetServiceBrowser> browser_;
@@ -94,19 +97,18 @@ class ServiceWatcherImplMac : public ServiceWatcher {
   ServiceWatcherImplMac(
       const std::string& service_type,
       const ServiceWatcher::UpdatedCallback& callback,
-      scoped_refptr<base::MessageLoopProxy> service_discovery_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> service_discovery_runner);
 
   void OnServicesUpdate(ServiceWatcher::UpdateType update,
                         const std::string& service);
 
  private:
-  virtual ~ServiceWatcherImplMac();
+  ~ServiceWatcherImplMac() override;
 
-  virtual void Start() OVERRIDE;
-  virtual void DiscoverNewServices(bool force_update) OVERRIDE;
-  virtual void SetActivelyRefreshServices(
-      bool actively_refresh_services) OVERRIDE;
-  virtual std::string GetServiceType() const OVERRIDE;
+  void Start() override;
+  void DiscoverNewServices(bool force_update) override;
+  void SetActivelyRefreshServices(bool actively_refresh_services) override;
+  std::string GetServiceType() const override;
 
   std::string service_type_;
   ServiceWatcher::UpdatedCallback callback_;
@@ -127,7 +129,7 @@ class ServiceResolverImplMac : public ServiceResolver {
     NetServiceContainer(
         const std::string& service_name,
         const ServiceResolver::ResolveCompleteCallback& callback,
-        scoped_refptr<base::MessageLoopProxy> service_discovery_runner);
+        scoped_refptr<base::SingleThreadTaskRunner> service_discovery_runner);
 
     virtual ~NetServiceContainer();
 
@@ -143,15 +145,15 @@ class ServiceResolverImplMac : public ServiceResolver {
     void StartResolvingOnDiscoveryThread();
 
     bool IsOnServiceDiscoveryThread() {
-      return base::MessageLoopProxy::current() ==
+      return base::ThreadTaskRunnerHandle::Get() ==
              service_discovery_runner_.get();
     }
 
     const std::string service_name_;
     ServiceResolver::ResolveCompleteCallback callback_;
 
-    scoped_refptr<base::MessageLoopProxy> callback_runner_;
-    scoped_refptr<base::MessageLoopProxy> service_discovery_runner_;
+    scoped_refptr<base::SingleThreadTaskRunner> callback_runner_;
+    scoped_refptr<base::SingleThreadTaskRunner> service_discovery_runner_;
 
     base::scoped_nsobject<id> delegate_;
     base::scoped_nsobject<NSNetService> service_;
@@ -162,16 +164,16 @@ class ServiceResolverImplMac : public ServiceResolver {
   ServiceResolverImplMac(
       const std::string& service_name,
       const ServiceResolver::ResolveCompleteCallback& callback,
-      scoped_refptr<base::MessageLoopProxy> service_discovery_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> service_discovery_runner);
 
   // Testing methods.
   NetServiceContainer* GetContainerForTesting();
 
  private:
-  virtual ~ServiceResolverImplMac();
+  ~ServiceResolverImplMac() override;
 
-  virtual void StartResolving() OVERRIDE;
-  virtual std::string GetName() const OVERRIDE;
+  void StartResolving() override;
+  std::string GetName() const override;
 
   void OnResolveComplete(RequestStatus status,
                          const ServiceDescription& description);

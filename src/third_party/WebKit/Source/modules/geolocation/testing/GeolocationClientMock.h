@@ -55,16 +55,16 @@ public:
     int numberOfPendingPermissionRequests() const;
 
     // GeolocationClient
-    virtual void startUpdating() OVERRIDE;
-    virtual void stopUpdating() OVERRIDE;
-    virtual void setEnableHighAccuracy(bool) OVERRIDE;
-    virtual GeolocationPosition* lastPosition() OVERRIDE;
-    virtual void requestPermission(Geolocation*) OVERRIDE;
-    virtual void cancelPermissionRequest(Geolocation*) OVERRIDE;
-    void controllerForTestAdded(GeolocationController*) OVERRIDE;
-    void controllerForTestRemoved(GeolocationController*) OVERRIDE;
+    virtual void startUpdating() override;
+    virtual void stopUpdating() override;
+    virtual void setEnableHighAccuracy(bool) override;
+    virtual GeolocationPosition* lastPosition() override;
+    virtual void requestPermission(Geolocation*) override;
+    virtual void cancelPermissionRequest(Geolocation*) override;
+    void controllerForTestAdded(GeolocationController*) override;
+    void controllerForTestRemoved(GeolocationController*) override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     void asyncUpdateController();
@@ -75,7 +75,7 @@ private:
 
     void clearError();
 
-    typedef WillBeHeapHashSet<RawPtrWillBeWeakMember<GeolocationController> > GeolocationControllers;
+    typedef WillBeHeapHashSet<RawPtrWillBeWeakMember<GeolocationController>> GeolocationControllers;
     GeolocationControllers m_controllers;
 
     PersistentWillBeMember<GeolocationPosition> m_lastPosition;
@@ -93,7 +93,7 @@ private:
 
     PermissionState m_permissionState;
 
-    typedef PersistentHeapHashSetWillBeHeapHashSet<Member<Geolocation> > GeolocationSet;
+    typedef PersistentHeapHashSetWillBeHeapHashSet<Member<Geolocation>> GeolocationSet;
     GeolocationSet m_pendingPermissions;
 };
 

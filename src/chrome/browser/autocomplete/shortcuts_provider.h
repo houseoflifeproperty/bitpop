@@ -28,10 +28,11 @@ class ShortcutsProvider
 
   // Performs the autocompletion synchronously. Since no asynch completion is
   // performed |minimal_changes| is ignored.
-  virtual void Start(const AutocompleteInput& input,
-                     bool minimal_changes) OVERRIDE;
+  void Start(const AutocompleteInput& input,
+             bool minimal_changes,
+             bool called_due_to_focus) override;
 
-  virtual void DeleteMatch(const AutocompleteMatch& match) OVERRIDE;
+  void DeleteMatch(const AutocompleteMatch& match) override;
 
  private:
   friend class ClassifyTest;
@@ -40,10 +41,10 @@ class ShortcutsProvider
 
   typedef std::multimap<base::char16, base::string16> WordMap;
 
-  virtual ~ShortcutsProvider();
+  ~ShortcutsProvider() override;
 
   // ShortcutsBackendObserver:
-  virtual void OnShortcutsLoaded() OVERRIDE;
+  void OnShortcutsLoaded() override;
 
   // Performs the autocomplete matching and scoring.
   void GetMatches(const AutocompleteInput& input);
@@ -54,7 +55,7 @@ class ShortcutsProvider
   // the user's input. |input| and |fixed_up_input_text| are used to decide
   // what can be inlined.
   AutocompleteMatch ShortcutToACMatch(
-      const history::ShortcutsDatabase::Shortcut& shortcut,
+      const ShortcutsDatabase::Shortcut& shortcut,
       int relevance,
       const AutocompleteInput& input,
       const base::string16& fixed_up_input_text);
@@ -98,7 +99,7 @@ class ShortcutsProvider
       ShortcutsBackend* backend);
 
   int CalculateScore(const base::string16& terms,
-                     const history::ShortcutsDatabase::Shortcut& shortcut,
+                     const ShortcutsDatabase::Shortcut& shortcut,
                      int max_relevance);
 
   // The default max relevance unless overridden by a field trial.

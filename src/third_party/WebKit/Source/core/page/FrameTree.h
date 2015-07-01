@@ -20,6 +20,7 @@
 #ifndef FrameTree_h
 #define FrameTree_h
 
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/text/AtomicString.h"
 
@@ -28,7 +29,7 @@ namespace blink {
 class Frame;
 class TreeScope;
 
-class FrameTree FINAL {
+class CORE_EXPORT FrameTree final {
     WTF_MAKE_NONCOPYABLE(FrameTree);
     DISALLOW_ALLOCATION();
 public:
@@ -50,7 +51,7 @@ public:
 
     bool isDescendantOf(const Frame* ancestor) const;
     Frame* traversePreviousWithWrap(bool) const;
-    Frame* traverseNext(const Frame* stayWithin = 0) const;
+    Frame* traverseNext(const Frame* stayWithin = nullptr) const;
     Frame* traverseNextWithWrap(bool) const;
 
     Frame* child(const AtomicString& name) const;
@@ -62,7 +63,7 @@ public:
     unsigned scopedChildCount() const;
     void invalidateScopedChildCount();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     Frame* deepLastChild() const;

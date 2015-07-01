@@ -17,6 +17,7 @@
 namespace gpu {
 namespace gles2 {
 
+class FeatureInfo;
 class RenderbufferManager;
 
 // Info about a Renderbuffer.
@@ -69,6 +70,7 @@ class GPU_EXPORT Renderbuffer
 
   size_t EstimatedSize();
 
+  size_t GetSignatureSize() const;
   void AddToSignature(std::string* signature) const;
 
  private:
@@ -127,7 +129,7 @@ class GPU_EXPORT RenderbufferManager {
   RenderbufferManager(MemoryTracker* memory_tracker,
                       GLint max_renderbuffer_size,
                       GLint max_samples,
-                      bool depth24_supported);
+                      FeatureInfo* feature_info);
   ~RenderbufferManager();
 
   GLint max_renderbuffer_size() const {
@@ -181,7 +183,8 @@ class GPU_EXPORT RenderbufferManager {
 
   GLint max_renderbuffer_size_;
   GLint max_samples_;
-  bool depth24_supported_;
+
+  scoped_refptr<FeatureInfo> feature_info_;
 
   int num_uncleared_renderbuffers_;
 

@@ -5,8 +5,11 @@
 #include "content/browser/renderer_host/p2p/socket_host_udp.h"
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
+#include "base/metrics/field_trial.h"
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "content/browser/renderer_host/p2p/socket_host_throttler.h"
 #include "content/common/p2p_messages.h"
 #include "content/public/browser/content_browser_client.h"
@@ -36,13 +39,32 @@ const int kRecvSocketBufferSize = 65536;  // 64K
 //
 // This is caused by WSAENETRESET or WSAECONNRESET which means the
 // last send resulted in an "ICMP Port Unreachable" message.
+struct {
+  int code;
+  const char* name;
+} static const kTransientErrors[] {
+  {net::ERR_ADDRESS_UNREACHABLE, "net::ERR_ADDRESS_UNREACHABLE"},
+  {net::ERR_ADDRESS_INVALID, "net::ERR_ADDRESS_INVALID"},
+  {net::ERR_ACCESS_DENIED, "net::ERR_ACCESS_DENIED"},
+  {net::ERR_CONNECTION_RESET, "net::ERR_CONNECTION_RESET"},
+  {net::ERR_OUT_OF_MEMORY, "net::ERR_OUT_OF_MEMORY"},
+  {net::ERR_INTERNET_DISCONNECTED, "net::ERR_INTERNET_DISCONNECTED"}
+};
+
 bool IsTransientError(int error) {
-  return error == net::ERR_ADDRESS_UNREACHABLE ||
-         error == net::ERR_ADDRESS_INVALID ||
-         error == net::ERR_ACCESS_DENIED ||
-         error == net::ERR_CONNECTION_RESET ||
-         error == net::ERR_OUT_OF_MEMORY ||
-         error == net::ERR_INTERNET_DISCONNECTED;
+  for (const auto& transient_error : kTransientErrors) {
+    if (transient_error.code == error)
+      return true;
+  }
+  return false;
+}
+
+const char* GetTransientErrorName(int error) {
+  for (const auto& transient_error : kTransientErrors) {
+    if (transient_error.code == error)
+      return transient_error.name;
+  }
+  return "";
 }
 
 }  // namespace
@@ -69,18 +91,39 @@ P2PSocketHostUdp::P2PSocketHostUdp(IPC::Sender* message_sender,
                                    int socket_id,
                                    P2PMessageThrottler* throttler)
     : P2PSocketHost(message_sender, socket_id, P2PSocketHost::UDP),
-      socket_(
-          new net::UDPServerSocket(GetContentClient()->browser()->GetNetLog(),
-                                   net::NetLog::Source())),
       send_pending_(false),
       last_dscp_(net::DSCP_CS0),
-      throttler_(throttler) {
+      throttler_(throttler),
+      send_buffer_size_(0) {
+  net::UDPServerSocket* socket = new net::UDPServerSocket(
+      GetContentClient()->browser()->GetNetLog(), net::NetLog::Source());
+#if defined(OS_WIN)
+  socket->UseNonBlockingIO();
+#endif
+  socket_.reset(socket);
 }
 
 P2PSocketHostUdp::~P2PSocketHostUdp() {
   if (state_ == STATE_OPEN) {
     DCHECK(socket_.get());
     socket_.reset();
+  }
+}
+
+void P2PSocketHostUdp::SetSendBufferSize() {
+  unsigned int send_buffer_size = 0;
+
+  base::StringToUint(
+      base::FieldTrialList::FindFullName("WebRTC-SystemUDPSendSocketSize"),
+      &send_buffer_size);
+
+  if (send_buffer_size > 0) {
+    if (!SetOption(P2P_SOCKET_OPT_SNDBUF, send_buffer_size)) {
+      LOG(WARNING) << "Failed to set socket send buffer size to "
+                   << send_buffer_size;
+    } else {
+      send_buffer_size_ = send_buffer_size;
+    }
   }
 }
 
@@ -112,6 +155,8 @@ bool P2PSocketHostUdp::Init(const net::IPEndPoint& local_address,
   VLOG(1) << "Local address: " << address.ToString();
 
   state_ = STATE_OPEN;
+
+  SetSendBufferSize();
 
   // NOTE: Remote address will be same as what renderer provided.
   message_sender_->Send(new P2PMsg_OnSocketCreated(
@@ -245,43 +290,51 @@ void P2PSocketHostUdp::DoSend(const PendingPacket& packet) {
       last_dscp_ = net::DSCP_NO_CHANGE;
     }
   }
+
+  uint64 tick_received = base::TimeTicks::Now().ToInternalValue();
+
   packet_processing_helpers::ApplyPacketOptions(
       packet.data->data(), packet.size, packet.packet_options, 0);
-  int result = socket_->SendTo(
-      packet.data.get(),
-      packet.size,
-      packet.to,
-      base::Bind(&P2PSocketHostUdp::OnSend, base::Unretained(this), packet.id));
+  int result = socket_->SendTo(packet.data.get(),
+                               packet.size,
+                               packet.to,
+                               base::Bind(&P2PSocketHostUdp::OnSend,
+                                          base::Unretained(this),
+                                          packet.id,
+                                          tick_received));
 
   // sendto() may return an error, e.g. if we've received an ICMP Destination
   // Unreachable message. When this happens try sending the same packet again,
   // and just drop it if it fails again.
   if (IsTransientError(result)) {
-    result = socket_->SendTo(
-        packet.data.get(),
-        packet.size,
-        packet.to,
-        base::Bind(&P2PSocketHostUdp::OnSend, base::Unretained(this),
-                   packet.id));
+    result = socket_->SendTo(packet.data.get(),
+                             packet.size,
+                             packet.to,
+                             base::Bind(&P2PSocketHostUdp::OnSend,
+                                        base::Unretained(this),
+                                        packet.id,
+                                        tick_received));
   }
 
   if (result == net::ERR_IO_PENDING) {
     send_pending_ = true;
   } else {
-    HandleSendResult(packet.id, result);
+    HandleSendResult(packet.id, tick_received, result);
   }
 
   if (dump_outgoing_rtp_packet_)
     DumpRtpPacket(packet.data->data(), packet.size, false);
 }
 
-void P2PSocketHostUdp::OnSend(uint64 packet_id, int result) {
+void P2PSocketHostUdp::OnSend(uint64 packet_id,
+                              uint64 tick_received,
+                              int result) {
   DCHECK(send_pending_);
   DCHECK_NE(result, net::ERR_IO_PENDING);
 
   send_pending_ = false;
 
-  HandleSendResult(packet_id, result);
+  HandleSendResult(packet_id, tick_received, result);
 
   // Send next packets if we have them waiting in the buffer.
   while (state_ == STATE_OPEN && !send_queue_.empty() && !send_pending_) {
@@ -292,7 +345,9 @@ void P2PSocketHostUdp::OnSend(uint64 packet_id, int result) {
   }
 }
 
-void P2PSocketHostUdp::HandleSendResult(uint64 packet_id, int result) {
+void P2PSocketHostUdp::HandleSendResult(uint64 packet_id,
+                                        uint64 tick_received,
+                                        int result) {
   TRACE_EVENT_ASYNC_END1("p2p", "Send", packet_id,
                          "result", result);
   if (result < 0) {
@@ -302,9 +357,19 @@ void P2PSocketHostUdp::HandleSendResult(uint64 packet_id, int result) {
       return;
     }
     VLOG(0) << "sendto() has failed twice returning a "
-               " transient error. Dropping the packet.";
+               " transient error " << GetTransientErrorName(result)
+            << ". Dropping the packet.";
   }
-  message_sender_->Send(new P2PMsg_OnSendComplete(id_));
+
+  // UMA to track the histograms from 1ms to 1 sec for how long a packet spends
+  // in the browser process.
+  UMA_HISTOGRAM_TIMES(
+      "WebRTC.SystemSendPacketDuration_UDP" /* name */,
+      base::TimeTicks::Now() -
+          base::TimeTicks::FromInternalValue(tick_received) /* sample */);
+
+  message_sender_->Send(
+      new P2PMsg_OnSendComplete(id_, P2PSendPacketMetrics(packet_id)));
 }
 
 P2PSocketHost* P2PSocketHostUdp::AcceptIncomingTcpConnection(
@@ -320,6 +385,11 @@ bool P2PSocketHostUdp::SetOption(P2PSocketOption option, int value) {
     case P2P_SOCKET_OPT_RCVBUF:
       return socket_->SetReceiveBufferSize(value) == net::OK;
     case P2P_SOCKET_OPT_SNDBUF:
+      // Ignore any following call to set the send buffer size if we're under
+      // experiment.
+      if (send_buffer_size_ > 0) {
+        return true;
+      }
       return socket_->SetSendBufferSize(value) == net::OK;
     case P2P_SOCKET_OPT_DSCP:
       return (net::OK == socket_->SetDiffServCodePoint(

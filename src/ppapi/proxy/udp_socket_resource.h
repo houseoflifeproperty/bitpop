@@ -18,27 +18,39 @@ class PPAPI_PROXY_EXPORT UDPSocketResource : public UDPSocketResourceBase,
                                              public thunk::PPB_UDPSocket_API {
  public:
   UDPSocketResource(Connection connection, PP_Instance instance);
-  virtual ~UDPSocketResource();
+  ~UDPSocketResource() override;
 
   // PluginResource implementation.
-  virtual thunk::PPB_UDPSocket_API* AsPPB_UDPSocket_API() OVERRIDE;
+  thunk::PPB_UDPSocket_API* AsPPB_UDPSocket_API() override;
 
   // thunk::PPB_UDPSocket_API implementation.
-  virtual int32_t Bind(PP_Resource addr,
-                       scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual PP_Resource GetBoundAddress() OVERRIDE;
-  virtual int32_t RecvFrom(char* buffer,
-                           int32_t num_bytes,
-                           PP_Resource* addr,
-                           scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual int32_t SendTo(const char* buffer,
-                         int32_t num_bytes,
-                         PP_Resource addr,
-                         scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual int32_t SetOption(PP_UDPSocket_Option name,
-                            const PP_Var& value,
-                            scoped_refptr<TrackedCallback> callback) OVERRIDE;
+  int32_t Bind(PP_Resource addr,
+               scoped_refptr<TrackedCallback> callback) override;
+  PP_Resource GetBoundAddress() override;
+  int32_t RecvFrom(char* buffer,
+                   int32_t num_bytes,
+                   PP_Resource* addr,
+                   scoped_refptr<TrackedCallback> callback) override;
+  int32_t SendTo(const char* buffer,
+                 int32_t num_bytes,
+                 PP_Resource addr,
+                 scoped_refptr<TrackedCallback> callback) override;
+  void Close() override;
+  int32_t SetOption1_0(
+      PP_UDPSocket_Option name,
+      const PP_Var& value,
+      scoped_refptr<TrackedCallback> callback) override;
+  int32_t SetOption1_1(
+      PP_UDPSocket_Option name,
+      const PP_Var& value,
+      scoped_refptr<TrackedCallback> callback) override;
+  int32_t SetOption(PP_UDPSocket_Option name,
+                    const PP_Var& value,
+                    scoped_refptr<TrackedCallback> callback) override;
+  int32_t JoinGroup(PP_Resource group,
+                    scoped_refptr<TrackedCallback> callback) override;
+  int32_t LeaveGroup(PP_Resource group,
+                     scoped_refptr<TrackedCallback> callback) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(UDPSocketResource);

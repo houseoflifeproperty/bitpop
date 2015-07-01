@@ -12,7 +12,7 @@
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/gfx/animation/animation_container_element.h"
-#include "ui/gfx/vector2d.h"
+#include "ui/gfx/geometry/vector2d.h"
 #include "ui/wm/core/transient_window_manager.h"
 #include "ui/wm/core/transient_window_stacking_client.h"
 #include "ui/wm/core/window_util.h"
@@ -47,9 +47,7 @@ class WindowAnimationsTest : public aura::test::AuraTestBase {
  public:
   WindowAnimationsTest() {}
 
-  virtual void TearDown() OVERRIDE {
-    AuraTestBase::TearDown();
-  }
+  void TearDown() override { AuraTestBase::TearDown(); }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(WindowAnimationsTest);
@@ -255,16 +253,13 @@ TEST_F(WindowAnimationsTest, HideAnimationDetachLayersWithTransientChildren) {
 class NotifyHideCompletedAnimationHost : public aura::client::AnimationHost {
  public:
   NotifyHideCompletedAnimationHost() : hide_completed_(false) {}
-  virtual ~NotifyHideCompletedAnimationHost() {}
+  ~NotifyHideCompletedAnimationHost() override {}
 
   // Overridden from TestWindowDelegate:
-  virtual void OnWindowHidingAnimationCompleted() OVERRIDE {
-    hide_completed_ = true;
-  }
+  void OnWindowHidingAnimationCompleted() override { hide_completed_ = true; }
 
-  virtual void SetHostTransitionOffsets(
-      const gfx::Vector2d& top_left,
-      const gfx::Vector2d& bottom_right) OVERRIDE {}
+  void SetHostTransitionOffsets(const gfx::Vector2d& top_left,
+                                const gfx::Vector2d& bottom_right) override {}
 
   bool hide_completed() const { return hide_completed_; }
 
@@ -302,6 +297,23 @@ TEST_F(WindowAnimationsTest, RotateHideNoLeak) {
   AnimateOnChildWindowVisibilityChanged(window.get(), true);
   AnimateOnChildWindowVisibilityChanged(window.get(), false);
 
+  animating_layer->GetAnimator()->StopAnimating();
+}
+
+// The rotation animation for hiding a window should not crash when terminated
+// by LayerAnimator::StopAnimating().
+TEST_F(WindowAnimationsTest, RotateHideNoCrash) {
+  ui::ScopedAnimationDurationScaleMode scale_mode(
+      ui::ScopedAnimationDurationScaleMode::FAST_DURATION);
+
+  scoped_ptr<aura::Window> window(aura::test::CreateTestWindowWithId(0, NULL));
+  ui::Layer* animating_layer = window->layer();
+  wm::SetWindowVisibilityAnimationType(window.get(),
+                                       WINDOW_VISIBILITY_ANIMATION_TYPE_ROTATE);
+  AnimateOnChildWindowVisibilityChanged(window.get(), true);
+  window->layer()->GetAnimator()->Step(base::TimeTicks::Now() +
+                                       base::TimeDelta::FromSeconds(5));
+  AnimateOnChildWindowVisibilityChanged(window.get(), false);
   animating_layer->GetAnimator()->StopAnimating();
 }
 

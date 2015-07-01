@@ -74,9 +74,9 @@ void GetNamePartsList(const std::vector<NameParts>& names,
                       std::vector<base::string16>* middle_names,
                       std::vector<base::string16>* last_names) {
   for (size_t i = 0; i < names.size(); ++i) {
-    first_names->push_back(ASCIIToUTF16(names[i].first));
-    middle_names->push_back(ASCIIToUTF16(names[i].middle));
-    last_names->push_back(ASCIIToUTF16(names[i].last));
+    first_names->push_back(UTF8ToUTF16(names[i].first));
+    middle_names->push_back(UTF8ToUTF16(names[i].middle));
+    last_names->push_back(UTF8ToUTF16(names[i].last));
   }
 }
 
@@ -1231,6 +1231,66 @@ TEST(AutofillProfileTest, FullAddress) {
   EXPECT_TRUE(profile.GetInfo(full_address, "en-US").empty());
 }
 
+TEST(AutofillProfileTest, CopyAndUpdateNameList) {
+  std::vector<base::string16> user_inputs;
+  user_inputs.push_back(ASCIIToUTF16("James Cameron Smith Harding"));
+  user_inputs.push_back(ASCIIToUTF16("Jane Smith Harding"));
+  user_inputs.push_back(ASCIIToUTF16("Alison Smith Harding"));
+
+  // With no base profile, names should just be copied.
+  AutofillProfile new_profile;
+  new_profile.CopyAndUpdateNameList(user_inputs, NULL, "en-US");
+  std::vector<base::string16> stored_full_names;
+  new_profile.GetMultiInfo(AutofillType(NAME_FULL), "en-US",
+                           &stored_full_names);
+  EXPECT_EQ(user_inputs, stored_full_names);
+
+  // With a base profile, names should be copied but keep their original parsing
+  // intact.
+  AutofillProfile original_profile;
+  std::vector<base::string16> original_first_names, original_middle_names,
+      original_last_names;
+  original_first_names.push_back(ASCIIToUTF16("James"));
+  original_middle_names.push_back(ASCIIToUTF16("Cameron"));
+  original_last_names.push_back(ASCIIToUTF16("Smith Harding"));
+
+  original_first_names.push_back(ASCIIToUTF16("Jane Smith"));
+  original_middle_names.push_back(base::string16());
+  original_last_names.push_back(ASCIIToUTF16("Harding"));
+
+  original_profile.SetRawMultiInfo(NAME_FIRST, original_first_names);
+  original_profile.SetRawMultiInfo(NAME_MIDDLE, original_middle_names);
+  original_profile.SetRawMultiInfo(NAME_LAST, original_last_names);
+
+  new_profile.CopyAndUpdateNameList(user_inputs, &original_profile, "en-US");
+  new_profile.GetMultiInfo(AutofillType(NAME_FULL), "en-US",
+                           &stored_full_names);
+  EXPECT_EQ(user_inputs, stored_full_names);
+
+  // The parsed names shouldn't have changed, except for the addition of the new
+  // one.
+  std::vector<base::string16> expected_first_names = original_first_names;
+  expected_first_names.push_back(ASCIIToUTF16("Alison"));
+  std::vector<base::string16> stored_first_names;
+  new_profile.GetMultiInfo(AutofillType(NAME_FIRST), "en-US",
+                           &stored_first_names);
+  EXPECT_EQ(expected_first_names, stored_first_names);
+
+  std::vector<base::string16> expected_middle_names = original_middle_names;
+  expected_middle_names.push_back(ASCIIToUTF16("Smith"));
+  std::vector<base::string16> stored_middle_names;
+  new_profile.GetMultiInfo(AutofillType(NAME_MIDDLE), "en-US",
+                           &stored_middle_names);
+  EXPECT_EQ(expected_middle_names, stored_middle_names);
+
+  std::vector<base::string16> expected_last_names = original_last_names;
+  expected_last_names.push_back(ASCIIToUTF16("Harding"));
+  std::vector<base::string16> stored_last_names;
+  new_profile.GetMultiInfo(AutofillType(NAME_LAST), "en-US",
+                           &stored_last_names);
+  EXPECT_EQ(expected_last_names, stored_last_names);
+}
+
 TEST(AutofillProfileTest, OverwriteOrAppendNames) {
   std::vector<TestCase> test_cases;
 
@@ -1241,6 +1301,10 @@ TEST(AutofillProfileTest, OverwriteOrAppendNames) {
   test_cases.push_back(TestCase(NameParts("Marion", "Mitchell", "Morrison"),
                                 NameParts("MARION", "MITCHELL", "MORRISON"),
                                 NameParts("Marion", "Mitchell", "Morrison")));
+  // Capital A with grave versus lower case a with grave.
+  test_cases.push_back(TestCase(NameParts("Màrion", "M", "Morrison"),
+                                NameParts("MÀrion", "M", "Morrison"),
+                                NameParts("Màrion", "M", "Morrison")));
 
   // A parse that has a two-word last name should take precedence over a
   // parse that assumes the two names are a middle and a last name.
@@ -1378,6 +1442,22 @@ TEST(AutofillProfileTest, OverwriteOrAppendNames) {
       EXPECT_EQ(last_names[i], merged_last_names[i]);
     }
   }
+}
+
+TEST(AutofillProfileTest, CanonicalizeProfileString) {
+  // NOP.
+  EXPECT_EQ(base::string16(),
+            AutofillProfile::CanonicalizeProfileString(base::string16()));
+
+  // Simple punctuation removed.
+  EXPECT_EQ(ASCIIToUTF16("1600 amphitheatre pkwy"),
+            AutofillProfile::CanonicalizeProfileString(ASCIIToUTF16(
+                "1600 Amphitheatre, Pkwy.")));
+
+  // Unicode punctuation (hyphen and space), multiple spaces collapsed.
+  EXPECT_EQ(ASCIIToUTF16("mid island plaza"),
+            AutofillProfile::CanonicalizeProfileString(base::WideToUTF16(
+                L"Mid\x2013Island\x2003 Plaza")));
 }
 
 }  // namespace autofill

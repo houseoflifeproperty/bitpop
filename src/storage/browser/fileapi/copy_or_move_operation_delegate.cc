@@ -8,15 +8,15 @@
 #include "base/files/file_path.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
-#include "storage/browser/blob/file_stream_reader.h"
+#include "storage/browser/blob/shareable_file_reference.h"
 #include "storage/browser/fileapi/copy_or_move_file_validator.h"
 #include "storage/browser/fileapi/file_observers.h"
+#include "storage/browser/fileapi/file_stream_reader.h"
 #include "storage/browser/fileapi/file_stream_writer.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/fileapi/file_system_operation_runner.h"
 #include "storage/browser/fileapi/file_system_url.h"
 #include "storage/browser/fileapi/recursive_operation_delegate.h"
-#include "storage/common/blob/shareable_file_reference.h"
 #include "storage/common/fileapi/file_system_util.h"
 
 namespace storage {
@@ -60,8 +60,8 @@ class CopyOrMoveOnSameFileSystemImpl
         file_progress_callback_(file_progress_callback) {
   }
 
-  virtual void Run(
-      const CopyOrMoveOperationDelegate::StatusCallback& callback) OVERRIDE {
+  void Run(
+      const CopyOrMoveOperationDelegate::StatusCallback& callback) override {
     if (operation_type_ == CopyOrMoveOperationDelegate::OPERATION_MOVE) {
       operation_runner_->MoveFileLocal(src_url_, dest_url_, option_, callback);
     } else {
@@ -70,7 +70,7 @@ class CopyOrMoveOnSameFileSystemImpl
     }
   }
 
-  virtual void Cancel() OVERRIDE {
+  void Cancel() override {
     // We can do nothing for the copy/move operation on a local file system.
     // Assuming the operation is quickly done, it should be ok to just wait
     // for the completion.
@@ -113,8 +113,8 @@ class SnapshotCopyOrMoveImpl
         weak_factory_(this) {
   }
 
-  virtual void Run(
-      const CopyOrMoveOperationDelegate::StatusCallback& callback) OVERRIDE {
+  void Run(
+      const CopyOrMoveOperationDelegate::StatusCallback& callback) override {
     file_progress_callback_.Run(0);
     operation_runner_->CreateSnapshotFile(
         src_url_,
@@ -122,9 +122,7 @@ class SnapshotCopyOrMoveImpl
                    weak_factory_.GetWeakPtr(), callback));
   }
 
-  virtual void Cancel() OVERRIDE {
-    cancel_requested_ = true;
-  }
+  void Cancel() override { cancel_requested_ = true; }
 
  private:
   void RunAfterCreateSnapshot(
@@ -388,8 +386,8 @@ class StreamCopyOrMoveImpl
         cancel_requested_(false),
         weak_factory_(this) {}
 
-  virtual void Run(
-      const CopyOrMoveOperationDelegate::StatusCallback& callback) OVERRIDE {
+  void Run(
+      const CopyOrMoveOperationDelegate::StatusCallback& callback) override {
     // Reader can be created even if the entry does not exist or the entry is
     // a directory. To check errors before destination file creation,
     // check metadata first.
@@ -399,7 +397,7 @@ class StreamCopyOrMoveImpl
                    weak_factory_.GetWeakPtr(), callback));
   }
 
-  virtual void Cancel() OVERRIDE {
+  void Cancel() override {
     cancel_requested_ = true;
     if (copy_helper_)
       copy_helper_->Cancel();
@@ -498,19 +496,13 @@ class StreamCopyOrMoveImpl
       return;
     }
 
-    const bool need_flush = dest_url_.mount_option().copy_sync_option() ==
-                            storage::COPY_SYNC_OPTION_SYNC;
-
     NotifyOnStartUpdate(dest_url_);
     DCHECK(!copy_helper_);
-    copy_helper_.reset(
-        new CopyOrMoveOperationDelegate::StreamCopyHelper(
-            reader_.Pass(), writer_.Pass(),
-            need_flush,
-            kReadBufferSize,
-            file_progress_callback_,
-            base::TimeDelta::FromMilliseconds(
-                kMinProgressCallbackInvocationSpanInMilliseconds)));
+    copy_helper_.reset(new CopyOrMoveOperationDelegate::StreamCopyHelper(
+        reader_.Pass(), writer_.Pass(), dest_url_.mount_option().flush_policy(),
+        kReadBufferSize, file_progress_callback_,
+        base::TimeDelta::FromMilliseconds(
+            kMinProgressCallbackInvocationSpanInMilliseconds)));
     copy_helper_->Run(
         base::Bind(&StreamCopyOrMoveImpl::RunAfterStreamCopy,
                    weak_factory_.GetWeakPtr(), callback, last_modified));
@@ -594,13 +586,13 @@ class StreamCopyOrMoveImpl
 CopyOrMoveOperationDelegate::StreamCopyHelper::StreamCopyHelper(
     scoped_ptr<storage::FileStreamReader> reader,
     scoped_ptr<FileStreamWriter> writer,
-    bool need_flush,
+    storage::FlushPolicy flush_policy,
     int buffer_size,
     const FileSystemOperation::CopyFileProgressCallback& file_progress_callback,
     const base::TimeDelta& min_progress_callback_invocation_span)
     : reader_(reader.Pass()),
       writer_(writer.Pass()),
-      need_flush_(need_flush),
+      flush_policy_(flush_policy),
       file_progress_callback_(file_progress_callback),
       io_buffer_(new net::IOBufferWithSize(buffer_size)),
       num_copied_bytes_(0),
@@ -649,7 +641,7 @@ void CopyOrMoveOperationDelegate::StreamCopyHelper::DidRead(
 
   if (result == 0) {
     // Here is the EOF.
-    if (need_flush_)
+    if (flush_policy_ == storage::FlushPolicy::FLUSH_ON_COMPLETION)
       Flush(callback, true /* is_eof */);
     else
       callback.Run(base::File::FILE_OK);
@@ -702,7 +694,7 @@ void CopyOrMoveOperationDelegate::StreamCopyHelper::DidWrite(
     return;
   }
 
-  if (need_flush_ &&
+  if (flush_policy_ == storage::FlushPolicy::FLUSH_ON_COMPLETION &&
       (num_copied_bytes_ - previous_flush_offset_) > kFlushIntervalInBytes) {
     Flush(callback, false /* not is_eof */);
   } else {

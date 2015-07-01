@@ -15,12 +15,13 @@
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_stats.h"
 #include "chrome/browser/bookmarks/chrome_bookmark_client.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/enhanced_bookmarks/enhanced_bookmark_model_factory.h"
 #include "chrome/browser/extensions/api/bookmarks/bookmark_api_constants.h"
 #include "chrome/browser/extensions/api/bookmarks/bookmark_api_helpers.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_drag_drop.h"
-#include "chrome/browser/undo/bookmark_undo_service.h"
 #include "chrome/browser/undo/bookmark_undo_service_factory.h"
 #include "chrome/common/extensions/api/bookmark_manager_private.h"
 #include "chrome/common/pref_names.h"
@@ -29,6 +30,8 @@
 #include "components/bookmarks/browser/bookmark_node_data.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/bookmarks/browser/scoped_group_bookmark_actions.h"
+#include "components/enhanced_bookmarks/enhanced_bookmark_model.h"
+#include "components/undo/bookmark_undo_service.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
@@ -39,7 +42,10 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
 
+using bookmarks::BookmarkModel;
+using bookmarks::BookmarkNode;
 using bookmarks::BookmarkNodeData;
+using content::WebContents;
 
 namespace extensions {
 
@@ -57,12 +63,11 @@ namespace Paste = api::bookmark_manager_private::Paste;
 namespace RedoInfo = api::bookmark_manager_private::GetRedoInfo;
 namespace RemoveTrees = api::bookmark_manager_private::RemoveTrees;
 namespace SetMetaInfo = api::bookmark_manager_private::SetMetaInfo;
+namespace SetVersion = api::bookmark_manager_private::SetVersion;
 namespace SortChildren = api::bookmark_manager_private::SortChildren;
 namespace StartDrag = api::bookmark_manager_private::StartDrag;
 namespace UndoInfo = api::bookmark_manager_private::GetUndoInfo;
 namespace UpdateMetaInfo = api::bookmark_manager_private::UpdateMetaInfo;
-
-using content::WebContents;
 
 namespace {
 
@@ -158,9 +163,8 @@ CreateApiBookmarkNodeData(Profile* profile, const BookmarkNodeData& data) {
     }
   } else {
     // We do not have a node IDs when the data comes from a different profile.
-    std::vector<BookmarkNodeData::Element> elements = data.elements;
-    for (size_t i = 0; i < elements.size(); ++i)
-      node_data->elements.push_back(CreateApiNodeDataElement(elements[i]));
+    for (size_t i = 0; i < data.size(); ++i)
+      node_data->elements.push_back(CreateApiNodeDataElement(data.elements[i]));
   }
   return node_data.Pass();
 }
@@ -305,7 +309,7 @@ void BookmarkManagerPrivateDragEventRouter::DispatchEvent(
 
 void BookmarkManagerPrivateDragEventRouter::OnDragEnter(
     const BookmarkNodeData& data) {
-  if (data.size() == 0)
+  if (!data.is_valid())
     return;
   DispatchEvent(bookmark_manager_private::OnDragEnter::kEventName,
                 bookmark_manager_private::OnDragEnter::Create(
@@ -320,7 +324,7 @@ void BookmarkManagerPrivateDragEventRouter::OnDragOver(
 
 void BookmarkManagerPrivateDragEventRouter::OnDragLeave(
     const BookmarkNodeData& data) {
-  if (data.size() == 0)
+  if (!data.is_valid())
     return;
   DispatchEvent(bookmark_manager_private::OnDragLeave::kEventName,
                 bookmark_manager_private::OnDragLeave::Create(
@@ -329,7 +333,7 @@ void BookmarkManagerPrivateDragEventRouter::OnDragLeave(
 
 void BookmarkManagerPrivateDragEventRouter::OnDrop(
     const BookmarkNodeData& data) {
-  if (data.size() == 0)
+  if (!data.is_valid())
     return;
   DispatchEvent(bookmark_manager_private::OnDrop::kEventName,
                 bookmark_manager_private::OnDrop::Create(
@@ -357,7 +361,7 @@ bool ClipboardBookmarkManagerFunction::CopyOrCut(bool cut,
   ChromeBookmarkClient* client = GetChromeBookmarkClient();
   std::vector<const BookmarkNode*> nodes;
   EXTENSION_FUNCTION_VALIDATE(GetNodesFromVector(model, id_list, &nodes));
-  if (cut && client->HasDescendantsOfManagedNode(nodes)) {
+  if (cut && bookmarks::HasDescendantsOf(nodes, client->managed_node())) {
     error_ = bookmark_keys::kModifyManagedError;
     return false;
   }
@@ -451,6 +455,8 @@ bool BookmarkManagerPrivateGetStringsFunction::RunAsync() {
       l10n_util::GetStringUTF16(IDS_BOOKMARK_MANAGER_TITLE));
   localized_strings->SetString("search_button",
       l10n_util::GetStringUTF16(IDS_BOOKMARK_MANAGER_SEARCH_BUTTON));
+  localized_strings->SetString("folders_menu",
+      l10n_util::GetStringUTF16(IDS_BOOKMARK_MANAGER_FOLDERS_MENU));
   localized_strings->SetString("organize_menu",
       l10n_util::GetStringUTF16(IDS_BOOKMARK_MANAGER_ORGANIZE_MENU));
   localized_strings->SetString("show_in_folder",
@@ -512,7 +518,8 @@ bool BookmarkManagerPrivateGetStringsFunction::RunAsync() {
   localized_strings->SetString("cancel",
       l10n_util::GetStringUTF16(IDS_CANCEL));
 
-  webui::SetFontAndTextDirection(localized_strings);
+  const std::string& app_locale = g_browser_process->GetApplicationLocale();
+  webui::SetLoadTimeDataDefaults(app_locale, localized_strings);
 
   SetResult(localized_strings);
 
@@ -612,7 +619,7 @@ bool BookmarkManagerPrivateGetSubtreeFunction::RunOnReady() {
 
   const BookmarkNode* node = NULL;
 
-  if (params->id == "") {
+  if (params->id.empty()) {
     BookmarkModel* model = BookmarkModelFactory::GetForProfile(GetProfile());
     node = model->root_node();
   } else {
@@ -721,7 +728,15 @@ bool BookmarkManagerPrivateSetMetaInfoFunction::RunOnReady() {
   if (!node)
     return false;
 
+  if (!CanBeModified(node))
+    return false;
+
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(GetProfile());
+  if (model->is_permanent_node(node)) {
+    error_ = bookmark_keys::kModifySpecialError;
+    return false;
+  }
+
   model->SetNodeMetaInfo(node, params->key, params->value);
   return true;
 }
@@ -735,7 +750,15 @@ bool BookmarkManagerPrivateUpdateMetaInfoFunction::RunOnReady() {
   if (!node)
     return false;
 
+  if (!CanBeModified(node))
+    return false;
+
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(GetProfile());
+  if (model->is_permanent_node(node)) {
+    error_ = bookmark_keys::kModifySpecialError;
+    return false;
+  }
+
   BookmarkNode::MetaInfoMap new_meta_info(
       params->meta_info_changes.additional_properties);
   if (node->GetMetaInfoMap()) {
@@ -804,6 +827,17 @@ bool BookmarkManagerPrivateGetRedoInfoFunction::RunOnReady() {
   result.label = base::UTF16ToUTF8(undo_manager->GetRedoLabel());
 
   results_ = RedoInfo::Results::Create(result);
+  return true;
+}
+
+bool BookmarkManagerPrivateSetVersionFunction::RunOnReady() {
+  scoped_ptr<SetVersion::Params> params = SetVersion::Params::Create(*args_);
+
+  enhanced_bookmarks::EnhancedBookmarkModel* model =
+      enhanced_bookmarks::EnhancedBookmarkModelFactory::GetForBrowserContext(
+          browser_context());
+  model->SetVersionSuffix(params->version);
+
   return true;
 }
 

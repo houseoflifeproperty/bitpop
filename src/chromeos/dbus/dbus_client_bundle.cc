@@ -4,10 +4,15 @@
 
 #include "chromeos/dbus/dbus_client_bundle.h"
 
+#include <vector>
+
 #include "base/command_line.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/dbus/amplifier_client.h"
+#include "chromeos/dbus/ap_manager_client.h"
+#include "chromeos/dbus/audio_dsp_client.h"
 #include "chromeos/dbus/bluetooth_adapter_client.h"
 #include "chromeos/dbus/bluetooth_agent_manager_client.h"
 #include "chromeos/dbus/bluetooth_device_client.h"
@@ -16,13 +21,18 @@
 #include "chromeos/dbus/bluetooth_gatt_manager_client.h"
 #include "chromeos/dbus/bluetooth_gatt_service_client.h"
 #include "chromeos/dbus/bluetooth_input_client.h"
+#include "chromeos/dbus/bluetooth_le_advertising_manager_client.h"
+#include "chromeos/dbus/bluetooth_media_client.h"
+#include "chromeos/dbus/bluetooth_media_transport_client.h"
 #include "chromeos/dbus/bluetooth_profile_manager_client.h"
 #include "chromeos/dbus/cras_audio_client.h"
-#include "chromeos/dbus/cras_audio_client_stub_impl.h"
 #include "chromeos/dbus/cros_disks_client.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/debug_daemon_client.h"
 #include "chromeos/dbus/easy_unlock_client.h"
+#include "chromeos/dbus/fake_amplifier_client.h"
+#include "chromeos/dbus/fake_ap_manager_client.h"
+#include "chromeos/dbus/fake_audio_dsp_client.h"
 #include "chromeos/dbus/fake_bluetooth_adapter_client.h"
 #include "chromeos/dbus/fake_bluetooth_agent_manager_client.h"
 #include "chromeos/dbus/fake_bluetooth_device_client.h"
@@ -31,13 +41,18 @@
 #include "chromeos/dbus/fake_bluetooth_gatt_manager_client.h"
 #include "chromeos/dbus/fake_bluetooth_gatt_service_client.h"
 #include "chromeos/dbus/fake_bluetooth_input_client.h"
+#include "chromeos/dbus/fake_bluetooth_le_advertising_manager_client.h"
+#include "chromeos/dbus/fake_bluetooth_media_client.h"
+#include "chromeos/dbus/fake_bluetooth_media_transport_client.h"
 #include "chromeos/dbus/fake_bluetooth_profile_manager_client.h"
+#include "chromeos/dbus/fake_cras_audio_client.h"
 #include "chromeos/dbus/fake_cryptohome_client.h"
 #include "chromeos/dbus/fake_debug_daemon_client.h"
 #include "chromeos/dbus/fake_easy_unlock_client.h"
 #include "chromeos/dbus/fake_gsm_sms_client.h"
 #include "chromeos/dbus/fake_image_burner_client.h"
 #include "chromeos/dbus/fake_introspectable_client.h"
+#include "chromeos/dbus/fake_leadership_daemon_manager_client.h"
 #include "chromeos/dbus/fake_lorgnette_manager_client.h"
 #include "chromeos/dbus/fake_modem_messaging_client.h"
 #include "chromeos/dbus/fake_nfc_adapter_client.h"
@@ -45,33 +60,41 @@
 #include "chromeos/dbus/fake_nfc_manager_client.h"
 #include "chromeos/dbus/fake_nfc_record_client.h"
 #include "chromeos/dbus/fake_nfc_tag_client.h"
+#include "chromeos/dbus/fake_peer_daemon_manager_client.h"
 #include "chromeos/dbus/fake_permission_broker_client.h"
+#include "chromeos/dbus/fake_privet_daemon_manager_client.h"
 #include "chromeos/dbus/fake_shill_device_client.h"
 #include "chromeos/dbus/fake_shill_ipconfig_client.h"
 #include "chromeos/dbus/fake_shill_manager_client.h"
 #include "chromeos/dbus/fake_shill_profile_client.h"
 #include "chromeos/dbus/fake_shill_service_client.h"
+#include "chromeos/dbus/fake_shill_third_party_vpn_driver_client.h"
 #include "chromeos/dbus/fake_sms_client.h"
 #include "chromeos/dbus/fake_system_clock_client.h"
 #include "chromeos/dbus/gsm_sms_client.h"
 #include "chromeos/dbus/image_burner_client.h"
 #include "chromeos/dbus/introspectable_client.h"
+#include "chromeos/dbus/leadership_daemon_manager_client.h"
 #include "chromeos/dbus/lorgnette_manager_client.h"
+#include "chromeos/dbus/metronome_client.h"
 #include "chromeos/dbus/modem_messaging_client.h"
 #include "chromeos/dbus/nfc_adapter_client.h"
 #include "chromeos/dbus/nfc_device_client.h"
 #include "chromeos/dbus/nfc_manager_client.h"
 #include "chromeos/dbus/nfc_record_client.h"
 #include "chromeos/dbus/nfc_tag_client.h"
+#include "chromeos/dbus/peer_daemon_manager_client.h"
 #include "chromeos/dbus/permission_broker_client.h"
 #include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/dbus/power_policy_controller.h"
+#include "chromeos/dbus/privet_daemon_manager_client.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/dbus/shill_device_client.h"
 #include "chromeos/dbus/shill_ipconfig_client.h"
 #include "chromeos/dbus/shill_manager_client.h"
 #include "chromeos/dbus/shill_profile_client.h"
 #include "chromeos/dbus/shill_service_client.h"
+#include "chromeos/dbus/shill_third_party_vpn_driver_client.h"
 #include "chromeos/dbus/sms_client.h"
 #include "chromeos/dbus/system_clock_client.h"
 #include "chromeos/dbus/update_engine_client.h"
@@ -85,21 +108,28 @@ const struct {
   const char* param_name;
   DBusClientBundle::DBusClientType client_type;
 } client_type_map[] = {
+    { "amplifier",  DBusClientBundle::AMPLIFIER },
+    { "ap",  DBusClientBundle::AP_MANAGER },
+    { "audio_dsp",  DBusClientBundle::AUDIO_DSP },
     { "bluetooth",  DBusClientBundle::BLUETOOTH },
     { "cras",  DBusClientBundle::CRAS },
     { "cros_disks",  DBusClientBundle::CROS_DISKS },
     { "cryptohome",  DBusClientBundle::CRYPTOHOME },
     { "debug_daemon",  DBusClientBundle::DEBUG_DAEMON },
     { "easy_unlock",  DBusClientBundle::EASY_UNLOCK },
+    { "leadership_daemon",  DBusClientBundle::LEADERSHIP_DAEMON },
     { "lorgnette_manager",  DBusClientBundle::LORGNETTE_MANAGER },
+    { "metronome",  DBusClientBundle::METRONOME },
     { "shill",  DBusClientBundle::SHILL },
     { "gsm_sms",  DBusClientBundle::GSM_SMS },
     { "image_burner",  DBusClientBundle::IMAGE_BURNER },
     { "introspectable",  DBusClientBundle::INTROSPECTABLE },
     { "modem_messaging",  DBusClientBundle::MODEM_MESSAGING },
     { "nfc",  DBusClientBundle::NFC },
+    { "peer_daemon",  DBusClientBundle::PEER_DAEMON },
     { "permission_broker",  DBusClientBundle::PERMISSION_BROKER },
     { "power_manager",  DBusClientBundle::POWER_MANAGER },
+    { "privet_daemon", DBusClientBundle::PRIVET_DAEMON },
     { "session_manager",  DBusClientBundle::SESSION_MANAGER },
     { "sms",  DBusClientBundle::SMS },
     { "system_clock",  DBusClientBundle::SYSTEM_CLOCK },
@@ -121,12 +151,27 @@ DBusClientBundle::DBusClientType GetDBusClientType(
 
 DBusClientBundle::DBusClientBundle(DBusClientTypeMask unstub_client_mask)
     : unstub_client_mask_(unstub_client_mask) {
+  if (!IsUsingStub(AMPLIFIER))
+    amplifier_client_.reset(AmplifierClient::Create());
+  else
+    amplifier_client_.reset(new FakeAmplifierClient);
+
+  if (!IsUsingStub(AUDIO_DSP))
+    audio_dsp_client_.reset(AudioDspClient::Create());
+  else
+    audio_dsp_client_.reset(new FakeAudioDspClient);
+
   if (!IsUsingStub(BLUETOOTH)) {
     bluetooth_adapter_client_.reset(BluetoothAdapterClient::Create());
+    bluetooth_le_advertising_manager_client_.reset(
+        BluetoothLEAdvertisingManagerClient::Create());
     bluetooth_agent_manager_client_.reset(
         BluetoothAgentManagerClient::Create());
     bluetooth_device_client_.reset(BluetoothDeviceClient::Create());
     bluetooth_input_client_.reset(BluetoothInputClient::Create());
+    bluetooth_media_client_.reset(BluetoothMediaClient::Create());
+    bluetooth_media_transport_client_.reset(
+        BluetoothMediaTransportClient::Create());
     bluetooth_profile_manager_client_.reset(
         BluetoothProfileManagerClient::Create());
     bluetooth_gatt_characteristic_client_.reset(
@@ -139,9 +184,14 @@ DBusClientBundle::DBusClientBundle(DBusClientTypeMask unstub_client_mask)
         BluetoothGattServiceClient::Create());
   } else {
     bluetooth_adapter_client_.reset(new FakeBluetoothAdapterClient);
+    bluetooth_le_advertising_manager_client_.reset(
+        new FakeBluetoothLEAdvertisingManagerClient);
     bluetooth_agent_manager_client_.reset(new FakeBluetoothAgentManagerClient);
     bluetooth_device_client_.reset(new FakeBluetoothDeviceClient);
     bluetooth_input_client_.reset(new FakeBluetoothInputClient);
+    bluetooth_media_client_.reset(new FakeBluetoothMediaClient);
+    bluetooth_media_transport_client_.reset(
+        new FakeBluetoothMediaTransportClient);
     bluetooth_profile_manager_client_.reset(
         new FakeBluetoothProfileManagerClient);
     bluetooth_gatt_characteristic_client_.reset(
@@ -155,7 +205,7 @@ DBusClientBundle::DBusClientBundle(DBusClientTypeMask unstub_client_mask)
   if (!IsUsingStub(CRAS))
     cras_audio_client_.reset(CrasAudioClient::Create());
   else
-    cras_audio_client_.reset(new CrasAudioClientStubImpl);
+    cras_audio_client_.reset(new FakeCrasAudioClient);
 
   cros_disks_client_.reset(CrosDisksClient::Create(
       IsUsingStub(CROS_DISKS) ? STUB_DBUS_CLIENT_IMPLEMENTATION
@@ -181,18 +231,26 @@ DBusClientBundle::DBusClientBundle(DBusClientTypeMask unstub_client_mask)
   else
     lorgnette_manager_client_.reset(new FakeLorgnetteManagerClient);
 
+  metronome_client_.reset(MetronomeClient::Create(
+      IsUsingStub(METRONOME) ? STUB_DBUS_CLIENT_IMPLEMENTATION
+                             : REAL_DBUS_CLIENT_IMPLEMENTATION));
+
   if (!IsUsingStub(SHILL)) {
     shill_manager_client_.reset(ShillManagerClient::Create());
     shill_device_client_.reset(ShillDeviceClient::Create());
     shill_ipconfig_client_.reset(ShillIPConfigClient::Create());
     shill_service_client_.reset(ShillServiceClient::Create());
     shill_profile_client_.reset(ShillProfileClient::Create());
+    shill_third_party_vpn_driver_client_.reset(
+        ShillThirdPartyVpnDriverClient::Create());
   } else {
     shill_manager_client_.reset(new FakeShillManagerClient);
     shill_device_client_.reset(new FakeShillDeviceClient);
     shill_ipconfig_client_.reset(new FakeShillIPConfigClient);
     shill_service_client_.reset(new FakeShillServiceClient);
     shill_profile_client_.reset(new FakeShillProfileClient);
+    shill_third_party_vpn_driver_client_.reset(
+        new FakeShillThirdPartyVpnDriverClient);
   }
 
   if (!IsUsingStub(GSM_SMS)) {
@@ -200,7 +258,7 @@ DBusClientBundle::DBusClientBundle(DBusClientTypeMask unstub_client_mask)
   } else {
     FakeGsmSMSClient* gsm_sms_client = new FakeGsmSMSClient();
     gsm_sms_client->set_sms_test_message_switch_present(
-        CommandLine::ForCurrentProcess()->HasSwitch(
+        base::CommandLine::ForCurrentProcess()->HasSwitch(
             chromeos::switches::kSmsTestMessages));
     gsm_sms_client_.reset(gsm_sms_client);
   }
@@ -238,10 +296,33 @@ DBusClientBundle::DBusClientBundle(DBusClientTypeMask unstub_client_mask)
     nfc_record_client_.reset(new FakeNfcRecordClient);
   }
 
+  if (!IsUsingStub(PEER_DAEMON))
+    peer_daemon_manager_client_.reset(PeerDaemonManagerClient::Create());
+  else
+    peer_daemon_manager_client_.reset(new FakePeerDaemonManagerClient);
+
   if (!IsUsingStub(PERMISSION_BROKER))
     permission_broker_client_.reset(PermissionBrokerClient::Create());
   else
     permission_broker_client_.reset(new FakePermissionBrokerClient);
+
+  if (!IsUsingStub(PRIVET_DAEMON))
+    privet_daemon_manager_client_.reset(PrivetDaemonManagerClient::Create());
+  else
+    privet_daemon_manager_client_.reset(new FakePrivetDaemonManagerClient);
+
+  if (!IsUsingStub(LEADERSHIP_DAEMON)) {
+    leadership_daemon_manager_client_.reset(
+        LeadershipDaemonManagerClient::Create());
+  } else {
+    leadership_daemon_manager_client_.reset(
+        new FakeLeadershipDaemonManagerClient);
+  }
+
+  if (!IsUsingStub(AP_MANAGER))
+    ap_manager_client_.reset(ApManagerClient::Create());
+  else
+    ap_manager_client_.reset(new FakeApManagerClient);
 
   power_manager_client_.reset(PowerManagerClient::Create(
       IsUsingStub(POWER_MANAGER) ? STUB_DBUS_CLIENT_IMPLEMENTATION

@@ -25,7 +25,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --expose-gc --allow-natives-syntax
+// Flags: --expose-gc --allow-natives-syntax --harmony-tostring
 
 var symbols = []
 
@@ -245,25 +245,20 @@ TestCall()
 function TestCollections() {
   var set = new Set
   var map = new Map
-  var weakmap = new WeakMap
   for (var i in symbols) {
     set.add(symbols[i])
     map.set(symbols[i], i)
-    weakmap.set(symbols[i], i)
   }
   assertEquals(symbols.length, set.size)
   assertEquals(symbols.length, map.size)
   for (var i in symbols) {
     assertTrue(set.has(symbols[i]))
     assertTrue(map.has(symbols[i]))
-    assertTrue(weakmap.has(symbols[i]))
     assertEquals(i, map.get(symbols[i]))
-    assertEquals(i, weakmap.get(symbols[i]))
   }
   for (var i in symbols) {
     assertTrue(set.delete(symbols[i]))
     assertTrue(map.delete(symbols[i]))
-    assertTrue(weakmap.delete(symbols[i]))
   }
   assertEquals(0, set.size)
   assertEquals(0, map.size)
@@ -501,3 +496,33 @@ function TestRegistry() {
   assertSame("x3", Symbol.keyFor(symbol3))
 }
 TestRegistry()
+
+
+function TestGetOwnPropertySymbolsOnPrimitives() {
+  assertEquals(Object.getOwnPropertySymbols(true), []);
+  assertEquals(Object.getOwnPropertySymbols(5000), []);
+  assertEquals(Object.getOwnPropertySymbols("OK"), []);
+}
+TestGetOwnPropertySymbolsOnPrimitives();
+
+
+function TestComparison() {
+  function lt() { var a = Symbol(); var b = Symbol(); a < b; }
+  function gt() { var a = Symbol(); var b = Symbol(); a > b; }
+  function le() { var a = Symbol(); var b = Symbol(); a <= b; }
+  function ge() { var a = Symbol(); var b = Symbol(); a >= b; }
+  function lt_same() { var a = Symbol(); a < a; }
+  function gt_same() { var a = Symbol(); a > a; }
+  function le_same() { var a = Symbol(); a <= a; }
+  function ge_same() { var a = Symbol(); a >= a; }
+
+  var throwFuncs = [lt, gt, le, ge, lt_same, gt_same, le_same, ge_same];
+
+  for (var f of throwFuncs) {
+    assertThrows(f, TypeError);
+    %OptimizeFunctionOnNextCall(f);
+    assertThrows(f, TypeError);
+    assertThrows(f, TypeError);
+  }
+}
+TestComparison();

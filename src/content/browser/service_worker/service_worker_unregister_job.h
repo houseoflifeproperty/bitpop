@@ -27,30 +27,31 @@ class ServiceWorkerStorage;
 // ServiceWorkerRegistration itself.
 class ServiceWorkerUnregisterJob : public ServiceWorkerRegisterJobBase {
  public:
-  typedef base::Callback<void(ServiceWorkerStatusCode status)>
+  typedef base::Callback<void(int64 registration_id,
+                              ServiceWorkerStatusCode status)>
       UnregistrationCallback;
 
   ServiceWorkerUnregisterJob(base::WeakPtr<ServiceWorkerContextCore> context,
                              const GURL& pattern);
-  virtual ~ServiceWorkerUnregisterJob();
+  ~ServiceWorkerUnregisterJob() override;
 
   // Registers a callback to be called when the job completes (whether
   // successfully or not). Multiple callbacks may be registered.
   void AddCallback(const UnregistrationCallback& callback);
 
   // ServiceWorkerRegisterJobBase implementation:
-  virtual void Start() OVERRIDE;
-  virtual void Abort() OVERRIDE;
-  virtual bool Equals(ServiceWorkerRegisterJobBase* job) OVERRIDE;
-  virtual RegistrationJobType GetType() OVERRIDE;
+  void Start() override;
+  void Abort() override;
+  bool Equals(ServiceWorkerRegisterJobBase* job) const override;
+  RegistrationJobType GetType() const override;
 
  private:
   void OnRegistrationFound(
       ServiceWorkerStatusCode status,
       const scoped_refptr<ServiceWorkerRegistration>& registration);
-  void Complete(ServiceWorkerStatusCode status);
-  void CompleteInternal(ServiceWorkerStatusCode status);
-  void ResolvePromise(ServiceWorkerStatusCode status);
+  void Complete(int64 registration_id, ServiceWorkerStatusCode status);
+  void CompleteInternal(int64 registration_id, ServiceWorkerStatusCode status);
+  void ResolvePromise(int64 registration_id, ServiceWorkerStatusCode status);
 
   base::WeakPtr<ServiceWorkerContextCore> context_;
   const GURL pattern_;

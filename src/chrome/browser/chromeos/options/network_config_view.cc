@@ -25,13 +25,14 @@
 #include "chromeos/login/login_state.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
+#include "components/device_event_log/device_event_log.h"
 #include "components/user_manager/user.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/rect.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/layout/layout_constants.h"
@@ -136,6 +137,7 @@ void NetworkConfigView::Show(const std::string& service_path,
     delete view;
     return;
   }
+  NET_LOG(USER) << "NetworkConfigView::Show: " << service_path;
   view->ShowDialog(parent);
 }
 
@@ -151,6 +153,7 @@ void NetworkConfigView::ShowForType(const std::string& type,
     delete view;
     return;
   }
+  NET_LOG(USER) << "NetworkConfigView::ShowForType: " << type;
   view->ShowDialog(parent);
 }
 
@@ -210,9 +213,9 @@ ui::ModalType NetworkConfigView::GetModalType() const {
 }
 
 void NetworkConfigView::GetAccessibleState(ui::AXViewState* state) {
+  views::DialogDelegateView::GetAccessibleState(state);
   state->name =
       l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_OTHER_WIFI_NETWORKS);
-  state->role = ui::AX_ROLE_DIALOG;
 }
 
 void NetworkConfigView::ButtonPressed(views::Button* sender,
@@ -266,6 +269,7 @@ void NetworkConfigView::ViewHierarchyChanged(
     const ViewHierarchyChangedDetails& details) {
   // Can't init before we're inserted into a Container, because we require
   // a HWND to parent native child controls to.
+  views::DialogDelegateView::ViewHierarchyChanged(details);
   if (details.is_add && details.child == this) {
     AddChildView(child_config_view_);
   }

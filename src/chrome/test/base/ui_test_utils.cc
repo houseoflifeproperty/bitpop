@@ -14,7 +14,6 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
-#include "base/json/json_reader.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
@@ -23,16 +22,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/test_timeouts.h"
 #include "base/time/time.h"
-#include "base/values.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog.h"
-#include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -49,7 +43,10 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/find_in_page_observer.h"
+#include "components/app_modal/app_modal_dialog.h"
+#include "components/app_modal/app_modal_dialog_queue.h"
 #include "components/bookmarks/browser/bookmark_model.h"
+#include "components/history/core/browser/history_service_observer.h"
 #include "components/search_engines/template_url_service.h"
 #include "content/public/browser/dom_operation_notification_details.h"
 #include "content/public/browser/download_item.h"
@@ -59,7 +56,6 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
-#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/geoposition.h"
@@ -74,10 +70,7 @@
 #include "net/test/python_utils.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "third_party/skia/include/core/SkBitmap.h"
-#include "third_party/skia/include/core/SkColor.h"
-#include "ui/gfx/size.h"
-#include "ui/snapshot/test/snapshot_desktop.h"
+#include "ui/gfx/geometry/rect.h"
 
 #if defined(USE_AURA)
 #include "ash/shell.h"
@@ -89,41 +82,12 @@ using content::NativeWebKeyboardEvent;
 using content::NavigationController;
 using content::NavigationEntry;
 using content::OpenURLParams;
-using content::RenderViewHost;
-using content::RenderWidgetHost;
 using content::Referrer;
 using content::WebContents;
 
 namespace ui_test_utils {
 
 namespace {
-
-#if defined(OS_WIN)
-const char kSnapshotBaseName[] = "ChromiumSnapshot";
-const char kSnapshotExtension[] = ".png";
-
-base::FilePath GetSnapshotFileName(const base::FilePath& snapshot_directory) {
-  base::Time::Exploded the_time;
-
-  base::Time::Now().LocalExplode(&the_time);
-  std::string filename(base::StringPrintf("%s%04d%02d%02d%02d%02d%02d%s",
-      kSnapshotBaseName, the_time.year, the_time.month, the_time.day_of_month,
-      the_time.hour, the_time.minute, the_time.second, kSnapshotExtension));
-
-  base::FilePath snapshot_file = snapshot_directory.AppendASCII(filename);
-  if (base::PathExists(snapshot_file)) {
-    int index = 0;
-    std::string suffix;
-    base::FilePath trial_file;
-    do {
-      suffix = base::StringPrintf(" (%d)", ++index);
-      trial_file = snapshot_file.InsertBeforeExtensionASCII(suffix);
-    } while (base::PathExists(trial_file));
-    snapshot_file = trial_file;
-  }
-  return snapshot_file;
-}
-#endif  // defined(OS_WIN)
 
 Browser* WaitForBrowserNotInSet(std::set<Browser*> excluded_browsers) {
   Browser* new_browser = GetBrowserNotInSet(excluded_browsers);
@@ -135,6 +99,38 @@ Browser* WaitForBrowserNotInSet(std::set<Browser*> excluded_browsers) {
   }
   return new_browser;
 }
+
+class AppModalDialogWaiter : public app_modal::AppModalDialogObserver {
+ public:
+  AppModalDialogWaiter()
+      : dialog_(NULL) {
+  }
+  ~AppModalDialogWaiter() override {
+  }
+
+  app_modal::AppModalDialog* Wait() {
+    if (dialog_)
+      return dialog_;
+    message_loop_runner_ = new content::MessageLoopRunner;
+    message_loop_runner_->Run();
+    EXPECT_TRUE(dialog_);
+    return dialog_;
+  }
+
+  // AppModalDialogWaiter:
+  void Notify(app_modal::AppModalDialog* dialog) override {
+    DCHECK(!dialog_);
+    dialog_ = dialog;
+    if (message_loop_runner_.get() && message_loop_runner_->loop_running())
+      message_loop_runner_->Quit();
+  }
+
+ private:
+  app_modal::AppModalDialog* dialog_;
+  scoped_refptr<content::MessageLoopRunner> message_loop_runner_;
+
+  DISALLOW_COPY_AND_ASSIGN(AppModalDialogWaiter);
+};
 
 }  // namespace
 
@@ -179,11 +175,7 @@ void NavigateToURL(Browser* browser, const GURL& url) {
                                BROWSER_TEST_WAIT_FOR_NAVIGATION);
 }
 
-// Navigates the specified tab (via |disposition|) of |browser| to |url|,
-// blocking until the |number_of_navigations| specified complete.
-// |disposition| indicates what tab the download occurs in, and
-// |browser_test_flags| controls what to wait for before continuing.
-static void NavigateToURLWithDispositionBlockUntilNavigationsComplete(
+void NavigateToURLWithDispositionBlockUntilNavigationsComplete(
     Browser* browser,
     const GURL& url,
     int number_of_navigations,
@@ -283,7 +275,7 @@ bool GetRelativeBuildDirectory(base::FilePath* build_dir) {
   // built files (nexes, etc).  TestServer expects a path relative to the source
   // root.
   base::FilePath exe_dir =
-      CommandLine::ForCurrentProcess()->GetProgram().DirName();
+      base::CommandLine::ForCurrentProcess()->GetProgram().DirName();
   base::FilePath src_dir;
   if (!PathService::Get(base::DIR_SOURCE_ROOT, &src_dir))
     return false;
@@ -321,16 +313,13 @@ bool GetRelativeBuildDirectory(base::FilePath* build_dir) {
   return true;
 }
 
-AppModalDialog* WaitForAppModalDialog() {
-  AppModalDialogQueue* dialog_queue = AppModalDialogQueue::GetInstance();
+app_modal::AppModalDialog* WaitForAppModalDialog() {
+  app_modal::AppModalDialogQueue* dialog_queue =
+      app_modal::AppModalDialogQueue::GetInstance();
   if (dialog_queue->HasActiveDialog())
     return dialog_queue->active_dialog();
-
-  content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_APP_MODAL_DIALOG_SHOWN,
-      content::NotificationService::AllSources());
-  observer.Wait();
-  return content::Source<AppModalDialog>(observer.source()).ptr();
+  AppModalDialogWaiter waiter;
+  return waiter.Wait();
 }
 
 int FindInPage(WebContents* tab,
@@ -362,14 +351,6 @@ void WaitForTemplateURLServiceToLoad(TemplateURLService* service) {
   message_loop_runner->Run();
 
   ASSERT_TRUE(service->loaded());
-}
-
-void WaitForHistoryToLoad(HistoryService* history_service) {
-  content::WindowedNotificationObserver history_loaded_observer(
-      chrome::NOTIFICATION_HISTORY_LOADED,
-      content::NotificationService::AllSources());
-  if (!history_service->BackendLoaded())
-    history_loaded_observer.Wait();
 }
 
 void DownloadURL(Browser* browser, const GURL& download_url) {
@@ -505,46 +486,6 @@ Browser* BrowserAddedObserver::WaitForSingleNewBrowser() {
   return GetBrowserNotInSet(original_browsers_);
 }
 
-#if defined(OS_WIN)
-
-bool SaveScreenSnapshotToDirectory(const base::FilePath& directory,
-                                   base::FilePath* screenshot_path) {
-  bool succeeded = false;
-  base::FilePath out_path(GetSnapshotFileName(directory));
-
-  MONITORINFO monitor_info = {};
-  monitor_info.cbSize = sizeof(monitor_info);
-  HMONITOR main_monitor = MonitorFromWindow(NULL, MONITOR_DEFAULTTOPRIMARY);
-  if (GetMonitorInfo(main_monitor, &monitor_info)) {
-    RECT& rect = monitor_info.rcMonitor;
-
-    std::vector<unsigned char> png_data;
-    gfx::Rect bounds(
-        gfx::Size(rect.right - rect.left, rect.bottom - rect.top));
-    if (ui::GrabDesktopSnapshot(bounds, &png_data) &&
-        png_data.size() <= INT_MAX) {
-      int bytes = static_cast<int>(png_data.size());
-      int written = base::WriteFile(
-          out_path, reinterpret_cast<char*>(&png_data[0]), bytes);
-      succeeded = (written == bytes);
-    }
-  }
-
-  if (succeeded && screenshot_path != NULL)
-    *screenshot_path = out_path;
-
-  return succeeded;
-}
-
-bool SaveScreenSnapshotToDesktop(base::FilePath* screenshot_path) {
-  base::FilePath desktop;
-
-  return PathService::Get(base::DIR_USER_DESKTOP, &desktop) &&
-      SaveScreenSnapshotToDirectory(desktop, screenshot_path);
-}
-
-#endif  // defined(OS_WIN)
-
 void OverrideGeolocation(double latitude, double longitude) {
   content::Geoposition position;
   position.latitude = latitude;
@@ -560,8 +501,8 @@ HistoryEnumerator::HistoryEnumerator(Profile* profile) {
   scoped_refptr<content::MessageLoopRunner> message_loop_runner =
       new content::MessageLoopRunner;
 
-  HistoryService* hs = HistoryServiceFactory::GetForProfile(
-      profile, Profile::EXPLICIT_ACCESS);
+  history::HistoryService* hs = HistoryServiceFactory::GetForProfile(
+      profile, ServiceAccessType::EXPLICIT_ACCESS);
   hs->QueryHistory(base::string16(),
                    history::QueryOptions(),
                    base::Bind(&HistoryEnumerator::HistoryQueryComplete,
@@ -579,6 +520,45 @@ void HistoryEnumerator::HistoryQueryComplete(
   for (size_t i = 0; i < results->size(); ++i)
     urls_.push_back((*results)[i].url());
   quit_task.Run();
+}
+
+// Wait for HistoryService to load.
+class WaitHistoryLoadedObserver : public history::HistoryServiceObserver {
+ public:
+  explicit WaitHistoryLoadedObserver(content::MessageLoopRunner* runner);
+  ~WaitHistoryLoadedObserver() override;
+
+  // history::HistoryServiceObserver:
+  void OnHistoryServiceLoaded(history::HistoryService* service) override;
+
+ private:
+  // weak
+  content::MessageLoopRunner* runner_;
+};
+
+WaitHistoryLoadedObserver::WaitHistoryLoadedObserver(
+    content::MessageLoopRunner* runner)
+    : runner_(runner) {
+}
+
+WaitHistoryLoadedObserver::~WaitHistoryLoadedObserver() {
+}
+
+void WaitHistoryLoadedObserver::OnHistoryServiceLoaded(
+    history::HistoryService* service) {
+  runner_->Quit();
+}
+
+void WaitForHistoryToLoad(history::HistoryService* history_service) {
+  if (!history_service->BackendLoaded()) {
+    scoped_refptr<content::MessageLoopRunner> runner =
+        new content::MessageLoopRunner;
+    WaitHistoryLoadedObserver observer(runner.get());
+    ScopedObserver<history::HistoryService, history::HistoryServiceObserver>
+        scoped_observer(&observer);
+    scoped_observer.Add(history_service);
+    runner->Run();
+  }
 }
 
 }  // namespace ui_test_utils

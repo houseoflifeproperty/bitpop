@@ -6,6 +6,7 @@
 
 #include <openssl/evp.h>
 #include <openssl/x509.h>
+#include <algorithm>
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
@@ -36,29 +37,27 @@ OpenSSLClientKeyStore::OpenSSLClientKeyStore() {
 OpenSSLClientKeyStore::~OpenSSLClientKeyStore() {
 }
 
-OpenSSLClientKeyStore::KeyPair::KeyPair(EVP_PKEY* pub_key,
-                                        EVP_PKEY* priv_key)
-    : public_key(EVP_PKEY_dup(pub_key)),
-      private_key(EVP_PKEY_dup(priv_key)) {
+OpenSSLClientKeyStore::KeyPair::KeyPair(EVP_PKEY* pub_key, EVP_PKEY* priv_key)
+    : public_key(EVP_PKEY_up_ref(pub_key)),
+      private_key(EVP_PKEY_up_ref(priv_key)) {
 }
 
 OpenSSLClientKeyStore::KeyPair::~KeyPair() {
 }
 
 OpenSSLClientKeyStore::KeyPair::KeyPair(const KeyPair& other)
-    : public_key(EVP_PKEY_dup(other.public_key.get())),
-      private_key(EVP_PKEY_dup(other.private_key.get())) {
+    : public_key(EVP_PKEY_up_ref(other.public_key.get())),
+      private_key(EVP_PKEY_up_ref(other.private_key.get())) {
 }
 
-void OpenSSLClientKeyStore::KeyPair::operator=(const KeyPair& other) {
-  // Use a temporary ScopedEVP_PKEY because scoped_ptr does not allow resetting
-  // to the current value, even though it's safe here.
-  crypto::ScopedEVP_PKEY public_key_tmp(EVP_PKEY_dup(other.public_key.get()));
-  crypto::ScopedEVP_PKEY private_key_tmp(EVP_PKEY_dup(other.private_key.get()));
-  public_key.reset();
-  public_key = public_key_tmp.Pass();
-  private_key.reset();
-  private_key = private_key_tmp.Pass();
+void OpenSSLClientKeyStore::KeyPair::operator=(KeyPair other) {
+  swap(other);
+}
+
+void OpenSSLClientKeyStore::KeyPair::swap(KeyPair& other) {
+  using std::swap;
+  swap(public_key, other.public_key);
+  swap(private_key, other.private_key);
 }
 
 int OpenSSLClientKeyStore::FindKeyPairIndex(EVP_PKEY* public_key) {
@@ -109,7 +108,8 @@ crypto::ScopedEVP_PKEY OpenSSLClientKeyStore::FetchClientCertPrivateKey(
   if (index < 0)
     return crypto::ScopedEVP_PKEY();
 
-  return crypto::ScopedEVP_PKEY(EVP_PKEY_dup(pairs_[index].private_key.get()));
+  return crypto::ScopedEVP_PKEY(
+      EVP_PKEY_up_ref(pairs_[index].private_key.get()));
 }
 
 void OpenSSLClientKeyStore::Flush() {

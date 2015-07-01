@@ -4,9 +4,12 @@
 
 #include "extensions/browser/api/cast_channel/logger.h"
 
+#include <string>
+
 #include "base/strings/string_util.h"
 #include "base/time/tick_clock.h"
 #include "extensions/browser/api/cast_channel/cast_auth_util.h"
+#include "extensions/browser/api/cast_channel/cast_socket.h"
 #include "extensions/browser/api/cast_channel/logger_util.h"
 #include "net/base/net_errors.h"
 #include "third_party/zlib/zlib.h"
@@ -44,14 +47,14 @@ proto::ChallengeReplyErrorType ChallegeReplyErrorToProto(
       return proto::CHALLENGE_REPLY_ERROR_NO_RESPONSE;
     case AuthResult::ERROR_FINGERPRINT_NOT_FOUND:
       return proto::CHALLENGE_REPLY_ERROR_FINGERPRINT_NOT_FOUND;
-    case AuthResult::ERROR_NSS_CERT_PARSING_FAILED:
-      return proto::CHALLENGE_REPLY_ERROR_NSS_CERT_PARSING_FAILED;
-    case AuthResult::ERROR_NSS_CERT_NOT_SIGNED_BY_TRUSTED_CA:
-      return proto::CHALLENGE_REPLY_ERROR_NSS_CERT_NOT_SIGNED_BY_TRUSTED_CA;
-    case AuthResult::ERROR_NSS_CANNOT_EXTRACT_PUBLIC_KEY:
-      return proto::CHALLENGE_REPLY_ERROR_NSS_CANNOT_EXTRACT_PUBLIC_KEY;
-    case AuthResult::ERROR_NSS_SIGNED_BLOBS_MISMATCH:
-      return proto::CHALLENGE_REPLY_ERROR_NSS_SIGNED_BLOBS_MISMATCH;
+    case AuthResult::ERROR_CERT_PARSING_FAILED:
+      return proto::CHALLENGE_REPLY_ERROR_CERT_PARSING_FAILED;
+    case AuthResult::ERROR_CERT_NOT_SIGNED_BY_TRUSTED_CA:
+      return proto::CHALLENGE_REPLY_ERROR_CERT_NOT_SIGNED_BY_TRUSTED_CA;
+    case AuthResult::ERROR_CANNOT_EXTRACT_PUBLIC_KEY:
+      return proto::CHALLENGE_REPLY_ERROR_CANNOT_EXTRACT_PUBLIC_KEY;
+    case AuthResult::ERROR_SIGNED_BLOBS_MISMATCH:
+      return proto::CHALLENGE_REPLY_ERROR_SIGNED_BLOBS_MISMATCH;
     default:
       NOTREACHED();
       return proto::CHALLENGE_REPLY_ERROR_NONE;
@@ -73,7 +76,8 @@ scoped_ptr<char[]> Compress(const std::string& input, size_t* length) {
   size_t out_size = deflateBound(&stream, input.size());
   scoped_ptr<char[]> out(new char[out_size]);
 
-  COMPILE_ASSERT(sizeof(uint8) == sizeof(char), uint8_char_different_sizes);
+  static_assert(sizeof(uint8) == sizeof(char),
+                "uint8 char should be of different sizes");
 
   stream.next_in = reinterpret_cast<uint8*>(const_cast<char*>(input.data()));
   stream.avail_in = input.size();
@@ -96,6 +100,25 @@ scoped_ptr<char[]> Compress(const std::string& input, size_t* length) {
     *length = out_size - stream.avail_out;
 
   return out.Pass();
+}
+
+// Propagate any error fields set in |event| to |last_errors|.  If any error
+// field in |event| is set, then also set |last_errors->event_type|.
+void MaybeSetLastErrors(const SocketEvent& event, LastErrors* last_errors) {
+  if (event.has_net_return_value() &&
+      event.net_return_value() < net::ERR_IO_PENDING) {
+    last_errors->net_return_value = event.net_return_value();
+    last_errors->event_type = event.type();
+  }
+  if (event.has_challenge_reply_error_type()) {
+    last_errors->challenge_reply_error_type =
+        event.challenge_reply_error_type();
+    last_errors->event_type = event.type();
+  }
+  if (event.has_nss_error_code()) {
+    last_errors->nss_error_code = event.nss_error_code();
+    last_errors->event_type = event.type();
+  }
 }
 
 }  // namespace
@@ -122,10 +145,9 @@ Logger::~Logger() {
 void Logger::LogNewSocketEvent(const CastSocket& cast_socket) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  int channel_id = cast_socket.id();
   SocketEvent event = CreateEvent(proto::CAST_SOCKET_CREATED);
   AggregatedSocketEvent& aggregated_socket_event =
-      LogSocketEvent(channel_id, event);
+      LogSocketEvent(cast_socket.id(), event);
 
   const net::IPAddressNumber& ip = cast_socket.ip_endpoint().address();
   aggregated_socket_event.set_endpoint_id(ip.back());
@@ -287,19 +309,9 @@ AggregatedSocketEvent& Logger::LogSocketEvent(int channel_id,
     socket_events.pop_front();
     log_.set_num_evicted_socket_events(log_.num_evicted_socket_events() + 1);
   }
-
   socket_events.push_back(socket_event);
 
-  it->second->last_errors.event_type = socket_event.type();
-  if (socket_event.has_net_return_value()) {
-    it->second->last_errors.net_return_value = socket_event.net_return_value();
-  }
-  if (socket_event.has_challenge_reply_error_type()) {
-    it->second->last_errors.challenge_reply_error_type =
-        socket_event.challenge_reply_error_type();
-  }
-  if (socket_event.has_nss_error_code())
-    it->second->last_errors.nss_error_code = socket_event.nss_error_code();
+  MaybeSetLastErrors(socket_event, &(it->second->last_errors));
 
   return it->second->aggregated_socket_event;
 }
@@ -356,5 +368,5 @@ LastErrors Logger::GetLastErrors(int channel_id) const {
 }
 
 }  // namespace cast_channel
-}  // namespace api
+}  // namespace core_api
 }  // namespace extensions

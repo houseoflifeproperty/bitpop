@@ -6,12 +6,11 @@
 #define REMOTING_PROTOCOL_CLIENT_CONTROL_DISPATCHER_H_
 
 #include "base/memory/ref_counted.h"
-#include "remoting/protocol/buffered_socket_writer.h"
 #include "remoting/protocol/channel_dispatcher_base.h"
 #include "remoting/protocol/clipboard_stub.h"
 #include "remoting/protocol/cursor_shape_stub.h"
 #include "remoting/protocol/host_stub.h"
-#include "remoting/protocol/message_reader.h"
+#include "remoting/protocol/protobuf_message_parser.h"
 
 namespace remoting {
 namespace protocol {
@@ -28,19 +27,18 @@ class ClientControlDispatcher : public ChannelDispatcherBase,
                                 public HostStub {
  public:
   ClientControlDispatcher();
-  virtual ~ClientControlDispatcher();
+  ~ClientControlDispatcher() override;
 
   // ClipboardStub implementation.
-  virtual void InjectClipboardEvent(const ClipboardEvent& event) OVERRIDE;
+  void InjectClipboardEvent(const ClipboardEvent& event) override;
 
   // HostStub implementation.
-  virtual void NotifyClientResolution(
-      const ClientResolution& resolution) OVERRIDE;
-  virtual void ControlVideo(const VideoControl& video_control) OVERRIDE;
-  virtual void ControlAudio(const AudioControl& audio_control) OVERRIDE;
-  virtual void SetCapabilities(const Capabilities& capabilities) OVERRIDE;
-  virtual void RequestPairing(const PairingRequest& pairing_request) OVERRIDE;
-  virtual void DeliverClientMessage(const ExtensionMessage& message) OVERRIDE;
+  void NotifyClientResolution(const ClientResolution& resolution) override;
+  void ControlVideo(const VideoControl& video_control) override;
+  void ControlAudio(const AudioControl& audio_control) override;
+  void SetCapabilities(const Capabilities& capabilities) override;
+  void RequestPairing(const PairingRequest& pairing_request) override;
+  void DeliverClientMessage(const ExtensionMessage& message) override;
 
   // Sets the ClientStub that will be called for each incoming control
   // message. |client_stub| must outlive this object.
@@ -52,10 +50,6 @@ class ClientControlDispatcher : public ChannelDispatcherBase,
     clipboard_stub_ = clipboard_stub;
   }
 
- protected:
-  // ChannelDispatcherBase overrides.
-  virtual void OnInitialized() OVERRIDE;
-
  private:
   void OnMessageReceived(scoped_ptr<ControlMessage> message,
                          const base::Closure& done_task);
@@ -63,8 +57,7 @@ class ClientControlDispatcher : public ChannelDispatcherBase,
   ClientStub* client_stub_;
   ClipboardStub* clipboard_stub_;
 
-  ProtobufMessageReader<ControlMessage> reader_;
-  BufferedSocketWriter writer_;
+  ProtobufMessageParser<ControlMessage> parser_;
 
   DISALLOW_COPY_AND_ASSIGN(ClientControlDispatcher);
 };

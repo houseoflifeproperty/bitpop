@@ -8,11 +8,10 @@
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
 #include "base/metrics/histogram.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/single_thread_task_runner.h"
-#include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
-#include "media/audio/audio_io.h"
-#include "media/audio/audio_output_dispatcher_impl.h"
 #include "media/audio/audio_output_proxy.h"
 #include "media/audio/sample_rates.h"
 #include "media/base/audio_converter.h"
@@ -26,12 +25,11 @@ class OnMoreDataConverter
  public:
   OnMoreDataConverter(const AudioParameters& input_params,
                       const AudioParameters& output_params);
-  virtual ~OnMoreDataConverter();
+  ~OnMoreDataConverter() override;
 
   // AudioSourceCallback interface.
-  virtual int OnMoreData(AudioBus* dest,
-                         AudioBuffersState buffers_state) OVERRIDE;
-  virtual void OnError(AudioOutputStream* stream) OVERRIDE;
+  int OnMoreData(AudioBus* dest, uint32 total_bytes_delay) override;
+  void OnError(AudioOutputStream* stream) override;
 
   // Sets |source_callback_|.  If this is not a new object, then Stop() must be
   // called before Start().
@@ -44,8 +42,8 @@ class OnMoreDataConverter
 
  private:
   // AudioConverter::InputCallback implementation.
-  virtual double ProvideInput(AudioBus* audio_bus,
-                              base::TimeDelta buffer_delay) OVERRIDE;
+  double ProvideInput(AudioBus* audio_bus,
+                      base::TimeDelta buffer_delay) override;
 
   // Ratio of input bytes to output bytes used to correct playback delay with
   // regard to buffering and resampling.
@@ -54,9 +52,9 @@ class OnMoreDataConverter
   // Source callback.
   AudioOutputStream::AudioSourceCallback* source_callback_;
 
-  // Last AudioBuffersState object received via OnMoreData(), used to correct
+  // Last |total_bytes_delay| received via OnMoreData(), used to correct
   // playback delay by ProvideInput() and passed on to |source_callback_|.
-  AudioBuffersState current_buffers_state_;
+  uint32 current_total_bytes_delay_;
 
   const int input_bytes_per_second_;
 
@@ -153,7 +151,13 @@ AudioOutputResampler::AudioOutputResampler(AudioManager* audio_manager,
     : AudioOutputDispatcher(audio_manager, input_params, output_device_id),
       close_delay_(close_delay),
       output_params_(output_params),
-      streams_opened_(false) {
+      original_output_params_(output_params),
+      streams_opened_(false),
+      reinitialize_timer_(FROM_HERE,
+                          close_delay_,
+                          base::Bind(&AudioOutputResampler::Reinitialize,
+                                     base::Unretained(this)),
+                          false) {
   DCHECK(input_params.IsValid());
   DCHECK(output_params.IsValid());
   DCHECK_EQ(output_params_.format(), AudioParameters::AUDIO_PCM_LOW_LATENCY);
@@ -166,6 +170,24 @@ AudioOutputResampler::AudioOutputResampler(AudioManager* audio_manager,
 
 AudioOutputResampler::~AudioOutputResampler() {
   DCHECK(callbacks_.empty());
+}
+
+void AudioOutputResampler::Reinitialize() {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(streams_opened_);
+
+  // We can only reinitialize the dispatcher if it has no active proxies. Check
+  // if one has been created since the reinitialization timer was started.
+  if (dispatcher_->HasOutputProxies())
+    return;
+
+  // Log a trace event so we can get feedback in the field when this happens.
+  TRACE_EVENT0("audio", "AudioOutputResampler::Reinitialize");
+
+  dispatcher_->Shutdown();
+  output_params_ = original_output_params_;
+  streams_opened_ = false;
+  Initialize();
 }
 
 void AudioOutputResampler::Initialize() {
@@ -282,6 +304,14 @@ void AudioOutputResampler::CloseStream(AudioOutputProxy* stream_proxy) {
     delete it->second;
     callbacks_.erase(it);
   }
+
+  // Start the reinitialization timer if there are no active proxies and we're
+  // not using the originally requested output parameters.  This allows us to
+  // recover from transient output creation errors.
+  if (!dispatcher_->HasOutputProxies() && callbacks_.empty() &&
+      !output_params_.Equals(original_output_params_)) {
+    reinitialize_timer_.Reset();
+  }
 }
 
 void AudioOutputResampler::Shutdown() {
@@ -327,8 +357,8 @@ void OnMoreDataConverter::Stop() {
 }
 
 int OnMoreDataConverter::OnMoreData(AudioBus* dest,
-                                    AudioBuffersState buffers_state) {
-  current_buffers_state_ = buffers_state;
+                                    uint32 total_bytes_delay) {
+  current_total_bytes_delay_ = total_bytes_delay;
   audio_converter_.Convert(dest);
 
   // Always return the full number of frames requested, ProvideInput()
@@ -341,13 +371,12 @@ double OnMoreDataConverter::ProvideInput(AudioBus* dest,
   // Adjust playback delay to include |buffer_delay|.
   // TODO(dalecurtis): Stop passing bytes around, it doesn't make sense since
   // AudioBus is just float data.  Use TimeDelta instead.
-  AudioBuffersState new_buffers_state;
-  new_buffers_state.pending_bytes =
-      io_ratio_ * (current_buffers_state_.total_bytes() +
-                   buffer_delay.InSecondsF() * input_bytes_per_second_);
+  uint32 new_total_bytes_delay = base::saturated_cast<uint32>(
+      io_ratio_ * (current_total_bytes_delay_ +
+                   buffer_delay.InSecondsF() * input_bytes_per_second_));
 
   // Retrieve data from the original callback.
-  const int frames = source_callback_->OnMoreData(dest, new_buffers_state);
+  const int frames = source_callback_->OnMoreData(dest, new_total_bytes_delay);
 
   // Zero any unfilled frames if anything was filled, otherwise we'll just
   // return a volume of zero and let AudioConverter drop the output.

@@ -6,50 +6,52 @@
 #define EXTENSIONS_SHELL_BROWSER_SHELL_APP_DELEGATE_H_
 
 #include "extensions/browser/app_window/app_delegate.h"
+#include "content/public/browser/web_contents_observer.h"
 
 namespace extensions {
 
-// app_shell's AppDelegate implementation.
+// AppDelegate implementation for app_shell. Sets focus after the WebContents is
+// created. Ignores most operations that would create a new dialog or window.
 class ShellAppDelegate : public AppDelegate {
  public:
   ShellAppDelegate();
-  virtual ~ShellAppDelegate();
+  ~ShellAppDelegate() override;
 
   // AppDelegate overrides:
-  virtual void InitWebContents(content::WebContents* web_contents) OVERRIDE;
-  virtual void ResizeWebContents(content::WebContents* web_contents,
-                                 const gfx::Size& size) OVERRIDE;
-  virtual content::WebContents* OpenURLFromTab(
+  void InitWebContents(content::WebContents* web_contents) override;
+  void RenderViewCreated(content::RenderViewHost* render_view_host) override;
+  void ResizeWebContents(content::WebContents* web_contents,
+                         const gfx::Size& size) override;
+  content::WebContents* OpenURLFromTab(
       content::BrowserContext* context,
       content::WebContents* source,
-      const content::OpenURLParams& params) OVERRIDE;
-  virtual void AddNewContents(content::BrowserContext* context,
-                              content::WebContents* new_contents,
-                              WindowOpenDisposition disposition,
-                              const gfx::Rect& initial_pos,
-                              bool user_gesture,
-                              bool* was_blocked) OVERRIDE;
-  virtual content::ColorChooser* ShowColorChooser(
-      content::WebContents* web_contents,
-      SkColor initial_color) OVERRIDE;
-  virtual void RunFileChooser(
-      content::WebContents* tab,
-      const content::FileChooserParams& params) OVERRIDE;
-  virtual void RequestMediaAccessPermission(
+      const content::OpenURLParams& params) override;
+  void AddNewContents(content::BrowserContext* context,
+                      content::WebContents* new_contents,
+                      WindowOpenDisposition disposition,
+                      const gfx::Rect& initial_rect,
+                      bool user_gesture,
+                      bool* was_blocked) override;
+  content::ColorChooser* ShowColorChooser(content::WebContents* web_contents,
+                                          SkColor initial_color) override;
+  void RunFileChooser(content::WebContents* tab,
+                      const content::FileChooserParams& params) override;
+  void RequestMediaAccessPermission(
       content::WebContents* web_contents,
       const content::MediaStreamRequest& request,
       const content::MediaResponseCallback& callback,
-      const Extension* extension) OVERRIDE;
-  virtual bool CheckMediaAccessPermission(content::WebContents* web_contents,
-                                          const GURL& security_origin,
-                                          content::MediaStreamType type,
-                                          const Extension* extension) OVERRIDE;
-  virtual int PreferredIconSize() OVERRIDE;
-  virtual void SetWebContentsBlocked(content::WebContents* web_contents,
-                                     bool blocked) OVERRIDE;
-  virtual bool IsWebContentsVisible(
-      content::WebContents* web_contents) OVERRIDE;
-  virtual void SetTerminatingCallback(const base::Closure& callback) OVERRIDE;
+      const Extension* extension) override;
+  bool CheckMediaAccessPermission(content::WebContents* web_contents,
+                                  const GURL& security_origin,
+                                  content::MediaStreamType type,
+                                  const Extension* extension) override;
+  int PreferredIconSize() override;
+  void SetWebContentsBlocked(content::WebContents* web_contents,
+                             bool blocked) override;
+  bool IsWebContentsVisible(content::WebContents* web_contents) override;
+  void SetTerminatingCallback(const base::Closure& callback) override;
+  void OnHide() override {}
+  void OnShow() override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ShellAppDelegate);

@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -44,10 +44,6 @@ RTCPeerConnectionObserver::RTCPeerConnectionObserver(
 }
 
 RTCPeerConnectionObserver::~RTCPeerConnectionObserver() {
-}
-
-void RTCPeerConnectionObserver::OnError() {
-  [_peerConnection.delegate peerConnectionOnError:_peerConnection];
 }
 
 void RTCPeerConnectionObserver::OnSignalingChange(

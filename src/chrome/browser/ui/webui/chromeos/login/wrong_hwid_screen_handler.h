@@ -21,20 +21,21 @@ class WrongHWIDScreenHandler : public WrongHWIDScreenActor,
                                public BaseScreenHandler {
  public:
   WrongHWIDScreenHandler();
-  virtual ~WrongHWIDScreenHandler();
+  ~WrongHWIDScreenHandler() override;
 
   // WrongHWIDScreenActor implementation:
-  virtual void PrepareToShow() OVERRIDE;
-  virtual void Show() OVERRIDE;
-  virtual void Hide() OVERRIDE;
-  virtual void SetDelegate(Delegate* delegate) OVERRIDE;
+  void PrepareToShow() override;
+  void Show() override;
+  void Hide() override;
+  void SetDelegate(Delegate* delegate) override;
 
   // BaseScreenHandler implementation:
-  virtual void DeclareLocalizedValues(LocalizedValuesBuilder* builder) OVERRIDE;
-  virtual void Initialize() OVERRIDE;
+  void DeclareLocalizedValues(
+      ::login::LocalizedValuesBuilder* builder) override;
+  void Initialize() override;
 
   // WebUIMessageHandler implementation:
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
  private:
   // JS messages handlers.

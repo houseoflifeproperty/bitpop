@@ -71,7 +71,7 @@ namespace content {
 class TouchActionBrowserTest : public ContentBrowserTest {
  public:
   TouchActionBrowserTest() {}
-  virtual ~TouchActionBrowserTest() {}
+  ~TouchActionBrowserTest() override {}
 
   RenderWidgetHostImpl* GetWidgetHost() {
     return RenderWidgetHostImpl::From(shell()->web_contents()->
@@ -97,7 +97,7 @@ class TouchActionBrowserTest : public ContentBrowserTest {
   }
 
   // ContentBrowserTest:
-  virtual void SetUpCommandLine(CommandLine* cmd) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* cmd) override {
     cmd->AppendSwitchASCII(switches::kTouchEvents,
                            switches::kTouchEventsEnabled);
     // TODO(rbyers): Remove this switch once touch-action ships.
@@ -138,9 +138,9 @@ class TouchActionBrowserTest : public ContentBrowserTest {
     scoped_ptr<SyntheticSmoothScrollGesture> gesture(
         new SyntheticSmoothScrollGesture(params));
     GetWidgetHost()->QueueSyntheticGesture(
-        gesture.PassAs<SyntheticGesture>(),
+        gesture.Pass(),
         base::Bind(&TouchActionBrowserTest::OnSyntheticGestureCompleted,
-            base::Unretained(this)));
+                   base::Unretained(this)));
 
     // Runs until we get the OnSyntheticGestureCompleted callback
     runner_->Run();
@@ -179,14 +179,8 @@ IN_PROC_BROWSER_TEST_F(TouchActionBrowserTest, DISABLED_DefaultAuto) {
 
   EXPECT_EQ(1, ExecuteScriptAndExtractInt("eventCounts.touchstart"));
   EXPECT_EQ(1, ExecuteScriptAndExtractInt("eventCounts.touchmove"));
-  if (TouchEventQueue::TOUCH_SCROLLING_MODE_DEFAULT ==
-      TouchEventQueue::TOUCH_SCROLLING_MODE_TOUCHCANCEL) {
-    EXPECT_EQ(0, ExecuteScriptAndExtractInt("eventCounts.touchend"));
-    EXPECT_EQ(1, ExecuteScriptAndExtractInt("eventCounts.touchcancel"));
-  } else {
-    EXPECT_EQ(1, ExecuteScriptAndExtractInt("eventCounts.touchend"));
-    EXPECT_EQ(0, ExecuteScriptAndExtractInt("eventCounts.touchcancel"));
-  }
+  EXPECT_EQ(1, ExecuteScriptAndExtractInt("eventCounts.touchend"));
+  EXPECT_EQ(0, ExecuteScriptAndExtractInt("eventCounts.touchcancel"));
 }
 
 // Verify that touching a touch-action: none region disables scrolling and

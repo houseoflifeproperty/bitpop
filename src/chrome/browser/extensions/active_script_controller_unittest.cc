@@ -7,6 +7,8 @@
 #include "base/values.h"
 #include "chrome/browser/extensions/active_script_controller.h"
 #include "chrome/browser/extensions/active_tab_permission_granter.h"
+#include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
+#include "chrome/browser/extensions/extension_sync_service_factory.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/extensions/tab_helper.h"
@@ -30,6 +32,11 @@ namespace {
 
 const char kAllHostsPermission[] = "*://*/*";
 
+// We skip syncing for testing purposes.
+KeyedService* BuildSyncService(content::BrowserContext* context) {
+  return nullptr;
+}
+
 }  // namespace
 
 // Unittests for the ActiveScriptController mostly test the internal logic
@@ -40,7 +47,7 @@ const char kAllHostsPermission[] = "*://*/*";
 class ActiveScriptControllerUnitTest : public ChromeRenderViewHostTestHarness {
  protected:
   ActiveScriptControllerUnitTest();
-  virtual ~ActiveScriptControllerUnitTest();
+  ~ActiveScriptControllerUnitTest() override;
 
   // Creates an extension with all hosts permission and adds it to the registry.
   const Extension* AddExtension();
@@ -70,7 +77,7 @@ class ActiveScriptControllerUnitTest : public ChromeRenderViewHostTestHarness {
   // Increment the number of executions for the given |extension_id|.
   void IncrementExecutionCount(const std::string& extension_id);
 
-  virtual void SetUp() OVERRIDE;
+  void SetUp() override;
 
   // Since ActiveScriptController's behavior is behind a flag, override the
   // feature switch.
@@ -162,6 +169,9 @@ void ActiveScriptControllerUnitTest::IncrementExecutionCount(
 void ActiveScriptControllerUnitTest::SetUp() {
   ChromeRenderViewHostTestHarness::SetUp();
 
+  ExtensionSyncServiceFactory::GetInstance()->SetTestingFactory(
+      profile(), &BuildSyncService);
+
   TabHelper::CreateForWebContents(web_contents());
   TabHelper* tab_helper = TabHelper::FromWebContents(web_contents());
   // These should never be NULL.
@@ -182,6 +192,11 @@ TEST_F(ActiveScriptControllerUnitTest, RequestPermissionAndExecute) {
   ASSERT_EQ(0u, GetExecutionCountForExtension(extension->id()));
   ASSERT_FALSE(controller()->WantsToRun(extension));
 
+  ExtensionActionAPI* extension_action_api =
+      ExtensionActionAPI::Get(profile());
+  ASSERT_FALSE(extension_action_api->ExtensionWantsToRun(extension,
+                                                         web_contents()));
+
   // Since the extension requests all_hosts, we should require user consent.
   EXPECT_TRUE(RequiresUserConsent(extension));
 
@@ -189,6 +204,8 @@ TEST_F(ActiveScriptControllerUnitTest, RequestPermissionAndExecute) {
   // executed.
   RequestInjection(extension);
   EXPECT_TRUE(controller()->WantsToRun(extension));
+  EXPECT_TRUE(extension_action_api->ExtensionWantsToRun(extension,
+                                                        web_contents()));
   EXPECT_EQ(0u, GetExecutionCountForExtension(extension->id()));
 
   // Click to accept the extension executing.
@@ -197,6 +214,8 @@ TEST_F(ActiveScriptControllerUnitTest, RequestPermissionAndExecute) {
   // The extension should execute, and the extension shouldn't want to run.
   EXPECT_EQ(1u, GetExecutionCountForExtension(extension->id()));
   EXPECT_FALSE(controller()->WantsToRun(extension));
+  EXPECT_FALSE(extension_action_api->ExtensionWantsToRun(extension,
+                                                         web_contents()));
 
   // Since we already executed on the given page, we shouldn't need permission
   // for a second time.

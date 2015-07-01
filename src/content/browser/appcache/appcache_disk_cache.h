@@ -26,7 +26,7 @@ class CONTENT_EXPORT AppCacheDiskCache
     : public AppCacheDiskCacheInterface {
  public:
   AppCacheDiskCache();
-  virtual ~AppCacheDiskCache();
+  ~AppCacheDiskCache() override;
 
   // Initializes the object to use disk backed storage.
   int InitWithDiskBackend(
@@ -44,12 +44,13 @@ class CONTENT_EXPORT AppCacheDiskCache
   void Disable();
   bool is_disabled() const { return is_disabled_; }
 
-  virtual int CreateEntry(int64 key, Entry** entry,
-                          const net::CompletionCallback& callback) OVERRIDE;
-  virtual int OpenEntry(int64 key, Entry** entry,
-                        const net::CompletionCallback& callback) OVERRIDE;
-  virtual int DoomEntry(int64 key,
-                        const net::CompletionCallback& callback) OVERRIDE;
+  int CreateEntry(int64 key,
+                  Entry** entry,
+                  const net::CompletionCallback& callback) override;
+  int OpenEntry(int64 key,
+                Entry** entry,
+                const net::CompletionCallback& callback) override;
+  int DoomEntry(int64 key, const net::CompletionCallback& callback) override;
 
  private:
   class CreateBackendCallbackShim;
@@ -95,8 +96,6 @@ class CONTENT_EXPORT AppCacheDiskCache
            const scoped_refptr<base::SingleThreadTaskRunner>& cache_thread,
            const net::CompletionCallback& callback);
   void OnCreateBackendComplete(int rv);
-  void AddActiveCall(ActiveCall* call) { active_calls_.insert(call); }
-  void RemoveActiveCall(ActiveCall* call) { active_calls_.erase(call); }
   void AddOpenEntry(EntryImpl* entry) { open_entries_.insert(entry); }
   void RemoveOpenEntry(EntryImpl* entry) { open_entries_.erase(entry); }
 
@@ -104,9 +103,10 @@ class CONTENT_EXPORT AppCacheDiskCache
   net::CompletionCallback init_callback_;
   scoped_refptr<CreateBackendCallbackShim> create_backend_callback_;
   PendingCalls pending_calls_;
-  ActiveCalls active_calls_;
   OpenEntries open_entries_;
   scoped_ptr<disk_cache::Backend> disk_cache_;
+
+  base::WeakPtrFactory<AppCacheDiskCache> weak_factory_;
 };
 
 }  // namespace content

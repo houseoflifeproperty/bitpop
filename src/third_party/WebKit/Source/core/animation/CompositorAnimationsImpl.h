@@ -28,7 +28,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "core/animation/AnimationEffect.h"
+#include "core/CoreExport.h"
+#include "core/animation/EffectModel.h"
 #include "core/animation/KeyframeEffectModel.h"
 #include "core/animation/Timing.h"
 #include "platform/animation/TimingFunction.h"
@@ -38,9 +39,18 @@ namespace blink {
 
 class WebCompositorAnimationCurve;
 
-class CompositorAnimationsImpl {
+class CORE_EXPORT CompositorAnimationsImpl {
 private:
     struct CompositorTiming {
+        void assertValid() const
+        {
+            ASSERT(scaledDuration > 0);
+            ASSERT(std::isfinite(scaledTimeOffset));
+            ASSERT(adjustedIterationCount > 0 || adjustedIterationCount == -1);
+            ASSERT(std::isfinite(playbackRate) && playbackRate);
+            ASSERT(iterationStart >= 0);
+        }
+
         Timing::PlaybackDirection direction;
         double scaledDuration;
         double scaledTimeOffset;
@@ -50,9 +60,9 @@ private:
         double iterationStart;
     };
 
-    static bool convertTimingForCompositor(const Timing&, double timeOffset, CompositorTiming& out, double playerPlaybackRate);
+    static bool convertTimingForCompositor(const Timing&, double timeOffset, CompositorTiming& out, double animationPlaybackRate);
 
-    static void getAnimationOnCompositor(const Timing&, double startTime, double timeOffset, const KeyframeEffectModelBase&, Vector<OwnPtr<WebCompositorAnimation> >& animations, double playerPlaybackRate);
+    static void getAnimationOnCompositor(const Timing&, int group, double startTime, double timeOffset, const KeyframeEffectModelBase&, Vector<OwnPtr<WebCompositorAnimation>>& animations, double animationPlaybackRate);
 
     static void addKeyframesToCurve(WebCompositorAnimationCurve&, const AnimatableValuePropertySpecificKeyframeVector&, const Timing&);
 

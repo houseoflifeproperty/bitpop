@@ -45,17 +45,23 @@ Store (CWS)**. Applications in the CWS are one of three types:
 
 * A **hosted application** is an application that you host on a server of your
   choice. To distribute an application as a hosted application, you upload
-  application metadata to the CWS.
+  application metadata to the CWS. Learn more on the `Chrome App </apps>`_
+  documentation page.
 
 * A **packaged application** is an application that is hosted in the CWS and
   downloaded to the user's machine. To distribute an application as a packaged
   application, you upload the entire application, including all application
-  assets and metadata, to the CWS.
+  assets and metadata, to the CWS. Learn more on the `Chrome App </apps>`_
+  documentation page.
 
 * An **extension** is a packaged application that has a tiny UI component
   (extensions are typically used to extend the functionality of the Chrome
   browser). To distribute an application as an extension, you upload the entire
-  application, including all application assets and metadata, to the CWS.
+  application, including all application assets and metadata, to the CWS. Learn
+  more on the `Chrome extensions </extensions>`_ documentation page.
+
+The web store documentation contains a handy guide to `help you choose which to
+use <https://developer.chrome.com/webstore/choosing>`_.
 
 It's clearly not convenient to package and upload files to the Chrome Web Store
 every time you want to run a new build of your application, but there are four
@@ -146,8 +152,8 @@ correct version of Chrome. Each version of Chrome supports a corresponding
 version of the Pepper API. You (and your users) must use a version of Chrome
 that is equal to or higher than the version of the Pepper API that your
 application uses. For example, if you compiled your application using the
-``pepper_31`` bundle, your application uses the Pepper 31 API, and you must run
-the application in Chrome 31 or higher. To check which version of Chrome you're
+``pepper_37`` bundle, your application uses the Pepper 37 API, and you must run
+the application in Chrome 37 or higher. To check which version of Chrome you're
 using, type ``about:version`` in the Chrome address bar.
 
 .. _cache:
@@ -364,7 +370,7 @@ extension:
    * If you're using the local server included with the Native Client SDK,
      simply put your application under the ``examples`` directory in the SDK
      bundle you are using (e.g., in the directory
-     ``pepper_31/examples/my_app``).
+     ``pepper_37/examples/my_app``).
 #. Create a Chrome Web Store manifest file and one or more icons for your
    application.
 

@@ -10,8 +10,9 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/app_context_menu.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
+#include "chrome/browser/ui/app_list/search/search_util.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow.h"
-#include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
+#include "chrome/common/extensions/extension_metrics.h"
 #include "content/public/browser/user_metrics.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
@@ -22,8 +23,6 @@
 #include "extensions/common/extension_icon_set.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "ui/app_list/app_list_switches.h"
-#include "ui/app_list/search/tokenized_string.h"
-#include "ui/app_list/search/tokenized_string_match.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/image/image_skia_operations.h"
 
@@ -31,14 +30,15 @@ namespace app_list {
 
 AppResult::AppResult(Profile* profile,
                      const std::string& app_id,
-                     AppListControllerDelegate* controller)
+                     AppListControllerDelegate* controller,
+                     bool is_recommendation)
     : profile_(profile),
       app_id_(app_id),
       controller_(controller),
       extension_registry_(NULL) {
   set_id(extensions::Extension::GetBaseURLFromExtensionId(app_id_).spec());
   if (app_list::switches::IsExperimentalAppListEnabled())
-    set_display_type(DISPLAY_TILE);
+    set_display_type(is_recommendation ? DISPLAY_RECOMMENDATION : DISPLAY_TILE);
 
   const extensions::Extension* extension =
       extensions::ExtensionSystem::Get(profile_)->extension_service()
@@ -63,24 +63,16 @@ AppResult::~AppResult() {
   StopObservingExtensionRegistry();
 }
 
-void AppResult::UpdateFromMatch(const TokenizedString& title,
-                                const TokenizedStringMatch& match) {
-  const TokenizedStringMatch::Hits& hits = match.hits();
-
-  Tags tags;
-  tags.reserve(hits.size());
-  for (size_t i = 0; i < hits.size(); ++i)
-    tags.push_back(Tag(Tag::MATCH, hits[i].start(), hits[i].end()));
-
-  set_title(title.text());
-  set_title_tags(tags);
-  set_relevance(match.relevance());
-}
-
 void AppResult::UpdateFromLastLaunched(const base::Time& current_time,
                                        const base::Time& last_launched) {
   base::TimeDelta delta = current_time - last_launched;
-  DCHECK_LE(0, delta.InSeconds());
+  // |current_time| can be before |last_launched| in weird cases such as users
+  // playing with their clocks. Handle this gracefully.
+  if (current_time < last_launched) {
+    set_relevance(1.0);
+    return;
+  }
+
   const int kSecondsInWeek = 60 * 60 * 24 * 7;
 
   // Set the relevance to a value between 0 and 1. This function decays as the
@@ -89,6 +81,7 @@ void AppResult::UpdateFromLastLaunched(const base::Time& current_time,
 }
 
 void AppResult::Open(int event_flags) {
+  RecordHistogram(APP_SEARCH_RESULT);
   const extensions::Extension* extension =
       extensions::ExtensionSystem::Get(profile_)->extension_service()
           ->GetInstalledExtension(app_id_);
@@ -103,7 +96,7 @@ void AppResult::Open(int event_flags) {
   if (RunExtensionEnableFlow())
     return;
 
-  CoreAppLauncherHandler::RecordAppListSearchLaunch(extension);
+  extensions::RecordAppListSearchLaunch(extension);
   content::RecordAction(
       base::UserMetricsAction("AppList_ClickOnAppFromSearch"));
 
@@ -114,19 +107,15 @@ void AppResult::Open(int event_flags) {
       event_flags);
 }
 
-void AppResult::InvokeAction(int action_index, int event_flags) {}
-
-scoped_ptr<ChromeSearchResult> AppResult::Duplicate() {
-  scoped_ptr<ChromeSearchResult> copy(
-      new AppResult(profile_, app_id_, controller_));
+scoped_ptr<SearchResult> AppResult::Duplicate() const {
+  scoped_ptr<SearchResult> copy(
+      new AppResult(profile_, app_id_, controller_,
+                    display_type() == DISPLAY_RECOMMENDATION));
   copy->set_title(title());
   copy->set_title_tags(title_tags());
+  copy->set_relevance(relevance());
 
   return copy.Pass();
-}
-
-ChromeSearchResultType AppResult::GetType() {
-  return APP_SEARCH_RESULT;
 }
 
 ui::MenuModel* AppResult::GetContextMenuModel() {
@@ -204,15 +193,6 @@ void AppResult::ExtensionEnableFlowAborted(bool user_initiated) {
 void AppResult::OnExtensionLoaded(content::BrowserContext* browser_context,
                                   const extensions::Extension* extension) {
   UpdateIcon();
-}
-
-void AppResult::OnExtensionUninstalled(content::BrowserContext* browser_context,
-                                       const extensions::Extension* extension,
-                                       extensions::UninstallReason reason) {
-  if (extension->id() != app_id_)
-    return;
-
-  NotifyItemUninstalled();
 }
 
 void AppResult::OnShutdown(extensions::ExtensionRegistry* registry) {

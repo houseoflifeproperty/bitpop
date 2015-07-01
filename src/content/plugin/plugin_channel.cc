@@ -79,11 +79,9 @@ class PluginChannel::MessageFilter : public IPC::MessageFilter {
   }
 
   // IPC::MessageFilter:
-  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE {
-    sender_ = sender;
-  }
+  void OnFilterAdded(IPC::Sender* sender) override { sender_ = sender; }
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     IPC_BEGIN_MESSAGE_MAP(PluginChannel::MessageFilter, message)
       IPC_MESSAGE_HANDLER_DELAY_REPLY(PluginMsg_Init, OnInit)
       IPC_MESSAGE_HANDLER(PluginMsg_SignalModalDialogEvent,
@@ -96,7 +94,7 @@ class PluginChannel::MessageFilter : public IPC::MessageFilter {
   }
 
  protected:
-  virtual ~MessageFilter() {
+  ~MessageFilter() override {
     // Clean up in case of renderer crash.
     for (ModalDialogEventMap::iterator i = modal_dialog_event_map_.begin();
         i != modal_dialog_event_map_.end(); ++i) {
@@ -245,7 +243,8 @@ PluginChannel::PluginChannel()
       filter_(new MessageFilter()),
       npp_(new struct _NPP) {
   set_send_unblocking_only_during_unblock_dispatch();
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
   log_messages_ = command_line->HasSwitch(switches::kLogPluginMessages);
 
   // Register |npp_| as the default owner for any object we receive via IPC,
@@ -317,7 +316,7 @@ void PluginChannel::OnClearSiteData(const std::string& site,
                                     uint64 flags,
                                     uint64 max_age) {
   bool success = false;
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   base::FilePath path = command_line->GetSwitchValuePath(switches::kPluginPath);
   scoped_refptr<PluginLib> plugin_lib(PluginLib::CreatePluginLib(path));
   if (plugin_lib.get()) {

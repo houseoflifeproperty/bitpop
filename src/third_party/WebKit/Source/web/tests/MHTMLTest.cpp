@@ -34,7 +34,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Location.h"
 #include "core/page/Page.h"
-#include "core/testing/URLTestHelpers.h"
+#include "platform/testing/URLTestHelpers.h"
 #include "platform/weborigin/KURL.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebString.h"
@@ -102,7 +102,7 @@ TEST_F(MHTMLTest, CheckDomain)
     Document* document = frame->document();
     ASSERT_TRUE(document);
 
-    EXPECT_STREQ(kFileURL, frame->domWindow()->location().href().ascii().data());
+    EXPECT_STREQ(kFileURL, frame->domWindow()->location()->href().ascii().data());
 
     SecurityOrigin* origin = document->securityOrigin();
     EXPECT_STRNE("localhost", origin->domain().ascii().data());

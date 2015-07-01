@@ -42,7 +42,6 @@ content::WebUIDataSource* CreateSlowUIHTMLSource() {
   content::WebUIDataSource* source =
       content::WebUIDataSource::Create(chrome::kChromeUISlowHost);
 
-  source->SetUseJsonJSFormatV2();
   source->AddLocalizedString("slowDisable", IDS_SLOW_DISABLE);
   source->AddLocalizedString("slowEnable", IDS_SLOW_ENABLE);
   source->AddLocalizedString("slowDescription", IDS_SLOW_DESCRIPTION);
@@ -58,10 +57,10 @@ content::WebUIDataSource* CreateSlowUIHTMLSource() {
 class SlowHandler : public WebUIMessageHandler {
  public:
   explicit SlowHandler(Profile* profile);
-  virtual ~SlowHandler();
+  ~SlowHandler() override;
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
  private:
   void UpdatePage();

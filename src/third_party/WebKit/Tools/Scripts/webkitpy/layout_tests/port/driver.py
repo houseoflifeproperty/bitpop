@@ -169,7 +169,7 @@ class Driver(object):
         leaked = self._leaked
 
         if not crashed:
-            sanitizer = self._port._output_contains_sanitizer_messages(self.error_from_test)
+            sanitizer = self._port.output_contains_sanitizer_messages(self.error_from_test)
             if sanitizer:
                 self.error_from_test = 'OUTPUT CONTAINS "' + sanitizer + '", so we are treating this test as if it crashed, even though it did not.\n\n' + self.error_from_test
                 crashed = True
@@ -230,15 +230,16 @@ class Driver(object):
         """Convert a test name to a URI.
 
         Tests which have an 'https' directory in their paths (e.g.
-        '/http/tests/security/mixedContent/https/test1.html') will be loaded
-        over HTTPS; all other tests over HTTP.
+        '/http/tests/security/mixedContent/https/test1.html') or '.https.' in
+        their name (e.g. 'http/tests/security/mixedContent/test1.https.html') will
+        be loaded over HTTPS; all other tests over HTTP.
         """
         if not self.is_http_test(test_name):
             return path.abspath_to_uri(self._port.host.platform, self._port.abspath_for_test(test_name))
 
         relative_path = test_name[len(self.HTTP_DIR):]
 
-        if "/https/" in test_name:
+        if "/https/" in test_name or ".https." in test_name:
             return "https://127.0.0.1:8443/" + relative_path
         return "http://127.0.0.1:8000/" + relative_path
 
@@ -343,8 +344,8 @@ class Driver(object):
         cmd.append(self._port._path_to_driver())
         if self._no_timeout:
             cmd.append('--no-timeout')
-        cmd.extend(self._port.get_option('additional_drt_flag', []))
-        cmd.extend(self._port.additional_drt_flag())
+        cmd.extend(self._port.get_option('additional_driver_flag', []))
+        cmd.extend(self._port.additional_driver_flag())
         if self._port.get_option('enable_leak_detection'):
             cmd.append('--enable-leak-detection')
         cmd.extend(per_test_args)

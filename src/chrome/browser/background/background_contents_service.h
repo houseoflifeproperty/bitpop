@@ -12,7 +12,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/scoped_observer.h"
-#include "chrome/browser/tab_contents/background_contents.h"
+#include "chrome/browser/background/background_contents.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -59,21 +59,25 @@ class BackgroundContentsService : private content::NotificationObserver,
  public:
   BackgroundContentsService(Profile* profile,
                             const base::CommandLine* command_line);
-  virtual ~BackgroundContentsService();
+  ~BackgroundContentsService() override;
 
   // Allows tests to reduce the time between a force-installed app/extension
   // crashing and when we reload it.
   static void SetRestartDelayForForceInstalledAppsAndExtensionsForTesting(
       int restart_delay_in_ms);
 
-  // Get the crash notification's id for the extension.
-  static std::string GetNotificationIdForExtensionForTesting(
+  // Get the crash notification's delegate id for the extension.
+  static std::string GetNotificationDelegateIdForExtensionForTesting(
       const std::string& extension_id);
 
   // Show a popup notification balloon with a crash message for a given app/
   // extension.
   static void ShowBalloonForTesting(const extensions::Extension* extension,
                                     Profile* profile);
+
+  // Disable closing the crash notification balloon for tests.
+  static void DisableCloseBalloonForTesting(
+      bool disable_close_balloon_for_testing);
 
   // Returns the BackgroundContents associated with the passed application id,
   // or NULL if none.
@@ -89,11 +93,11 @@ class BackgroundContentsService : private content::NotificationObserver,
   std::vector<BackgroundContents*> GetBackgroundContents() const;
 
   // BackgroundContents::Delegate implementation.
-  virtual void AddWebContents(content::WebContents* new_contents,
-                              WindowOpenDisposition disposition,
-                              const gfx::Rect& initial_pos,
-                              bool user_gesture,
-                              bool* was_blocked) OVERRIDE;
+  void AddWebContents(content::WebContents* new_contents,
+                      WindowOpenDisposition disposition,
+                      const gfx::Rect& initial_rect,
+                      bool user_gesture,
+                      bool* was_blocked) override;
 
   // Gets the parent application id for the passed BackgroundContents. Returns
   // an empty string if no parent application found (e.g. passed
@@ -109,6 +113,7 @@ class BackgroundContentsService : private content::NotificationObserver,
   BackgroundContents* CreateBackgroundContents(
       content::SiteInstance* site,
       int route_id,
+      int main_frame_route_id,
       Profile* profile,
       const base::string16& frame_name,
       const base::string16& application_id,
@@ -140,22 +145,20 @@ class BackgroundContentsService : private content::NotificationObserver,
   void StartObserving(Profile* profile);
 
   // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // extensions::ExtensionRegistryObserver implementation.
-  virtual void OnExtensionLoaded(
-      content::BrowserContext* browser_context,
-      const extensions::Extension* extension) OVERRIDE;
-  virtual void OnExtensionUnloaded(
-      content::BrowserContext* browser_context,
-      const extensions::Extension* extension,
-      extensions::UnloadedExtensionInfo::Reason reason) OVERRIDE;
-  virtual void OnExtensionUninstalled(
+  void OnExtensionLoaded(content::BrowserContext* browser_context,
+                         const extensions::Extension* extension) override;
+  void OnExtensionUnloaded(
       content::BrowserContext* browser_context,
       const extensions::Extension* extension,
-      extensions::UninstallReason reason) OVERRIDE;
+      extensions::UnloadedExtensionInfo::Reason reason) override;
+  void OnExtensionUninstalled(content::BrowserContext* browser_context,
+                              const extensions::Extension* extension,
+                              extensions::UninstallReason reason) override;
 
   // Restarts a force-installed app/extension after a crash.
   void RestartForceInstalledExtensionOnCrash(
@@ -185,7 +188,8 @@ class BackgroundContentsService : private content::NotificationObserver,
                               const base::string16& appid);
 
   // Invoked when a new BackgroundContents is opened.
-  void BackgroundContentsOpened(BackgroundContentsOpenedDetails* details);
+  void BackgroundContentsOpened(BackgroundContentsOpenedDetails* details,
+                                Profile* profile);
 
   // Invoked when a BackgroundContents object is destroyed.
   void BackgroundContentsShutdown(BackgroundContents* contents);

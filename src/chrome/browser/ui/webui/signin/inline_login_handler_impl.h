@@ -11,7 +11,6 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
 #include "chrome/browser/ui/webui/signin/inline_login_handler.h"
-#include "content/public/browser/web_contents_delegate.h"
 
 class GaiaAuthFetcher;
 
@@ -19,11 +18,10 @@ class GaiaAuthFetcher;
 // CrOS migrates to the same webview approach as desktop Chrome, much of the
 // code in this class should move to its base class |InlineLoginHandler|.
 class InlineLoginHandlerImpl : public InlineLoginHandler,
-                               public content::WebContentsDelegate,
                                public content::WebContentsObserver {
  public:
   InlineLoginHandlerImpl();
-  virtual ~InlineLoginHandlerImpl();
+  ~InlineLoginHandlerImpl() override;
 
   using InlineLoginHandler::web_ui;
 
@@ -39,19 +37,36 @@ class InlineLoginHandlerImpl : public InlineLoginHandler,
   void HandleLoginError(const std::string& error_msg);
 
  private:
-  // InlineLoginHandler overrides:
-  virtual void SetExtraInitParams(base::DictionaryValue& params) OVERRIDE;
-  virtual void CompleteLogin(const base::ListValue* args) OVERRIDE;
+  friend class InlineLoginUIBrowserTest;
+  FRIEND_TEST_ALL_PREFIXES(InlineLoginUIBrowserTest, CanOfferNoProfile);
+  FRIEND_TEST_ALL_PREFIXES(InlineLoginUIBrowserTest, CanOffer);
+  FRIEND_TEST_ALL_PREFIXES(InlineLoginUIBrowserTest, CanOfferProfileConnected);
+  FRIEND_TEST_ALL_PREFIXES(InlineLoginUIBrowserTest,
+                           CanOfferUsernameNotAllowed);
+  FRIEND_TEST_ALL_PREFIXES(InlineLoginUIBrowserTest, CanOfferWithRejectedEmail);
+  FRIEND_TEST_ALL_PREFIXES(InlineLoginUIBrowserTest, CanOfferNoSigninCookies);
 
-  // Overridden from content::WebContentsDelegate.
-  virtual bool HandleContextMenu(
-      const content::ContextMenuParams& params) OVERRIDE;
+  // Argument to CanOffer().
+  enum CanOfferFor {
+    CAN_OFFER_FOR_ALL,
+    CAN_OFFER_FOR_SECONDARY_ACCOUNT
+  };
+
+  static bool CanOffer(Profile* profile,
+                       CanOfferFor can_offer_for,
+                       const std::string& gaia_id,
+                       const std::string& email,
+                       std::string* error_message);
+
+  // InlineLoginHandler overrides:
+  void SetExtraInitParams(base::DictionaryValue& params) override;
+  void CompleteLogin(const base::ListValue* args) override;
 
   // Overridden from content::WebContentsObserver overrides.
-  virtual void DidCommitProvisionalLoadForFrame(
+  void DidCommitProvisionalLoadForFrame(
       content::RenderFrameHost* render_frame_host,
       const GURL& url,
-      ui::PageTransition transition_type) OVERRIDE;
+      ui::PageTransition transition_type) override;
 
   // True if the user has navigated to untrusted domains during the signin
   // process.

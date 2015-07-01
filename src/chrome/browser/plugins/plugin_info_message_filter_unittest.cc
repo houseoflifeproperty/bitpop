@@ -10,11 +10,11 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/plugin_service_filter.h"
 #include "content/public/browser/render_process_host.h"
@@ -34,17 +34,17 @@ void PluginsLoaded(const base::Closure& callback,
 class FakePluginServiceFilter : public content::PluginServiceFilter {
  public:
   FakePluginServiceFilter() {}
-  virtual ~FakePluginServiceFilter() {}
+  ~FakePluginServiceFilter() override {}
 
-  virtual bool IsPluginAvailable(int render_process_id,
-                                 int render_view_id,
-                                 const void* context,
-                                 const GURL& url,
-                                 const GURL& policy_url,
-                                 content::WebPluginInfo* plugin) OVERRIDE;
+  bool IsPluginAvailable(int render_process_id,
+                         int render_view_id,
+                         const void* context,
+                         const GURL& url,
+                         const GURL& policy_url,
+                         content::WebPluginInfo* plugin) override;
 
-  virtual bool CanLoadPlugin(int render_process_id,
-                             const base::FilePath& path) OVERRIDE;
+  bool CanLoadPlugin(int render_process_id,
+                     const base::FilePath& path) override;
 
   void set_plugin_enabled(const base::FilePath& plugin_path, bool enabled) {
     plugin_state_[plugin_path] = enabled;
@@ -64,7 +64,7 @@ bool FakePluginServiceFilter::IsPluginAvailable(
   std::map<base::FilePath, bool>::iterator it =
       plugin_state_.find(plugin->path);
   if (it == plugin_state_.end()) {
-    ADD_FAILURE() << "No plug-in state for '" << plugin->path.value() << "'";
+    ADD_FAILURE() << "No plugin state for '" << plugin->path.value() << "'";
     return false;
   }
   return it->second;
@@ -85,11 +85,11 @@ class PluginInfoMessageFilterTest : public ::testing::Test {
       context_(0, &profile_) {
   }
 
-  virtual void SetUp() OVERRIDE {
-    content::WebPluginInfo foo_plugin(base::ASCIIToUTF16("Foo Plug-in"),
+  void SetUp() override {
+    content::WebPluginInfo foo_plugin(base::ASCIIToUTF16("Foo Plugin"),
                                       foo_plugin_path_,
                                       base::ASCIIToUTF16("1"),
-                                      base::ASCIIToUTF16("The Foo plug-in."));
+                                      base::ASCIIToUTF16("The Foo plugin."));
     content::WebPluginMimeType mime_type;
     mime_type.mime_type = "foo/bar";
     foo_plugin.mime_types.push_back(mime_type);
@@ -97,10 +97,10 @@ class PluginInfoMessageFilterTest : public ::testing::Test {
     PluginService::GetInstance()->Init();
     PluginService::GetInstance()->RegisterInternalPlugin(foo_plugin, false);
 
-    content::WebPluginInfo bar_plugin(base::ASCIIToUTF16("Bar Plug-in"),
+    content::WebPluginInfo bar_plugin(base::ASCIIToUTF16("Bar Plugin"),
                                       bar_plugin_path_,
                                       base::ASCIIToUTF16("1"),
-                                      base::ASCIIToUTF16("The Bar plug-in."));
+                                      base::ASCIIToUTF16("The Bar plugin."));
     mime_type.mime_type = "foo/bar";
     bar_plugin.mime_types.push_back(mime_type);
     bar_plugin.type = content::WebPluginInfo::PLUGIN_TYPE_PEPPER_IN_PROCESS;
@@ -168,7 +168,7 @@ TEST_F(PluginInfoMessageFilterTest, FindEnabledPlugin) {
     EXPECT_TRUE(context()->FindEnabledPlugin(
         0, GURL(), GURL(), "foo/bar", &status, &plugin, &actual_mime_type,
         NULL));
-    EXPECT_EQ(ChromeViewHostMsg_GetPluginInfo_Status::kAllowed, status.value);
+    EXPECT_EQ(ChromeViewHostMsg_GetPluginInfo_Status::kAllowed, status);
     EXPECT_EQ(foo_plugin_path_.value(), plugin.path.value());
   }
 
@@ -180,7 +180,7 @@ TEST_F(PluginInfoMessageFilterTest, FindEnabledPlugin) {
     EXPECT_TRUE(context()->FindEnabledPlugin(
         0, GURL(), GURL(), "foo/bar", &status, &plugin, &actual_mime_type,
         NULL));
-    EXPECT_EQ(ChromeViewHostMsg_GetPluginInfo_Status::kAllowed, status.value);
+    EXPECT_EQ(ChromeViewHostMsg_GetPluginInfo_Status::kAllowed, status);
     EXPECT_EQ(bar_plugin_path_.value(), plugin.path.value());
   }
 
@@ -194,7 +194,7 @@ TEST_F(PluginInfoMessageFilterTest, FindEnabledPlugin) {
     EXPECT_FALSE(context()->FindEnabledPlugin(
         0, GURL(), GURL(), "foo/bar", &status, &plugin, &actual_mime_type,
         NULL));
-    EXPECT_EQ(ChromeViewHostMsg_GetPluginInfo_Status::kDisabled, status.value);
+    EXPECT_EQ(ChromeViewHostMsg_GetPluginInfo_Status::kDisabled, status);
     EXPECT_EQ(foo_plugin_path_.value(), plugin.path.value());
   }
   {
@@ -204,7 +204,7 @@ TEST_F(PluginInfoMessageFilterTest, FindEnabledPlugin) {
     EXPECT_FALSE(context()->FindEnabledPlugin(
         0, GURL(), GURL(), "baz/blurp", &status, &plugin, &actual_mime_type,
         NULL));
-    EXPECT_EQ(ChromeViewHostMsg_GetPluginInfo_Status::kNotFound, status.value);
+    EXPECT_EQ(ChromeViewHostMsg_GetPluginInfo_Status::kNotFound, status);
     EXPECT_EQ(FILE_PATH_LITERAL(""), plugin.path.value());
   }
 }
@@ -216,14 +216,12 @@ TEST_F(PluginInfoMessageFilterTest, GetPluginContentSetting) {
   map->SetDefaultContentSetting(CONTENT_SETTINGS_TYPE_PLUGINS,
                                 CONTENT_SETTING_BLOCK);
 
-  // Set plugins to click-to-play on example.com and subdomains.
+  // Set plugins to Plugin Power Saver on example.com and subdomains.
   ContentSettingsPattern pattern =
        ContentSettingsPattern::FromString("[*.]example.com");
-  map->SetContentSetting(pattern,
-                         ContentSettingsPattern::Wildcard(),
-                         CONTENT_SETTINGS_TYPE_PLUGINS,
-                         std::string(),
-                         CONTENT_SETTING_ASK);
+  map->SetContentSetting(pattern, ContentSettingsPattern::Wildcard(),
+                         CONTENT_SETTINGS_TYPE_PLUGINS, std::string(),
+                         CONTENT_SETTING_DETECT_IMPORTANT_CONTENT);
 
   // Allow plugin "foo" on all sites.
   map->SetContentSetting(ContentSettingsPattern::Wildcard(),
@@ -237,8 +235,9 @@ TEST_F(PluginInfoMessageFilterTest, GetPluginContentSetting) {
   ASSERT_EQ(CONTENT_SETTING_BLOCK, map->GetContentSetting(
       unmatched_host, unmatched_host, CONTENT_SETTINGS_TYPE_PLUGINS,
       std::string()));
-  ASSERT_EQ(CONTENT_SETTING_ASK, map->GetContentSetting(
-      host, host, CONTENT_SETTINGS_TYPE_PLUGINS, std::string()));
+  ASSERT_EQ(CONTENT_SETTING_DETECT_IMPORTANT_CONTENT,
+            map->GetContentSetting(host, host, CONTENT_SETTINGS_TYPE_PLUGINS,
+                                   std::string()));
   ASSERT_EQ(CONTENT_SETTING_ALLOW, map->GetContentSetting(
       host, host, CONTENT_SETTINGS_TYPE_PLUGINS, "foo"));
   ASSERT_EQ(CONTENT_SETTING_DEFAULT, map->GetContentSetting(
@@ -249,7 +248,8 @@ TEST_F(PluginInfoMessageFilterTest, GetPluginContentSetting) {
 
   // There is no specific content setting for "bar", so the general setting
   // for example.com applies.
-  VerifyPluginContentSetting(host, "bar", CONTENT_SETTING_ASK, false, false);
+  VerifyPluginContentSetting(
+      host, "bar", CONTENT_SETTING_DETECT_IMPORTANT_CONTENT, false, false);
 
   // Otherwise, use the default.
   VerifyPluginContentSetting(unmatched_host, "bar", CONTENT_SETTING_BLOCK,

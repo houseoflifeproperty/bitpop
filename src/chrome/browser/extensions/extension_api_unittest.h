@@ -17,10 +17,6 @@ class DictionaryValue;
 class ListValue;
 }
 
-namespace content {
-class WebContents;
-}
-
 class UIThreadExtensionFunction;
 
 namespace extensions {
@@ -40,9 +36,7 @@ namespace extensions {
 class ExtensionApiUnittest : public BrowserWithTestWindowTest {
  public:
   ExtensionApiUnittest();
-  virtual ~ExtensionApiUnittest();
-
-  content::WebContents* contents() { return contents_; }
+  ~ExtensionApiUnittest() override;
 
   const Extension* extension() const { return extension_.get(); }
   scoped_refptr<Extension> extension_ref() { return extension_; }
@@ -52,12 +46,7 @@ class ExtensionApiUnittest : public BrowserWithTestWindowTest {
 
  protected:
   // SetUp creates and loads an empty, unpacked Extension.
-  virtual void SetUp() OVERRIDE;
-
-  // Creates a background page for |extension_|, and sets it for the WebContents
-  // to be used in API calls.
-  // If |contents_| is already set, this does nothing.
-  void CreateBackgroundPage();
+  void SetUp() override;
 
   // Various ways of running an API function. These methods take ownership of
   // |function|. |args| should be in JSON format, wrapped in a list.
@@ -87,10 +76,6 @@ class ExtensionApiUnittest : public BrowserWithTestWindowTest {
       UIThreadExtensionFunction* function, const std::string& args);
 
  private:
-  // The WebContents used to associate a RenderViewHost with API function calls,
-  // or NULL.
-  content::WebContents* contents_;
-
   // The Extension used when running API function calls.
   scoped_refptr<Extension> extension_;
 };

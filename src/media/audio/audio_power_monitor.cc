@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <cmath>
 
-#include "base/float_util.h"
 #include "base/logging.h"
 #include "base/time/time.h"
 #include "media/base/audio_bus.h"
@@ -26,8 +25,17 @@ AudioPowerMonitor::~AudioPowerMonitor() {
 }
 
 void AudioPowerMonitor::Reset() {
-  power_reading_ = average_power_ = 0.0f;
-  clipped_reading_ = has_clipped_ = false;
+  // These are only read/written by Scan(), but Scan() should not be running
+  // when Reset() is called.
+  average_power_ = 0.0f;
+  has_clipped_ = false;
+
+  // These are the copies read by ReadCurrentPowerAndClip().  The lock here is
+  // not necessary, as racey writes/reads are acceptable, but this prevents
+  // quality-enhancement tools like TSAN from complaining.
+  base::AutoLock for_reset(reading_lock_);
+  power_reading_ = 0.0f;
+  clipped_reading_ = false;
 }
 
 void AudioPowerMonitor::Scan(const AudioBus& buffer, int num_frames) {
@@ -44,7 +52,7 @@ void AudioPowerMonitor::Scan(const AudioBus& buffer, int num_frames) {
     const std::pair<float, float> ewma_and_max = vector_math::EWMAAndMaxPower(
         average_power_, buffer.channel(i), num_frames, sample_weight_);
     // If data in audio buffer is garbage, ignore its effect on the result.
-    if (!base::IsFinite(ewma_and_max.first)) {
+    if (!std::isfinite(ewma_and_max.first)) {
       sum_power += average_power_;
     } else {
       sum_power += ewma_and_max.first;

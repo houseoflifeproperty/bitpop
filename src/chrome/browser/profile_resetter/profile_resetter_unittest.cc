@@ -8,7 +8,6 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_path_override.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_service_test_base.h"
 #include "chrome/browser/extensions/tab_helper.h"
@@ -24,11 +23,12 @@
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
-#include "components/google/core/browser/google_pref_names.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/search_engines/template_url_service_client.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_browser_thread.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "net/http/http_response_headers.h"
@@ -100,10 +100,10 @@ class ProfileResetterTest : public extensions::ExtensionServiceTestBase,
                             public ProfileResetterTestBase {
  public:
   ProfileResetterTest();
-  virtual ~ProfileResetterTest();
+  ~ProfileResetterTest() override;
 
  protected:
-  virtual void SetUp() OVERRIDE;
+  void SetUp() override;
 
   TestingProfile* profile() { return profile_.get(); }
 
@@ -151,7 +151,7 @@ KeyedService* ProfileResetterTest::CreateTemplateURLService(
       profile->GetPrefs(),
       scoped_ptr<SearchTermsData>(new UIThreadSearchTermsData(profile)),
       WebDataServiceFactory::GetKeywordWebDataForProfile(
-          profile, Profile::EXPLICIT_ACCESS),
+          profile, ServiceAccessType::EXPLICIT_ACCESS),
       scoped_ptr<TemplateURLServiceClient>(), NULL, NULL, base::Closure());
 }
 
@@ -161,7 +161,7 @@ KeyedService* ProfileResetterTest::CreateTemplateURLService(
 class PinnedTabsResetTest : public BrowserWithTestWindowTest,
                             public ProfileResetterTestBase {
  protected:
-  virtual void SetUp() OVERRIDE;
+  void SetUp() override;
 
   content::WebContents* CreateWebContents();
 };
@@ -182,9 +182,9 @@ content::WebContents* PinnedTabsResetTest::CreateWebContents() {
 // URLFetcher delegate that simply records the upload data.
 struct URLFetcherRequestListener : net::URLFetcherDelegate {
   URLFetcherRequestListener();
-  virtual ~URLFetcherRequestListener();
+  ~URLFetcherRequestListener() override;
 
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
 
   std::string upload_data;
   net::URLFetcherDelegate* real_delegate;
@@ -423,10 +423,6 @@ TEST_F(ProfileResetterTest, ResetNothing) {
 }
 
 TEST_F(ProfileResetterTest, ResetDefaultSearchEngineNonOrganic) {
-  PrefService* prefs = profile()->GetPrefs();
-  DCHECK(prefs);
-  prefs->SetString(prefs::kLastPromptedGoogleURL, "http://www.foo.com/");
-
   ResetAndWait(ProfileResetter::DEFAULT_SEARCH_ENGINE, kDistributionConfig);
 
   TemplateURLService* model =
@@ -436,17 +432,11 @@ TEST_F(ProfileResetterTest, ResetDefaultSearchEngineNonOrganic) {
   EXPECT_EQ(base::ASCIIToUTF16("first"), default_engine->short_name());
   EXPECT_EQ(base::ASCIIToUTF16("firstkey"), default_engine->keyword());
   EXPECT_EQ("http://www.foo.com/s?q={searchTerms}", default_engine->url());
-
-  EXPECT_EQ("", prefs->GetString(prefs::kLastPromptedGoogleURL));
 }
 
 TEST_F(ProfileResetterTest, ResetDefaultSearchEnginePartially) {
   // Search engine's logic is tested by
   // TemplateURLServiceTest.RepairPrepopulatedSearchEngines.
-  PrefService* prefs = profile()->GetPrefs();
-  DCHECK(prefs);
-  prefs->SetString(prefs::kLastPromptedGoogleURL, "http://www.foo.com/");
-
   // Make sure TemplateURLService has loaded.
   ResetAndWait(ProfileResetter::DEFAULT_SEARCH_ENGINE);
 
@@ -458,7 +448,6 @@ TEST_F(ProfileResetterTest, ResetDefaultSearchEnginePartially) {
   ResetAndWait(ProfileResetter::DEFAULT_SEARCH_ENGINE);
 
   EXPECT_EQ(urls, model->GetTemplateURLs());
-  EXPECT_EQ(std::string(), prefs->GetString(prefs::kLastPromptedGoogleURL));
 }
 
 TEST_F(ProfileResetterTest, ResetHomepageNonOrganic) {
@@ -497,47 +486,42 @@ TEST_F(ProfileResetterTest, ResetContentSettings) {
   std::map<ContentSettingsType, ContentSetting> default_settings;
 
   for (int type = 0; type < CONTENT_SETTINGS_NUM_TYPES; ++type) {
-    if (type == CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE ||
-        type == CONTENT_SETTINGS_TYPE_MIXEDSCRIPT ||
-        type == CONTENT_SETTINGS_TYPE_PROTOCOL_HANDLERS) {
+    ContentSettingsType content_type = static_cast<ContentSettingsType>(type);
+    if (content_type == CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE ||
+        content_type == CONTENT_SETTINGS_TYPE_MIXEDSCRIPT ||
+        content_type == CONTENT_SETTINGS_TYPE_PROTOCOL_HANDLERS) {
       // These types are excluded because one can't call
       // GetDefaultContentSetting() for them.
-    } else {
-      ContentSettingsType content_type = static_cast<ContentSettingsType>(type);
-      ContentSetting default_setting =
-          host_content_settings_map->GetDefaultContentSetting(content_type,
-                                                              NULL);
-      default_settings[content_type] = default_setting;
-      ContentSetting wildcard_setting =
-          default_setting == CONTENT_SETTING_BLOCK ? CONTENT_SETTING_ALLOW
-                                                   : CONTENT_SETTING_BLOCK;
-      ContentSetting site_setting =
-          default_setting == CONTENT_SETTING_ALLOW ? CONTENT_SETTING_ALLOW
-                                                   : CONTENT_SETTING_BLOCK;
-      if (HostContentSettingsMap::IsSettingAllowedForType(
-              profile()->GetPrefs(),
-              wildcard_setting,
-              content_type)) {
-        host_content_settings_map->SetDefaultContentSetting(
-            content_type,
-            wildcard_setting);
-      }
-      if (!HostContentSettingsMap::ContentTypeHasCompoundValue(content_type) &&
-          HostContentSettingsMap::IsSettingAllowedForType(
-              profile()->GetPrefs(),
-              site_setting,
-              content_type)) {
-        host_content_settings_map->SetContentSetting(
-            pattern,
-            ContentSettingsPattern::Wildcard(),
-            content_type,
-            std::string(),
-            site_setting);
-        ContentSettingsForOneType host_settings;
-        host_content_settings_map->GetSettingsForOneType(
-            content_type, std::string(), &host_settings);
-        EXPECT_EQ(2U, host_settings.size());
-      }
+      continue;
+    }
+    if (content_type == CONTENT_SETTINGS_TYPE_MEDIASTREAM) {
+      // This has been deprecated so we can neither set nor get it's value.
+      continue;
+    }
+    ContentSetting default_setting =
+        host_content_settings_map->GetDefaultContentSetting(content_type, NULL);
+    default_settings[content_type] = default_setting;
+    ContentSetting wildcard_setting = default_setting == CONTENT_SETTING_BLOCK
+                                          ? CONTENT_SETTING_ALLOW
+                                          : CONTENT_SETTING_BLOCK;
+    ContentSetting site_setting = default_setting == CONTENT_SETTING_ALLOW
+                                      ? CONTENT_SETTING_ALLOW
+                                      : CONTENT_SETTING_BLOCK;
+    if (HostContentSettingsMap::IsSettingAllowedForType(
+            profile()->GetPrefs(), wildcard_setting, content_type)) {
+      host_content_settings_map->SetDefaultContentSetting(content_type,
+                                                          wildcard_setting);
+    }
+    if (!HostContentSettingsMap::ContentTypeHasCompoundValue(content_type) &&
+        HostContentSettingsMap::IsSettingAllowedForType(
+            profile()->GetPrefs(), site_setting, content_type)) {
+      host_content_settings_map->SetContentSetting(
+          pattern, ContentSettingsPattern::Wildcard(), content_type,
+          std::string(), site_setting);
+      ContentSettingsForOneType host_settings;
+      host_content_settings_map->GetSettingsForOneType(
+          content_type, std::string(), &host_settings);
+      EXPECT_EQ(2U, host_settings.size());
     }
   }
 
@@ -546,8 +530,9 @@ TEST_F(ProfileResetterTest, ResetContentSettings) {
   for (int type = 0; type < CONTENT_SETTINGS_NUM_TYPES; ++type) {
     ContentSettingsType content_type = static_cast<ContentSettingsType>(type);
     if (HostContentSettingsMap::ContentTypeHasCompoundValue(content_type) ||
-        type == CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE ||
+        content_type == CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE ||
         content_type == CONTENT_SETTINGS_TYPE_MIXEDSCRIPT ||
+        content_type == CONTENT_SETTINGS_TYPE_MEDIASTREAM ||
         content_type == CONTENT_SETTINGS_TYPE_PROTOCOL_HANDLERS)
       continue;
     ContentSetting default_setting =
@@ -628,16 +613,16 @@ TEST_F(ProfileResetterTest, ResetExtensionsByDisabling) {
       extensions::Manifest::TYPE_EXTENSION,
       false);
   service_->AddExtension(ext6.get());
-  EXPECT_EQ(6u, service_->extensions()->size());
+  EXPECT_EQ(6u, registry()->enabled_extensions().size());
 
   ResetAndWait(ProfileResetter::EXTENSIONS);
-  EXPECT_EQ(4u, service_->extensions()->size());
-  EXPECT_FALSE(service_->extensions()->Contains(theme->id()));
-  EXPECT_FALSE(service_->extensions()->Contains(ext2->id()));
-  EXPECT_TRUE(service_->extensions()->Contains(ext3->id()));
-  EXPECT_TRUE(service_->extensions()->Contains(ext4->id()));
-  EXPECT_TRUE(service_->extensions()->Contains(ext5->id()));
-  EXPECT_TRUE(service_->extensions()->Contains(ext6->id()));
+  EXPECT_EQ(4u, registry()->enabled_extensions().size());
+  EXPECT_FALSE(registry()->enabled_extensions().Contains(theme->id()));
+  EXPECT_FALSE(registry()->enabled_extensions().Contains(ext2->id()));
+  EXPECT_TRUE(registry()->enabled_extensions().Contains(ext3->id()));
+  EXPECT_TRUE(registry()->enabled_extensions().Contains(ext4->id()));
+  EXPECT_TRUE(registry()->enabled_extensions().Contains(ext5->id()));
+  EXPECT_TRUE(registry()->enabled_extensions().Contains(ext6->id()));
   EXPECT_TRUE(theme_service->UsingDefaultTheme());
 }
 
@@ -657,15 +642,15 @@ TEST_F(ProfileResetterTest, ResetExtensionsByDisablingNonOrganic) {
       extensions::Manifest::TYPE_EXTENSION,
       false);
   service_->AddExtension(ext3.get());
-  EXPECT_EQ(2u, service_->extensions()->size());
+  EXPECT_EQ(2u, registry()->enabled_extensions().size());
 
   std::string master_prefs(kDistributionConfig);
   ReplaceString(&master_prefs, "placeholder_for_id", ext3->id());
 
   ResetAndWait(ProfileResetter::EXTENSIONS, master_prefs);
 
-  EXPECT_EQ(1u, service_->extensions()->size());
-  EXPECT_TRUE(service_->extensions()->Contains(ext3->id()));
+  EXPECT_EQ(1u, registry()->enabled_extensions().size());
+  EXPECT_TRUE(registry()->enabled_extensions().Contains(ext3->id()));
 }
 
 TEST_F(ProfileResetterTest, ResetExtensionsAndDefaultApps) {
@@ -703,14 +688,14 @@ TEST_F(ProfileResetterTest, ResetExtensionsAndDefaultApps) {
                       extensions::Manifest::TYPE_HOSTED_APP,
                       true);
   service_->AddExtension(ext3.get());
-  EXPECT_EQ(3u, service_->extensions()->size());
+  EXPECT_EQ(3u, registry()->enabled_extensions().size());
 
   ResetAndWait(ProfileResetter::EXTENSIONS);
 
-  EXPECT_EQ(1u, service_->extensions()->size());
-  EXPECT_FALSE(service_->extensions()->Contains(ext1->id()));
-  EXPECT_FALSE(service_->extensions()->Contains(ext2->id()));
-  EXPECT_TRUE(service_->extensions()->Contains(ext3->id()));
+  EXPECT_EQ(1u, registry()->enabled_extensions().size());
+  EXPECT_FALSE(registry()->enabled_extensions().Contains(ext1->id()));
+  EXPECT_FALSE(registry()->enabled_extensions().Contains(ext2->id()));
+  EXPECT_TRUE(registry()->enabled_extensions().Contains(ext3->id()));
   EXPECT_TRUE(theme_service->UsingDefaultTheme());
 }
 
@@ -966,12 +951,12 @@ TEST_F(ProfileResetterTest, FeedbackSerializationTest) {
   // Let it enumerate shortcuts on the FILE thread.
   base::MessageLoop::current()->RunUntilIdle();
 
-  COMPILE_ASSERT(ResettableSettingsSnapshot::ALL_FIELDS == 31,
-                 expand_this_test);
+  static_assert(ResettableSettingsSnapshot::ALL_FIELDS == 31,
+                "this test needs to be expanded");
   for (int field_mask = 0; field_mask <= ResettableSettingsSnapshot::ALL_FIELDS;
        ++field_mask) {
     std::string report = SerializeSettingsReport(nonorganic_snap, field_mask);
-    JSONStringValueSerializer json(report);
+    JSONStringValueDeserializer json(report);
     std::string error;
     scoped_ptr<base::Value> root(json.Deserialize(NULL, &error));
     ASSERT_TRUE(root) << error;

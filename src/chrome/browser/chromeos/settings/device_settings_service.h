@@ -12,6 +12,7 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
@@ -81,6 +82,8 @@ class DeviceSettingsService : public SessionManagerClient::Observer {
 
     // Gets call after updates to the device settings.
     virtual void DeviceSettingsUpdated() = 0;
+
+    virtual void OnDeviceSettingsServiceShutdown() = 0;
   };
 
   // Manage singleton instance.
@@ -92,7 +95,7 @@ class DeviceSettingsService : public SessionManagerClient::Observer {
   // Creates a device settings service instance. This is meant for unit tests,
   // production code uses the singleton returned by Get() above.
   DeviceSettingsService();
-  virtual ~DeviceSettingsService();
+  ~DeviceSettingsService() override;
 
   // To be called on startup once threads are initialized and DBus is ready.
   void SetSessionManager(SessionManagerClient* session_manager_client,
@@ -128,22 +131,6 @@ class DeviceSettingsService : public SessionManagerClient::Observer {
   // load the device settings.
   void Load();
 
-  // Signs |settings| with the private half of the owner key and sends the
-  // resulting policy blob to session manager for storage. The result of the
-  // operation is reported through |callback|. If successful, the updated device
-  // settings are present in policy_data() and device_settings() when the
-  // callback runs.
-  void SignAndStore(
-      scoped_ptr<enterprise_management::ChromeDeviceSettingsProto> new_settings,
-      const base::Closure& callback);
-
-  // Sets the management related settings in PolicyData.
-  void SetManagementSettings(
-      enterprise_management::PolicyData::ManagementMode management_mode,
-      const std::string& request_token,
-      const std::string& device_id,
-      const base::Closure& callback);
-
   // Stores a policy blob to session_manager. The result of the operation is
   // reported through |callback|. If successful, the updated device settings are
   // present in policy_data() and device_settings() when the callback runs.
@@ -159,15 +146,27 @@ class DeviceSettingsService : public SessionManagerClient::Observer {
   void GetOwnershipStatusAsync(const OwnershipStatusCallback& callback);
 
   // Checks whether we have the private owner key.
+  //
+  // DEPRECATED (ygorshenin@, crbug.com/433840): this method should
+  // not be used since private key is a profile-specific resource and
+  // should be checked and used in a profile-aware manner, through
+  // OwnerSettingsService.
   bool HasPrivateOwnerKey();
 
   // Sets the identity of the user that's interacting with the service. This is
   // relevant only for writing settings through SignAndStore().
+  //
+  // TODO (ygorshenin@, crbug.com/433840): get rid of the method when
+  // write path for device settings will be removed from
+  // DeviceSettingsProvider and all existing clients will be switched
+  // to OwnerSettingsServiceChromeOS.
   void InitOwner(const std::string& username,
                  const base::WeakPtr<ownership::OwnerSettingsService>&
                      owner_settings_service);
 
   const std::string& GetUsername() const;
+
+  ownership::OwnerSettingsService* GetOwnerSettingsService() const;
 
   // Adds an observer.
   void AddObserver(Observer* observer);
@@ -175,15 +174,15 @@ class DeviceSettingsService : public SessionManagerClient::Observer {
   void RemoveObserver(Observer* observer);
 
   // SessionManagerClient::Observer:
-  virtual void OwnerKeySet(bool success) OVERRIDE;
-  virtual void PropertyChangeComplete(bool success) OVERRIDE;
+  void OwnerKeySet(bool success) override;
+  void PropertyChangeComplete(bool success) override;
 
  private:
   friend class OwnerSettingsServiceChromeOS;
 
   // Enqueues a new operation. Takes ownership of |operation| and starts it
   // right away if there is no active operation currently.
-  void Enqueue(SessionManagerOperation* operation);
+  void Enqueue(const linked_ptr<SessionManagerOperation>& operation);
 
   // Enqueues a load operation.
   void EnqueueLoad(bool force_key_load);
@@ -204,19 +203,6 @@ class DeviceSettingsService : public SessionManagerClient::Observer {
   // Updates status and invokes the callback immediately.
   void HandleError(Status status, const base::Closure& callback);
 
-  // Called by OwnerSettingsService when sign-and-store operation completes.
-  void OnSignAndStoreOperationCompleted(Status status);
-
-  void set_policy_data(
-      scoped_ptr<enterprise_management::PolicyData> policy_data) {
-    policy_data_ = policy_data.Pass();
-  }
-
-  void set_device_settings(scoped_ptr<
-      enterprise_management::ChromeDeviceSettingsProto> device_settings) {
-    device_settings_ = device_settings.Pass();
-  }
-
   SessionManagerClient* session_manager_client_;
   scoped_refptr<ownership::OwnerKeyUtil> owner_key_util_;
 
@@ -233,9 +219,9 @@ class DeviceSettingsService : public SessionManagerClient::Observer {
 
   // The queue of pending operations. The first operation on the queue is
   // currently active; it gets removed and destroyed once it completes.
-  std::deque<SessionManagerOperation*> pending_operations_;
+  std::deque<linked_ptr<SessionManagerOperation>> pending_operations_;
 
-  ObserverList<Observer, true> observers_;
+  ObserverList<Observer> observers_;
 
   // For recoverable load errors how many retries are left before we give up.
   int load_retries_left_;

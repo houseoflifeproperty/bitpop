@@ -16,12 +16,12 @@ class EmptyWifiDataProvider : public WifiDataProvider {
   EmptyWifiDataProvider();
 
   // WifiDataProvider implementation
-  virtual void StartDataProvider() OVERRIDE { }
-  virtual void StopDataProvider() OVERRIDE { }
-  virtual bool GetData(WifiData* data) OVERRIDE;
+  void StartDataProvider() override { }
+  void StopDataProvider() override { }
+  bool GetData(WifiData* data) override;
 
  private:
-  virtual ~EmptyWifiDataProvider();
+  ~EmptyWifiDataProvider() override;
 
   DISALLOW_COPY_AND_ASSIGN(EmptyWifiDataProvider);
 };

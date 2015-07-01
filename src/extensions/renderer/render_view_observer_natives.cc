@@ -20,16 +20,17 @@ class LoadWatcher : public content::RenderViewObserver {
  public:
   LoadWatcher(ScriptContext* context,
               content::RenderView* view,
-              v8::Handle<v8::Function> cb)
-      : content::RenderViewObserver(view), context_(context), callback_(cb) {}
+              v8::Local<v8::Function> cb)
+      : content::RenderViewObserver(view),
+        context_(context),
+        callback_(context->isolate(), cb) {}
 
-  virtual void DidCreateDocumentElement(blink::WebLocalFrame* frame) OVERRIDE {
+  void DidCreateDocumentElement(blink::WebLocalFrame* frame) override {
     CallbackAndDie(true);
   }
 
-  virtual void DidFailProvisionalLoad(blink::WebLocalFrame* frame,
-                                      const blink::WebURLError& error)
-      OVERRIDE {
+  void DidFailProvisionalLoad(blink::WebLocalFrame* frame,
+                              const blink::WebURLError& error) override {
     CallbackAndDie(false);
   }
 
@@ -37,13 +38,14 @@ class LoadWatcher : public content::RenderViewObserver {
   void CallbackAndDie(bool succeeded) {
     v8::Isolate* isolate = context_->isolate();
     v8::HandleScope handle_scope(isolate);
-    v8::Handle<v8::Value> args[] = {v8::Boolean::New(isolate, succeeded)};
-    context_->CallFunction(callback_.NewHandle(isolate), 1, args);
+    v8::Local<v8::Value> args[] = {v8::Boolean::New(isolate, succeeded)};
+    context_->CallFunction(v8::Local<v8::Function>::New(isolate, callback_),
+                           arraysize(args), args);
     delete this;
   }
 
   ScriptContext* context_;
-  ScopedPersistent<v8::Function> callback_;
+  v8::Global<v8::Function> callback_;
   DISALLOW_COPY_AND_ASSIGN(LoadWatcher);
 };
 }  // namespace

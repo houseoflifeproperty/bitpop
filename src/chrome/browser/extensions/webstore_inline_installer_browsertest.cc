@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/tab_helper.h"
@@ -11,9 +12,12 @@
 #include "chrome/browser/extensions/webstore_standalone_installer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "url/gurl.h"
 
@@ -49,13 +53,13 @@ class ProgrammableInstallPrompt : public ExtensionInstallPrompt {
       : ExtensionInstallPrompt(contents)
   {}
 
-  virtual ~ProgrammableInstallPrompt() {}
+  ~ProgrammableInstallPrompt() override {}
 
-  virtual void ConfirmStandaloneInstall(
+  void ConfirmStandaloneInstall(
       Delegate* delegate,
       const Extension* extension,
       SkBitmap* icon,
-      scoped_refptr<ExtensionInstallPrompt::Prompt> prompt) OVERRIDE {
+      scoped_refptr<ExtensionInstallPrompt::Prompt> prompt) override {
     delegate_ = delegate;
   }
 
@@ -93,14 +97,13 @@ class WebstoreInlineInstallerForTest : public WebstoreInlineInstaller {
         programmable_prompt_(NULL) {
   }
 
-  virtual scoped_ptr<ExtensionInstallPrompt> CreateInstallUI() OVERRIDE {
+  scoped_ptr<ExtensionInstallPrompt> CreateInstallUI() override {
     programmable_prompt_ = new ProgrammableInstallPrompt(web_contents());
-    return make_scoped_ptr(programmable_prompt_).
-        PassAs<ExtensionInstallPrompt>();
+    return make_scoped_ptr(programmable_prompt_);
   }
 
  private:
-  virtual ~WebstoreInlineInstallerForTest() {}
+  ~WebstoreInlineInstallerForTest() override {}
 
   friend class base::RefCountedThreadSafe<WebstoreStandaloneInstaller>;
 
@@ -114,19 +117,19 @@ class WebstoreInlineInstallerForTest : public WebstoreInlineInstaller {
 
 class WebstoreInlineInstallerForTestFactory :
     public WebstoreInlineInstallerFactory {
-  virtual ~WebstoreInlineInstallerForTestFactory() {}
-  virtual WebstoreInlineInstaller* CreateInstaller(
+  ~WebstoreInlineInstallerForTestFactory() override {}
+  WebstoreInlineInstaller* CreateInstaller(
       WebContents* contents,
       const std::string& webstore_item_id,
       const GURL& requestor_url,
-      const WebstoreStandaloneInstaller::Callback& callback) OVERRIDE {
+      const WebstoreStandaloneInstaller::Callback& callback) override {
     return new WebstoreInlineInstallerForTest(
         contents, webstore_item_id, requestor_url, callback);
   }
 };
 
 IN_PROC_BROWSER_TEST_F(WebstoreInlineInstallerTest,
-    CloseTabBeforeInstallConfirmation) {
+                       CloseTabBeforeInstallConfirmation) {
   GURL install_url = GenerateTestServerUrl(kAppDomain, "install.html");
   ui_test_utils::NavigateToURL(browser(), install_url);
   WebContents* web_contents =
@@ -141,6 +144,25 @@ IN_PROC_BROWSER_TEST_F(WebstoreInlineInstallerTest,
   ProgrammableInstallPrompt::Accept();
 }
 
+IN_PROC_BROWSER_TEST_F(WebstoreInlineInstallerTest,
+                       ShouldBlockInlineInstallFromPopupWindow) {
+  GURL install_url =
+      GenerateTestServerUrl(kAppDomain, "install_from_popup.html");
+  // Disable popup blocking for the test url.
+  browser()->profile()->GetHostContentSettingsMap()->SetContentSetting(
+      ContentSettingsPattern::FromURL(install_url),
+      ContentSettingsPattern::Wildcard(), CONTENT_SETTINGS_TYPE_POPUPS,
+      std::string(), CONTENT_SETTING_ALLOW);
+  ui_test_utils::NavigateToURL(browser(), install_url);
+  // The test page opens a popup which is a new |browser| window.
+  Browser* popup_browser = chrome::FindLastActiveWithProfile(
+      browser()->profile(), chrome::GetActiveDesktop());
+  WebContents* popup_contents =
+      popup_browser->tab_strip_model()->GetActiveWebContents();
+  EXPECT_EQ(base::ASCIIToUTF16("POPUP"), popup_contents->GetTitle());
+  RunTest(popup_contents, "runTest");
+}
+
 // Ensure that inline-installing a disabled extension simply re-enables it.
 IN_PROC_BROWSER_TEST_F(WebstoreInlineInstallerTest,
                        ReinstallDisabledExtension) {
@@ -150,27 +172,55 @@ IN_PROC_BROWSER_TEST_F(WebstoreInlineInstallerTest,
   ui_test_utils::NavigateToURL(
       browser(), GenerateTestServerUrl(kAppDomain, "install.html"));
   RunTest("runTest");
-  ExtensionService* extension_service =
-      ExtensionSystem::Get(browser()->profile())->extension_service();
-  ASSERT_TRUE(extension_service->GetExtensionById(kTestExtensionId, false));
+  ExtensionRegistry* registry = ExtensionRegistry::Get(profile());
+  ASSERT_TRUE(registry->enabled_extensions().GetByID(kTestExtensionId));
 
   // Disable the extension.
+  ExtensionService* extension_service =
+      ExtensionSystem::Get(browser()->profile())->extension_service();
   extension_service->DisableExtension(kTestExtensionId,
                                       Extension::DISABLE_USER_ACTION);
-  ASSERT_FALSE(extension_service->IsExtensionEnabled(kTestExtensionId));
+  EXPECT_TRUE(registry->disabled_extensions().GetByID(kTestExtensionId));
 
   // Revisit the inline install site and reinstall the extension. It should
   // simply be re-enabled, rather than try to install again.
   ui_test_utils::NavigateToURL(
       browser(), GenerateTestServerUrl(kAppDomain, "install.html"));
   RunTest("runTest");
-  ASSERT_TRUE(extension_service->IsExtensionEnabled(kTestExtensionId));
+  EXPECT_TRUE(registry->enabled_extensions().GetByID(kTestExtensionId));
+  // Since it was disabled by user action, the prompt should have just been the
+  // inline install prompt.
+  EXPECT_EQ(ExtensionInstallPrompt::INLINE_INSTALL_PROMPT,
+            ExtensionInstallPrompt::g_last_prompt_type_for_tests);
+
+  // Disable the extension due to a permissions increase.
+  extension_service->DisableExtension(kTestExtensionId,
+                                      Extension::DISABLE_PERMISSIONS_INCREASE);
+  EXPECT_TRUE(registry->disabled_extensions().GetByID(kTestExtensionId));
+  ui_test_utils::NavigateToURL(
+      browser(), GenerateTestServerUrl(kAppDomain, "install.html"));
+  RunTest("runTest");
+  EXPECT_TRUE(registry->enabled_extensions().GetByID(kTestExtensionId));
+  // The displayed prompt should be for the permissions increase, versus a
+  // normal inline install prompt.
+  EXPECT_EQ(ExtensionInstallPrompt::RE_ENABLE_PROMPT,
+            ExtensionInstallPrompt::g_last_prompt_type_for_tests);
+
+  ExtensionInstallPrompt::g_last_prompt_type_for_tests =
+      ExtensionInstallPrompt::UNSET_PROMPT_TYPE;
+  ui_test_utils::NavigateToURL(
+      browser(), GenerateTestServerUrl(kAppDomain, "install.html"));
+  RunTest("runTest");
+  // If the extension was already enabled, we should still display an inline
+  // install prompt (until we come up with something better).
+  EXPECT_EQ(ExtensionInstallPrompt::INLINE_INSTALL_PROMPT,
+            ExtensionInstallPrompt::g_last_prompt_type_for_tests);
 }
 
 class WebstoreInlineInstallerListenerTest : public WebstoreInlineInstallerTest {
  public:
   WebstoreInlineInstallerListenerTest() {}
-  virtual ~WebstoreInlineInstallerListenerTest() {}
+  ~WebstoreInlineInstallerListenerTest() override {}
 
  protected:
   void RunTest(const std::string& file_name) {

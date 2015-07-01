@@ -4,183 +4,147 @@
 
 #include "extensions/renderer/guest_view/guest_view_container.h"
 
-#include "content/public/renderer/browser_plugin_delegate.h"
+#include "components/guest_view/common/guest_view_constants.h"
+#include "components/guest_view/common/guest_view_messages.h"
 #include "content/public/renderer/render_frame.h"
+#include "content/public/renderer/render_frame_observer.h"
 #include "content/public/renderer/render_view.h"
-#include "extensions/common/extension_messages.h"
-#include "extensions/common/guest_view/guest_view_constants.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebScopedMicrotaskSuppression.h"
-#include "third_party/WebKit/public/web/WebView.h"
+#include "extensions/common/guest_view/extensions_guest_view_messages.h"
+#include "extensions/renderer/guest_view/guest_view_request.h"
 
 namespace {
-typedef std::pair<int, int> GuestViewID;
-typedef std::map<GuestViewID, extensions::GuestViewContainer*>
-    GuestViewContainerMap;
+
+using GuestViewContainerMap = std::map<int, extensions::GuestViewContainer*>;
 static base::LazyInstance<GuestViewContainerMap> g_guest_view_container_map =
     LAZY_INSTANCE_INITIALIZER;
+
 }  // namespace
 
 namespace extensions {
 
-GuestViewContainer::GuestViewContainer(
-    content::RenderFrame* render_frame,
-    const std::string& mime_type)
-    : content::BrowserPluginDelegate(render_frame, mime_type),
-      content::RenderFrameObserver(render_frame),
-      mime_type_(mime_type),
-      element_instance_id_(guestview::kInstanceIDNone),
-      render_view_routing_id_(render_frame->GetRenderView()->GetRoutingID()),
-      attached_(false),
-      attach_pending_(false),
-      isolate_(NULL) {
+class GuestViewContainer::RenderFrameLifetimeObserver
+    : public content::RenderFrameObserver {
+ public:
+  RenderFrameLifetimeObserver(GuestViewContainer* container,
+                              content::RenderFrame* render_frame);
+
+  // content::RenderFrameObserver overrides.
+  void OnDestruct() override;
+
+ private:
+  GuestViewContainer* container_;
+
+  DISALLOW_COPY_AND_ASSIGN(RenderFrameLifetimeObserver);
+};
+
+GuestViewContainer::RenderFrameLifetimeObserver::RenderFrameLifetimeObserver(
+    GuestViewContainer* container,
+    content::RenderFrame* render_frame)
+    : content::RenderFrameObserver(render_frame),
+      container_(container) {}
+
+void GuestViewContainer::RenderFrameLifetimeObserver::OnDestruct() {
+  container_->RenderFrameDestroyed();
+}
+
+GuestViewContainer::GuestViewContainer(content::RenderFrame* render_frame)
+    : element_instance_id_(guest_view::kInstanceIDNone),
+      render_frame_(render_frame),
+      ready_(false) {
+  render_frame_lifetime_observer_.reset(
+      new RenderFrameLifetimeObserver(this, render_frame_));
 }
 
 GuestViewContainer::~GuestViewContainer() {
-  if (element_instance_id_ != guestview::kInstanceIDNone) {
-    g_guest_view_container_map.Get().erase(
-        GuestViewID(render_view_routing_id_, element_instance_id_));
+  if (element_instance_id() != guest_view::kInstanceIDNone)
+    g_guest_view_container_map.Get().erase(element_instance_id());
+
+  if (pending_response_.get())
+    pending_response_->ExecuteCallbackIfAvailable(0 /* argc */, nullptr);
+
+  while (pending_requests_.size() > 0) {
+    linked_ptr<GuestViewRequest> pending_request = pending_requests_.front();
+    pending_requests_.pop_front();
+    // Call the JavaScript callbacks with no arguments which implies an error.
+    pending_request->ExecuteCallbackIfAvailable(0 /* argc */, nullptr);
   }
 }
 
-GuestViewContainer* GuestViewContainer::FromID(int render_view_routing_id,
-                                               int element_instance_id) {
+// static.
+GuestViewContainer* GuestViewContainer::FromID(int element_instance_id) {
   GuestViewContainerMap* guest_view_containers =
       g_guest_view_container_map.Pointer();
-  GuestViewContainerMap::iterator it = guest_view_containers->find(
-      GuestViewID(render_view_routing_id, element_instance_id));
-  return it == guest_view_containers->end() ? NULL : it->second;
+  auto it = guest_view_containers->find(element_instance_id);
+  return it == guest_view_containers->end() ? nullptr : it->second;
 }
 
+void GuestViewContainer::RenderFrameDestroyed() {
+  OnRenderFrameDestroyed();
+  render_frame_ = nullptr;
+}
 
-void GuestViewContainer::AttachGuest(int element_instance_id,
-                                     int guest_instance_id,
-                                     scoped_ptr<base::DictionaryValue> params,
-                                     v8::Handle<v8::Function> callback,
-                                     v8::Isolate* isolate) {
-  // GuestViewContainer supports reattachment (i.e. attached_ == true) but not
-  // while a current attach process is pending.
-  if (attach_pending_)
+void GuestViewContainer::IssueRequest(linked_ptr<GuestViewRequest> request) {
+  EnqueueRequest(request);
+  PerformPendingRequest();
+}
+
+void GuestViewContainer::EnqueueRequest(linked_ptr<GuestViewRequest> request) {
+  pending_requests_.push_back(request);
+}
+
+void GuestViewContainer::PerformPendingRequest() {
+  if (!ready_ || pending_requests_.empty() || pending_response_.get())
     return;
 
-  // Step 1, send the attach params to chrome/.
-  render_frame()->Send(new ExtensionHostMsg_AttachGuest(render_view_routing_id_,
-                                                        element_instance_id,
-                                                        guest_instance_id,
-                                                        *params));
-
-  // Step 2, attach plugin through content/.
-  render_frame()->AttachGuest(element_instance_id);
-
-  callback_.reset(callback);
-  isolate_ = isolate;
-  attach_pending_ = true;
+  linked_ptr<GuestViewRequest> pending_request = pending_requests_.front();
+  pending_requests_.pop_front();
+  pending_request->PerformRequest();
+  pending_response_ = pending_request;
 }
 
-void GuestViewContainer::SetElementInstanceID(int element_instance_id) {
-  GuestViewID guest_view_id(render_view_routing_id_, element_instance_id);
-  DCHECK_EQ(element_instance_id_, guestview::kInstanceIDNone);
-  DCHECK(g_guest_view_container_map.Get().find(guest_view_id) ==
-            g_guest_view_container_map.Get().end());
-  element_instance_id_ = element_instance_id;
-  g_guest_view_container_map.Get().insert(std::make_pair(guest_view_id, this));
+void GuestViewContainer::HandlePendingResponseCallback(
+    const IPC::Message& message) {
+  CHECK(pending_response_.get());
+  linked_ptr<GuestViewRequest> pending_response(pending_response_.release());
+  pending_response->HandleResponse(message);
 }
 
-void GuestViewContainer::DidFinishLoading() {
-  if (mime_type_.empty())
-    return;
-
-  DCHECK_NE(element_instance_id_, guestview::kInstanceIDNone);
-  render_frame()->Send(new ExtensionHostMsg_CreateMimeHandlerViewGuest(
-      routing_id(), html_string_, mime_type_, element_instance_id_));
+void GuestViewContainer::OnHandleCallback(const IPC::Message& message) {
+  // Handle the callback for the current request with a pending response.
+  HandlePendingResponseCallback(message);
+  // Perform the subsequent request if one exists.
+  PerformPendingRequest();
 }
 
-void GuestViewContainer::DidReceiveData(const char* data, int data_length) {
-  std::string value(data, data_length);
-  html_string_ += value;
-}
-
-void GuestViewContainer::OnDestruct() {
-  // GuestViewContainer's lifetime is managed by BrowserPlugin so don't let
-  // RenderFrameObserver self-destruct here.
+bool GuestViewContainer::OnMessage(const IPC::Message& message) {
+  return false;
 }
 
 bool GuestViewContainer::OnMessageReceived(const IPC::Message& message) {
-  if (!ShouldHandleMessage(message))
-    return false;
+  if (OnMessage(message))
+    return true;
 
-  DCHECK_NE(element_instance_id_, guestview::kInstanceIDNone);
-  int element_instance_id = guestview::kInstanceIDNone;
-  PickleIterator iter(message);
-  bool success = iter.ReadInt(&element_instance_id);
-  DCHECK(success);
-  if (element_instance_id != element_instance_id_)
-    return false;
-
-  bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(GuestViewContainer, message)
-    IPC_MESSAGE_HANDLER(ExtensionMsg_CreateMimeHandlerViewGuestACK,
-                        OnCreateMimeHandlerViewGuestACK)
-    IPC_MESSAGE_HANDLER(ExtensionMsg_GuestAttached, OnGuestAttached)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-  return handled;
+  OnHandleCallback(message);
+  return true;
 }
 
-void GuestViewContainer::OnCreateMimeHandlerViewGuestACK(
-    int element_instance_id) {
-  DCHECK_NE(element_instance_id_, guestview::kInstanceIDNone);
-  DCHECK_EQ(element_instance_id_, element_instance_id);
-  DCHECK(!mime_type_.empty());
-  render_frame()->AttachGuest(element_instance_id);
+void GuestViewContainer::Ready() {
+  ready_ = true;
+  CHECK(!pending_response_.get());
+  PerformPendingRequest();
+
+  // Give the derived type an opportunity to perform some actions when the
+  // container acquires a geometry.
+  OnReady();
 }
 
-void GuestViewContainer::OnGuestAttached(int element_instance_id,
-                                         int guest_routing_id) {
-  attached_ = true;
-  attach_pending_ = false;
+void GuestViewContainer::SetElementInstanceID(int element_instance_id) {
+  DCHECK_EQ(element_instance_id_, guest_view::kInstanceIDNone);
+  element_instance_id_ = element_instance_id;
 
-  // If we don't have a callback then there's nothing more to do.
-  if (callback_.IsEmpty())
-    return;
-
-  content::RenderView* guest_proxy_render_view =
-      content::RenderView::FromRoutingID(guest_routing_id);
-  // TODO(fsamuel): Should we be reporting an error to JavaScript or DCHECKing?
-  if (!guest_proxy_render_view)
-    return;
-
-  v8::HandleScope handle_scope(isolate_);
-  v8::Handle<v8::Function> callback = callback_.NewHandle(isolate_);
-  v8::Handle<v8::Context> context = callback->CreationContext();
-  if (context.IsEmpty())
-    return;
-
-  blink::WebFrame* frame = guest_proxy_render_view->GetWebView()->mainFrame();
-  v8::Local<v8::Value> window = frame->mainWorldScriptContext()->Global();
-
-  const int argc = 1;
-  v8::Handle<v8::Value> argv[argc] = { window };
-
-  v8::Context::Scope context_scope(context);
-  blink::WebScopedMicrotaskSuppression suppression;
-
-  // Call the AttachGuest API's callback with the guest proxy as the first
-  // parameter.
-  callback->Call(context->Global(), argc, argv);
-  callback_.reset();
-}
-
-// static
-bool GuestViewContainer::ShouldHandleMessage(const IPC::Message& message) {
-  switch (message.type()) {
-    case ExtensionMsg_CreateMimeHandlerViewGuestACK::ID:
-    case ExtensionMsg_GuestAttached::ID:
-      return true;
-    default:
-      break;
-  }
-  return false;
+  DCHECK(!g_guest_view_container_map.Get().count(element_instance_id));
+  g_guest_view_container_map.Get().insert(
+      std::make_pair(element_instance_id, this));
 }
 
 }  // namespace extensions

@@ -5,25 +5,29 @@
 #include "chrome/browser/search/instant_service.h"
 
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/history/top_sites.h"
+#include "chrome/browser/favicon/fallback_icon_service_factory.h"
+#include "chrome/browser/favicon/large_icon_service_factory.h"
+#include "chrome/browser/history/top_sites_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/instant_io_context.h"
 #include "chrome/browser/search/instant_service_observer.h"
-#include "chrome/browser/search/local_ntp_source.h"
 #include "chrome/browser/search/most_visited_iframe_source.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search/suggestions/suggestions_source.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
-#include "chrome/browser/themes/theme_properties.h"
-#include "chrome/browser/themes/theme_service.h"
-#include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/thumbnails/thumbnail_list_source.h"
 #include "chrome/browser/ui/search/instant_search_prerenderer.h"
+#include "chrome/browser/ui/webui/fallback_icon_source.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
+#include "chrome/browser/ui/webui/large_icon_source.h"
 #include "chrome/browser/ui/webui/ntp/thumbnail_source.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/render_messages.h"
+#include "components/favicon/core/fallback_icon_service.h"
+#include "components/favicon/core/large_icon_service.h"
+#include "components/history/core/browser/top_sites.h"
+#include "components/keyed_service/core/service_access_type.h"
 #include "components/search_engines/template_url_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -36,22 +40,15 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/sys_color_change_listener.h"
 
+#if !defined(OS_ANDROID)
+#include "chrome/browser/search/local_ntp_source.h"
+#endif
 
-namespace {
-
-const int kSectionBorderAlphaTransparency = 80;
-
-// Converts SkColor to RGBAColor
-RGBAColor SkColorToRGBAColor(const SkColor& sKColor) {
-  RGBAColor color;
-  color.r = SkColorGetR(sKColor);
-  color.g = SkColorGetG(sKColor);
-  color.b = SkColorGetB(sKColor);
-  color.a = SkColorGetA(sKColor);
-  return color;
-}
-
-}  // namespace
+#if defined(ENABLE_THEMES)
+#include "chrome/browser/themes/theme_properties.h"
+#include "chrome/browser/themes/theme_service.h"
+#include "chrome/browser/themes/theme_service_factory.h"
+#endif  // defined(ENABLE_THEMES)
 
 InstantService::InstantService(Profile* profile)
     : profile_(profile),
@@ -90,12 +87,10 @@ InstantService::InstantService(Profile* profile)
                  content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
                  content::NotificationService::AllSources());
 
-  history::TopSites* top_sites = profile_->GetTopSites();
-  if (top_sites) {
-    registrar_.Add(this,
-                   chrome::NOTIFICATION_TOP_SITES_CHANGED,
-                   content::Source<history::TopSites>(top_sites));
-  }
+  scoped_refptr<history::TopSites> top_sites =
+      TopSitesFactory::GetForProfile(profile_);
+  if (top_sites)
+    top_sites->AddObserver(this);
 
   if (profile_ && profile_->GetResourceContext()) {
     content::BrowserThread::PostTask(
@@ -117,14 +112,22 @@ InstantService::InstantService(Profile* profile)
   // TODO(aurimas) remove this #if once instant_service.cc is no longer compiled
   // on Android.
 #if !defined(OS_ANDROID)
+  content::URLDataSource::Add(profile_, new LocalNtpSource(profile_));
   content::URLDataSource::Add(profile_, new ThumbnailSource(profile_, false));
   content::URLDataSource::Add(profile_, new ThumbnailSource(profile_, true));
   content::URLDataSource::Add(profile_, new ThumbnailListSource(profile_));
 #endif  // !defined(OS_ANDROID)
 
+  favicon::FallbackIconService* fallback_icon_service =
+      FallbackIconServiceFactory::GetForBrowserContext(profile_);
+  favicon::LargeIconService* large_icon_service =
+      LargeIconServiceFactory::GetForBrowserContext(profile_);
+  content::URLDataSource::Add(
+      profile_, new FallbackIconSource(fallback_icon_service));
   content::URLDataSource::Add(
       profile_, new FaviconSource(profile_, FaviconSource::FAVICON));
-  content::URLDataSource::Add(profile_, new LocalNtpSource(profile_));
+  content::URLDataSource::Add(
+      profile_, new LargeIconSource(fallback_icon_service, large_icon_service));
   content::URLDataSource::Add(profile_, new MostVisitedIframeSource());
   content::URLDataSource::Add(
       profile_, new suggestions::SuggestionsSource(profile_));
@@ -159,7 +162,8 @@ void InstantService::RemoveObserver(InstantServiceObserver* observer) {
 }
 
 void InstantService::DeleteMostVisitedItem(const GURL& url) {
-  history::TopSites* top_sites = profile_->GetTopSites();
+  scoped_refptr<history::TopSites> top_sites =
+      TopSitesFactory::GetForProfile(profile_);
   if (!top_sites)
     return;
 
@@ -167,7 +171,8 @@ void InstantService::DeleteMostVisitedItem(const GURL& url) {
 }
 
 void InstantService::UndoMostVisitedDeletion(const GURL& url) {
-  history::TopSites* top_sites = profile_->GetTopSites();
+  scoped_refptr<history::TopSites> top_sites =
+      TopSitesFactory::GetForProfile(profile_);
   if (!top_sites)
     return;
 
@@ -175,7 +180,8 @@ void InstantService::UndoMostVisitedDeletion(const GURL& url) {
 }
 
 void InstantService::UndoAllMostVisitedDeletions() {
-  history::TopSites* top_sites = profile_->GetTopSites();
+  scoped_refptr<history::TopSites> top_sites =
+      TopSitesFactory::GetForProfile(profile_);
   if (!top_sites)
     return;
 
@@ -183,12 +189,14 @@ void InstantService::UndoAllMostVisitedDeletions() {
 }
 
 void InstantService::UpdateThemeInfo() {
+#if defined(ENABLE_THEMES)
   // Update theme background info.
   // Initialize |theme_info| if necessary.
   if (!theme_info_)
     OnThemeChanged(ThemeServiceFactory::GetForProfile(profile_));
   else
     OnThemeChanged(NULL);
+#endif  // defined(ENABLE_THEMES)
 }
 
 void InstantService::UpdateMostVisitedItemsInfo() {
@@ -204,6 +212,12 @@ void InstantService::Shutdown() {
         base::Bind(&InstantIOContext::ClearInstantProcessesOnIO,
                    instant_io_context_));
   }
+
+  scoped_refptr<history::TopSites> top_sites =
+      TopSitesFactory::GetForProfile(profile_);
+  if (top_sites)
+    top_sites->RemoveObserver(this);
+
   instant_io_context_ = NULL;
 }
 
@@ -219,15 +233,6 @@ void InstantService::Observe(int type,
       OnRendererProcessTerminated(
           content::Source<content::RenderProcessHost>(source)->GetID());
       break;
-    case chrome::NOTIFICATION_TOP_SITES_CHANGED: {
-      history::TopSites* top_sites = profile_->GetTopSites();
-      if (top_sites) {
-        top_sites->GetMostVisitedURLs(
-            base::Bind(&InstantService::OnMostVisitedItemsReceived,
-                       weak_ptr_factory_.GetWeakPtr()), false);
-      }
-      break;
-    }
 #if defined(ENABLE_THEMES)
     case chrome::NOTIFICATION_BROWSER_THEME_CHANGED: {
       OnThemeChanged(content::Source<ThemeService>(source).ptr());
@@ -281,6 +286,24 @@ void InstantService::NotifyAboutMostVisitedItems() {
   FOR_EACH_OBSERVER(InstantServiceObserver, observers_,
                     MostVisitedItemsChanged(most_visited_items_));
 }
+
+#if defined(ENABLE_THEMES)
+
+namespace {
+
+const int kSectionBorderAlphaTransparency = 80;
+
+// Converts SkColor to RGBAColor
+RGBAColor SkColorToRGBAColor(const SkColor& sKColor) {
+  RGBAColor color;
+  color.r = SkColorGetR(sKColor);
+  color.g = SkColorGetG(sKColor);
+  color.b = SkColorGetB(sKColor);
+  color.a = SkColorGetA(sKColor);
+  return color;
+}
+
+}  // namespace
 
 void InstantService::OnThemeChanged(ThemeService* theme_service) {
   if (!theme_service) {
@@ -389,6 +412,7 @@ void InstantService::OnThemeChanged(ThemeService* theme_service) {
   FOR_EACH_OBSERVER(InstantServiceObserver, observers_,
                     ThemeInfoChanged(*theme_info_));
 }
+#endif  // defined(ENABLE_THEMES)
 
 void InstantService::OnTemplateURLServiceChanged() {
   // Check whether the default search provider was changed.
@@ -406,19 +430,31 @@ void InstantService::OnTemplateURLServiceChanged() {
   // changed, the effective URLs might change if they reference the Google base
   // URL. The TemplateURLService will notify us when the effective URL changes
   // in this way but it's up to us to do the work to check both.
+  bool google_base_url_domain_changed = false;
   GURL google_base_url(UIThreadSearchTermsData(profile_).GoogleBaseURLValue());
   if (google_base_url != previous_google_base_url_) {
     previous_google_base_url_ = google_base_url;
     if (template_url && template_url->HasGoogleBaseURLs(
             UIThreadSearchTermsData(profile_)))
-      default_search_provider_changed = true;
+      google_base_url_domain_changed = true;
   }
 
-  if (default_search_provider_changed) {
+  if (default_search_provider_changed || google_base_url_domain_changed) {
     ResetInstantSearchPrerenderer();
-    FOR_EACH_OBSERVER(InstantServiceObserver, observers_,
-                      DefaultSearchProviderChanged());
+    FOR_EACH_OBSERVER(
+        InstantServiceObserver, observers_,
+        DefaultSearchProviderChanged(google_base_url_domain_changed));
   }
+}
+
+void InstantService::TopSitesLoaded(history::TopSites* top_sites) {
+}
+
+void InstantService::TopSitesChanged(history::TopSites* top_sites) {
+  top_sites->GetMostVisitedURLs(
+      base::Bind(&InstantService::OnMostVisitedItemsReceived,
+                 weak_ptr_factory_.GetWeakPtr()),
+      false);
 }
 
 void InstantService::ResetInstantSearchPrerenderer() {

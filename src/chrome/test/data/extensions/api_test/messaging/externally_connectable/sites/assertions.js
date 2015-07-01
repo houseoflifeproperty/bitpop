@@ -25,16 +25,23 @@ function clobber(obj, name, qualifiedName) {
   // Clobbering constructors would break everything.
   // Clobbering toString is annoying.
   // Clobbering __proto__ breaks in ways that grep can't find.
+  // Clobbering function name will break because
+  // SafeBuiltins does not support getters yet. See crbug.com/463526.
   // Clobbering Function.call would make it impossible to implement these tests.
   // Clobbering Object.valueOf breaks v8.
+  // Clobbering %FunctionPrototype%.caller and .arguments will break because
+  // these properties are poisoned accessors in ES6.
   if (name == 'constructor' ||
       name == 'toString' ||
       name == '__proto__' ||
+      name == 'name' && typeof obj == 'function' ||
       qualifiedName == 'Function.call' ||
+      (obj !== Function && qualifiedName == 'Function.caller') ||
+      (obj !== Function && qualifiedName == 'Function.arguments') ||
       qualifiedName == 'Object.valueOf') {
     return;
   }
-  if (typeof(obj[name]) == 'function') {
+  if (typeof obj[name] == 'function') {
     obj[name] = function() {
       throw new Error('Clobbered ' + qualifiedName + ' function');
     };
@@ -248,6 +255,52 @@ window.assertions = {
       else
         canConnectAndSendMessages(sendToBrowser);
     });
+  },
+
+  trySendMessage: function(extensionId) {
+    chrome.runtime.sendMessage(extensionId, kMessage, function(response) {
+      // The result is unimportant. All that matters is the attempt.
+    });
+  },
+
+  tryIllegalArguments: function() {
+    // Tests that illegal arguments to messaging functions throw exceptions.
+    // Regression test for crbug.com/472700, where they crashed the renderer.
+    function runIllegalFunction(fun) {
+      try {
+        fun();
+      } catch(e) {
+        return true;
+      }
+      console.error('Function did not throw exception: ' + fun);
+      sendToBrowser(false);
+      return false;
+    }
+    var result =
+        runIllegalFunction(chrome.runtime.connect) &&
+        runIllegalFunction(function() {
+          chrome.runtime.connect('');
+        }) &&
+        runIllegalFunction(function() {
+          chrome.runtime.connect(42);
+        }) &&
+        runIllegalFunction(function() {
+          chrome.runtime.connect('', 42);
+        }) &&
+        runIllegalFunction(function() {
+          chrome.runtime.connect({name: 'noname'});
+        }) &&
+        runIllegalFunction(chrome.runtime.sendMessage) &&
+        runIllegalFunction(function() {
+          chrome.runtime.sendMessage('');
+        }) &&
+        runIllegalFunction(function() {
+          chrome.runtime.sendMessage(42);
+        }) &&
+        runIllegalFunction(function() {
+          chrome.runtime.sendMessage('', 42);
+        }) &&
+        sendToBrowser(true);
   },
 
   areAnyRuntimePropertiesDefined: function(names) {

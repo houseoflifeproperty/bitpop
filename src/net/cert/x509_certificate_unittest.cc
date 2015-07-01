@@ -11,6 +11,7 @@
 #include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "crypto/rsa_private_key.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_data_directory.h"
@@ -19,7 +20,7 @@
 #include "net/test/test_certificate_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
 #include <cert.h>
 #endif
 
@@ -323,6 +324,22 @@ TEST(X509CertificateTest, SerialNumbers) {
                      paypal_null_serial, sizeof(paypal_null_serial)) == 0);
 }
 
+TEST(X509CertificateTest, SHA256FingerprintsCorrectly) {
+  scoped_refptr<X509Certificate> google_cert(X509Certificate::CreateFromBytes(
+      reinterpret_cast<const char*>(google_der), sizeof(google_der)));
+
+  static const uint8 google_sha256_fingerprint[32] = {
+      0x21, 0xaf, 0x58, 0x74, 0xea, 0x6b, 0xad, 0xbd, 0xe4, 0xb3, 0xb1,
+      0xaa, 0x53, 0x32, 0x80, 0x8f, 0xbf, 0x8a, 0x24, 0x7d, 0x98, 0xec,
+      0x7f, 0x77, 0x49, 0x38, 0x42, 0x81, 0x26, 0x7f, 0xed, 0x38};
+
+  SHA256HashValue fingerprint =
+      X509Certificate::CalculateFingerprint256(google_cert->os_cert_handle());
+
+  for (size_t i = 0; i < 32; ++i)
+    EXPECT_EQ(google_sha256_fingerprint[i], fingerprint.data[i]);
+}
+
 TEST(X509CertificateTest, CAFingerprints) {
   base::FilePath certs_dir = GetTestCertsDirectory();
 
@@ -602,7 +619,7 @@ TEST(X509CertificateTest, Pickle) {
   PickleIterator iter(pickle);
   scoped_refptr<X509Certificate> cert_from_pickle =
       X509Certificate::CreateFromPickle(
-          pickle, &iter, X509Certificate::PICKLETYPE_CERTIFICATE_CHAIN_V3);
+          &iter, X509Certificate::PICKLETYPE_CERTIFICATE_CHAIN_V3);
   ASSERT_NE(static_cast<X509Certificate*>(NULL), cert_from_pickle.get());
   EXPECT_TRUE(X509Certificate::IsSameOSCert(
       cert->os_cert_handle(), cert_from_pickle->os_cert_handle()));
@@ -697,6 +714,20 @@ TEST(X509CertificateTest, IsIssuedByEncoded) {
   EXPECT_TRUE(google_cert->IsIssuedByEncoded(issuers));
 }
 
+TEST(X509CertificateTest, IsSelfSigned) {
+  base::FilePath certs_dir = GetTestCertsDirectory();
+
+  scoped_refptr<X509Certificate> cert(
+      ImportCertFromFile(certs_dir, "mit.davidben.der"));
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), cert.get());
+  EXPECT_FALSE(X509Certificate::IsSelfSigned(cert->os_cert_handle()));
+
+  scoped_refptr<X509Certificate> self_signed(
+      ImportCertFromFile(certs_dir, "aia-root.pem"));
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), self_signed.get());
+  EXPECT_TRUE(X509Certificate::IsSelfSigned(self_signed->os_cert_handle()));
+}
+
 TEST(X509CertificateTest, IsIssuedByEncodedWithIntermediates) {
   static const unsigned char kPolicyRootDN[] = {
     0x30, 0x1e, 0x31, 0x1c, 0x30, 0x1a, 0x06, 0x03, 0x55, 0x04, 0x03, 0x0c,
@@ -765,7 +796,7 @@ TEST(X509CertificateTest, FreeNullHandle) {
   X509Certificate::FreeOSCertHandle(NULL);
 }
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
 TEST(X509CertificateTest, GetDefaultNickname) {
   base::FilePath certs_dir = GetTestCertsDirectory();
 
@@ -850,10 +881,8 @@ class X509CertificateParseTest
     : public testing::TestWithParam<CertificateFormatTestData> {
  public:
   virtual ~X509CertificateParseTest() {}
-  virtual void SetUp() {
-    test_data_ = GetParam();
-  }
-  virtual void TearDown() {}
+  void SetUp() override { test_data_ = GetParam(); }
+  void TearDown() override {}
 
  protected:
   CertificateFormatTestData test_data_;
@@ -942,10 +971,10 @@ const CertificateNameVerifyTestData kNameVerifyTestData[] = {
     { false, "w.bar.foo.com", "w*.bar.foo.com" },
     { false, "www.bar.foo.com", "ww*ww.bar.foo.com" },
     { false, "wwww.bar.foo.com", "ww*ww.bar.foo.com" },
-    { true, "wwww.bar.foo.com", "w*w.bar.foo.com" },
+    { false, "wwww.bar.foo.com", "w*w.bar.foo.com" },
     { false, "wwww.bar.foo.com", "w*w.bar.foo.c0m" },
-    { true, "WALLY.bar.foo.com", "wa*.bar.foo.com" },
-    { true, "wally.bar.foo.com", "*Ly.bar.foo.com" },
+    { false, "WALLY.bar.foo.com", "wa*.bar.foo.com" },
+    { false, "wally.bar.foo.com", "*Ly.bar.foo.com" },
     { true, "ww%57.foo.com", "", "www.foo.com" },
     { true, "www&.foo.com", "www%26.foo.com" },
     // Common name must not be used if subject alternative name was provided.
@@ -969,18 +998,20 @@ const CertificateNameVerifyTestData kNameVerifyTestData[] = {
     { true, "foo.example.com", "*.example.com" },
     { false, "bar.foo.example.com", "*.example.com" },
     { false, "example.com", "*.example.com" },
-    //   (e.g., baz*.example.net and *baz.example.net and b*z.example.net would
-    //   be taken to match baz1.example.net and foobaz.example.net and
-    //   buzz.example.net, respectively
-    { true, "baz1.example.net", "baz*.example.net" },
-    { true, "foobaz.example.net", "*baz.example.net" },
-    { true, "buzz.example.net", "b*z.example.net" },
+    //   Partial wildcards are disallowed, though RFC 2818 rules allow them.
+    //   That is, forms such as baz*.example.net, *baz.example.net, and
+    //   b*z.example.net should NOT match domains. Instead, the wildcard must
+    //   always be the left-most label, and only a single label.
+    { false, "baz1.example.net", "baz*.example.net" },
+    { false, "foobaz.example.net", "*baz.example.net" },
+    { false, "buzz.example.net", "b*z.example.net" },
+    { false, "www.test.example.net", "www.*.example.net" },
     // Wildcards should not be valid for public registry controlled domains,
     // and unknown/unrecognized domains, at least three domain components must
     // be present.
     { true, "www.test.example", "*.test.example" },
     { true, "test.example.co.uk", "*.example.co.uk" },
-    { false, "test.example", "*.exmaple" },
+    { false, "test.example", "*.example" },
     { false, "example.co.uk", "*.co.uk" },
     { false, "foo.com", "*.com" },
     { false, "foo.us", "*.us" },
@@ -1127,12 +1158,23 @@ const struct PublicKeyInfoTestData {
   size_t expected_bits;
   X509Certificate::PublicKeyType expected_type;
 } kPublicKeyInfoTestData[] = {
-  { "768-rsa-ee-by-768-rsa-intermediate.pem", 768,
-    X509Certificate::kPublicKeyTypeRSA },
-  { "1024-rsa-ee-by-768-rsa-intermediate.pem", 1024,
-    X509Certificate::kPublicKeyTypeRSA },
-  { "prime256v1-ecdsa-ee-by-1024-rsa-intermediate.pem", 256,
-    X509Certificate::kPublicKeyTypeECDSA },
+    {"768-rsa-ee-by-768-rsa-intermediate.pem",
+     768,
+     X509Certificate::kPublicKeyTypeRSA},
+    {"1024-rsa-ee-by-768-rsa-intermediate.pem",
+     1024,
+     X509Certificate::kPublicKeyTypeRSA},
+    {"prime256v1-ecdsa-ee-by-1024-rsa-intermediate.pem",
+     256,
+     X509Certificate::kPublicKeyTypeECDSA},
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+    // OS X has an key length limit of 4096 bits. This should manifest as an
+    // unknown key. If a future version of OS X changes this, large_key.pem may
+    // need to be renegerated with a larger key. See https://crbug.com/472291.
+    {"large_key.pem", 0, X509Certificate::kPublicKeyTypeUnknown},
+#else
+    {"large_key.pem", 4104, X509Certificate::kPublicKeyTypeRSA},
+#endif
 };
 
 class X509CertificatePublicKeyInfoTest

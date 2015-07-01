@@ -15,7 +15,9 @@ using base::DictionaryValue;
 DomainReliabilityBeacon::DomainReliabilityBeacon() {}
 DomainReliabilityBeacon::~DomainReliabilityBeacon() {}
 
-Value* DomainReliabilityBeacon::ToValue(base::TimeTicks upload_time) const {
+Value* DomainReliabilityBeacon::ToValue(
+    base::TimeTicks upload_time,
+    base::TimeTicks last_network_change_time) const {
   DictionaryValue* beacon_value = new DictionaryValue();
   if (!url.empty())
     beacon_value->SetString("url", url);
@@ -31,6 +33,7 @@ Value* DomainReliabilityBeacon::ToValue(base::TimeTicks upload_time) const {
     beacon_value->Set("failure_data", failure_value);
   }
   beacon_value->SetString("server_ip", server_ip);
+  beacon_value->SetBoolean("was_proxied", was_proxied);
   beacon_value->SetString("protocol", protocol);
   if (http_response_code >= 0)
     beacon_value->SetInteger("http_response_code", http_response_code);
@@ -38,6 +41,8 @@ Value* DomainReliabilityBeacon::ToValue(base::TimeTicks upload_time) const {
                            elapsed.InMilliseconds());
   beacon_value->SetInteger("request_age_ms",
                            (upload_time - start_time).InMilliseconds());
+  bool network_changed = last_network_change_time > start_time;
+  beacon_value->SetBoolean("network_changed", network_changed);
   return beacon_value;
 }
 

@@ -14,12 +14,13 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
-#include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
+#include "extensions/common/manifest_url_handlers.h"
 #include "extensions/common/permissions/api_permission_set.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "sync/api/attachments/attachment_id.h"
@@ -61,36 +62,32 @@ class FakeThemeService : public ThemeService {
     is_dirty_(false) {}
 
   // ThemeService implementation
-  virtual void SetTheme(const extensions::Extension* extension) OVERRIDE {
+  void SetTheme(const extensions::Extension* extension) override {
     is_dirty_ = true;
     theme_extension_ = extension;
     using_system_theme_ = false;
     using_default_theme_ = false;
   }
 
-  virtual void UseDefaultTheme() OVERRIDE {
+  void UseDefaultTheme() override {
     is_dirty_ = true;
     using_default_theme_ = true;
     using_system_theme_ = false;
     theme_extension_ = NULL;
   }
 
-  virtual void UseSystemTheme() OVERRIDE {
+  void UseSystemTheme() override {
     is_dirty_ = true;
     using_system_theme_ = true;
     using_default_theme_ = false;
     theme_extension_ = NULL;
   }
 
-  virtual bool UsingDefaultTheme() const OVERRIDE {
-    return using_default_theme_;
-  }
+  bool UsingDefaultTheme() const override { return using_default_theme_; }
 
-  virtual bool UsingSystemTheme() const OVERRIDE {
-    return using_system_theme_;
-  }
+  bool UsingSystemTheme() const override { return using_system_theme_; }
 
-  virtual string GetThemeID() const OVERRIDE {
+  string GetThemeID() const override {
     if (theme_extension_.get())
       return theme_extension_->id();
     else
@@ -149,9 +146,9 @@ class ThemeSyncableServiceTest : public testing::Test {
         file_thread_(content::BrowserThread::FILE, &loop_),
         fake_theme_service_(NULL) {}
 
-  virtual ~ThemeSyncableServiceTest() {}
+  ~ThemeSyncableServiceTest() override {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     profile_.reset(new TestingProfile);
     fake_theme_service_ = BuildForProfile(profile_.get());
     theme_sync_service_.reset(new ThemeSyncableService(profile_.get(),
@@ -160,13 +157,13 @@ class ThemeSyncableServiceTest : public testing::Test {
     SetUpExtension();
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     profile_.reset();
     loop_.RunUntilIdle();
   }
 
   void SetUpExtension() {
-    CommandLine command_line(CommandLine::NO_PROGRAM);
+    base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
     extensions::TestExtensionSystem* test_ext_system =
         static_cast<extensions::TestExtensionSystem*>(
                 extensions::ExtensionSystem::Get(profile_.get()));
@@ -191,7 +188,9 @@ class ThemeSyncableServiceTest : public testing::Test {
     extensions::ExtensionPrefs::Get(profile_.get())
         ->AddGrantedPermissions(theme_extension_->id(), permissions.get());
     service->AddExtension(theme_extension_.get());
-    ASSERT_EQ(1u, service->extensions()->size());
+    extensions::ExtensionRegistry* registry =
+        extensions::ExtensionRegistry::Get(profile_.get());
+    ASSERT_EQ(1u, registry->enabled_extensions().size());
   }
 
   // Overridden in PolicyInstalledThemeTest below.
@@ -236,7 +235,7 @@ class ThemeSyncableServiceTest : public testing::Test {
 };
 
 class PolicyInstalledThemeTest : public ThemeSyncableServiceTest {
-  virtual extensions::Manifest::Location GetThemeLocation() OVERRIDE {
+  extensions::Manifest::Location GetThemeLocation() override {
     return extensions::Manifest::EXTERNAL_POLICY_DOWNLOAD;
   }
 };

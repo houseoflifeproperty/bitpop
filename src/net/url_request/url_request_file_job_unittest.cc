@@ -39,14 +39,14 @@ class URLRequestFileJobWithCallbacks : public URLRequestFileJob {
   const std::vector<std::string>& data_chunks() { return data_chunks_; }
 
  protected:
-  virtual ~URLRequestFileJobWithCallbacks() {}
+  ~URLRequestFileJobWithCallbacks() override {}
 
-  virtual void OnSeekComplete(int64 result) OVERRIDE {
+  void OnSeekComplete(int64 result) override {
     ASSERT_EQ(seek_position_, 0);
     seek_position_ = result;
   }
 
-  virtual void OnReadComplete(IOBuffer* buf, int result) OVERRIDE {
+  void OnReadComplete(IOBuffer* buf, int result) override {
     data_chunks_.push_back(std::string(buf->data(), result));
   }
 
@@ -67,12 +67,12 @@ class CallbacksJobFactory : public URLRequestJobFactory {
       : path_(path), observer_(observer) {
   }
 
-  virtual ~CallbacksJobFactory() {}
+  ~CallbacksJobFactory() override {}
 
-  virtual URLRequestJob* MaybeCreateJobWithProtocolHandler(
+  URLRequestJob* MaybeCreateJobWithProtocolHandler(
       const std::string& scheme,
       URLRequest* request,
-      NetworkDelegate* network_delegate) const OVERRIDE {
+      NetworkDelegate* network_delegate) const override {
     URLRequestFileJobWithCallbacks* job = new URLRequestFileJobWithCallbacks(
         request,
         network_delegate,
@@ -82,15 +82,27 @@ class CallbacksJobFactory : public URLRequestJobFactory {
     return job;
   }
 
-  virtual bool IsHandledProtocol(const std::string& scheme) const OVERRIDE {
+  URLRequestJob* MaybeInterceptRedirect(URLRequest* request,
+                                        NetworkDelegate* network_delegate,
+                                        const GURL& location) const override {
+    return nullptr;
+  }
+
+  URLRequestJob* MaybeInterceptResponse(
+      URLRequest* request,
+      NetworkDelegate* network_delegate) const override {
+    return nullptr;
+  }
+
+  bool IsHandledProtocol(const std::string& scheme) const override {
     return scheme == "file";
   }
 
-  virtual bool IsHandledURL(const GURL& url) const OVERRIDE {
+  bool IsHandledURL(const GURL& url) const override {
     return IsHandledProtocol(url.scheme());
   }
 
-  virtual bool IsSafeRedirectTarget(const GURL& location) const OVERRIDE {
+  bool IsSafeRedirectTarget(const GURL& location) const override {
     return false;
   }
 
@@ -116,7 +128,7 @@ bool CreateTempFileWithContent(const std::string& content,
 
 class JobObserverImpl : public CallbacksJobFactory::JobObserver {
  public:
-  virtual void OnJobCreated(URLRequestFileJobWithCallbacks* job) OVERRIDE {
+  void OnJobCreated(URLRequestFileJobWithCallbacks* job) override {
     jobs_.push_back(job);
   }
 
@@ -176,7 +188,7 @@ void URLRequestFileJobEventsTest::RunRequest(const std::string& content,
   context_.set_job_factory(&factory);
 
   scoped_ptr<URLRequest> request(context_.CreateRequest(
-      FilePathToFileURL(path), DEFAULT_PRIORITY, &delegate_, NULL));
+      FilePathToFileURL(path), DEFAULT_PRIORITY, &delegate_));
   if (range) {
     ASSERT_GE(range->start, 0);
     ASSERT_GE(range->end, 0);

@@ -7,7 +7,6 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "chrome/browser/background/background_mode_manager.h"
@@ -23,7 +22,7 @@ using content::BrowserThread;
 
 void BackgroundModeManager::EnableLaunchOnStartup(bool should_launch) {
   // This functionality is only defined for default profile, currently.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kUserDataDir))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kUserDataDir))
     return;
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,

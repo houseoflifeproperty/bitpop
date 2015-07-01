@@ -5,9 +5,11 @@
 #ifndef V8_BASE_MACROS_H_
 #define V8_BASE_MACROS_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <cstring>
 
-#include "include/v8stdint.h"
 #include "src/base/build_config.h"
 #include "src/base/compiler-specific.h"
 #include "src/base/logging.h"
@@ -18,10 +20,12 @@
 // corresponds to 'offsetof' (in stddef.h), except that it doesn't
 // use 0 or NULL, which causes a problem with the compiler warnings
 // we have enabled (which is also why 'offsetof' doesn't seem to work).
-// Here we simply use the non-zero value 4, which seems to work.
-#define OFFSET_OF(type, field)                                          \
-  (reinterpret_cast<intptr_t>(&(reinterpret_cast<type*>(4)->field)) - 4)
+// Here we simply use the aligned, non-zero value 16.
+#define OFFSET_OF(type, field) \
+  (reinterpret_cast<intptr_t>(&(reinterpret_cast<type*>(16)->field)) - 16)
 
+
+#if V8_OS_NACL
 
 // ARRAYSIZE_UNSAFE performs essentially the same calculation as arraysize,
 // but can be used on anonymous types or types defined inside
@@ -62,9 +66,6 @@
 #define ARRAYSIZE_UNSAFE(a)     \
   ((sizeof(a) / sizeof(*(a))) / \
    static_cast<size_t>(!(sizeof(a) % sizeof(*(a)))))  // NOLINT
-
-
-#if V8_OS_NACL
 
 // TODO(bmeurer): For some reason, the NaCl toolchain cannot handle the correct
 // definition of arraysize() below, so we have to use the unsafe version for
@@ -130,7 +131,7 @@ struct CompileAssert {};
 
 #define COMPILE_ASSERT(expr, msg)                \
   typedef CompileAssert<static_cast<bool>(expr)> \
-      msg[static_cast<bool>(expr) ? 1 : -1] ALLOW_UNUSED
+      msg[static_cast<bool>(expr) ? 1 : -1] ALLOW_UNUSED_TYPE
 
 // Implementation details of COMPILE_ASSERT:
 //
@@ -150,23 +151,11 @@ struct CompileAssert {};
 //     COMPILE_ASSERT(foo, msg); // not supposed to compile as foo is
 //                               // not a compile-time constant.
 //
-// - By using the type CompileAssert<(bool(expr))>, we ensures that
+// - By using the type CompileAssert<static_cast<bool>(expr)>, we ensure that
 //   expr is a compile-time constant.  (Template arguments must be
 //   determined at compile-time.)
 //
-// - The outer parentheses in CompileAssert<(bool(expr))> are necessary
-//   to work around a bug in gcc 3.4.4 and 4.0.1.  If we had written
-//
-//     CompileAssert<bool(expr)>
-//
-//   instead, these compilers will refuse to compile
-//
-//     COMPILE_ASSERT(5 > 0, some_message);
-//
-//   (They seem to think the ">" in "5 > 0" marks the end of the
-//   template argument list.)
-//
-// - The array size is (bool(expr) ? 1 : -1), instead of simply
+// - The array size is (static_cast<bool>(expr) ? 1 : -1), instead of simply
 //
 //     ((expr) ? 1 : -1).
 //
@@ -239,11 +228,15 @@ V8_INLINE Dest bit_cast(Source const& source) {
 }
 
 
+// Put this in the private: declarations for a class to be unassignable.
+#define DISALLOW_ASSIGN(TypeName) void operator=(const TypeName&)
+
+
 // A macro to disallow the evil copy constructor and operator= functions
 // This should be used in the private: declarations for a class
-#define DISALLOW_COPY_AND_ASSIGN(TypeName)  \
-  TypeName(const TypeName&) V8_DELETE;      \
-  void operator=(const TypeName&) V8_DELETE
+#define DISALLOW_COPY_AND_ASSIGN(TypeName) \
+  TypeName(const TypeName&) = delete;      \
+  void operator=(const TypeName&) = delete
 
 
 // A macro to disallow all the implicit constructors, namely the
@@ -252,8 +245,8 @@ V8_INLINE Dest bit_cast(Source const& source) {
 // This should be used in the private: declarations for a class
 // that wants to prevent anyone from instantiating it. This is
 // especially useful for classes containing only static methods.
-#define DISALLOW_IMPLICIT_CONSTRUCTORS(TypeName)  \
-  TypeName() V8_DELETE;                           \
+#define DISALLOW_IMPLICIT_CONSTRUCTORS(TypeName) \
+  TypeName() = delete;                           \
   DISALLOW_COPY_AND_ASSIGN(TypeName)
 
 
@@ -308,10 +301,10 @@ template <> class StaticAssertion<true> { };
 // actually causes each use to introduce a new defined type with a
 // name depending on the source line.
 template <int> class StaticAssertionHelper { };
-#define STATIC_ASSERT(test)                                                    \
-  typedef                                                                     \
-    StaticAssertionHelper<sizeof(StaticAssertion<static_cast<bool>((test))>)> \
-    SEMI_STATIC_JOIN(__StaticAssertTypedef__, __LINE__) ALLOW_UNUSED
+#define STATIC_ASSERT(test)                               \
+  typedef StaticAssertionHelper<                          \
+      sizeof(StaticAssertion<static_cast<bool>((test))>)> \
+      SEMI_STATIC_JOIN(__StaticAssertTypedef__, __LINE__) ALLOW_UNUSED_TYPE
 
 #endif
 
@@ -344,7 +337,7 @@ inline void USE(T) { }
 # define V8_INTPTR_C(x)   (x ## LL)
 # define V8_PTR_PREFIX    "I64"
 #elif V8_HOST_ARCH_64_BIT
-# if V8_OS_MACOSX
+# if V8_OS_MACOSX || V8_OS_OPENBSD
 #  define V8_UINT64_C(x)   (x ## ULL)
 #  define V8_INT64_C(x)    (x ## LL)
 # else
@@ -357,7 +350,11 @@ inline void USE(T) { }
 # define V8_UINT64_C(x)   (x ## ULL)
 # define V8_INT64_C(x)    (x ## LL)
 # define V8_INTPTR_C(x)   (x)
+#if V8_OS_AIX
+#define V8_PTR_PREFIX "l"
+#else
 # define V8_PTR_PREFIX    ""
+#endif
 #endif
 
 #define V8PRIxPTR V8_PTR_PREFIX "x"
@@ -407,5 +404,23 @@ template <typename T>
 inline T RoundUp(T x, intptr_t m) {
   return RoundDown<T>(static_cast<T>(x + m - 1), m);
 }
+
+
+namespace v8 {
+namespace base {
+
+// TODO(yangguo): This is a poor man's replacement for std::is_fundamental,
+// which requires C++11. Switch to std::is_fundamental once possible.
+template <typename T>
+inline bool is_fundamental() {
+  return false;
+}
+
+template <>
+inline bool is_fundamental<uint8_t>() {
+  return true;
+}
+}
+}  // namespace v8::base
 
 #endif   // V8_BASE_MACROS_H_

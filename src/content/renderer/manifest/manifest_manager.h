@@ -33,15 +33,17 @@ class ManifestManager : public RenderFrameObserver {
   typedef base::Callback<void(const Manifest&)> GetManifestCallback;
 
   explicit ManifestManager(RenderFrame* render_frame);
-  virtual ~ManifestManager();
+  ~ManifestManager() override;
 
   // Will call the given |callback| with the Manifest associated with the
   // RenderFrame if any. Will pass an empty Manifest in case of error.
   void GetManifest(const GetManifestCallback& callback);
 
   // RenderFrameObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void DidChangeManifest() OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void DidChangeManifest() override;
+  void DidCommitProvisionalLoad(bool is_new_navigation,
+                                bool is_same_page_navigation) override;
 
  private:
   enum ResolveState {
@@ -81,4 +83,4 @@ class ManifestManager : public RenderFrameObserver {
 
 } // namespace content
 
-#endif // CONTENT_RENDERER_MANIFEST_MANIFEST_MANAGER_H_
+#endif  // CONTENT_RENDERER_MANIFEST_MANIFEST_MANAGER_H_

@@ -64,6 +64,10 @@ public class AwContentsStatics {
     }
 
     public static String getUnreachableWebDataUrl() {
+        // Note that this method may be called from both IO and UI threads,
+        // but as it only retrieves a value of a constant from native, even if
+        // two calls will be running at the same time, this should not cause
+        // any harm.
         if (sUnreachableWebDataUrl == null) {
             sUnreachableWebDataUrl = nativeGetUnreachableWebDataUrl();
         }
@@ -74,6 +78,17 @@ public class AwContentsStatics {
         nativeSetRecordFullDocument(recordFullDocument);
     }
 
+    /*
+     * Register the signal handler that prints out the version code upon crash.
+     */
+    public static void registerCrashHandler(String version) {
+        nativeRegisterCrashHandler(version);
+    }
+
+    public static void setLegacyCacheRemovalDelayForTest(long timeoutMs) {
+        nativeSetLegacyCacheRemovalDelayForTest(timeoutMs);
+    }
+
     //--------------------------------------------------------------------------------------------
     //  Native methods
     //--------------------------------------------------------------------------------------------
@@ -82,4 +97,6 @@ public class AwContentsStatics {
     private static native void nativeSetDataReductionProxyEnabled(boolean enabled);
     private static native String nativeGetUnreachableWebDataUrl();
     private static native void nativeSetRecordFullDocument(boolean recordFullDocument);
+    private static native void nativeRegisterCrashHandler(String version);
+    private static native void nativeSetLegacyCacheRemovalDelayForTest(long timeoutMs);
 }

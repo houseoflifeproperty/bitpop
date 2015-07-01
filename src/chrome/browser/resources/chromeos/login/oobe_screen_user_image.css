@@ -19,7 +19,7 @@
 }
 
 #user-image-screen-description {
-  -webkit-margin-before: 0;
+  margin-top: 0;
 }
 
 #user-image-grid {
@@ -94,6 +94,33 @@
   left: 14px;
   position: absolute;
   top: 14px;
+}
+
+.image-loading.user-image .new-gaia-flow #user-image {
+  height: 528px; /* Should be the same as #gaia-signin height. */
+  padding: 0 0 0;
+  width: 448px; /* Should be the same as #gaia-signin width. */
+}
+
+.new-gaia-flow #user-image.loading {
+  min-height: 528px; /* Should be the same as #gaia-signin height. */
+  width: 448px; /* Should be the same as #gaia-signin width. */
+}
+
+.new-gaia-flow #old-flow-throbber {
+  display: none;
+}
+
+#new-flow-throbber {
+  display: none;
+}
+
+.new-gaia-flow #new-flow-throbber {
+  display: block;
+}
+
+.image-loading.user-image .new-gaia-flow #step-logo {
+  display: none;
 }
 
 html[dir=rtl] #user-image-preview {
@@ -173,7 +200,7 @@ html[dir=rtl] #user-image-preview {
 
 #flip-photo {
   -webkit-transition: opacity 75ms linear;
-  background: url('chrome://theme/IDR_MIRROR_FLIP') no-repeat;
+  background: url(chrome://theme/IDR_MIRROR_FLIP) no-repeat;
   border: none;
   bottom: 44px;  /* 8px + image bottom. */
   display: block;
@@ -211,13 +238,13 @@ html[dir=rtl] #flip-photo {
 }
 
 .camera:not(.live) #discard-photo {
-  background: url('chrome://theme/IDR_USER_IMAGE_RECYCLE')
+  background: url(chrome://theme/IDR_USER_IMAGE_RECYCLE)
       no-repeat center center;
   display: block;
 }
 
 .camera.live.online #take-photo {
-  background: url('chrome://theme/IDR_USER_IMAGE_CAPTURE')
+  background: url(chrome://theme/IDR_USER_IMAGE_CAPTURE)
       no-repeat center -1px;
   display: block;
 }
@@ -236,8 +263,8 @@ html[dir=rtl] #flip-photo {
 }
 
 #user-image .step-contents {
-  -webkit-margin-after: 30px;
   -webkit-margin-start: 31px;
+  margin-bottom: 30px;
 }
 
 .user-image-stream-area .spinner {

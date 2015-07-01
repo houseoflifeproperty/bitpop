@@ -34,32 +34,18 @@ class SessionStorageNamespaceImpl
   SessionStorageNamespaceImpl(DOMStorageContextWrapper* context,
                               const std::string& persistent_id);
 
-  // Creates an alias of |master_session_storage_namespace|. This will allocate
-  // a new non-persistent ID.
-  explicit SessionStorageNamespaceImpl(
-      SessionStorageNamespaceImpl* master_session_storage_namespace);
-
   // SessionStorageNamespace implementation.
-  virtual int64 id() const OVERRIDE;
-  virtual const std::string& persistent_id() const OVERRIDE;
-  virtual void SetShouldPersist(bool should_persist) OVERRIDE;
-  virtual bool should_persist() const OVERRIDE;
+  int64 id() const override;
+  const std::string& persistent_id() const override;
+  void SetShouldPersist(bool should_persist) override;
+  bool should_persist() const override;
 
   SessionStorageNamespaceImpl* Clone();
   bool IsFromContext(DOMStorageContextWrapper* context);
 
-  virtual void AddTransactionLogProcessId(int process_id) OVERRIDE;
-  virtual void RemoveTransactionLogProcessId(int process_id) OVERRIDE;
-  virtual void Merge(bool actually_merge,
-                     int process_id,
-                     SessionStorageNamespace* other,
-                     const MergeResultCallback& callback) OVERRIDE;
-  virtual bool IsAliasOf(SessionStorageNamespace* other) OVERRIDE;
-  virtual SessionStorageNamespace* CreateAlias() OVERRIDE;
-
  private:
   explicit SessionStorageNamespaceImpl(DOMStorageSession* clone);
-  virtual ~SessionStorageNamespaceImpl();
+  ~SessionStorageNamespaceImpl() override;
 
   scoped_refptr<DOMStorageSession> session_;
 

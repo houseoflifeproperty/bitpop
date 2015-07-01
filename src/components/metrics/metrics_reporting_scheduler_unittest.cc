@@ -15,10 +15,15 @@ namespace metrics {
 class MetricsReportingSchedulerTest : public testing::Test {
  public:
   MetricsReportingSchedulerTest() : callback_call_count_(0) {}
-  virtual ~MetricsReportingSchedulerTest() {}
+  ~MetricsReportingSchedulerTest() override {}
 
   base::Closure GetCallback() {
     return base::Bind(&MetricsReportingSchedulerTest::SchedulerCallback,
+                      base::Unretained(this));
+  }
+
+  base::Callback<base::TimeDelta(void)> GetConnectionCallback() {
+    return base::Bind(&MetricsReportingSchedulerTest::GetStandardUploadInterval,
                       base::Unretained(this));
   }
 
@@ -27,6 +32,10 @@ class MetricsReportingSchedulerTest : public testing::Test {
  private:
   void SchedulerCallback() {
     ++callback_call_count_;
+  }
+
+  base::TimeDelta GetStandardUploadInterval() {
+    return base::TimeDelta::FromMinutes(5);
   }
 
   int callback_call_count_;
@@ -38,7 +47,7 @@ class MetricsReportingSchedulerTest : public testing::Test {
 
 
 TEST_F(MetricsReportingSchedulerTest, InitTaskCompleteBeforeTimer) {
-  MetricsReportingScheduler scheduler(GetCallback());
+  MetricsReportingScheduler scheduler(GetCallback(), GetConnectionCallback());
   scheduler.SetUploadIntervalForTesting(base::TimeDelta());
   scheduler.InitTaskComplete();
   scheduler.Start();
@@ -49,7 +58,7 @@ TEST_F(MetricsReportingSchedulerTest, InitTaskCompleteBeforeTimer) {
 }
 
 TEST_F(MetricsReportingSchedulerTest, InitTaskCompleteAfterTimer) {
-  MetricsReportingScheduler scheduler(GetCallback());
+  MetricsReportingScheduler scheduler(GetCallback(), GetConnectionCallback());
   scheduler.SetUploadIntervalForTesting(base::TimeDelta());
   scheduler.Start();
   base::RunLoop().RunUntilIdle();

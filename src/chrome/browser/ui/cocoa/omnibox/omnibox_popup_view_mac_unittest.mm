@@ -11,7 +11,7 @@
 #import "chrome/browser/ui/cocoa/omnibox/omnibox_view_mac.h"
 #include "chrome/test/base/testing_profile.h"
 #include "ui/gfx/font_list.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/text_elider.h"
 
 namespace {
@@ -33,9 +33,7 @@ class MockOmniboxPopupViewMac : public OmniboxPopupViewMac {
   }
 
  protected:
-  virtual const AutocompleteResult& GetResult() const OVERRIDE {
-    return result_;
-  }
+  const AutocompleteResult& GetResult() const override { return result_; }
 
  private:
   AutocompleteResult result_;

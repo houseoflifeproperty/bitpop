@@ -39,6 +39,8 @@ source_set("browser") {
 
   deps = [
     "//base",
+    "//base:i18n",
+    "//base:prefs",
     "//components/bookmarks/common",
     "//components/favicon_base",
     "//components/keyed_service/core",
@@ -54,9 +56,7 @@ source_set("browser") {
   ]
 
   if (toolkit_views) {
-    sources += [
-      "bookmark_node_data_views.cc",
-    ]
+    sources += [ "bookmark_node_data_views.cc" ]
   }
 }
 
@@ -70,8 +70,17 @@ source_set("unit_tests") {
     "bookmark_utils_unittest.cc",
   ]
 
+  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
+
   deps = [
     ":browser",
+    "//base:prefs",
+    "//base:prefs_test_support",
+    "//components/bookmarks/common",
+    "//components/bookmarks/test",
+    "//components/pref_registry",
     "//testing/gtest",
+    "//ui/base",
+    "//url",
   ]
 }

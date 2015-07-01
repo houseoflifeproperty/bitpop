@@ -9,6 +9,7 @@ import android.graphics.Color;
 import android.text.SpannableString;
 import android.text.TextUtils;
 import android.text.style.ForegroundColorSpan;
+import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -103,8 +104,9 @@ public class TranslateLanguagePanel
         mTargetAdapter.measureWidthRequiredForView();
 
         // Create the spinners.
-        mSourceSpinner = new Spinner(context);
-        mTargetSpinner = new Spinner(context);
+        LayoutInflater inflater = LayoutInflater.from(context);
+        mSourceSpinner = (Spinner) inflater.inflate(R.layout.spinner, null);
+        mTargetSpinner = (Spinner) inflater.inflate(R.layout.spinner, null);
         mSourceSpinner.setOnItemSelectedListener(this);
         mTargetSpinner.setOnItemSelectedListener(this);
         mSourceSpinner.setAdapter(mSourceAdapter);
@@ -123,13 +125,15 @@ public class TranslateLanguagePanel
 
         int originalSourceSelection = mSourceSpinner.getSelectedItemPosition();
         int newSourceSelection = getSelectionPosition(LANGUAGE_TYPE_SOURCE);
-        if (originalSourceSelection != newSourceSelection)
+        if (originalSourceSelection != newSourceSelection) {
             mSourceSpinner.setSelection(newSourceSelection);
+        }
 
         int originalTargetSelection = mTargetSpinner.getSelectedItemPosition();
         int newTargetSelection = getSelectionPosition(LANGUAGE_TYPE_TARGET);
-        if (originalTargetSelection != newTargetSelection)
+        if (originalTargetSelection != newTargetSelection) {
             mTargetSpinner.setSelection(newTargetSelection);
+        }
     }
 
     private int getSelectionPosition(int languageType) {
@@ -234,8 +238,9 @@ public class TranslateLanguagePanel
         public View getView(int position, View convertView, ViewGroup parent) {
             TextView result;
             if (!(convertView instanceof TextView)) {
-                result = (TextView) LayoutInflater.from(getContext()).inflate(
-                        R.layout.infobar_text, null);
+                result = new TextView(getContext());
+                result.setTextSize(TypedValue.COMPLEX_UNIT_PX,
+                        getContext().getResources().getDimension(R.dimen.infobar_text_size));
             } else {
                 result = (TextView) convertView;
             }

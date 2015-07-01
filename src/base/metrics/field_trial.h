@@ -106,6 +106,14 @@ class BASE_EXPORT FieldTrial : public RefCounted<FieldTrial> {
     std::string group_name;
   };
 
+  // A triplet representing a FieldTrial, its selected group and whether it's
+  // active.
+  struct FieldTrialState {
+    std::string trial_name;
+    std::string group_name;
+    bool activated;
+  };
+
   typedef std::vector<ActiveGroup> ActiveGroups;
 
   // A return value to indicate that a given instance has not yet had a group
@@ -180,8 +188,10 @@ class BASE_EXPORT FieldTrial : public RefCounted<FieldTrial> {
   FRIEND_TEST_ALL_PREFIXES(FieldTrialTest, OneWinner);
   FRIEND_TEST_ALL_PREFIXES(FieldTrialTest, DisableProbability);
   FRIEND_TEST_ALL_PREFIXES(FieldTrialTest, ActiveGroups);
+  FRIEND_TEST_ALL_PREFIXES(FieldTrialTest, AllGroups);
   FRIEND_TEST_ALL_PREFIXES(FieldTrialTest, ActiveGroupsNotFinalized);
   FRIEND_TEST_ALL_PREFIXES(FieldTrialTest, Save);
+  FRIEND_TEST_ALL_PREFIXES(FieldTrialTest, SaveAll);
   FRIEND_TEST_ALL_PREFIXES(FieldTrialTest, DuplicateRestore);
   FRIEND_TEST_ALL_PREFIXES(FieldTrialTest, SetForcedTurnFeatureOff);
   FRIEND_TEST_ALL_PREFIXES(FieldTrialTest, SetForcedTurnFeatureOn);
@@ -229,6 +239,13 @@ class BASE_EXPORT FieldTrial : public RefCounted<FieldTrial> {
   // is filled in; otherwise, the result is false and |active_group| is left
   // untouched.
   bool GetActiveGroup(ActiveGroup* active_group) const;
+
+  // Returns the trial name and selected group name for this field trial via
+  // the output parameter |field_trial_state|, but only if the trial has not
+  // been disabled. In that case, true is returned and |field_trial_state| is
+  // filled in; otherwise, the result is false and |field_trial_state| is left
+  // untouched.
+  bool GetState(FieldTrialState* field_trial_state) const;
 
   // Returns the group_name. A winner need not have been chosen.
   std::string group_name_internal() const { return group_name_; }
@@ -291,7 +308,8 @@ class BASE_EXPORT FieldTrial : public RefCounted<FieldTrial> {
 class BASE_EXPORT FieldTrialList {
  public:
   // Specifies whether field trials should be activated (marked as "used"), when
-  // created using |CreateTrialsFromString()|.
+  // created using |CreateTrialsFromString()|. Has no effect on trials that are
+  // prefixed with |kActivationMarker|, which will always be activated."
   enum FieldTrialActivationMode {
     DONT_ACTIVATE_TRIALS,
     ACTIVATE_TRIALS,
@@ -301,6 +319,10 @@ class BASE_EXPORT FieldTrialList {
   // instance.  This is intended for use as a command line argument, passed to a
   // second process to mimic our state (i.e., provide the same group name).
   static const char kPersistentStringSeparator;  // Currently a slash.
+
+  // Define a marker character to be used as a prefix to a trial name on the
+  // command line which forces its activation.
+  static const char kActivationMarker;  // Currently an asterisk.
 
   // Year that is guaranteed to not be expired when instantiating a field trial
   // via |FactoryGetFieldTrial()|.  Set to two years from the build date.
@@ -399,6 +421,16 @@ class BASE_EXPORT FieldTrialList {
   // by |CreateTrialsFromString()|.
   static void StatesToString(std::string* output);
 
+  // Creates a persistent representation of all FieldTrial instances for
+  // resurrection in another process. This allows randomization to be done in
+  // one process, and secondary processes can be synchronized on the result.
+  // The resulting string contains the name and group name pairs of all
+  // registered FieldTrials which have not been disabled, with "/" used
+  // to separate all names and to terminate the string. All activated trials
+  // have their name prefixed with "*". This string is parsed by
+  // |CreateTrialsFromString()|.
+  static void AllStatesToString(std::string* output);
+
   // Fills in the supplied vector |active_groups| (which must be empty when
   // called) with a snapshot of all registered FieldTrials for which the group
   // has been chosen and externally observed (via |group()|) and which have
@@ -412,9 +444,10 @@ class BASE_EXPORT FieldTrialList {
   // used in a non-browser process, to carry randomly selected state in a
   // browser process into this non-browser process, but could also be invoked
   // through a command line argument to the browser process. The created field
-  // trials are marked as "used" for the purposes of active trial reporting if
-  // |mode| is ACTIVATE_TRIALS. Trial names in |ignored_trial_names| are ignored
-  // when parsing |prior_trials|.
+  // trials are all marked as "used" for the purposes of active trial reporting
+  // if |mode| is ACTIVATE_TRIALS, otherwise each trial will be marked as "used"
+  // if it is prefixed with |kActivationMarker|. Trial names in
+  // |ignored_trial_names| are ignored when parsing |prior_trials|.
   static bool CreateTrialsFromString(
       const std::string& prior_trials,
       FieldTrialActivationMode mode,

@@ -51,7 +51,7 @@ class BookmarkEditorView : public BookmarkEditor,
                            public views::TextfieldController,
                            public views::ContextMenuController,
                            public ui::SimpleMenuModel::Delegate,
-                           public BookmarkModelObserver {
+                           public bookmarks::BookmarkModelObserver {
  public:
   // Type of node in the tree. Public purely for testing.
   typedef ui::TreeNodeWithValue<int64> EditorNode;
@@ -63,99 +63,99 @@ class BookmarkEditorView : public BookmarkEditor,
     explicit EditorTreeModel(EditorNode* root)
         : ui::TreeNodeModel<EditorNode>(root) {}
 
-    virtual void SetTitle(ui::TreeModelNode* node,
-                          const base::string16& title) OVERRIDE;
+    void SetTitle(ui::TreeModelNode* node,
+                  const base::string16& title) override;
 
    private:
     DISALLOW_COPY_AND_ASSIGN(EditorTreeModel);
   };
 
   BookmarkEditorView(Profile* profile,
-                     const BookmarkNode* parent,
+                     const bookmarks::BookmarkNode* parent,
                      const EditDetails& details,
                      BookmarkEditor::Configuration configuration);
 
-  virtual ~BookmarkEditorView();
+  ~BookmarkEditorView() override;
 
   // views::DialogDelegateView:
-  virtual base::string16 GetDialogButtonLabel(
-      ui::DialogButton button) const OVERRIDE;
-  virtual bool IsDialogButtonEnabled(ui::DialogButton button) const OVERRIDE;
-  virtual views::View* CreateExtraView() OVERRIDE;
-  virtual ui::ModalType GetModalType() const OVERRIDE;
-  virtual bool CanResize() const  OVERRIDE;
-  virtual base::string16 GetWindowTitle() const  OVERRIDE;
-  virtual bool Accept() OVERRIDE;
+  base::string16 GetDialogButtonLabel(ui::DialogButton button) const override;
+  bool IsDialogButtonEnabled(ui::DialogButton button) const override;
+  views::View* CreateExtraView() override;
+  ui::ModalType GetModalType() const override;
+  bool CanResize() const override;
+  base::string16 GetWindowTitle() const override;
+  bool Accept() override;
 
   // views::View:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  void GetAccessibleState(ui::AXViewState* state) override;
 
   // views::TreeViewController:
-  virtual void OnTreeViewSelectionChanged(views::TreeView* tree_view) OVERRIDE;
-  virtual bool CanEdit(views::TreeView* tree_view,
-                       ui::TreeModelNode* node) OVERRIDE;
+  void OnTreeViewSelectionChanged(views::TreeView* tree_view) override;
+  bool CanEdit(views::TreeView* tree_view, ui::TreeModelNode* node) override;
 
   // views::TextfieldController:
-  virtual void ContentsChanged(views::Textfield* sender,
-                               const base::string16& new_contents) OVERRIDE;
-  virtual bool HandleKeyEvent(views::Textfield* sender,
-                              const ui::KeyEvent& key_event) OVERRIDE;
+  void ContentsChanged(views::Textfield* sender,
+                       const base::string16& new_contents) override;
+  bool HandleKeyEvent(views::Textfield* sender,
+                      const ui::KeyEvent& key_event) override;
 
   // views::ButtonListener:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   // ui::SimpleMenuModel::Delegate:
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
-  virtual bool GetAcceleratorForCommandId(
-      int command_id,
-      ui::Accelerator* accelerator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
+  bool IsCommandIdChecked(int command_id) const override;
+  bool IsCommandIdEnabled(int command_id) const override;
+  bool GetAcceleratorForCommandId(int command_id,
+                                  ui::Accelerator* accelerator) override;
+  void ExecuteCommand(int command_id, int event_flags) override;
 
   // Creates a Window and adds the BookmarkEditorView to it. When the window is
   // closed the BookmarkEditorView is deleted.
   void Show(gfx::NativeWindow parent);
 
   // views::ContextMenuController:
-  virtual void ShowContextMenuForView(views::View* source,
-                                      const gfx::Point& point,
-                                      ui::MenuSourceType source_type) OVERRIDE;
+  void ShowContextMenuForView(views::View* source,
+                              const gfx::Point& point,
+                              ui::MenuSourceType source_type) override;
 
  private:
   friend class BookmarkEditorViewTest;
 
+  // views::DialogDelegateView:
+  const char* GetClassName() const override;
+
+  // bookmarks::BookmarkModelObserver:
+  // Any structural change results in resetting the tree model.
+  void BookmarkModelLoaded(bookmarks::BookmarkModel* model,
+                           bool ids_reassigned) override {}
+  void BookmarkNodeMoved(bookmarks::BookmarkModel* model,
+                         const bookmarks::BookmarkNode* old_parent,
+                         int old_index,
+                         const bookmarks::BookmarkNode* new_parent,
+                         int new_index) override;
+  void BookmarkNodeAdded(bookmarks::BookmarkModel* model,
+                         const bookmarks::BookmarkNode* parent,
+                         int index) override;
+  void BookmarkNodeRemoved(bookmarks::BookmarkModel* model,
+                           const bookmarks::BookmarkNode* parent,
+                           int index,
+                           const bookmarks::BookmarkNode* node,
+                           const std::set<GURL>& removed_urls) override;
+  void BookmarkAllUserNodesRemoved(bookmarks::BookmarkModel* model,
+                                   const std::set<GURL>& removed_urls) override;
+  void BookmarkNodeChanged(bookmarks::BookmarkModel* model,
+                           const bookmarks::BookmarkNode* node) override {}
+  void BookmarkNodeChildrenReordered(
+      bookmarks::BookmarkModel* model,
+      const bookmarks::BookmarkNode* node) override;
+  void BookmarkNodeFaviconChanged(
+      bookmarks::BookmarkModel* model,
+      const bookmarks::BookmarkNode* node) override {}
+
   // Creates the necessary sub-views, configures them, adds them to the layout,
   // and requests the entries to display from the database.
   void Init();
-
-  // BookmarkModel observer methods. Any structural change results in
-  // resetting the tree model.
-  virtual void BookmarkModelLoaded(BookmarkModel* model,
-                                   bool ids_reassigned) OVERRIDE {}
-  virtual void BookmarkNodeMoved(BookmarkModel* model,
-                                 const BookmarkNode* old_parent,
-                                 int old_index,
-                                 const BookmarkNode* new_parent,
-                                 int new_index) OVERRIDE;
-  virtual void BookmarkNodeAdded(BookmarkModel* model,
-                                 const BookmarkNode* parent,
-                                 int index) OVERRIDE;
-  virtual void BookmarkNodeRemoved(BookmarkModel* model,
-                                   const BookmarkNode* parent,
-                                   int index,
-                                   const BookmarkNode* node,
-                                   const std::set<GURL>& removed_urls) OVERRIDE;
-  virtual void BookmarkAllUserNodesRemoved(
-      BookmarkModel* model,
-      const std::set<GURL>& removed_urls) OVERRIDE;
-  virtual void BookmarkNodeChanged(BookmarkModel* model,
-                                   const BookmarkNode* node) OVERRIDE {}
-  virtual void BookmarkNodeChildrenReordered(BookmarkModel* model,
-                                             const BookmarkNode* node) OVERRIDE;
-  virtual void BookmarkNodeFaviconChanged(BookmarkModel* model,
-                                          const BookmarkNode* node) OVERRIDE {}
 
   // Resets the model of the tree and updates the various buttons appropriately.
   void Reset();
@@ -171,7 +171,7 @@ class BookmarkEditorView : public BookmarkEditor,
 
   // Adds and creates a child node in b_node for all children of bb_node that
   // are folders.
-  void CreateNodes(const BookmarkNode* bb_node, EditorNode* b_node);
+  void CreateNodes(const bookmarks::BookmarkNode* bb_node, EditorNode* b_node);
 
   // Returns the node with the specified id, or NULL if one can't be found.
   EditorNode* FindNodeWithID(BookmarkEditorView::EditorNode* node, int64 id);
@@ -193,10 +193,10 @@ class BookmarkEditorView : public BookmarkEditor,
   // used to determine the new BookmarkNode parent based on the EditorNode
   // parent.
   void ApplyNameChangesAndCreateNewFolders(
-      const BookmarkNode* bb_node,
+      const bookmarks::BookmarkNode* bb_node,
       BookmarkEditorView::EditorNode* b_node,
       BookmarkEditorView::EditorNode* parent_b_node,
-      const BookmarkNode** parent_bb_node);
+      const bookmarks::BookmarkNode** parent_bb_node);
 
   // Returns the current url the user has input.
   GURL GetInputURL() const;
@@ -249,7 +249,7 @@ class BookmarkEditorView : public BookmarkEditor,
 
   // Initial parent to select. Is only used if |details_.existing_node| is
   // NULL.
-  const BookmarkNode* parent_;
+  const bookmarks::BookmarkNode* parent_;
 
   const EditDetails details_;
 
@@ -258,7 +258,7 @@ class BookmarkEditorView : public BookmarkEditor,
   scoped_ptr<views::MenuRunner> context_menu_runner_;
 
   // Mode used to create nodes from.
-  BookmarkModel* bb_model_;
+  bookmarks::BookmarkModel* bb_model_;
 
   // If true, we're running the menu for the bookmark bar or other bookmarks
   // nodes.

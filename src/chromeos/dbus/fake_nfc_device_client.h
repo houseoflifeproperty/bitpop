@@ -26,32 +26,30 @@ class CHROMEOS_EXPORT FakeNfcDeviceClient : public NfcDeviceClient {
   // Properties structure that provides fake behavior for D-Bus calls.
   struct Properties : public NfcDeviceClient::Properties {
     explicit Properties(const PropertyChangedCallback& callback);
-    virtual ~Properties();
+    ~Properties() override;
 
     // dbus::PropertySet overrides.
-    virtual void Get(dbus::PropertyBase* property,
-                     dbus::PropertySet::GetCallback callback) OVERRIDE;
-    virtual void GetAll() OVERRIDE;
-    virtual void Set(dbus::PropertyBase* property,
-                     dbus::PropertySet::SetCallback callback) OVERRIDE;
+    void Get(dbus::PropertyBase* property,
+             dbus::PropertySet::GetCallback callback) override;
+    void GetAll() override;
+    void Set(dbus::PropertyBase* property,
+             dbus::PropertySet::SetCallback callback) override;
   };
 
   FakeNfcDeviceClient();
-  virtual ~FakeNfcDeviceClient();
+  ~FakeNfcDeviceClient() override;
 
   // NfcDeviceClient overrides.
-  virtual void Init(dbus::Bus* bus) OVERRIDE;
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual std::vector<dbus::ObjectPath> GetDevicesForAdapter(
-      const dbus::ObjectPath& adapter_path) OVERRIDE;
-  virtual Properties* GetProperties(
-      const dbus::ObjectPath& object_path) OVERRIDE;
-  virtual void Push(
-      const dbus::ObjectPath& object_path,
-      const base::DictionaryValue& attributes,
-      const base::Closure& callback,
-      const nfc_client_helpers::ErrorCallback& error_callback) OVERRIDE;
+  void Init(dbus::Bus* bus) override;
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
+  std::vector<dbus::ObjectPath> GetDevicesForAdapter(
+      const dbus::ObjectPath& adapter_path) override;
+  Properties* GetProperties(const dbus::ObjectPath& object_path) override;
+  void Push(const dbus::ObjectPath& object_path,
+            const base::DictionaryValue& attributes,
+            const base::Closure& callback,
+            const nfc_client_helpers::ErrorCallback& error_callback) override;
 
   // Simulates the appearance of a device. The fake device will show up after
   // exactly |visibility_delay| milliseconds, and will simulate pushing a single

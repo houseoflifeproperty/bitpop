@@ -4,8 +4,8 @@
 // found in the LICENSE file.
 //
 
-#ifndef _SYMBOL_TABLE_INCLUDED_
-#define _SYMBOL_TABLE_INCLUDED_
+#ifndef COMPILER_TRANSLATOR_SYMBOLTABLE_H_
+#define COMPILER_TRANSLATOR_SYMBOLTABLE_H_
 
 //
 // Symbol table for parsing.  Has these design characteristics:
@@ -31,13 +31,14 @@
 //
 
 #include <assert.h>
+#include <set>
 
 #include "common/angleutils.h"
 #include "compiler/translator/InfoSink.h"
 #include "compiler/translator/IntermNode.h"
 
 // Symbol base class. (Can build functions or variables out of these...)
-class TSymbol
+class TSymbol : angle::NonCopyable
 {
   public:
     POOL_ALLOCATOR_NEW_DELETE();
@@ -85,8 +86,6 @@ class TSymbol
     }
 
   private:
-    DISALLOW_COPY_AND_ASSIGN(TSymbol);
-
     int uniqueId; // For real comparing during code generation
     const TString *name;
     TString extension;
@@ -134,20 +133,20 @@ class TVariable : public TSymbol
         type.setQualifier(qualifier);
     }
 
-    ConstantUnion *getConstPointer()
+    TConstantUnion *getConstPointer()
     { 
         if (!unionArray)
-            unionArray = new ConstantUnion[type.getObjectSize()];
+            unionArray = new TConstantUnion[type.getObjectSize()];
 
         return unionArray;
     }
 
-    ConstantUnion *getConstPointer() const
+    TConstantUnion *getConstPointer() const
     {
         return unionArray;
     }
 
-    void shareConstPointer(ConstantUnion *constArray)
+    void shareConstPointer(TConstantUnion *constArray)
     {
         if (unionArray == constArray)
             return;
@@ -157,13 +156,11 @@ class TVariable : public TSymbol
     }
 
   private:
-    DISALLOW_COPY_AND_ASSIGN(TVariable);
-
     TType type;
     bool userType;
     // we are assuming that Pool Allocator will free the memory
     // allocated to unionArray when this object is destroyed.
-    ConstantUnion *unionArray;
+    TConstantUnion *unionArray;
 };
 
 // The function sub-class of symbols and the parser will need to
@@ -185,13 +182,14 @@ class TFunction : public TSymbol
           defined(false)
     {
     }
-    TFunction(const TString *name, const TType &retType, TOperator tOp = EOpNull)
+    TFunction(const TString *name, const TType &retType, TOperator tOp = EOpNull, const char *ext = "")
         : TSymbol(name),
           returnType(retType),
           mangledName(TFunction::mangleName(*name)),
           op(tOp),
           defined(false)
     {
+        relateToExtension(ext);
     }
     virtual ~TFunction();
     virtual bool isFunction() const
@@ -223,10 +221,6 @@ class TFunction : public TSymbol
         return returnType;
     }
 
-    void relateToOperator(TOperator o)
-    {
-        op = o;
-    }
     TOperator getBuiltInOp() const
     {
         return op;
@@ -251,8 +245,6 @@ class TFunction : public TSymbol
     }
 
   private:
-    DISALLOW_COPY_AND_ASSIGN(TFunction);
-
     typedef TVector<TParameter> TParamList;
     TParamList parameters;
     TType returnType;
@@ -290,28 +282,30 @@ class TSymbolTableLevel
 
     bool insert(TSymbol *symbol);
 
-    TSymbol *find(const TString &name) const;
+    // Insert a function using its unmangled name as the key.
+    bool insertUnmangled(TFunction *function);
 
-    void relateToOperator(const char *name, TOperator op);
-    void relateToExtension(const char *name, const TString &ext);
+    TSymbol *find(const TString &name) const;
 
   protected:
     tLevel level;
 };
 
-enum ESymbolLevel
-{
-    COMMON_BUILTINS = 0,
-    ESSL1_BUILTINS = 1,
-    ESSL3_BUILTINS = 2,
-    LAST_BUILTIN_LEVEL = ESSL3_BUILTINS,
-    GLOBAL_LEVEL = 3
-};
+// Define ESymbolLevel as int rather than an enum since level can go
+// above GLOBAL_LEVEL and cause atBuiltInLevel() to fail if the
+// compiler optimizes the >= of the last element to ==.
+typedef int ESymbolLevel;
+const int COMMON_BUILTINS = 0;
+const int ESSL1_BUILTINS = 1;
+const int ESSL3_BUILTINS = 2;
+const int LAST_BUILTIN_LEVEL = ESSL3_BUILTINS;
+const int GLOBAL_LEVEL = 3;
 
-class TSymbolTable
+class TSymbolTable : angle::NonCopyable
 {
   public:
     TSymbolTable()
+        : mGlobalInvariant(false)
     {
         // The symbol table cannot be used until push() is called, but
         // the lack of an initial call to push() can be used to detect
@@ -360,6 +354,12 @@ class TSymbolTable
         return table[level]->insert(symbol);
     }
 
+    bool insert(ESymbolLevel level, const char *ext, TSymbol *symbol)
+    {
+        symbol->relateToExtension(ext);
+        return table[level]->insert(symbol);
+    }
+
     bool insertConstInt(ESymbolLevel level, const char *name, int value)
     {
         TVariable *constant = new TVariable(
@@ -368,9 +368,26 @@ class TSymbolTable
         return insert(level, constant);
     }
 
+    void insertBuiltIn(ESymbolLevel level, TOperator op, const char *ext, TType *rvalue, const char *name,
+                       TType *ptype1, TType *ptype2 = 0, TType *ptype3 = 0, TType *ptype4 = 0, TType *ptype5 = 0);
+
     void insertBuiltIn(ESymbolLevel level, TType *rvalue, const char *name,
-                       TType *ptype1, TType *ptype2 = 0, TType *ptype3 = 0,
-                       TType *ptype4 = 0, TType *ptype5 = 0);
+                       TType *ptype1, TType *ptype2 = 0, TType *ptype3 = 0, TType *ptype4 = 0, TType *ptype5 = 0)
+    {
+        insertBuiltIn(level, EOpNull, "", rvalue, name, ptype1, ptype2, ptype3, ptype4, ptype5);
+    }
+
+    void insertBuiltIn(ESymbolLevel level, const char *ext, TType *rvalue, const char *name,
+                       TType *ptype1, TType *ptype2 = 0, TType *ptype3 = 0, TType *ptype4 = 0, TType *ptype5 = 0)
+    {
+        insertBuiltIn(level, EOpNull, ext, rvalue, name, ptype1, ptype2, ptype3, ptype4, ptype5);
+    }
+
+    void insertBuiltIn(ESymbolLevel level, TOperator op, TType *rvalue, const char *name,
+                       TType *ptype1, TType *ptype2 = 0, TType *ptype3 = 0, TType *ptype4 = 0, TType *ptype5 = 0)
+    {
+        insertBuiltIn(level, op, "", rvalue, name, ptype1, ptype2, ptype3, ptype4, ptype5);
+    }
 
     TSymbol *find(const TString &name, int shaderVersion,
                   bool *builtIn = NULL, bool *sameScope = NULL) const;
@@ -382,14 +399,6 @@ class TSymbolTable
         return table[currentLevel() - 1];
     }
 
-    void relateToOperator(ESymbolLevel level, const char *name, TOperator op)
-    {
-        table[level]->relateToOperator(name, op);
-    }
-    void relateToExtension(ESymbolLevel level, const char *name, const TString &ext)
-    {
-        table[level]->relateToExtension(name, ext);
-    }
     void dump(TInfoSink &infoSink) const;
 
     bool setDefaultPrecision(const TPublicType &type, TPrecision prec)
@@ -408,6 +417,25 @@ class TSymbolTable
     // for the specified TBasicType
     TPrecision getDefaultPrecision(TBasicType type) const;
 
+    // This records invariant varyings declared through
+    // "invariant varying_name;".
+    void addInvariantVarying(const std::string &originalName)
+    {
+        mInvariantVaryings.insert(originalName);
+    }
+    // If this returns false, the varying could still be invariant
+    // if it is set as invariant during the varying variable
+    // declaration - this piece of information is stored in the
+    // variable's type, not here.
+    bool isVaryingInvariant(const std::string &originalName) const
+    {
+      return (mGlobalInvariant ||
+              mInvariantVaryings.count(originalName) > 0);
+    }
+
+    void setGlobalInvariant() { mGlobalInvariant = true; }
+    bool getGlobalInvariant() const { return mGlobalInvariant; }
+
     static int nextUniqueId()
     {
         return ++uniqueIdCounter;
@@ -423,7 +451,10 @@ class TSymbolTable
     typedef TMap<TBasicType, TPrecision> PrecisionStackLevel;
     std::vector< PrecisionStackLevel *> precisionStack;
 
+    std::set<std::string> mInvariantVaryings;
+    bool mGlobalInvariant;
+
     static int uniqueIdCounter;
 };
 
-#endif // _SYMBOL_TABLE_INCLUDED_
+#endif // COMPILER_TRANSLATOR_SYMBOLTABLE_H_

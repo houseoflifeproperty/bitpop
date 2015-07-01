@@ -17,12 +17,12 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
 #include "base/third_party/icu/icu_utf.h"
-#include "chromeos/ime/composition_text.h"
-#include "chromeos/ime/ime_keyboard.h"
-#include "chromeos/ime/input_method_manager.h"
+#include "ui/base/ime/chromeos/composition_text.h"
+#include "ui/base/ime/chromeos/ime_keyboard.h"
+#include "ui/base/ime/chromeos/input_method_manager.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/events/event.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace {
 chromeos::IMEEngineHandlerInterface* GetEngine() {
@@ -37,7 +37,7 @@ InputMethodChromeOS::InputMethodChromeOS(
     internal::InputMethodDelegate* delegate)
     : composing_text_(false),
       composition_changed_(false),
-      current_keyevent_id_(0),
+      handling_key_event_(false),
       weak_ptr_factory_(this) {
   SetDelegate(delegate);
   chromeos::IMEBridge::Get()->SetInputContextHandler(this);
@@ -46,7 +46,6 @@ InputMethodChromeOS::InputMethodChromeOS(
 }
 
 InputMethodChromeOS::~InputMethodChromeOS() {
-  AbandonAllPendingKeyEvents();
   ConfirmCompositionText();
   // We are dead, so we need to ask the client to stop relying on us.
   OnInputMethodChanged();
@@ -71,12 +70,8 @@ bool InputMethodChromeOS::OnUntranslatedIMEMessage(
   return false;
 }
 
-void InputMethodChromeOS::ProcessKeyEventDone(uint32 id,
-                                              ui::KeyEvent* event,
+void InputMethodChromeOS::ProcessKeyEventDone(const ui::KeyEvent* event,
                                               bool is_handled) {
-  if (pending_key_events_.find(id) == pending_key_events_.end())
-   return;  // Abandoned key event.
-
   DCHECK(event);
   if (event->type() == ET_KEY_PRESSED) {
     if (is_handled) {
@@ -93,8 +88,7 @@ void InputMethodChromeOS::ProcessKeyEventDone(uint32 id,
   if (event->type() == ET_KEY_PRESSED || event->type() == ET_KEY_RELEASED)
     ProcessKeyEventPostIME(*event, is_handled);
 
-  // ProcessKeyEventPostIME may change the |pending_key_events_|.
-  pending_key_events_.erase(id);
+  handling_key_event_ = false;
 }
 
 bool InputMethodChromeOS::DispatchKeyEvent(const ui::KeyEvent& event) {
@@ -123,7 +117,7 @@ bool InputMethodChromeOS::DispatchKeyEvent(const ui::KeyEvent& event) {
   // normal input field (not a password field).
   // Note: We need to send the key event to ibus even if the |context_| is not
   // enabled, so that ibus can have a chance to enable the |context_|.
-  if (!IsInputFieldFocused() || !GetEngine()) {
+  if (!IsNonPasswordInputFieldFocused() || !GetEngine()) {
     if (event.type() == ET_KEY_PRESSED) {
       if (ExecuteCharacterComposer(event)) {
         // Treating as PostIME event if character composer handles key event and
@@ -138,18 +132,17 @@ bool InputMethodChromeOS::DispatchKeyEvent(const ui::KeyEvent& event) {
     return true;
   }
 
-  pending_key_events_.insert(current_keyevent_id_);
-
-  ui::KeyEvent* copied_event = new ui::KeyEvent(event);
-  GetEngine()->ProcessKeyEvent(
-      event,
-      base::Bind(&InputMethodChromeOS::ProcessKeyEventDone,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 current_keyevent_id_,
-                 // Pass the ownership of |copied_event|.
-                 base::Owned(copied_event)));
-
-  ++current_keyevent_id_;
+  handling_key_event_ = true;
+  if (GetEngine()->IsInterestedInKeyEvent()) {
+    GetEngine()->ProcessKeyEvent(
+        event,
+        base::Bind(&InputMethodChromeOS::ProcessKeyEventDone,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   // Pass the ownership of the new copied event.
+                   base::Owned(new ui::KeyEvent(event))));
+  } else {
+    ProcessKeyEventDone(&event, false);
+  }
   return true;
 }
 
@@ -167,7 +160,7 @@ void InputMethodChromeOS::OnTextInputTypeChanged(
     // The focus in to or out from password field should also notify engine.
     engine->FocusOut();
     chromeos::IMEEngineHandlerInterface::InputContext context(
-        GetTextInputType(), GetTextInputMode());
+        GetTextInputType(), GetTextInputMode(), GetTextInputFlags());
     engine->FocusIn(context);
   }
 
@@ -178,28 +171,45 @@ void InputMethodChromeOS::OnCaretBoundsChanged(const TextInputClient* client) {
   if (!IsInputFieldFocused() || !IsTextInputClientFocused(client))
     return;
 
+  NotifyTextInputCaretBoundsChanged(client);
+
+  if (!IsNonPasswordInputFieldFocused())
+    return;
+
   // The current text input type should not be NONE if |context_| is focused.
+  DCHECK(client == GetTextInputClient());
   DCHECK(!IsTextInputTypeNone());
-  const gfx::Rect rect = GetTextInputClient()->GetCaretBounds();
+  const gfx::Rect caret_rect = client->GetCaretBounds();
 
   gfx::Rect composition_head;
-  if (!GetTextInputClient()->GetCompositionCharacterBounds(0,
-                                                           &composition_head)) {
-    composition_head = rect;
+  std::vector<gfx::Rect> rects;
+  if (client->HasCompositionText()) {
+    uint32 i = 0;
+    gfx::Rect rect;
+    while (client->GetCompositionCharacterBounds(i++, &rect))
+      rects.push_back(rect);
+  } else {
+    rects.push_back(caret_rect);
+  }
+
+  if (rects.size() > 0) {
+    composition_head = rects[0];
+    if (GetEngine())
+      GetEngine()->SetCompositionBounds(rects);
   }
 
   chromeos::IMECandidateWindowHandlerInterface* candidate_window =
       chromeos::IMEBridge::Get()->GetCandidateWindowHandler();
   if (!candidate_window)
     return;
-  candidate_window->SetCursorBounds(rect, composition_head);
+  candidate_window->SetCursorBounds(caret_rect, composition_head);
 
   gfx::Range text_range;
   gfx::Range selection_range;
   base::string16 surrounding_text;
-  if (!GetTextInputClient()->GetTextRange(&text_range) ||
-      !GetTextInputClient()->GetTextFromRange(text_range, &surrounding_text) ||
-      !GetTextInputClient()->GetSelectionRange(&selection_range)) {
+  if (!client->GetTextRange(&text_range) ||
+      !client->GetTextFromRange(text_range, &surrounding_text) ||
+      !client->GetSelectionRange(&selection_range)) {
     previous_surrounding_text_.clear();
     previous_selection_range_ = gfx::Range::InvalidRange();
     return;
@@ -230,7 +240,7 @@ void InputMethodChromeOS::OnCaretBoundsChanged(const TextInputClient* client) {
 }
 
 void InputMethodChromeOS::CancelComposition(const TextInputClient* client) {
-  if (IsInputFieldFocused() && IsTextInputClientFocused(client))
+  if (IsNonPasswordInputFieldFocused() && IsTextInputClientFocused(client))
     ResetContext();
 }
 
@@ -271,7 +281,7 @@ void InputMethodChromeOS::OnDidChangeFocusedClient(
 
   if (GetEngine()) {
     chromeos::IMEEngineHandlerInterface::InputContext context(
-        GetTextInputType(), GetTextInputMode());
+        GetTextInputType(), GetTextInputMode(), GetTextInputFlags());
     GetEngine()->FocusIn(context);
   }
 }
@@ -285,7 +295,7 @@ void InputMethodChromeOS::ConfirmCompositionText() {
 }
 
 void InputMethodChromeOS::ResetContext() {
-  if (!IsInputFieldFocused() || !GetTextInputClient())
+  if (!IsNonPasswordInputFieldFocused() || !GetTextInputClient())
     return;
 
   DCHECK(system_toplevel_window_focused());
@@ -294,11 +304,6 @@ void InputMethodChromeOS::ResetContext() {
   result_text_.clear();
   composing_text_ = false;
   composition_changed_ = false;
-
-  // We need to abandon all pending key events, but as above comment says, there
-  // is no reliable way to abandon all results generated by these abandoned key
-  // events.
-  AbandonAllPendingKeyEvents();
 
   // This function runs asynchronously.
   // Note: some input method engines may not support reset method, such as
@@ -319,17 +324,18 @@ void InputMethodChromeOS::UpdateContextFocusState() {
   chromeos::IMECandidateWindowHandlerInterface* candidate_window =
       chromeos::IMEBridge::Get()->GetCandidateWindowHandler();
   if (candidate_window)
-    candidate_window->FocusStateChanged(IsInputFieldFocused());
+    candidate_window->FocusStateChanged(IsNonPasswordInputFieldFocused());
 
-  chromeos::IMEBridge::Get()->SetCurrentTextInputType(GetTextInputType());
+  chromeos::IMEEngineHandlerInterface::InputContext context(
+      GetTextInputType(), GetTextInputMode(), GetTextInputFlags());
+  chromeos::IMEBridge::Get()->SetCurrentInputContext(context);
 
   if (!IsTextInputTypeNone())
     OnCaretBoundsChanged(GetTextInputClient());
 }
 
-void InputMethodChromeOS::ProcessKeyEventPostIME(
-    const ui::KeyEvent& event,
-    bool handled) {
+void InputMethodChromeOS::ProcessKeyEventPostIME(const ui::KeyEvent& event,
+                                                 bool handled) {
   TextInputClient* client = GetTextInputClient();
   if (!client) {
     // As ibus works asynchronously, there is a chance that the focused client
@@ -354,7 +360,10 @@ void InputMethodChromeOS::ProcessKeyEventPostIME(
   if (client != GetTextInputClient())
     return;
 
-  if (event.type() == ET_KEY_PRESSED && !handled)
+  if (handled)
+    return;  // IME handled the key event. do not forward.
+
+  if (event.type() == ET_KEY_PRESSED)
     ProcessUnfilteredKeyPressEvent(event);
   else if (event.type() == ET_KEY_RELEASED)
     DispatchKeyEventPostIME(event);
@@ -447,10 +456,6 @@ void InputMethodChromeOS::SendFakeProcessKeyEvent(bool pressed) const {
   DispatchKeyEventPostIME(evt);
 }
 
-void InputMethodChromeOS::AbandonAllPendingKeyEvents() {
-  pending_key_events_.clear();
-}
-
 void InputMethodChromeOS::CommitText(const std::string& text) {
   if (text.empty())
     return;
@@ -471,7 +476,7 @@ void InputMethodChromeOS::CommitText(const std::string& text) {
 
   // If we are not handling key event, do not bother sending text result if the
   // focused text input client does not support text input.
-  if (pending_key_events_.empty() && !IsTextInputTypeNone()) {
+  if (!handling_key_event_ && !IsTextInputTypeNone()) {
     SendFakeProcessKeyEvent(true);
     GetTextInputClient()->InsertText(utf16_text);
     SendFakeProcessKeyEvent(false);
@@ -513,9 +518,9 @@ void InputMethodChromeOS::UpdateCompositionText(
   if (composition_.text.length())
     composing_text_ = true;
 
-  // If we receive a composition text without pending key event, then we need to
-  // send it to the focused text input client directly.
-  if (pending_key_events_.empty()) {
+  if (!handling_key_event_) {
+    // If we receive a composition text without pending key event, then we need
+    // to send it to the focused text input client directly.
     SendFakeProcessKeyEvent(true);
     GetTextInputClient()->SetCompositionText(composition_);
     SendFakeProcessKeyEvent(false);
@@ -532,7 +537,7 @@ void InputMethodChromeOS::HidePreeditText() {
   composition_changed_ = true;
   composition_.Clear();
 
-  if (pending_key_events_.empty()) {
+  if (!handling_key_event_) {
     TextInputClient* client = GetTextInputClient();
     if (client && client->HasCompositionText()) {
       SendFakeProcessKeyEvent(true);
@@ -546,10 +551,11 @@ void InputMethodChromeOS::HidePreeditText() {
 void InputMethodChromeOS::DeleteSurroundingText(int32 offset, uint32 length) {
   if (!composition_.text.empty())
     return;  // do nothing if there is ongoing composition.
-  if (offset < 0 && static_cast<uint32>(-1 * offset) != length)
-    return;  // only preceding text can be deletable.
-  if (GetTextInputClient())
-    GetTextInputClient()->ExtendSelectionAndDelete(length, 0U);
+
+  if (GetTextInputClient()) {
+    uint32 before = offset >= 0 ? 0U : static_cast<uint32>(-1 * offset);
+    GetTextInputClient()->ExtendSelectionAndDelete(before, length - before);
+  }
 }
 
 bool InputMethodChromeOS::ExecuteCharacterComposer(const ui::KeyEvent& event) {
@@ -617,6 +623,9 @@ void InputMethodChromeOS::ExtractCompositionText(
       else if (underline_attributes[i].type ==
                chromeos::CompositionText::COMPOSITION_TEXT_UNDERLINE_ERROR)
         underline.color = SK_ColorRED;
+      else if (underline_attributes[i].type ==
+               chromeos::CompositionText::COMPOSITION_TEXT_UNDERLINE_NONE)
+        underline.color = SK_ColorTRANSPARENT;
       out_composition->underlines.push_back(underline);
     }
   }
@@ -651,9 +660,13 @@ void InputMethodChromeOS::ExtractCompositionText(
   }
 }
 
-bool InputMethodChromeOS::IsInputFieldFocused() {
+bool InputMethodChromeOS::IsNonPasswordInputFieldFocused() {
   TextInputType type = GetTextInputType();
   return (type != TEXT_INPUT_TYPE_NONE) && (type != TEXT_INPUT_TYPE_PASSWORD);
+}
+
+bool InputMethodChromeOS::IsInputFieldFocused() {
+  return GetTextInputType() != TEXT_INPUT_TYPE_NONE;
 }
 
 }  // namespace ui

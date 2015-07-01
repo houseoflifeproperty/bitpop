@@ -11,7 +11,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/ui/status_bubble.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "url/gurl.h"
 
 namespace gfx {
@@ -35,7 +35,7 @@ class StatusBubbleViews : public StatusBubble {
 
   // |base_view| is the view that this bubble is positioned relative to.
   explicit StatusBubbleViews(views::View* base_view);
-  virtual ~StatusBubbleViews();
+  ~StatusBubbleViews() override;
 
   views::View* base_view() { return base_view_; }
 
@@ -54,14 +54,11 @@ class StatusBubbleViews : public StatusBubble {
   void SetBubbleWidth(int width);
 
   // Overridden from StatusBubble:
-  virtual void SetStatus(const base::string16& status) OVERRIDE;
-  virtual void SetURL(const GURL& url, const std::string& languages) OVERRIDE;
-  virtual void Hide() OVERRIDE;
-  virtual void MouseMoved(const gfx::Point& location,
-                          bool left_content) OVERRIDE;
-  virtual void UpdateDownloadShelfVisibility(bool visible) OVERRIDE;
-
-  views::Widget* GetPopupForTest() { return popup(); }
+  void SetStatus(const base::string16& status) override;
+  void SetURL(const GURL& url, const std::string& languages) override;
+  void Hide() override;
+  void MouseMoved(const gfx::Point& location, bool left_content) override;
+  void UpdateDownloadShelfVisibility(bool visible) override;
 
  protected:
   views::Widget* popup() { return popup_.get(); }

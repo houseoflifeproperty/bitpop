@@ -7,13 +7,14 @@
 import logging
 import operator
 
-from telemetry import decorators
 from telemetry.core.backends.chrome import android_browser_finder
 from telemetry.core.backends.chrome import cros_browser_finder
 from telemetry.core.backends.chrome import desktop_browser_finder
 from telemetry.core.backends.chrome import ios_browser_finder
 from telemetry.core.backends.remote import trybot_browser_finder
-from telemetry.core.backends.webdriver import webdriver_desktop_browser_finder
+from telemetry.core import browser_finder_exceptions
+from telemetry.core import device_finder
+from telemetry import decorators
 
 BROWSER_FINDERS = [
   desktop_browser_finder,
@@ -21,16 +22,7 @@ BROWSER_FINDERS = [
   cros_browser_finder,
   ios_browser_finder,
   trybot_browser_finder,
-  webdriver_desktop_browser_finder,
   ]
-
-
-class BrowserTypeRequiredException(Exception):
-  pass
-
-
-class BrowserFinderException(Exception):
-  pass
 
 
 def FindAllBrowserTypes(options):
@@ -52,32 +44,34 @@ def FindBrowser(options):
     BrowserFinderException: Options improperly set, or an error occurred.
   """
   if options.browser_type == 'exact' and options.browser_executable == None:
-    raise BrowserFinderException(
+    raise browser_finder_exceptions.BrowserFinderException(
         '--browser=exact requires --browser-executable to be set.')
   if options.browser_type != 'exact' and options.browser_executable != None:
-    raise BrowserFinderException(
+    raise browser_finder_exceptions.BrowserFinderException(
         '--browser-executable requires --browser=exact.')
 
   if options.browser_type == 'cros-chrome' and options.cros_remote == None:
-    raise BrowserFinderException(
+    raise browser_finder_exceptions.BrowserFinderException(
         'browser_type=cros-chrome requires cros_remote be set.')
   if (options.browser_type != 'cros-chrome' and
       options.browser_type != 'cros-chrome-guest' and
       options.cros_remote != None):
-    raise BrowserFinderException(
+    raise browser_finder_exceptions.BrowserFinderException(
         '--remote requires --browser=cros-chrome or cros-chrome-guest.')
 
+  devices = device_finder.GetDevicesMatchingOptions(options)
   browsers = []
   default_browsers = []
-  for finder in BROWSER_FINDERS:
-    if(options.browser_type and options.browser_type != 'any' and
-       options.browser_type not in finder.FindAllBrowserTypes(options)):
-      continue
-    curr_browsers = finder.FindAllAvailableBrowsers(options)
-    new_default_browser = finder.SelectDefaultBrowser(curr_browsers)
-    if new_default_browser:
-      default_browsers.append(new_default_browser)
-    browsers.extend(curr_browsers)
+  for device in devices:
+    for finder in BROWSER_FINDERS:
+      if(options.browser_type and options.browser_type != 'any' and
+         options.browser_type not in finder.FindAllBrowserTypes(options)):
+        continue
+      curr_browsers = finder.FindAllAvailableBrowsers(options, device)
+      new_default_browser = finder.SelectDefaultBrowser(curr_browsers)
+      if new_default_browser:
+        default_browsers.append(new_default_browser)
+      browsers.extend(curr_browsers)
 
   if options.browser_type == None:
     if default_browsers:
@@ -95,7 +89,7 @@ def FindBrowser(options):
       browsers[0].UpdateExecutableIfNeeded()
       return browsers[0]
 
-    raise BrowserTypeRequiredException(
+    raise browser_finder_exceptions.BrowserTypeRequiredException(
         '--browser must be specified. Available browsers:\n%s' %
         '\n'.join(sorted(set([b.browser_type for b in browsers]))))
 
@@ -132,6 +126,29 @@ def FindBrowser(options):
 
 
 @decorators.Cache
+def GetAllAvailableBrowsers(options, device):
+  """Returns a list of available browsers on the device.
+
+  Args:
+    options: A BrowserOptions object.
+    device: The target device, which can be None.
+
+  Returns:
+    A list of browser instances.
+
+  Raises:
+    BrowserFinderException: Options are improperly set, or an error occurred.
+  """
+  if not device:
+    return []
+  possible_browsers = []
+  for browser_finder in BROWSER_FINDERS:
+    possible_browsers.extend(
+      browser_finder.FindAllAvailableBrowsers(options, device))
+  return possible_browsers
+
+
+@decorators.Cache
 def GetAllAvailableBrowserTypes(options):
   """Returns a list of available browser types.
 
@@ -144,11 +161,11 @@ def GetAllAvailableBrowserTypes(options):
   Raises:
     BrowserFinderException: Options are improperly set, or an error occurred.
   """
-  browsers = []
-  for finder in BROWSER_FINDERS:
-    browsers.extend(finder.FindAllAvailableBrowsers(options))
-
-  type_list = set([browser.browser_type for browser in browsers])
+  devices = device_finder.GetDevicesMatchingOptions(options)
+  possible_browsers = []
+  for device in devices:
+    possible_browsers.extend(GetAllAvailableBrowsers(options, device))
+  type_list = set([browser.browser_type for browser in possible_browsers])
   type_list = list(type_list)
   type_list.sort()
   return type_list

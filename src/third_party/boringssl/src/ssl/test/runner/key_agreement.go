@@ -12,7 +12,6 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
-	"crypto/sha256"
 	"crypto/x509"
 	"encoding/asn1"
 	"errors"
@@ -25,13 +24,77 @@ var errServerKeyExchange = errors.New("tls: invalid ServerKeyExchange message")
 
 // rsaKeyAgreement implements the standard TLS key agreement where the client
 // encrypts the pre-master secret to the server's public key.
-type rsaKeyAgreement struct{}
-
-func (ka rsaKeyAgreement) generateServerKeyExchange(config *Config, cert *Certificate, clientHello *clientHelloMsg, hello *serverHelloMsg) (*serverKeyExchangeMsg, error) {
-	return nil, nil
+type rsaKeyAgreement struct {
+	version       uint16
+	clientVersion uint16
+	exportKey     *rsa.PrivateKey
 }
 
-func (ka rsaKeyAgreement) processClientKeyExchange(config *Config, cert *Certificate, ckx *clientKeyExchangeMsg, version uint16) ([]byte, error) {
+func (ka *rsaKeyAgreement) generateServerKeyExchange(config *Config, cert *Certificate, clientHello *clientHelloMsg, hello *serverHelloMsg) (*serverKeyExchangeMsg, error) {
+	// Save the client version for comparison later.
+	ka.clientVersion = versionToWire(clientHello.vers, clientHello.isDTLS)
+
+	if !config.Bugs.RSAEphemeralKey {
+		return nil, nil
+	}
+
+	// Generate an ephemeral RSA key to use instead of the real
+	// one, as in RSA_EXPORT.
+	key, err := rsa.GenerateKey(config.rand(), 512)
+	if err != nil {
+		return nil, err
+	}
+	ka.exportKey = key
+
+	modulus := key.N.Bytes()
+	exponent := big.NewInt(int64(key.E)).Bytes()
+	serverRSAParams := make([]byte, 0, 2+len(modulus)+2+len(exponent))
+	serverRSAParams = append(serverRSAParams, byte(len(modulus)>>8), byte(len(modulus)))
+	serverRSAParams = append(serverRSAParams, modulus...)
+	serverRSAParams = append(serverRSAParams, byte(len(exponent)>>8), byte(len(exponent)))
+	serverRSAParams = append(serverRSAParams, exponent...)
+
+	var tls12HashId uint8
+	if ka.version >= VersionTLS12 {
+		if tls12HashId, err = pickTLS12HashForSignature(signatureRSA, clientHello.signatureAndHashes, config.signatureAndHashesForServer()); err != nil {
+			return nil, err
+		}
+	}
+
+	digest, hashFunc, err := hashForServerKeyExchange(signatureRSA, tls12HashId, ka.version, clientHello.random, hello.random, serverRSAParams)
+	if err != nil {
+		return nil, err
+	}
+	privKey, ok := cert.PrivateKey.(*rsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("RSA ephemeral key requires an RSA server private key")
+	}
+	sig, err := rsa.SignPKCS1v15(config.rand(), privKey, hashFunc, digest)
+	if err != nil {
+		return nil, errors.New("failed to sign RSA parameters: " + err.Error())
+	}
+
+	skx := new(serverKeyExchangeMsg)
+	sigAndHashLen := 0
+	if ka.version >= VersionTLS12 {
+		sigAndHashLen = 2
+	}
+	skx.key = make([]byte, len(serverRSAParams)+sigAndHashLen+2+len(sig))
+	copy(skx.key, serverRSAParams)
+	k := skx.key[len(serverRSAParams):]
+	if ka.version >= VersionTLS12 {
+		k[0] = tls12HashId
+		k[1] = signatureRSA
+		k = k[2:]
+	}
+	k[0] = byte(len(sig) >> 8)
+	k[1] = byte(len(sig))
+	copy(k[2:], sig)
+
+	return skx, nil
+}
+
+func (ka *rsaKeyAgreement) processClientKeyExchange(config *Config, cert *Certificate, ckx *clientKeyExchangeMsg, version uint16) ([]byte, error) {
 	preMasterSecret := make([]byte, 48)
 	_, err := io.ReadFull(config.rand(), preMasterSecret[2:])
 	if err != nil {
@@ -51,24 +114,29 @@ func (ka rsaKeyAgreement) processClientKeyExchange(config *Config, cert *Certifi
 		ciphertext = ckx.ciphertext[2:]
 	}
 
-	err = rsa.DecryptPKCS1v15SessionKey(config.rand(), cert.PrivateKey.(*rsa.PrivateKey), ciphertext, preMasterSecret)
+	key := cert.PrivateKey.(*rsa.PrivateKey)
+	if ka.exportKey != nil {
+		key = ka.exportKey
+	}
+	err = rsa.DecryptPKCS1v15SessionKey(config.rand(), key, ciphertext, preMasterSecret)
 	if err != nil {
 		return nil, err
 	}
-	// We don't check the version number in the premaster secret.  For one,
-	// by checking it, we would leak information about the validity of the
-	// encrypted pre-master secret. Secondly, it provides only a small
-	// benefit against a downgrade attack and some implementations send the
-	// wrong version anyway. See the discussion at the end of section
-	// 7.4.7.1 of RFC 4346.
+	// This check should be done in constant-time, but this is a testing
+	// implementation. See the discussion at the end of section 7.4.7.1 of
+	// RFC 4346.
+	vers := uint16(preMasterSecret[0])<<8 | uint16(preMasterSecret[1])
+	if ka.clientVersion != vers {
+		return nil, errors.New("tls: invalid version in RSA premaster")
+	}
 	return preMasterSecret, nil
 }
 
-func (ka rsaKeyAgreement) processServerKeyExchange(config *Config, clientHello *clientHelloMsg, serverHello *serverHelloMsg, cert *x509.Certificate, skx *serverKeyExchangeMsg) error {
+func (ka *rsaKeyAgreement) processServerKeyExchange(config *Config, clientHello *clientHelloMsg, serverHello *serverHelloMsg, cert *x509.Certificate, skx *serverKeyExchangeMsg) error {
 	return errors.New("tls: unexpected ServerKeyExchange")
 }
 
-func (ka rsaKeyAgreement) generateClientKeyExchange(config *Config, clientHello *clientHelloMsg, cert *x509.Certificate) ([]byte, *clientKeyExchangeMsg, error) {
+func (ka *rsaKeyAgreement) generateClientKeyExchange(config *Config, clientHello *clientHelloMsg, cert *x509.Certificate) ([]byte, *clientKeyExchangeMsg, error) {
 	preMasterSecret := make([]byte, 48)
 	vers := clientHello.vers
 	if config.Bugs.RsaClientKeyExchangeVersion != 0 {
@@ -120,28 +188,20 @@ func md5SHA1Hash(slices [][]byte) []byte {
 	return md5sha1
 }
 
-// sha256Hash implements TLS 1.2's hash function.
-func sha256Hash(slices [][]byte) []byte {
-	h := sha256.New()
-	for _, slice := range slices {
-		h.Write(slice)
-	}
-	return h.Sum(nil)
-}
-
 // hashForServerKeyExchange hashes the given slices and returns their digest
 // and the identifier of the hash function used. The hashFunc argument is only
 // used for >= TLS 1.2 and precisely identifies the hash function to use.
 func hashForServerKeyExchange(sigType, hashFunc uint8, version uint16, slices ...[]byte) ([]byte, crypto.Hash, error) {
 	if version >= VersionTLS12 {
-		switch hashFunc {
-		case hashSHA256:
-			return sha256Hash(slices), crypto.SHA256, nil
-		case hashSHA1:
-			return sha1Hash(slices), crypto.SHA1, nil
-		default:
-			return nil, crypto.Hash(0), errors.New("tls: unknown hash function used by peer")
+		hash, err := lookupTLSHash(hashFunc)
+		if err != nil {
+			return nil, 0, err
 		}
+		h := hash.New()
+		for _, slice := range slices {
+			h.Write(slice)
+		}
+		return h.Sum(nil), hash, nil
 	}
 	if sigType == signatureECDSA {
 		return sha1Hash(slices), crypto.SHA1, nil
@@ -152,20 +212,19 @@ func hashForServerKeyExchange(sigType, hashFunc uint8, version uint16, slices ..
 // pickTLS12HashForSignature returns a TLS 1.2 hash identifier for signing a
 // ServerKeyExchange given the signature type being used and the client's
 // advertized list of supported signature and hash combinations.
-func pickTLS12HashForSignature(sigType uint8, clientSignatureAndHashes []signatureAndHash) (uint8, error) {
-	if len(clientSignatureAndHashes) == 0 {
+func pickTLS12HashForSignature(sigType uint8, clientList, serverList []signatureAndHash) (uint8, error) {
+	if len(clientList) == 0 {
 		// If the client didn't specify any signature_algorithms
 		// extension then we can assume that it supports SHA1. See
 		// http://tools.ietf.org/html/rfc5246#section-7.4.1.4.1
 		return hashSHA1, nil
 	}
 
-	for _, sigAndHash := range clientSignatureAndHashes {
+	for _, sigAndHash := range clientList {
 		if sigAndHash.signature != sigType {
 			continue
 		}
-		switch sigAndHash.hash {
-		case hashSHA1, hashSHA256:
+		if isSupportedSignatureAndHash(sigAndHash, serverList) {
 			return sigAndHash.hash, nil
 		}
 	}
@@ -175,6 +234,8 @@ func pickTLS12HashForSignature(sigType uint8, clientSignatureAndHashes []signatu
 
 func curveForCurveID(id CurveID) (elliptic.Curve, bool) {
 	switch id {
+	case CurveP224:
+		return elliptic.P224(), true
 	case CurveP256:
 		return elliptic.P256(), true
 	case CurveP384:
@@ -187,8 +248,29 @@ func curveForCurveID(id CurveID) (elliptic.Curve, bool) {
 
 }
 
-// signedKeyAgreement implements helper functions for key agreement
-// methods that involve signed parameters in the ServerKeyExchange.
+// keyAgreementAuthentication is a helper interface that specifies how
+// to authenticate the ServerKeyExchange parameters.
+type keyAgreementAuthentication interface {
+	signParameters(config *Config, cert *Certificate, clientHello *clientHelloMsg, hello *serverHelloMsg, params []byte) (*serverKeyExchangeMsg, error)
+	verifyParameters(config *Config, clientHello *clientHelloMsg, serverHello *serverHelloMsg, cert *x509.Certificate, params []byte, sig []byte) error
+}
+
+// nilKeyAgreementAuthentication does not authenticate the key
+// agreement parameters.
+type nilKeyAgreementAuthentication struct{}
+
+func (ka *nilKeyAgreementAuthentication) signParameters(config *Config, cert *Certificate, clientHello *clientHelloMsg, hello *serverHelloMsg, params []byte) (*serverKeyExchangeMsg, error) {
+	skx := new(serverKeyExchangeMsg)
+	skx.key = params
+	return skx, nil
+}
+
+func (ka *nilKeyAgreementAuthentication) verifyParameters(config *Config, clientHello *clientHelloMsg, serverHello *serverHelloMsg, cert *x509.Certificate, params []byte, sig []byte) error {
+	return nil
+}
+
+// signedKeyAgreement signs the ServerKeyExchange parameters with the
+// server's private key.
 type signedKeyAgreement struct {
 	version uint16
 	sigType uint8
@@ -198,7 +280,7 @@ func (ka *signedKeyAgreement) signParameters(config *Config, cert *Certificate, 
 	var tls12HashId uint8
 	var err error
 	if ka.version >= VersionTLS12 {
-		if tls12HashId, err = pickTLS12HashForSignature(ka.sigType, clientHello.signatureAndHashes); err != nil {
+		if tls12HashId, err = pickTLS12HashForSignature(ka.sigType, clientHello.signatureAndHashes, config.signatureAndHashesForServer()); err != nil {
 			return nil, err
 		}
 	}
@@ -281,6 +363,10 @@ func (ka *signedKeyAgreement) verifyParameters(config *Config, clientHello *clie
 		if len(sig) < 2 {
 			return errServerKeyExchange
 		}
+
+		if !isSupportedSignatureAndHash(signatureAndHash{ka.sigType, tls12HashId}, config.signatureAndHashesForClient()) {
+			return errors.New("tls: unsupported hash function for ServerKeyExchange")
+		}
 	}
 	sigLen := int(sig[0])<<8 | int(sig[1])
 	if sigLen+2 != len(sig) {
@@ -328,7 +414,7 @@ func (ka *signedKeyAgreement) verifyParameters(config *Config, clientHello *clie
 // pre-master secret is then calculated using ECDH. The signature may
 // either be ECDSA or RSA.
 type ecdheKeyAgreement struct {
-	signedKeyAgreement
+	auth       keyAgreementAuthentication
 	privateKey []byte
 	curve      elliptic.Curve
 	x, y       *big.Int
@@ -394,7 +480,7 @@ NextCandidate:
 	serverECDHParams[3] = byte(len(ecdhePublic))
 	copy(serverECDHParams[4:], ecdhePublic)
 
-	return ka.signParameters(config, cert, clientHello, hello, serverECDHParams)
+	return ka.auth.signParameters(config, cert, clientHello, hello, serverECDHParams)
 }
 
 func (ka *ecdheKeyAgreement) processClientKeyExchange(config *Config, cert *Certificate, ckx *clientKeyExchangeMsg, version uint16) ([]byte, error) {
@@ -438,7 +524,7 @@ func (ka *ecdheKeyAgreement) processServerKeyExchange(config *Config, clientHell
 	serverECDHParams := skx.key[:4+publicLen]
 	sig := skx.key[4+publicLen:]
 
-	return ka.verifyParameters(config, clientHello, serverHello, cert, serverECDHParams, sig)
+	return ka.auth.verifyParameters(config, clientHello, serverHello, cert, serverECDHParams, sig)
 }
 
 func (ka *ecdheKeyAgreement) generateClientKeyExchange(config *Config, clientHello *clientHelloMsg, cert *x509.Certificate) ([]byte, *clientKeyExchangeMsg, error) {
@@ -468,7 +554,7 @@ func (ka *ecdheKeyAgreement) generateClientKeyExchange(config *Config, clientHel
 // an ephemeral Diffie-Hellman public/private key pair and signs it. The
 // pre-master secret is then calculated using Diffie-Hellman.
 type dheKeyAgreement struct {
-	signedKeyAgreement
+	auth    keyAgreementAuthentication
 	p, g    *big.Int
 	yTheirs *big.Int
 	xOurs   *big.Int
@@ -500,7 +586,7 @@ func (ka *dheKeyAgreement) generateServerKeyExchange(config *Config, cert *Certi
 	serverDHParams = append(serverDHParams, byte(len(yBytes)>>8), byte(len(yBytes)))
 	serverDHParams = append(serverDHParams, yBytes...)
 
-	return ka.signParameters(config, cert, clientHello, hello, serverDHParams)
+	return ka.auth.signParameters(config, cert, clientHello, hello, serverDHParams)
 }
 
 func (ka *dheKeyAgreement) processClientKeyExchange(config *Config, cert *Certificate, ckx *clientKeyExchangeMsg, version uint16) ([]byte, error) {
@@ -562,7 +648,7 @@ func (ka *dheKeyAgreement) processServerKeyExchange(config *Config, clientHello 
 	sig := k
 	serverDHParams := skx.key[:len(skx.key)-len(sig)]
 
-	return ka.verifyParameters(config, clientHello, serverHello, cert, serverDHParams, sig)
+	return ka.auth.verifyParameters(config, clientHello, serverHello, cert, serverDHParams, sig)
 }
 
 func (ka *dheKeyAgreement) generateClientKeyExchange(config *Config, clientHello *clientHelloMsg, cert *x509.Certificate) ([]byte, *clientKeyExchangeMsg, error) {
@@ -585,4 +671,165 @@ func (ka *dheKeyAgreement) generateClientKeyExchange(config *Config, clientHello
 	copy(ckx.ciphertext[2:], yBytes)
 
 	return preMasterSecret, ckx, nil
+}
+
+// nilKeyAgreement is a fake key agreement used to implement the plain PSK key
+// exchange.
+type nilKeyAgreement struct{}
+
+func (ka *nilKeyAgreement) generateServerKeyExchange(config *Config, cert *Certificate, clientHello *clientHelloMsg, hello *serverHelloMsg) (*serverKeyExchangeMsg, error) {
+	return nil, nil
+}
+
+func (ka *nilKeyAgreement) processClientKeyExchange(config *Config, cert *Certificate, ckx *clientKeyExchangeMsg, version uint16) ([]byte, error) {
+	if len(ckx.ciphertext) != 0 {
+		return nil, errClientKeyExchange
+	}
+
+	// Although in plain PSK, otherSecret is all zeros, the base key
+	// agreement does not access to the length of the pre-shared
+	// key. pskKeyAgreement instead interprets nil to mean to use all zeros
+	// of the appropriate length.
+	return nil, nil
+}
+
+func (ka *nilKeyAgreement) processServerKeyExchange(config *Config, clientHello *clientHelloMsg, serverHello *serverHelloMsg, cert *x509.Certificate, skx *serverKeyExchangeMsg) error {
+	if len(skx.key) != 0 {
+		return errServerKeyExchange
+	}
+	return nil
+}
+
+func (ka *nilKeyAgreement) generateClientKeyExchange(config *Config, clientHello *clientHelloMsg, cert *x509.Certificate) ([]byte, *clientKeyExchangeMsg, error) {
+	// Although in plain PSK, otherSecret is all zeros, the base key
+	// agreement does not access to the length of the pre-shared
+	// key. pskKeyAgreement instead interprets nil to mean to use all zeros
+	// of the appropriate length.
+	return nil, &clientKeyExchangeMsg{}, nil
+}
+
+// makePSKPremaster formats a PSK pre-master secret based on otherSecret from
+// the base key exchange and psk.
+func makePSKPremaster(otherSecret, psk []byte) []byte {
+	out := make([]byte, 0, 2+len(otherSecret)+2+len(psk))
+	out = append(out, byte(len(otherSecret)>>8), byte(len(otherSecret)))
+	out = append(out, otherSecret...)
+	out = append(out, byte(len(psk)>>8), byte(len(psk)))
+	out = append(out, psk...)
+	return out
+}
+
+// pskKeyAgreement implements the PSK key agreement.
+type pskKeyAgreement struct {
+	base         keyAgreement
+	identityHint string
+}
+
+func (ka *pskKeyAgreement) generateServerKeyExchange(config *Config, cert *Certificate, clientHello *clientHelloMsg, hello *serverHelloMsg) (*serverKeyExchangeMsg, error) {
+	// Assemble the identity hint.
+	bytes := make([]byte, 2+len(config.PreSharedKeyIdentity))
+	bytes[0] = byte(len(config.PreSharedKeyIdentity) >> 8)
+	bytes[1] = byte(len(config.PreSharedKeyIdentity))
+	copy(bytes[2:], []byte(config.PreSharedKeyIdentity))
+
+	// If there is one, append the base key agreement's
+	// ServerKeyExchange.
+	baseSkx, err := ka.base.generateServerKeyExchange(config, cert, clientHello, hello)
+	if err != nil {
+		return nil, err
+	}
+
+	if baseSkx != nil {
+		bytes = append(bytes, baseSkx.key...)
+	} else if config.PreSharedKeyIdentity == "" {
+		// ServerKeyExchange is optional if the identity hint is empty
+		// and there would otherwise be no ServerKeyExchange.
+		return nil, nil
+	}
+
+	skx := new(serverKeyExchangeMsg)
+	skx.key = bytes
+	return skx, nil
+}
+
+func (ka *pskKeyAgreement) processClientKeyExchange(config *Config, cert *Certificate, ckx *clientKeyExchangeMsg, version uint16) ([]byte, error) {
+	// First, process the PSK identity.
+	if len(ckx.ciphertext) < 2 {
+		return nil, errClientKeyExchange
+	}
+	identityLen := (int(ckx.ciphertext[0]) << 8) | int(ckx.ciphertext[1])
+	if 2+identityLen > len(ckx.ciphertext) {
+		return nil, errClientKeyExchange
+	}
+	identity := string(ckx.ciphertext[2 : 2+identityLen])
+
+	if identity != config.PreSharedKeyIdentity {
+		return nil, errors.New("tls: unexpected identity")
+	}
+
+	if config.PreSharedKey == nil {
+		return nil, errors.New("tls: pre-shared key not configured")
+	}
+
+	// Process the remainder of the ClientKeyExchange to compute the base
+	// pre-master secret.
+	newCkx := new(clientKeyExchangeMsg)
+	newCkx.ciphertext = ckx.ciphertext[2+identityLen:]
+	otherSecret, err := ka.base.processClientKeyExchange(config, cert, newCkx, version)
+	if err != nil {
+		return nil, err
+	}
+
+	if otherSecret == nil {
+		// Special-case for the plain PSK key exchanges.
+		otherSecret = make([]byte, len(config.PreSharedKey))
+	}
+	return makePSKPremaster(otherSecret, config.PreSharedKey), nil
+}
+
+func (ka *pskKeyAgreement) processServerKeyExchange(config *Config, clientHello *clientHelloMsg, serverHello *serverHelloMsg, cert *x509.Certificate, skx *serverKeyExchangeMsg) error {
+	if len(skx.key) < 2 {
+		return errServerKeyExchange
+	}
+	identityLen := (int(skx.key[0]) << 8) | int(skx.key[1])
+	if 2+identityLen > len(skx.key) {
+		return errServerKeyExchange
+	}
+	ka.identityHint = string(skx.key[2 : 2+identityLen])
+
+	// Process the remainder of the ServerKeyExchange.
+	newSkx := new(serverKeyExchangeMsg)
+	newSkx.key = skx.key[2+identityLen:]
+	return ka.base.processServerKeyExchange(config, clientHello, serverHello, cert, newSkx)
+}
+
+func (ka *pskKeyAgreement) generateClientKeyExchange(config *Config, clientHello *clientHelloMsg, cert *x509.Certificate) ([]byte, *clientKeyExchangeMsg, error) {
+	// The server only sends an identity hint but, for purposes of
+	// test code, the server always sends the hint and it is
+	// required to match.
+	if ka.identityHint != config.PreSharedKeyIdentity {
+		return nil, nil, errors.New("tls: unexpected identity")
+	}
+
+	// Serialize the identity.
+	bytes := make([]byte, 2+len(config.PreSharedKeyIdentity))
+	bytes[0] = byte(len(config.PreSharedKeyIdentity) >> 8)
+	bytes[1] = byte(len(config.PreSharedKeyIdentity))
+	copy(bytes[2:], []byte(config.PreSharedKeyIdentity))
+
+	// Append the base key exchange's ClientKeyExchange.
+	otherSecret, baseCkx, err := ka.base.generateClientKeyExchange(config, clientHello, cert)
+	if err != nil {
+		return nil, nil, err
+	}
+	ckx := new(clientKeyExchangeMsg)
+	ckx.ciphertext = append(bytes, baseCkx.ciphertext...)
+
+	if config.PreSharedKey == nil {
+		return nil, nil, errors.New("tls: pre-shared key not configured")
+	}
+	if otherSecret == nil {
+		otherSecret = make([]byte, len(config.PreSharedKey))
+	}
+	return makePSKPremaster(otherSecret, config.PreSharedKey), ckx, nil
 }

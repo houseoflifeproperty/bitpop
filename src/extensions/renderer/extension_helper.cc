@@ -6,12 +6,13 @@
 
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_visitor.h"
-#include "extensions/common/api/messaging/message.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_messages.h"
+#include "extensions/common/permissions/permissions_data.h"
+#include "extensions/common/url_pattern_set.h"
+#include "extensions/renderer/api/automation/automation_api_helper.h"
 #include "extensions/renderer/console.h"
 #include "extensions/renderer/dispatcher.h"
-#include "extensions/renderer/messaging_bindings.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -47,7 +48,7 @@ class ViewAccumulator : public content::RenderViewVisitor {
   std::vector<content::RenderView*> views() { return views_; }
 
   // Returns false to terminate the iteration.
-  virtual bool Visit(content::RenderView* render_view) OVERRIDE {
+  bool Visit(content::RenderView* render_view) override {
     ExtensionHelper* helper = ExtensionHelper::Get(render_view);
     if (!ViewTypeMatches(helper->view_type(), view_type_))
       return true;
@@ -122,6 +123,8 @@ ExtensionHelper::ExtensionHelper(content::RenderView* render_view,
       view_type_(VIEW_TYPE_INVALID),
       tab_id_(-1),
       browser_window_id_(-1) {
+  // Lifecycle managed by RenderViewObserver.
+  new AutomationApiHelper(render_view);
 }
 
 ExtensionHelper::~ExtensionHelper() {
@@ -132,11 +135,6 @@ bool ExtensionHelper::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(ExtensionHelper, message)
     IPC_MESSAGE_HANDLER(ExtensionMsg_Response, OnExtensionResponse)
     IPC_MESSAGE_HANDLER(ExtensionMsg_MessageInvoke, OnExtensionMessageInvoke)
-    IPC_MESSAGE_HANDLER(ExtensionMsg_DispatchOnConnect,
-                        OnExtensionDispatchOnConnect)
-    IPC_MESSAGE_HANDLER(ExtensionMsg_DeliverMessage, OnExtensionDeliverMessage)
-    IPC_MESSAGE_HANDLER(ExtensionMsg_DispatchOnDisconnect,
-                        OnExtensionDispatchOnDisconnect)
     IPC_MESSAGE_HANDLER(ExtensionMsg_SetFrameName, OnSetFrameName)
     IPC_MESSAGE_HANDLER(ExtensionMsg_SetTabId, OnSetTabId)
     IPC_MESSAGE_HANDLER(ExtensionMsg_UpdateBrowserWindowId,
@@ -197,34 +195,6 @@ void ExtensionHelper::OnExtensionMessageInvoke(const std::string& extension_id,
       user_gesture);
 }
 
-void ExtensionHelper::OnExtensionDispatchOnConnect(
-    int target_port_id,
-    const std::string& channel_name,
-    const base::DictionaryValue& source_tab,
-    const ExtensionMsg_ExternalConnectionInfo& info,
-    const std::string& tls_channel_id) {
-  MessagingBindings::DispatchOnConnect(dispatcher_->script_context_set(),
-                                       target_port_id,
-                                       channel_name,
-                                       source_tab,
-                                       info,
-                                       tls_channel_id,
-                                       render_view());
-}
-
-void ExtensionHelper::OnExtensionDeliverMessage(int target_id,
-                                                const Message& message) {
-  MessagingBindings::DeliverMessage(
-      dispatcher_->script_context_set(), target_id, message, render_view());
-}
-
-void ExtensionHelper::OnExtensionDispatchOnDisconnect(
-    int port_id,
-    const std::string& error_message) {
-  MessagingBindings::DispatchOnDisconnect(
-      dispatcher_->script_context_set(), port_id, error_message, render_view());
-}
-
 void ExtensionHelper::OnNotifyRendererViewType(ViewType type) {
   view_type_ = type;
 }
@@ -252,7 +222,7 @@ void ExtensionHelper::OnAddMessageToConsole(ConsoleMessageLevel level,
 
 void ExtensionHelper::OnAppWindowClosed() {
   v8::HandleScope scope(v8::Isolate::GetCurrent());
-  v8::Handle<v8::Context> v8_context =
+  v8::Local<v8::Context> v8_context =
       render_view()->GetWebView()->mainFrame()->mainWorldScriptContext();
   ScriptContext* script_context =
       dispatcher_->script_context_set().GetByV8Context(v8_context);

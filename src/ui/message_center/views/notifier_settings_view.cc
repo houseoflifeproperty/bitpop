@@ -14,10 +14,11 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/size.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/views/message_center_view.h"
 #include "ui/resources/grit/ui_resources.h"
@@ -126,17 +127,17 @@ scoped_ptr<views::Painter> CreateFocusPainter() {
 class EntryView : public views::View {
  public:
   explicit EntryView(views::View* contents);
-  virtual ~EntryView();
+  ~EntryView() override;
 
   // views::View:
-  virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
-  virtual void OnFocus() OVERRIDE;
-  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
-  virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual void OnBlur() OVERRIDE;
+  void Layout() override;
+  gfx::Size GetPreferredSize() const override;
+  void GetAccessibleState(ui::AXViewState* state) override;
+  void OnFocus() override;
+  bool OnKeyPressed(const ui::KeyEvent& event) override;
+  bool OnKeyReleased(const ui::KeyEvent& event) override;
+  void OnPaint(gfx::Canvas* canvas) override;
+  void OnBlur() override;
 
  private:
   scoped_ptr<views::Painter> focus_painter_;
@@ -207,15 +208,14 @@ class NotifierGroupMenuModel : public ui::SimpleMenuModel,
                                public ui::SimpleMenuModel::Delegate {
  public:
   NotifierGroupMenuModel(NotifierSettingsProvider* notifier_settings_provider);
-  virtual ~NotifierGroupMenuModel();
+  ~NotifierGroupMenuModel() override;
 
   // ui::SimpleMenuModel::Delegate:
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
-  virtual bool GetAcceleratorForCommandId(
-      int command_id,
-      ui::Accelerator* accelerator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
+  bool IsCommandIdChecked(int command_id) const override;
+  bool IsCommandIdEnabled(int command_id) const override;
+  bool GetAcceleratorForCommandId(int command_id,
+                                  ui::Accelerator* accelerator) override;
+  void ExecuteCommand(int command_id, int event_flags) override;
 
  private:
   NotifierSettingsProvider* notifier_settings_provider_;
@@ -372,9 +372,9 @@ void NotifierSettingsView::NotifierButton::SendLearnMorePressedForTest() {
   if (learn_more_ == NULL)
     return;
   gfx::Point point(110, 120);
-  ui::MouseEvent pressed(
-      ui::ET_MOUSE_PRESSED, point, point, ui::EF_LEFT_MOUSE_BUTTON,
-      ui::EF_LEFT_MOUSE_BUTTON);
+  ui::MouseEvent pressed(ui::ET_MOUSE_PRESSED, point, point,
+                         ui::EventTimeForNow(), ui::EF_LEFT_MOUSE_BUTTON,
+                         ui::EF_LEFT_MOUSE_BUTTON);
   ButtonPressed(learn_more_, pressed);
 }
 
@@ -577,7 +577,7 @@ void NotifierSettingsView::UpdateContentsView(
         new views::MenuButton(NULL, notifier_group_text, this, true);
     notifier_group_selector_->SetBorder(scoped_ptr<views::Border>(
         new views::LabelButtonBorder(views::Button::STYLE_BUTTON)).Pass());
-    notifier_group_selector_->SetFocusPainter(scoped_ptr<views::Painter>());
+    notifier_group_selector_->SetFocusPainter(nullptr);
     notifier_group_selector_->set_animate_on_state_change(false);
     notifier_group_selector_->SetFocusable(true);
     contents_title_view->AddChildView(notifier_group_selector_);

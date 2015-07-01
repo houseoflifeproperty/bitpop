@@ -37,33 +37,33 @@
 namespace blink {
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-typedef BaseMultipleFieldsDateAndTimeInputType BaseMonthInputType;
+using BaseMonthInputType = BaseMultipleFieldsDateAndTimeInputType;
 #else
-typedef BaseChooserOnlyDateAndTimeInputType BaseMonthInputType;
+using BaseMonthInputType = BaseChooserOnlyDateAndTimeInputType;
 #endif
 
-class MonthInputType FINAL : public BaseMonthInputType {
+class MonthInputType final : public BaseMonthInputType {
 public:
     static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&);
 
 private:
     MonthInputType(HTMLInputElement& element) : BaseMonthInputType(element) { }
-    virtual void countUsage() OVERRIDE;
-    virtual const AtomicString& formControlType() const OVERRIDE;
-    virtual double valueAsDate() const OVERRIDE;
-    virtual String serializeWithMilliseconds(double) const OVERRIDE;
-    virtual Decimal parseToNumber(const String&, const Decimal&) const OVERRIDE;
-    virtual Decimal defaultValueForStepUp() const OVERRIDE;
-    virtual StepRange createStepRange(AnyStepHandling) const OVERRIDE;
-    virtual bool parseToDateComponentsInternal(const String&, DateComponents*) const OVERRIDE;
-    virtual bool setMillisecondToDateComponents(double, DateComponents*) const OVERRIDE;
-    virtual bool canSetSuggestedValue() OVERRIDE;
+    void countUsage() override;
+    const AtomicString& formControlType() const override;
+    double valueAsDate() const override;
+    String serializeWithMilliseconds(double) const override;
+    Decimal parseToNumber(const String&, const Decimal&) const override;
+    Decimal defaultValueForStepUp() const override;
+    StepRange createStepRange(AnyStepHandling) const override;
+    bool parseToDateComponentsInternal(const String&, DateComponents*) const override;
+    bool setMillisecondToDateComponents(double, DateComponents*) const override;
+    bool canSetSuggestedValue() override;
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     // BaseMultipleFieldsDateAndTimeInputType functions
-    virtual String formatDateTimeFieldsState(const DateTimeFieldsState&) const OVERRIDE;
-    virtual void setupLayoutParameters(DateTimeEditElement::LayoutParameters&, const DateComponents&) const OVERRIDE;
-    virtual bool isValidFormat(bool hasYear, bool hasMonth, bool hasWeek, bool hasDay, bool hasAMPM, bool hasHour, bool hasMinute, bool hasSecond) const OVERRIDE;
+    String formatDateTimeFieldsState(const DateTimeFieldsState&) const override;
+    void setupLayoutParameters(DateTimeEditElement::LayoutParameters&, const DateComponents&) const override;
+    bool isValidFormat(bool hasYear, bool hasMonth, bool hasWeek, bool hasDay, bool hasAMPM, bool hasHour, bool hasMinute, bool hasSecond) const override;
 #endif
 };
 

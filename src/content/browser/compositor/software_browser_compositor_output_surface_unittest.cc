@@ -4,7 +4,7 @@
 
 #include "base/message_loop/message_loop.h"
 #include "cc/output/compositor_frame.h"
-#include "content/browser/compositor/browser_compositor_output_surface_proxy.h"
+#include "cc/test/fake_output_surface_client.h"
 #include "content/browser/compositor/software_browser_compositor_output_surface.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/compositor/compositor.h"
@@ -16,10 +16,9 @@ namespace {
 class FakeVSyncProvider : public gfx::VSyncProvider {
  public:
   FakeVSyncProvider() : call_count_(0) {}
-  virtual ~FakeVSyncProvider() {}
+  ~FakeVSyncProvider() override {}
 
-  virtual void GetVSyncParameters(const UpdateVSyncCallback& callback)
-      OVERRIDE {
+  void GetVSyncParameters(const UpdateVSyncCallback& callback) override {
     callback.Run(timebase_, interval_);
     call_count_++;
   }
@@ -41,9 +40,9 @@ class FakeVSyncProvider : public gfx::VSyncProvider {
 class FakeSoftwareOutputDevice : public cc::SoftwareOutputDevice {
  public:
   FakeSoftwareOutputDevice() : vsync_provider_(new FakeVSyncProvider()) {}
-  virtual ~FakeSoftwareOutputDevice() {}
+  ~FakeSoftwareOutputDevice() override {}
 
-  virtual gfx::VSyncProvider* GetVSyncProvider() OVERRIDE {
+  gfx::VSyncProvider* GetVSyncProvider() override {
     return vsync_provider_.get();
   }
 
@@ -58,10 +57,10 @@ class FakeSoftwareOutputDevice : public cc::SoftwareOutputDevice {
 class SoftwareBrowserCompositorOutputSurfaceTest : public testing::Test {
  public:
   SoftwareBrowserCompositorOutputSurfaceTest();
-  virtual ~SoftwareBrowserCompositorOutputSurfaceTest();
+  ~SoftwareBrowserCompositorOutputSurfaceTest() override;
 
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   scoped_ptr<content::BrowserCompositorOutputSurface> CreateSurface(
       scoped_ptr<cc::SoftwareOutputDevice> device);
@@ -71,9 +70,6 @@ class SoftwareBrowserCompositorOutputSurfaceTest : public testing::Test {
 
   scoped_ptr<base::MessageLoop> message_loop_;
   scoped_ptr<ui::Compositor> compositor_;
-
-  IDMap<content::BrowserCompositorOutputSurface> surface_map_;
-  scoped_refptr<content::BrowserCompositorOutputSurfaceProxy> surface_proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(SoftwareBrowserCompositorOutputSurfaceTest);
 };
@@ -96,17 +92,11 @@ void SoftwareBrowserCompositorOutputSurfaceTest::SetUp() {
   compositor_.reset(new ui::Compositor(gfx::kNullAcceleratedWidget,
                                        context_factory,
                                        base::MessageLoopProxy::current()));
-  surface_proxy_ =
-      new content::BrowserCompositorOutputSurfaceProxy(&surface_map_);
 }
 
 void SoftwareBrowserCompositorOutputSurfaceTest::TearDown() {
   output_surface_.reset();
   compositor_.reset();
-
-  EXPECT_TRUE(surface_map_.IsEmpty());
-
-  surface_map_.Clear();
   ui::TerminateContextFactoryForTests();
 }
 
@@ -115,28 +105,30 @@ SoftwareBrowserCompositorOutputSurfaceTest::CreateSurface(
     scoped_ptr<cc::SoftwareOutputDevice> device) {
   return scoped_ptr<content::BrowserCompositorOutputSurface>(
       new content::SoftwareBrowserCompositorOutputSurface(
-          surface_proxy_,
           device.Pass(),
-          1,
-          &surface_map_,
           compositor_->vsync_manager()));
 }
 
 TEST_F(SoftwareBrowserCompositorOutputSurfaceTest, NoVSyncProvider) {
+  cc::FakeOutputSurfaceClient output_surface_client;
   scoped_ptr<cc::SoftwareOutputDevice> software_device(
       new cc::SoftwareOutputDevice());
   output_surface_ = CreateSurface(software_device.Pass());
+  CHECK(output_surface_->BindToClient(&output_surface_client));
 
   cc::CompositorFrame frame;
   output_surface_->SwapBuffers(&frame);
 
+  EXPECT_EQ(1, output_surface_client.swap_count());
   EXPECT_EQ(NULL, output_surface_->software_device()->GetVSyncProvider());
 }
 
 TEST_F(SoftwareBrowserCompositorOutputSurfaceTest, VSyncProviderUpdates) {
+  cc::FakeOutputSurfaceClient output_surface_client;
   scoped_ptr<cc::SoftwareOutputDevice> software_device(
       new FakeSoftwareOutputDevice());
   output_surface_ = CreateSurface(software_device.Pass());
+  CHECK(output_surface_->BindToClient(&output_surface_client));
 
   FakeVSyncProvider* vsync_provider = static_cast<FakeVSyncProvider*>(
       output_surface_->software_device()->GetVSyncProvider());
@@ -145,5 +137,6 @@ TEST_F(SoftwareBrowserCompositorOutputSurfaceTest, VSyncProviderUpdates) {
   cc::CompositorFrame frame;
   output_surface_->SwapBuffers(&frame);
 
+  EXPECT_EQ(1, output_surface_client.swap_count());
   EXPECT_EQ(1, vsync_provider->call_count());
 }

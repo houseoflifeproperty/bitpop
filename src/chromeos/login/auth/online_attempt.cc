@@ -4,20 +4,16 @@
 
 #include "chromeos/login/auth/online_attempt.h"
 
-#include <string>
 
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "chromeos/login/auth/auth_attempt_state.h"
 #include "chromeos/login/auth/auth_attempt_state_resolver.h"
 #include "chromeos/login/auth/key.h"
 #include "chromeos/login/auth/user_context.h"
 #include "components/user_manager/user_type.h"
-#include "google_apis/gaia/gaia_auth_consumer.h"
 #include "google_apis/gaia/gaia_auth_fetcher.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "net/base/load_flags.h"
@@ -36,7 +32,8 @@ OnlineAttempt::OnlineAttempt(AuthAttemptState* current_attempt,
       resolver_(callback),
       try_again_(true),
       weak_factory_(this) {
-  DCHECK(attempt_->user_type == user_manager::USER_TYPE_REGULAR);
+  DCHECK_EQ(user_manager::USER_TYPE_REGULAR,
+            attempt_->user_context.GetUserType());
 }
 
 OnlineAttempt::~OnlineAttempt() {

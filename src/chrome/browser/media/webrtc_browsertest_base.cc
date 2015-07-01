@@ -27,20 +27,20 @@
 
 const char WebRtcTestBase::kAudioVideoCallConstraints[] =
     "{audio: true, video: true}";
-const char WebRtcTestBase::kAudioVideoCallConstraintsQVGA[] =
-   "{audio: true, video: {mandatory: {minWidth: 320, maxWidth: 320, "
+const char WebRtcTestBase::kVideoCallConstraintsQVGA[] =
+   "{video: {mandatory: {minWidth: 320, maxWidth: 320, "
    " minHeight: 240, maxHeight: 240}}}";
-const char WebRtcTestBase::kAudioVideoCallConstraints360p[] =
-   "{audio: true, video: {mandatory: {minWidth: 640, maxWidth: 640, "
+const char WebRtcTestBase::kVideoCallConstraints360p[] =
+   "{video: {mandatory: {minWidth: 640, maxWidth: 640, "
    " minHeight: 360, maxHeight: 360}}}";
-const char WebRtcTestBase::kAudioVideoCallConstraintsVGA[] =
-   "{audio: true, video: {mandatory: {minWidth: 640, maxWidth: 640, "
+const char WebRtcTestBase::kVideoCallConstraintsVGA[] =
+   "{video: {mandatory: {minWidth: 640, maxWidth: 640, "
    " minHeight: 480, maxHeight: 480}}}";
-const char WebRtcTestBase::kAudioVideoCallConstraints720p[] =
-   "{audio: true, video: {mandatory: {minWidth: 1280, maxWidth: 1280, "
+const char WebRtcTestBase::kVideoCallConstraints720p[] =
+   "{video: {mandatory: {minWidth: 1280, maxWidth: 1280, "
    " minHeight: 720, maxHeight: 720}}}";
-const char WebRtcTestBase::kAudioVideoCallConstraints1080p[] =
-    "{audio: true, video: {mandatory: {minWidth: 1920, maxWidth: 1920, "
+const char WebRtcTestBase::kVideoCallConstraints1080p[] =
+    "{video: {mandatory: {minWidth: 1920, maxWidth: 1920, "
     " minHeight: 1080, maxHeight: 1080}}}";
 const char WebRtcTestBase::kAudioOnlyCallConstraints[] = "{audio: true}";
 const char WebRtcTestBase::kVideoOnlyCallConstraints[] = "{video: true}";
@@ -48,6 +48,12 @@ const char WebRtcTestBase::kFailedWithPermissionDeniedError[] =
     "failed-with-error-PermissionDeniedError";
 const char WebRtcTestBase::kFailedWithPermissionDismissedError[] =
     "failed-with-error-PermissionDismissedError";
+const char WebRtcTestBase::kAudioVideoCallConstraints360p[] =
+   "{audio: true, video: {mandatory: {minWidth: 640, maxWidth: 640, "
+   " minHeight: 360, maxHeight: 360}}}";
+const char WebRtcTestBase::kAudioVideoCallConstraints720p[] =
+   "{audio: true, video: {mandatory: {minWidth: 1280, maxWidth: 1280, "
+   " minHeight: 720, maxHeight: 720}}}";
 
 namespace {
 
@@ -94,13 +100,13 @@ WebRtcTestBase::~WebRtcTestBase() {
   }
 }
 
-void WebRtcTestBase::GetUserMediaAndAccept(
+bool WebRtcTestBase::GetUserMediaAndAccept(
     content::WebContents* tab_contents) const {
-  GetUserMediaWithSpecificConstraintsAndAccept(tab_contents,
-                                               kAudioVideoCallConstraints);
+  return GetUserMediaWithSpecificConstraintsAndAccept(
+      tab_contents, kAudioVideoCallConstraints);
 }
 
-void WebRtcTestBase::GetUserMediaWithSpecificConstraintsAndAccept(
+bool WebRtcTestBase::GetUserMediaWithSpecificConstraintsAndAccept(
     content::WebContents* tab_contents,
     const std::string& constraints) const {
   infobars::InfoBar* infobar =
@@ -110,8 +116,8 @@ void WebRtcTestBase::GetUserMediaWithSpecificConstraintsAndAccept(
 
   // Wait for WebRTC to call the success callback.
   const char kOkGotStream[] = "ok-got-stream";
-  EXPECT_TRUE(test::PollingWaitUntil("obtainGetUserMediaResult()", kOkGotStream,
-                                     tab_contents));
+  return test::PollingWaitUntil("obtainGetUserMediaResult()", kOkGotStream,
+                                tab_contents);
 }
 
 void WebRtcTestBase::GetUserMediaAndDeny(content::WebContents* tab_contents) {
@@ -185,13 +191,10 @@ WebRtcTestBase::OpenPageAndGetUserMediaInNewTabWithConstraints(
     const std::string& constraints) const {
   chrome::AddTabAt(browser(), GURL(), -1, true);
   ui_test_utils::NavigateToURL(browser(), url);
-#if defined (OS_LINUX)
-  // Load the page again on Linux to work around crbug.com/281268.
-  ui_test_utils::NavigateToURL(browser(), url);
-#endif
   content::WebContents* new_tab =
       browser()->tab_strip_model()->GetActiveWebContents();
-  GetUserMediaWithSpecificConstraintsAndAccept(new_tab, constraints);
+  EXPECT_TRUE(GetUserMediaWithSpecificConstraintsAndAccept(
+      new_tab, constraints));
   return new_tab;
 }
 
@@ -255,9 +258,14 @@ std::string WebRtcTestBase::ExecuteJavascript(
 
 void WebRtcTestBase::SetupPeerconnectionWithLocalStream(
     content::WebContents* tab) const {
+  SetupPeerconnectionWithoutLocalStream(tab);
+  EXPECT_EQ("ok-added", ExecuteJavascript("addLocalStream()", tab));
+}
+
+void WebRtcTestBase::SetupPeerconnectionWithoutLocalStream(
+    content::WebContents* tab) const {
   EXPECT_EQ("ok-peerconnection-created",
             ExecuteJavascript("preparePeerConnection()", tab));
-  EXPECT_EQ("ok-added", ExecuteJavascript("addLocalStream()", tab));
 }
 
 std::string WebRtcTestBase::CreateLocalOffer(
@@ -330,10 +338,12 @@ void WebRtcTestBase::StartDetectingVideo(
   EXPECT_EQ("ok-started", ExecuteJavascript(javascript, tab_contents));
 }
 
-void WebRtcTestBase::WaitForVideoToPlay(
+bool WebRtcTestBase::WaitForVideoToPlay(
     content::WebContents* tab_contents) const {
-  EXPECT_TRUE(test::PollingWaitUntil("isVideoPlaying()", "video-playing",
-                                     tab_contents));
+  bool is_video_playing = test::PollingWaitUntil(
+      "isVideoPlaying()", "video-playing", tab_contents);
+  EXPECT_TRUE(is_video_playing);
+  return is_video_playing;
 }
 
 std::string WebRtcTestBase::GetStreamSize(

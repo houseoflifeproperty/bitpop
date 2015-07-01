@@ -29,50 +29,50 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
  public:
   static scoped_ptr<SoftwareRenderer> Create(
       RendererClient* client,
-      const LayerTreeSettings* settings,
+      const RendererSettings* settings,
       OutputSurface* output_surface,
       ResourceProvider* resource_provider);
 
-  virtual ~SoftwareRenderer();
-  virtual const RendererCapabilitiesImpl& Capabilities() const OVERRIDE;
-  virtual void Finish() OVERRIDE;
-  virtual void SwapBuffers(const CompositorFrameMetadata& metadata) OVERRIDE;
-  virtual void ReceiveSwapBuffersAck(
-      const CompositorFrameAck& ack) OVERRIDE;
-  virtual void DiscardBackbuffer() OVERRIDE;
-  virtual void EnsureBackbuffer() OVERRIDE;
+  ~SoftwareRenderer() override;
+  const RendererCapabilitiesImpl& Capabilities() const override;
+  void Finish() override;
+  void SwapBuffers(const CompositorFrameMetadata& metadata) override;
+  void ReceiveSwapBuffersAck(const CompositorFrameAck& ack) override;
+  void DiscardBackbuffer() override;
+  void EnsureBackbuffer() override;
 
  protected:
-  virtual void BindFramebufferToOutputSurface(DrawingFrame* frame) OVERRIDE;
-  virtual bool BindFramebufferToTexture(
+  void BindFramebufferToOutputSurface(DrawingFrame* frame) override;
+  bool BindFramebufferToTexture(DrawingFrame* frame,
+                                const ScopedResource* texture,
+                                const gfx::Rect& target_rect) override;
+  void SetScissorTestRect(const gfx::Rect& scissor_rect) override;
+  void PrepareSurfaceForPass(DrawingFrame* frame,
+                             SurfaceInitializationMode initialization_mode,
+                             const gfx::Rect& render_pass_scissor) override;
+
+  void DoDrawQuad(DrawingFrame* frame,
+                  const DrawQuad* quad,
+                  const gfx::QuadF* draw_region) override;
+  void BeginDrawingFrame(DrawingFrame* frame) override;
+  void FinishDrawingFrame(DrawingFrame* frame) override;
+  bool FlippedFramebuffer(const DrawingFrame* frame) const override;
+  void EnsureScissorTestEnabled() override;
+  void EnsureScissorTestDisabled() override;
+  void CopyCurrentRenderPassToBitmap(
       DrawingFrame* frame,
-      const ScopedResource* texture,
-      const gfx::Rect& target_rect) OVERRIDE;
-  virtual void SetDrawViewport(const gfx::Rect& window_space_viewport) OVERRIDE;
-  virtual void SetScissorTestRect(const gfx::Rect& scissor_rect) OVERRIDE;
-  virtual void DiscardPixels(bool has_external_stencil_test,
-                             bool draw_rect_covers_full_surface) OVERRIDE;
-  virtual void ClearFramebuffer(DrawingFrame* frame,
-                                bool has_external_stencil_test) OVERRIDE;
-  virtual void DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) OVERRIDE;
-  virtual void BeginDrawingFrame(DrawingFrame* frame) OVERRIDE;
-  virtual void FinishDrawingFrame(DrawingFrame* frame) OVERRIDE;
-  virtual bool FlippedFramebuffer() const OVERRIDE;
-  virtual void EnsureScissorTestEnabled() OVERRIDE;
-  virtual void EnsureScissorTestDisabled() OVERRIDE;
-  virtual void CopyCurrentRenderPassToBitmap(
-      DrawingFrame* frame,
-      scoped_ptr<CopyOutputRequest> request) OVERRIDE;
+      scoped_ptr<CopyOutputRequest> request) override;
 
   SoftwareRenderer(RendererClient* client,
-                   const LayerTreeSettings* settings,
+                   const RendererSettings* settings,
                    OutputSurface* output_surface,
                    ResourceProvider* resource_provider);
 
-  virtual void DidChangeVisibility() OVERRIDE;
+  void DidChangeVisibility() override;
 
  private:
   void ClearCanvas(SkColor color);
+  void ClearFramebuffer(DrawingFrame* frame);
   void SetClipRect(const gfx::Rect& rect);
   bool IsSoftwareResource(ResourceProvider::ResourceId resource_id) const;
 
@@ -104,6 +104,7 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
   SkPaint current_paint_;
   scoped_ptr<ResourceProvider::ScopedWriteLockSoftware>
       current_framebuffer_lock_;
+  skia::RefPtr<SkCanvas> current_framebuffer_canvas_;
   scoped_ptr<SoftwareFrameData> current_frame_data_;
 
   DISALLOW_COPY_AND_ASSIGN(SoftwareRenderer);

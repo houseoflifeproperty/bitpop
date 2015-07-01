@@ -38,11 +38,7 @@
 namespace blink {
 
 class Document;
-class LocalFrame;
-class HTMLImportChild;
 class HTMLImportLoader;
-class HTMLImportsController;
-class KURL;
 
 //
 // # Basic Data Structure and Algorithms of HTML Imports implemenation.
@@ -114,12 +110,12 @@ public:
     void appendImport(HTMLImport*);
 
     virtual Document* document() const = 0;
-    virtual bool isDone() const = 0; // FIXME: Should be renamed to haveFinishedLoading()
-    virtual HTMLImportLoader* loader() const { return 0; }
+    virtual bool hasFinishedLoading() const = 0;
+    virtual HTMLImportLoader* loader() const { return nullptr; }
     virtual void stateWillChange() { }
     virtual void stateDidChange();
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
 protected:
     // Stating from most conservative state.

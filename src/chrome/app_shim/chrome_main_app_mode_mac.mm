@@ -24,7 +24,6 @@
 #include "base/mac/scoped_nsobject.h"
 #include "base/mac/sdk_forward_declarations.h"
 #include "base/message_loop/message_loop.h"
-#include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/threading/thread.h"
@@ -88,7 +87,7 @@ class AppShimController;
 class AppShimController : public IPC::Listener {
  public:
   AppShimController();
-  virtual ~AppShimController();
+  ~AppShimController() override;
 
   // Called when the main Chrome process responds to the Apple Event ping that
   // was sent, or when the ping fails (if |success| is false).
@@ -119,8 +118,8 @@ class AppShimController : public IPC::Listener {
 
  private:
   // IPC::Listener implemetation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnChannelError() OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnChannelError() override;
 
   // If Chrome failed to launch the app, |success| will be false and the app
   // shim process should die.
@@ -213,9 +212,8 @@ void AppShimController::CreateChannelAndSendLaunchApp(
                                        this,
                                        g_io_thread->message_loop_proxy().get());
 
-  bool launched_by_chrome =
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          app_mode::kLaunchedByChromeProcessId);
+  bool launched_by_chrome = base::CommandLine::ForCurrentProcess()->HasSwitch(
+      app_mode::kLaunchedByChromeProcessId);
   apps::AppShimLaunchType launch_type = launched_by_chrome ?
           apps::APP_SHIM_LAUNCH_REGISTER_ONLY : apps::APP_SHIM_LAUNCH_NORMAL;
 
@@ -564,7 +562,7 @@ int ChromeAppModeStart(const app_mode::ChromeAppModeInfo* info);
 }  // extern "C"
 
 int ChromeAppModeStart(const app_mode::ChromeAppModeInfo* info) {
-  CommandLine::Init(info->argc, info->argv);
+  base::CommandLine::Init(info->argc, info->argv);
 
   base::mac::ScopedNSAutoreleasePool scoped_pool;
   base::AtExitManager exit_manager;
@@ -617,8 +615,9 @@ int ChromeAppModeStart(const app_mode::ChromeAppModeInfo* info) {
 
   // Find already running instances of Chrome.
   pid_t pid = -1;
-  std::string chrome_process_id = CommandLine::ForCurrentProcess()->
-      GetSwitchValueASCII(app_mode::kLaunchedByChromeProcessId);
+  std::string chrome_process_id =
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          app_mode::kLaunchedByChromeProcessId);
   if (!chrome_process_id.empty()) {
     if (!base::StringToInt(chrome_process_id, &pid))
       LOG(FATAL) << "Invalid PID: " << chrome_process_id;
@@ -638,11 +637,11 @@ int ChromeAppModeStart(const app_mode::ChromeAppModeInfo* info) {
   // In tests, launching Chrome does nothing, and we won't get a ping response,
   // so just assume the socket exists.
   if (pid == -1 &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
           app_mode::kLaunchedForTest)) {
     // Launch Chrome if it isn't already running.
     ProcessSerialNumber psn;
-    CommandLine command_line(CommandLine::NO_PROGRAM);
+    base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
     command_line.AppendSwitch(switches::kSilentLaunch);
 
     // If the shim is the app launcher, pass --show-app-list when starting a new

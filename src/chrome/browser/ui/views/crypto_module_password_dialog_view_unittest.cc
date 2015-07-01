@@ -17,7 +17,7 @@ namespace chrome {
 class CryptoModulePasswordDialogViewTest : public testing::Test {
  public:
   CryptoModulePasswordDialogViewTest() {}
-  virtual ~CryptoModulePasswordDialogViewTest() {}
+  ~CryptoModulePasswordDialogViewTest() override {}
 
   void Capture(const std::string& text) {
     text_ = text;
@@ -28,7 +28,6 @@ class CryptoModulePasswordDialogViewTest : public testing::Test {
         kCryptoModulePasswordKeygen, "server", callback));
   }
 
-  CryptoModulePasswordCallback* callback_;
   std::string text_;
   scoped_ptr<CryptoModulePasswordDialogView> dialog_;
 };

@@ -6,12 +6,12 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/platform_util.h"
-#include "chrome/browser/ui/views/constrained_window_views.h"
+#include "components/constrained_window/constrained_window_views.h"
 #include "components/web_modal/single_web_contents_dialog_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_host.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/views/border.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
@@ -27,14 +27,6 @@
 #include "ui/wm/core/window_modality_controller.h"
 #endif
 
-// TODO(wittman): this code should not depend on ash.
-#if defined(USE_ASH)
-#include "ash/ash_constants.h"
-#include "ash/frame/custom_frame_view_ash.h"
-#include "ash/shell.h"
-#endif
-
-using web_modal::NativeWebContentsModalDialog;
 using web_modal::SingleWebContentsDialogManager;
 using web_modal::SingleWebContentsDialogManagerDelegate;
 using web_modal::WebContentsModalDialogHost;
@@ -48,7 +40,7 @@ class NativeWebContentsModalDialogManagerViews
       public views::WidgetObserver {
  public:
   NativeWebContentsModalDialogManagerViews(
-      NativeWebContentsModalDialog dialog,
+      gfx::NativeWindow dialog,
       SingleWebContentsDialogManagerDelegate* native_delegate)
       : native_delegate_(native_delegate),
         dialog_(dialog),
@@ -56,7 +48,7 @@ class NativeWebContentsModalDialogManagerViews
     ManageDialog();
   }
 
-  virtual ~NativeWebContentsModalDialogManagerViews() {
+  ~NativeWebContentsModalDialogManagerViews() override {
     if (host_)
       host_->RemoveObserver(this);
 
@@ -83,9 +75,7 @@ class NativeWebContentsModalDialogManagerViews
     wm::SetWindowVisibilityAnimationType(
         widget->GetNativeWindow(),
         wm::WINDOW_VISIBILITY_ANIMATION_TYPE_ROTATE);
-#endif
 
-#if defined(USE_ASH)
     gfx::NativeView parent = platform_util::GetParent(widget->GetNativeView());
     wm::SetChildWindowVisibilityChangesAnimated(parent);
     // No animations should get performed on the window since that will re-order
@@ -101,7 +91,7 @@ class NativeWebContentsModalDialogManagerViews
   }
 
   // SingleWebContentsDialogManager overrides
-  virtual void Show() OVERRIDE {
+  void Show() override {
     views::Widget* widget = GetWidget(dialog());
 #if defined(USE_AURA)
     scoped_ptr<wm::SuspendChildWindowVisibilityAnimations> suspend;
@@ -112,7 +102,7 @@ class NativeWebContentsModalDialogManagerViews
 #endif
     // Host may be NULL during tab drag on Views/Win32.
     if (host_)
-      UpdateWebContentsModalDialogPosition(widget, host_);
+      constrained_window::UpdateWebContentsModalDialogPosition(widget, host_);
     widget->Show();
     Focus();
 
@@ -124,7 +114,7 @@ class NativeWebContentsModalDialogManagerViews
 #endif
   }
 
-  virtual void Hide() OVERRIDE {
+  void Hide() override {
     views::Widget* widget = GetWidget(dialog());
 #if defined(USE_AURA)
     scoped_ptr<wm::SuspendChildWindowVisibilityAnimations> suspend;
@@ -134,37 +124,34 @@ class NativeWebContentsModalDialogManagerViews
     widget->Hide();
   }
 
-  virtual void Close() OVERRIDE {
-    GetWidget(dialog())->Close();
-  }
+  void Close() override { GetWidget(dialog())->Close(); }
 
-  virtual void Focus() OVERRIDE {
+  void Focus() override {
     views::Widget* widget = GetWidget(dialog());
     if (widget->widget_delegate() &&
         widget->widget_delegate()->GetInitiallyFocusedView())
       widget->widget_delegate()->GetInitiallyFocusedView()->RequestFocus();
-#if defined(USE_ASH)
+#if defined(USE_AURA)
     // We don't necessarily have a RootWindow yet.
     if (widget->GetNativeView()->GetRootWindow())
       widget->GetNativeView()->Focus();
 #endif
   }
 
-  virtual void Pulse() OVERRIDE {
-  }
+  void Pulse() override {}
 
   // WebContentsModalDialogHostObserver overrides
-  virtual void OnPositionRequiresUpdate() OVERRIDE {
+  void OnPositionRequiresUpdate() override {
     DCHECK(host_);
 
     for (std::set<views::Widget*>::iterator it = observed_widgets_.begin();
          it != observed_widgets_.end();
          ++it) {
-      UpdateWebContentsModalDialogPosition(*it, host_);
+      constrained_window::UpdateWebContentsModalDialogPosition(*it, host_);
     }
   }
 
-  virtual void OnHostDestroying() OVERRIDE {
+  void OnHostDestroying() override {
     host_->RemoveObserver(this);
     host_ = NULL;
   }
@@ -179,16 +166,15 @@ class NativeWebContentsModalDialogManagerViews
   // widget is implicitly destroyed due to its parent being closed. This
   // situation occurs with app windows.  WidgetClosing removes the observer, so
   // only one of these two functions is ever invoked for a given widget.
-  virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE {
+  void OnWidgetClosing(views::Widget* widget) override {
     WidgetClosing(widget);
   }
 
-  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE {
+  void OnWidgetDestroying(views::Widget* widget) override {
     WidgetClosing(widget);
   }
 
-  virtual void HostChanged(
-      web_modal::WebContentsModalDialogHost* new_host) OVERRIDE {
+  void HostChanged(web_modal::WebContentsModalDialogHost* new_host) override {
     if (host_)
       host_->RemoveObserver(this);
 
@@ -209,19 +195,17 @@ class NativeWebContentsModalDialogManagerViews
     }
   }
 
-  virtual NativeWebContentsModalDialog dialog() OVERRIDE {
-    return dialog_;
-  }
+  gfx::NativeWindow dialog() override { return dialog_; }
 
  private:
-  static views::Widget* GetWidget(NativeWebContentsModalDialog dialog) {
+  static views::Widget* GetWidget(gfx::NativeWindow dialog) {
     views::Widget* widget = views::Widget::GetWidgetForNativeWindow(dialog);
     DCHECK(widget);
     return widget;
   }
 
   void WidgetClosing(views::Widget* widget) {
-#if defined(USE_ASH)
+#if defined(USE_AURA)
     gfx::NativeView view = platform_util::GetParent(widget->GetNativeView());
     // Allow the parent to animate again.
     if (view && view->parent())
@@ -235,11 +219,11 @@ class NativeWebContentsModalDialogManagerViews
 #endif
 
     // Will cause this object to be deleted.
-    native_delegate_->WillClose(widget->GetNativeView());
+    native_delegate_->WillClose(widget->GetNativeWindow());
   }
 
   SingleWebContentsDialogManagerDelegate* native_delegate_;
-  NativeWebContentsModalDialog dialog_;
+  gfx::NativeWindow dialog_;
   WebContentsModalDialogHost* host_;
   std::set<views::Widget*> observed_widgets_;
   std::set<views::Widget*> shown_widgets_;
@@ -251,9 +235,9 @@ class NativeWebContentsModalDialogManagerViews
 
 namespace web_modal {
 
-SingleWebContentsDialogManager* WebContentsModalDialogManager::
-CreateNativeWebModalManager(
-    NativeWebContentsModalDialog dialog,
+SingleWebContentsDialogManager*
+WebContentsModalDialogManager::CreateNativeWebModalManager(
+    gfx::NativeWindow dialog,
     SingleWebContentsDialogManagerDelegate* native_delegate) {
   return new NativeWebContentsModalDialogManagerViews(dialog, native_delegate);
 }

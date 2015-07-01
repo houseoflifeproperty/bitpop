@@ -63,19 +63,19 @@ class StatusTrayStateChangerWin : public INotificationCB,
   void EnsureTrayIconVisible();
 
   // IUnknown.
-  virtual ULONG STDMETHODCALLTYPE AddRef() OVERRIDE;
-  virtual ULONG STDMETHODCALLTYPE Release() OVERRIDE;
-  virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID, PVOID*) OVERRIDE;
+  ULONG STDMETHODCALLTYPE AddRef() override;
+  ULONG STDMETHODCALLTYPE Release() override;
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID, PVOID*) override;
 
   // INotificationCB.
   // Notify is called in response to RegisterCallback for each current
   // entry in Explorer's list of notification area icons, and ever time
   // one of them changes, until UnregisterCallback is called or |this|
   // is destroyed.
-  virtual HRESULT STDMETHODCALLTYPE Notify(ULONG, NOTIFYITEM*);
+  HRESULT STDMETHODCALLTYPE Notify(ULONG, NOTIFYITEM*) override;
 
  protected:
-  virtual ~StatusTrayStateChangerWin();
+  ~StatusTrayStateChangerWin() override;
 
  private:
   friend class StatusTrayStateChangerWinTest;

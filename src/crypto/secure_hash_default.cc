@@ -23,22 +23,20 @@ class SecureHashSHA256NSS : public SecureHash {
     SHA256_Begin(&ctx_);
   }
 
-  virtual ~SecureHashSHA256NSS() {
-    memset(&ctx_, 0, sizeof(ctx_));
-  }
+  ~SecureHashSHA256NSS() override { memset(&ctx_, 0, sizeof(ctx_)); }
 
   // SecureHash implementation:
-  virtual void Update(const void* input, size_t len) OVERRIDE {
+  void Update(const void* input, size_t len) override {
     SHA256_Update(&ctx_, static_cast<const unsigned char*>(input), len);
   }
 
-  virtual void Finish(void* output, size_t len) OVERRIDE {
+  void Finish(void* output, size_t len) override {
     SHA256_End(&ctx_, static_cast<unsigned char*>(output), NULL,
                static_cast<unsigned int>(len));
   }
 
-  virtual bool Serialize(Pickle* pickle) OVERRIDE;
-  virtual bool Deserialize(PickleIterator* data_iterator) OVERRIDE;
+  bool Serialize(Pickle* pickle) override;
+  bool Deserialize(PickleIterator* data_iterator) override;
 
  private:
   SHA256Context ctx_;

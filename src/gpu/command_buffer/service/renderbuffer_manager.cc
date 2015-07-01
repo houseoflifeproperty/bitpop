@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 #include "gpu/command_buffer/service/renderbuffer_manager.h"
-#include "base/debug/trace_event.h"
+
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
+#include "base/trace_event/trace_event.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
+#include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "ui/gl/gl_implementation.h"
@@ -14,16 +16,40 @@
 namespace gpu {
 namespace gles2 {
 
+// This should contain everything to uniquely identify a Renderbuffer.
+static const char RenderbufferTag[] = "|Renderbuffer|";
+struct RenderbufferSignature {
+  GLenum internal_format_;
+  GLsizei samples_;
+  GLsizei width_;
+  GLsizei height_;
+
+  // Since we will be hashing this signature structure, the padding must be
+  // zero initialized. Although the C++11 specifications specify that this is
+  // true, we will use a constructor with a memset to further enforce it instead
+  // of relying on compilers adhering to this deep dark corner specification.
+  RenderbufferSignature(GLenum internal_format,
+                        GLsizei samples,
+                        GLsizei width,
+                        GLsizei height) {
+    memset(this, 0, sizeof(RenderbufferSignature));
+    internal_format_ = internal_format;
+    samples_ = samples;
+    width_ = width;
+    height_ = height;
+  }
+};
+
 RenderbufferManager::RenderbufferManager(
     MemoryTracker* memory_tracker,
     GLint max_renderbuffer_size,
     GLint max_samples,
-    bool depth24_supported)
+    FeatureInfo* feature_info)
     : memory_tracker_(
           new MemoryTypeTracker(memory_tracker, MemoryTracker::kUnmanaged)),
       max_renderbuffer_size_(max_renderbuffer_size),
       max_samples_(max_samples),
-      depth24_supported_(depth24_supported),
+      feature_info_(feature_info),
       num_uncleared_renderbuffers_(0),
       renderbuffer_count_(0),
       have_context_(true) {
@@ -45,12 +71,21 @@ size_t Renderbuffer::EstimatedSize() {
   return size;
 }
 
-void Renderbuffer::AddToSignature(
-    std::string* signature) const {
+
+size_t Renderbuffer::GetSignatureSize() const {
+  return sizeof(RenderbufferTag) + sizeof(RenderbufferSignature);
+}
+
+void Renderbuffer::AddToSignature(std::string* signature) const {
   DCHECK(signature);
-  *signature += base::StringPrintf(
-      "|Renderbuffer|internal_format=%04x|samples=%d|width=%d|height=%d",
-      internal_format_, samples_, width_, height_);
+  RenderbufferSignature signature_data(internal_format_,
+                                       samples_,
+                                       width_,
+                                       height_);
+
+  signature->append(RenderbufferTag, sizeof(RenderbufferTag));
+  signature->append(reinterpret_cast<const char*>(&signature_data),
+                    sizeof(signature_data));
 }
 
 Renderbuffer::Renderbuffer(RenderbufferManager* manager,
@@ -176,7 +211,7 @@ bool RenderbufferManager::ComputeEstimatedRenderbufferSize(int width,
 
 GLenum RenderbufferManager::InternalRenderbufferFormatToImplFormat(
     GLenum impl_format) const {
-  if (gfx::GetGLImplementation() != gfx::kGLImplementationEGLGLES2) {
+  if (!feature_info_->gl_version_info().BehavesLikeGLES()) {
     switch (impl_format) {
       case GL_DEPTH_COMPONENT16:
         return GL_DEPTH_COMPONENT;
@@ -188,7 +223,8 @@ GLenum RenderbufferManager::InternalRenderbufferFormatToImplFormat(
     }
   } else {
     // Upgrade 16-bit depth to 24-bit if possible.
-    if (impl_format == GL_DEPTH_COMPONENT16 && depth24_supported_)
+    if (impl_format == GL_DEPTH_COMPONENT16 &&
+        feature_info_->feature_flags().oes_depth24)
       return GL_DEPTH_COMPONENT24;
   }
   return impl_format;

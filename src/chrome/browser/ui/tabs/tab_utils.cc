@@ -17,7 +17,21 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/animation/multi_animation.h"
 
+struct LastMuteMetadata
+    : public content::WebContentsUserData<LastMuteMetadata> {
+  std::string cause;  // Extension ID or constant from header file
+                      // or empty string
+ private:
+  explicit LastMuteMetadata(content::WebContents* contents) {}
+  friend class content::WebContentsUserData<LastMuteMetadata>;
+};
+
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(LastMuteMetadata);
+
 namespace chrome {
+
+const char kMutedToggleCauseUser[] = "user";
+const char kMutedToggleCauseCapture[] = "auto-forced for capture";
 
 namespace {
 
@@ -36,10 +50,10 @@ const int kIndicatorFadeOutDurationMs = 1000;
 // "in" state.
 class TabRecordingIndicatorAnimation : public gfx::MultiAnimation {
  public:
-  virtual ~TabRecordingIndicatorAnimation() {}
+  ~TabRecordingIndicatorAnimation() override {}
 
   // Overridden to provide alternating "towards in" and "towards out" behavior.
-  virtual double GetCurrentValue() const OVERRIDE;
+  double GetCurrentValue() const override;
 
   static scoped_ptr<TabRecordingIndicatorAnimation> Create();
 
@@ -62,8 +76,8 @@ double TabRecordingIndicatorAnimation::GetCurrentValue() const {
 scoped_ptr<TabRecordingIndicatorAnimation>
 TabRecordingIndicatorAnimation::Create() {
   MultiAnimation::Parts parts;
-  COMPILE_ASSERT(kCaptureIndicatorThrobCycles % 2 != 0,
-                 must_be_odd_so_animation_finishes_in_showing_state);
+  static_assert(kCaptureIndicatorThrobCycles % 2 != 0,
+        "odd number of cycles required so animation finishes in showing state");
   for (int i = 0; i < kCaptureIndicatorThrobCycles; ++i) {
     parts.push_back(MultiAnimation::Part(
         i % 2 ? kIndicatorFadeOutDurationMs : kIndicatorFadeInDurationMs,
@@ -183,7 +197,7 @@ scoped_ptr<gfx::Animation> CreateTabMediaIndicatorFadeAnimation(
     TabMediaState media_state) {
   if (media_state == TAB_MEDIA_STATE_RECORDING ||
       media_state == TAB_MEDIA_STATE_CAPTURING) {
-    return TabRecordingIndicatorAnimation::Create().PassAs<gfx::Animation>();
+    return TabRecordingIndicatorAnimation::Create();
   }
 
   // Note: While it seems silly to use a one-part MultiAnimation, it's the only
@@ -198,7 +212,7 @@ scoped_ptr<gfx::Animation> CreateTabMediaIndicatorFadeAnimation(
   scoped_ptr<gfx::MultiAnimation> animation(
       new gfx::MultiAnimation(parts, interval));
   animation->set_continuous(false);
-  return animation.PassAs<gfx::Animation>();
+  return animation.Pass();
 }
 
 base::string16 AssembleTabTooltipText(const base::string16& title,
@@ -234,12 +248,8 @@ base::string16 AssembleTabTooltipText(const base::string16& title,
 }
 
 bool IsTabAudioMutingFeatureEnabled() {
-#if defined(USE_AURA)
   return base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableTabAudioMuting);
-#else
-  return false;
-#endif
 }
 
 bool CanToggleAudioMute(content::WebContents* contents) {
@@ -256,9 +266,25 @@ bool CanToggleAudioMute(content::WebContents* contents) {
   return false;
 }
 
-void SetTabAudioMuted(content::WebContents* contents, bool mute) {
+const std::string& GetTabAudioMutedCause(content::WebContents* contents) {
+  LastMuteMetadata::CreateForWebContents(contents);  // Create if not exists.
+  if (GetTabMediaStateForContents(contents) == TAB_MEDIA_STATE_CAPTURING) {
+    // For tab capture, libcontent forces muting off.
+    LastMuteMetadata::FromWebContents(contents)->cause =
+        kMutedToggleCauseCapture;
+  }
+  return LastMuteMetadata::FromWebContents(contents)->cause;
+}
+
+void SetTabAudioMuted(content::WebContents* contents,
+                      bool mute,
+                      const std::string& cause) {
   if (!contents || !chrome::CanToggleAudioMute(contents))
     return;
+
+  LastMuteMetadata::CreateForWebContents(contents);  // Create if not exists.
+  LastMuteMetadata::FromWebContents(contents)->cause = cause;
+
   contents->SetAudioMuted(mute);
 }
 

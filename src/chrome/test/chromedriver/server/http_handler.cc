@@ -97,6 +97,12 @@ HttpHandler::HttpHandler(
                                                       port_server_.get(),
                                                       port_manager_.get()))))),
       CommandMapping(kGet,
+                     "sessions",
+                     base::Bind(&ExecuteGetSessions,
+                               WrapToCommand("GetSessions",
+                               base::Bind(&ExecuteGetSessionCapabilities)),
+                               &session_thread_map_)),
+      CommandMapping(kGet,
                      "session/:sessionId",
                      WrapToCommand("GetSessionCapabilities",
                                    base::Bind(&ExecuteGetSessionCapabilities))),
@@ -364,6 +370,21 @@ HttpHandler::HttpHandler(
           kPost,
           "session/:sessionId/location",
           WrapToCommand("SetGeolocation", base::Bind(&ExecuteSetLocation))),
+      CommandMapping(
+          kGet,
+          "session/:sessionId/chromium/network_conditions",
+          WrapToCommand("GetNetworkConditions",
+                        base::Bind(&ExecuteGetNetworkConditions))),
+      CommandMapping(
+          kPost,
+          "session/:sessionId/chromium/network_conditions",
+          WrapToCommand("SetNetworkConditions",
+                        base::Bind(&ExecuteSetNetworkConditions))),
+      CommandMapping(
+          kDelete,
+          "session/:sessionId/chromium/network_conditions",
+          WrapToCommand("DeleteNetworkConditions",
+                        base::Bind(&ExecuteDeleteNetworkConditions))),
       CommandMapping(kGet,
                      "session/:sessionId/application_cache/status",
                      base::Bind(&ExecuteGetStatus)),
@@ -491,13 +512,16 @@ HttpHandler::HttpHandler(
                      WrapToCommand("TouchMove", base::Bind(&ExecuteTouchMove))),
       CommandMapping(kPost,
                      "session/:sessionId/touch/scroll",
-                     base::Bind(&UnimplementedCommand)),
+                     WrapToCommand("TouchScroll",
+                                   base::Bind(&ExecuteTouchScroll))),
       CommandMapping(kPost,
                      "session/:sessionId/touch/doubleclick",
-                     base::Bind(&UnimplementedCommand)),
+                     WrapToCommand("TouchDoubleTap",
+                                   base::Bind(&ExecuteTouchDoubleTap))),
       CommandMapping(kPost,
                      "session/:sessionId/touch/longclick",
-                     base::Bind(&UnimplementedCommand)),
+                     WrapToCommand("TouchLongPress",
+                                   base::Bind(&ExecuteTouchLongPress))),
       CommandMapping(kPost,
                      "session/:sessionId/touch/flick",
                      WrapToCommand("TouchFlick", base::Bind(&ExecuteFlick))),
@@ -537,6 +561,10 @@ HttpHandler::HttpHandler(
                      WrapToCommand(
                          "SetAutoReporting",
                          base::Bind(&ExecuteSetAutoReporting))),
+      CommandMapping(kPost,
+                     "session/:sessionId/touch/pinch",
+                     WrapToCommand("TouchPinch",
+                                   base::Bind(&ExecuteTouchPinch))),
   };
   command_map_.reset(
       new CommandMap(commands, commands + arraysize(commands)));
@@ -673,7 +701,7 @@ scoped_ptr<net::HttpServerResponseInfo> HttpHandler::PrepareResponseHelper(
     value.reset(error.release());
   }
   if (!value)
-    value.reset(base::Value::CreateNullValue());
+    value = base::Value::CreateNullValue();
 
   base::DictionaryValue body_params;
   body_params.SetInteger("status", status.code());

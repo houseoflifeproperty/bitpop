@@ -21,8 +21,6 @@ class FilePath;
 
 namespace local_discovery {
 
-const int kPrivetHTTPCodeInternalFailure = -1;
-
 // Privet-specific URLFetcher adapter. Currently supports only the subset
 // of HTTP features required by Privet for GCP 1.5
 // (/privet/info and /privet/register).
@@ -71,10 +69,10 @@ class PrivetURLFetcher : public net::URLFetcherDelegate {
       net::URLRequestContextGetter* request_context,
       Delegate* delegate);
 
-  virtual ~PrivetURLFetcher();
+  ~PrivetURLFetcher() override;
 
   // net::URLFetcherDelegate methods.
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
 
   static void SetTokenForHost(const std::string& host,
                               const std::string& token);

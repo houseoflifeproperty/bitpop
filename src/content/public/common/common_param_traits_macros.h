@@ -28,7 +28,10 @@
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 
-IPC_ENUM_TRAITS(ui::PageTransition)  // Bitmask.
+IPC_ENUM_TRAITS_VALIDATE(ui::PageTransition,
+                         ((value &
+                           ui::PageTransition::PAGE_TRANSITION_CORE_MASK) <=
+                          ui::PageTransition::PAGE_TRANSITION_LAST_CORE))
 IPC_ENUM_TRAITS_MAX_VALUE(net::NetworkChangeNotifier::ConnectionType,
                           net::NetworkChangeNotifier::CONNECTION_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(content::ConsoleMessageLevel,
@@ -44,6 +47,15 @@ IPC_ENUM_TRAITS_MAX_VALUE(WindowOpenDisposition,
 IPC_ENUM_TRAITS_MAX_VALUE(net::RequestPriority, net::MAXIMUM_PRIORITY)
 IPC_ENUM_TRAITS_MAX_VALUE(content::V8CacheOptions,
                           content::V8_CACHE_OPTIONS_LAST)
+IPC_ENUM_TRAITS_MIN_MAX_VALUE(ui::PointerType,
+                              ui::POINTER_TYPE_FIRST,
+                              ui::POINTER_TYPE_LAST)
+IPC_ENUM_TRAITS_MIN_MAX_VALUE(ui::HoverType,
+                              ui::HOVER_TYPE_FIRST,
+                              ui::HOVER_TYPE_LAST)
+IPC_ENUM_TRAITS_MIN_MAX_VALUE(content::ImageAnimationPolicy,
+                              content::IMAGE_ANIMATION_POLICY_ALLOWED,
+                              content::IMAGE_ANIMATION_POLICY_NO_ANIMATION)
 
 IPC_STRUCT_TRAITS_BEGIN(blink::WebPoint)
   IPC_STRUCT_TRAITS_MEMBER(x)
@@ -101,6 +113,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(minimum_font_size)
   IPC_STRUCT_TRAITS_MEMBER(minimum_logical_font_size)
   IPC_STRUCT_TRAITS_MEMBER(default_encoding)
+  IPC_STRUCT_TRAITS_MEMBER(context_menu_on_mouse_up)
   IPC_STRUCT_TRAITS_MEMBER(javascript_enabled)
   IPC_STRUCT_TRAITS_MEMBER(web_security_enabled)
   IPC_STRUCT_TRAITS_MEMBER(javascript_can_open_windows_automatically)
@@ -140,18 +153,22 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(privileged_webgl_extensions_enabled)
   IPC_STRUCT_TRAITS_MEMBER(webgl_errors_to_console_enabled)
   IPC_STRUCT_TRAITS_MEMBER(mock_scrollbars_enabled)
-  IPC_STRUCT_TRAITS_MEMBER(layer_squashing_enabled)
   IPC_STRUCT_TRAITS_MEMBER(asynchronous_spell_checking_enabled)
   IPC_STRUCT_TRAITS_MEMBER(unified_textchecker_enabled)
   IPC_STRUCT_TRAITS_MEMBER(accelerated_2d_canvas_enabled)
   IPC_STRUCT_TRAITS_MEMBER(minimum_accelerated_2d_canvas_size)
   IPC_STRUCT_TRAITS_MEMBER(antialiased_2d_canvas_disabled)
+  IPC_STRUCT_TRAITS_MEMBER(antialiased_clips_2d_canvas_enabled)
   IPC_STRUCT_TRAITS_MEMBER(accelerated_2d_canvas_msaa_sample_count)
   IPC_STRUCT_TRAITS_MEMBER(accelerated_filters_enabled)
   IPC_STRUCT_TRAITS_MEMBER(deferred_filters_enabled)
   IPC_STRUCT_TRAITS_MEMBER(container_culling_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(text_blobs_enabled)
   IPC_STRUCT_TRAITS_MEMBER(allow_displaying_insecure_content)
   IPC_STRUCT_TRAITS_MEMBER(allow_running_insecure_content)
+  IPC_STRUCT_TRAITS_MEMBER(disable_reading_from_canvas)
+  IPC_STRUCT_TRAITS_MEMBER(strict_mixed_content_checking)
+  IPC_STRUCT_TRAITS_MEMBER(strict_powerful_feature_restrictions)
   IPC_STRUCT_TRAITS_MEMBER(enable_scroll_animator)
   IPC_STRUCT_TRAITS_MEMBER(password_echo_enabled)
   IPC_STRUCT_TRAITS_MEMBER(should_clear_document_background)
@@ -161,8 +178,13 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(device_supports_mouse)
   IPC_STRUCT_TRAITS_MEMBER(touch_adjustment_enabled)
   IPC_STRUCT_TRAITS_MEMBER(pointer_events_max_touch_points)
+  IPC_STRUCT_TRAITS_MEMBER(available_pointer_types)
+  IPC_STRUCT_TRAITS_MEMBER(primary_pointer_type)
+  IPC_STRUCT_TRAITS_MEMBER(available_hover_types)
+  IPC_STRUCT_TRAITS_MEMBER(primary_hover_type)
   IPC_STRUCT_TRAITS_MEMBER(sync_xhr_in_documents_enabled)
   IPC_STRUCT_TRAITS_MEMBER(deferred_image_decoding_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(image_color_profiles_enabled)
   IPC_STRUCT_TRAITS_MEMBER(should_respect_image_orientation)
   IPC_STRUCT_TRAITS_MEMBER(number_of_cpu_cores)
   IPC_STRUCT_TRAITS_MEMBER(editing_behavior)
@@ -176,15 +198,15 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(navigate_on_drag_drop)
   IPC_STRUCT_TRAITS_MEMBER(spatial_navigation_enabled)
   IPC_STRUCT_TRAITS_MEMBER(v8_cache_options)
-  IPC_STRUCT_TRAITS_MEMBER(v8_script_streaming_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(slimming_paint_enabled)
   IPC_STRUCT_TRAITS_MEMBER(pepper_accelerated_video_decode_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(animation_policy)
 #if defined(OS_ANDROID)
   IPC_STRUCT_TRAITS_MEMBER(text_autosizing_enabled)
   IPC_STRUCT_TRAITS_MEMBER(font_scale_factor)
   IPC_STRUCT_TRAITS_MEMBER(device_scale_adjustment)
   IPC_STRUCT_TRAITS_MEMBER(force_enable_zoom)
   IPC_STRUCT_TRAITS_MEMBER(fullscreen_supported)
-  IPC_STRUCT_TRAITS_MEMBER(disallow_fullscreen_for_non_media_elements)
   IPC_STRUCT_TRAITS_MEMBER(double_tap_to_zoom_enabled)
   IPC_STRUCT_TRAITS_MEMBER(user_gesture_required_for_media_playback)
   IPC_STRUCT_TRAITS_MEMBER(default_video_poster_url)
@@ -201,6 +223,8 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(ignore_main_frame_overflow_hidden_quirk)
   IPC_STRUCT_TRAITS_MEMBER(report_screen_size_in_physical_pixels_quirk)
 #endif
+  IPC_STRUCT_TRAITS_MEMBER(default_minimum_page_scale_factor)
+  IPC_STRUCT_TRAITS_MEMBER(default_maximum_page_scale_factor)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(blink::WebWindowFeatures)

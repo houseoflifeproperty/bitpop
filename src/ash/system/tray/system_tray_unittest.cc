@@ -12,8 +12,10 @@
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/system/status_area_widget.h"
+#include "ash/system/tray/system_tray_bubble.h"
 #include "ash/system/tray/system_tray_item.h"
 #include "ash/system/tray/tray_constants.h"
+#include "ash/system/tray/tray_popup_item_container.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/wm/window_util.h"
 #include "base/run_loop.h"
@@ -22,6 +24,7 @@
 #include "ui/base/ui_base_types.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/test/event_generator.h"
+#include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/fill_layout.h"
@@ -48,7 +51,7 @@ class TestItem : public SystemTrayItem {
  public:
   TestItem() : SystemTrayItem(GetSystemTray()), tray_view_(NULL) {}
 
-  virtual views::View* CreateTrayView(user::LoginStatus status) OVERRIDE {
+  views::View* CreateTrayView(user::LoginStatus status) override {
     tray_view_ = new views::View;
     // Add a label so it has non-zero width.
     tray_view_->SetLayoutManager(new views::FillLayout);
@@ -56,14 +59,14 @@ class TestItem : public SystemTrayItem {
     return tray_view_;
   }
 
-  virtual views::View* CreateDefaultView(user::LoginStatus status) OVERRIDE {
+  views::View* CreateDefaultView(user::LoginStatus status) override {
     default_view_ = new views::View;
     default_view_->SetLayoutManager(new views::FillLayout);
     default_view_->AddChildView(new views::Label(base::UTF8ToUTF16("Default")));
     return default_view_;
   }
 
-  virtual views::View* CreateDetailedView(user::LoginStatus status) OVERRIDE {
+  views::View* CreateDetailedView(user::LoginStatus status) override {
     detailed_view_ = new views::View;
     detailed_view_->SetLayoutManager(new views::FillLayout);
     detailed_view_->AddChildView(
@@ -71,31 +74,20 @@ class TestItem : public SystemTrayItem {
     return detailed_view_;
   }
 
-  virtual views::View* CreateNotificationView(
-      user::LoginStatus status) OVERRIDE {
+  views::View* CreateNotificationView(user::LoginStatus status) override {
     notification_view_ = new views::View;
     return notification_view_;
   }
 
-  virtual void DestroyTrayView() OVERRIDE {
-    tray_view_ = NULL;
-  }
+  void DestroyTrayView() override { tray_view_ = NULL; }
 
-  virtual void DestroyDefaultView() OVERRIDE {
-    default_view_ = NULL;
-  }
+  void DestroyDefaultView() override { default_view_ = NULL; }
 
-  virtual void DestroyDetailedView() OVERRIDE {
-    detailed_view_ = NULL;
-  }
+  void DestroyDetailedView() override { detailed_view_ = NULL; }
 
-  virtual void DestroyNotificationView() OVERRIDE {
-    notification_view_ = NULL;
-  }
+  void DestroyNotificationView() override { notification_view_ = NULL; }
 
-  virtual void UpdateAfterLoginStatusChange(
-      user::LoginStatus status) OVERRIDE {
-  }
+  void UpdateAfterLoginStatusChange(user::LoginStatus status) override {}
 
   views::View* tray_view() const { return tray_view_; }
   views::View* default_view() const { return default_view_; }
@@ -115,41 +107,36 @@ class TestNoViewItem : public SystemTrayItem {
  public:
   TestNoViewItem() : SystemTrayItem(GetSystemTray()) {}
 
-  virtual views::View* CreateTrayView(user::LoginStatus status) OVERRIDE {
+  views::View* CreateTrayView(user::LoginStatus status) override {
     return NULL;
   }
 
-  virtual views::View* CreateDefaultView(user::LoginStatus status) OVERRIDE {
+  views::View* CreateDefaultView(user::LoginStatus status) override {
     return NULL;
   }
 
-  virtual views::View* CreateDetailedView(user::LoginStatus status) OVERRIDE {
+  views::View* CreateDetailedView(user::LoginStatus status) override {
     return NULL;
   }
 
-  virtual views::View* CreateNotificationView(
-      user::LoginStatus status) OVERRIDE {
+  views::View* CreateNotificationView(user::LoginStatus status) override {
     return NULL;
   }
 
-  virtual void DestroyTrayView() OVERRIDE {}
-  virtual void DestroyDefaultView() OVERRIDE {}
-  virtual void DestroyDetailedView() OVERRIDE {}
-  virtual void DestroyNotificationView() OVERRIDE {}
-  virtual void UpdateAfterLoginStatusChange(
-      user::LoginStatus status) OVERRIDE {
-  }
+  void DestroyTrayView() override {}
+  void DestroyDefaultView() override {}
+  void DestroyDetailedView() override {}
+  void DestroyNotificationView() override {}
+  void UpdateAfterLoginStatusChange(user::LoginStatus status) override {}
 };
 
 class ModalWidgetDelegate : public views::WidgetDelegateView {
  public:
   ModalWidgetDelegate() {}
-  virtual ~ModalWidgetDelegate() {}
+  ~ModalWidgetDelegate() override {}
 
-  virtual views::View* GetContentsView() OVERRIDE { return this; }
-  virtual ui::ModalType GetModalType() const OVERRIDE {
-    return ui::MODAL_TYPE_SYSTEM;
-  }
+  views::View* GetContentsView() override { return this; }
+  ui::ModalType GetModalType() const override { return ui::MODAL_TYPE_SYSTEM; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ModalWidgetDelegate);
@@ -504,6 +491,54 @@ TEST_F(SystemTrayTest, SetVisibleDuringHideAnimation) {
   EXPECT_TRUE(tray->visible());
   EXPECT_EQ(1.0f, tray->layer()->GetTargetOpacity());
 }
+
+#if defined(OS_CHROMEOS)
+// Tests that touch on an item in the system bubble triggers it to become
+// active.
+TEST_F(SystemTrayTest, TrayPopupItemContainerTouchFeedback) {
+  SystemTray* tray = GetSystemTray();
+  tray->ShowDefaultView(BUBBLE_CREATE_NEW);
+
+  TrayPopupItemContainer* view =
+      static_cast<TrayPopupItemContainer*>(tray->GetSystemBubble()->
+          bubble_view()->child_at(0));
+  EXPECT_FALSE(view->active());
+
+  ui::test::EventGenerator generator(Shell::GetPrimaryRootWindow());
+  generator.set_current_location(view->GetBoundsInScreen().CenterPoint());
+  generator.PressTouch();
+  EXPECT_TRUE(view->active());
+
+  generator.ReleaseTouch();
+  EXPECT_FALSE(view->active());
+}
+
+// Tests that touch events on an item in the system bubble cause it to stop
+// being active.
+TEST_F(SystemTrayTest, TrayPopupItemContainerTouchFeedbackCancellation) {
+  SystemTray* tray = GetSystemTray();
+  tray->ShowDefaultView(BUBBLE_CREATE_NEW);
+
+  TrayPopupItemContainer* view =
+      static_cast<TrayPopupItemContainer*>(tray->GetSystemBubble()->
+          bubble_view()->child_at(0));
+  EXPECT_FALSE(view->active());
+
+  gfx::Rect view_bounds = view->GetBoundsInScreen();
+  ui::test::EventGenerator generator(Shell::GetPrimaryRootWindow());
+  generator.set_current_location(view_bounds.CenterPoint());
+  generator.PressTouch();
+  EXPECT_TRUE(view->active());
+
+  gfx::Point move_point(view_bounds.x(), view_bounds.CenterPoint().y());
+  generator.MoveTouch(move_point);
+  EXPECT_FALSE(view->active());
+
+  generator.set_current_location(move_point);
+  generator.ReleaseTouch();
+  EXPECT_FALSE(view->active());
+}
+#endif  // OS_CHROMEOS
 
 }  // namespace test
 }  // namespace ash

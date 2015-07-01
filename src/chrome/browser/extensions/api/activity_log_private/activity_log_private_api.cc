@@ -12,7 +12,6 @@
 #include "chrome/browser/extensions/event_router_forwarder.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/common/extensions/api/activity_log_private.h"
-#include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_context.h"
 #include "extensions/browser/extension_system_provider.h"
 #include "extensions/browser/extensions_browser_client.h"
@@ -23,9 +22,9 @@ namespace extensions {
 
 namespace activity_log_private = api::activity_log_private;
 
-using api::activity_log_private::ActivityResultSet;
-using api::activity_log_private::ExtensionActivity;
-using api::activity_log_private::Filter;
+using activity_log_private::ActivityResultSet;
+using activity_log_private::ExtensionActivity;
+using activity_log_private::Filter;
 
 static base::LazyInstance<BrowserContextKeyedAPIFactory<ActivityLogAPI> >
     g_factory = LAZY_INSTANCE_INITIALIZER;
@@ -105,25 +104,25 @@ bool ActivityLogPrivateGetExtensionActivitiesFunction::RunAsync() {
   filter.reset(&params.release()->filter);
   Action::ActionType action_type = Action::ACTION_API_CALL;
   switch (filter->activity_type) {
-    case Filter::ACTIVITY_TYPE_API_CALL:
+    case activity_log_private::EXTENSION_ACTIVITY_FILTER_API_CALL:
       action_type = Action::ACTION_API_CALL;
       break;
-    case Filter::ACTIVITY_TYPE_API_EVENT:
+    case activity_log_private::EXTENSION_ACTIVITY_FILTER_API_EVENT:
       action_type = Action::ACTION_API_EVENT;
       break;
-    case Filter::ACTIVITY_TYPE_CONTENT_SCRIPT:
+    case activity_log_private::EXTENSION_ACTIVITY_FILTER_CONTENT_SCRIPT:
       action_type = Action::ACTION_CONTENT_SCRIPT;
       break;
-    case Filter::ACTIVITY_TYPE_DOM_ACCESS:
+    case activity_log_private::EXTENSION_ACTIVITY_FILTER_DOM_ACCESS:
       action_type = Action::ACTION_DOM_ACCESS;
       break;
-    case Filter::ACTIVITY_TYPE_DOM_EVENT:
+    case activity_log_private::EXTENSION_ACTIVITY_FILTER_DOM_EVENT:
       action_type = Action::ACTION_DOM_EVENT;
       break;
-    case  Filter::ACTIVITY_TYPE_WEB_REQUEST:
+    case activity_log_private::EXTENSION_ACTIVITY_FILTER_WEB_REQUEST:
       action_type = Action::ACTION_WEB_REQUEST;
       break;
-    case Filter::ACTIVITY_TYPE_ANY:
+    case activity_log_private::EXTENSION_ACTIVITY_FILTER_ANY:
     default:
       action_type = Action::ACTION_ANY;
   }

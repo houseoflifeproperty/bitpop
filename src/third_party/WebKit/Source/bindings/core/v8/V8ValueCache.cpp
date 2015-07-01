@@ -31,20 +31,24 @@
 
 namespace blink {
 
-StringCacheMapTraits::MapType* StringCacheMapTraits::MapFromWeakCallbackData(
-    const v8::WeakCallbackData<v8::String, WeakCallbackDataType>& data)
+StringCacheMapTraits::MapType* StringCacheMapTraits::MapFromWeakCallbackInfo(
+    const v8::WeakCallbackInfo<WeakCallbackDataType>& data)
 {
     return &(V8PerIsolateData::from(data.GetIsolate())->stringCache()->m_stringCache);
 }
 
-
 void StringCacheMapTraits::Dispose(
-    v8::Isolate* isolate, v8::UniquePersistent<v8::String> value, StringImpl* key)
+    v8::Isolate* isolate, v8::Global<v8::String> value, StringImpl* key)
 {
     V8PerIsolateData::from(isolate)->stringCache()->InvalidateLastString();
     key->deref();
 }
 
+void StringCacheMapTraits::DisposeWeak(const v8::WeakCallbackInfo<WeakCallbackDataType>& data)
+{
+    V8PerIsolateData::from(data.GetIsolate())->stringCache()->InvalidateLastString();
+    data.GetParameter()->deref();
+}
 
 StringCache::~StringCache()
 {
@@ -54,24 +58,28 @@ StringCache::~StringCache()
     m_stringCache.Clear();
 }
 
-static v8::Local<v8::String> makeExternalString(const String& string, v8::Isolate* isolate)
+static v8::Local<v8::String> makeExternalString(v8::Isolate* isolate, const String& string)
 {
     if (string.is8Bit()) {
         WebCoreStringResource8* stringResource = new WebCoreStringResource8(string);
-        v8::Local<v8::String> newString = v8::String::NewExternal(isolate, stringResource);
-        if (newString.IsEmpty())
+        v8::Local<v8::String> newString;
+        if (!v8::String::NewExternalOneByte(isolate, stringResource).ToLocal(&newString)) {
             delete stringResource;
+            return v8::String::Empty(isolate);
+        }
         return newString;
     }
 
     WebCoreStringResource16* stringResource = new WebCoreStringResource16(string);
-    v8::Local<v8::String> newString = v8::String::NewExternal(isolate, stringResource);
-    if (newString.IsEmpty())
+    v8::Local<v8::String> newString;
+    if (!v8::String::NewExternalTwoByte(isolate, stringResource).ToLocal(&newString)) {
         delete stringResource;
+        return v8::String::Empty(isolate);
+    }
     return newString;
 }
 
-v8::Handle<v8::String> StringCache::v8ExternalStringSlow(StringImpl* stringImpl, v8::Isolate* isolate)
+v8::Local<v8::String> StringCache::v8ExternalStringSlow(v8::Isolate* isolate, StringImpl* stringImpl)
 {
     if (!stringImpl->length())
         return v8::String::Empty(isolate);
@@ -83,7 +91,7 @@ v8::Handle<v8::String> StringCache::v8ExternalStringSlow(StringImpl* stringImpl,
         return m_lastV8String.NewLocal(isolate);
     }
 
-    return createStringAndInsertIntoCache(stringImpl, isolate);
+    return createStringAndInsertIntoCache(isolate, stringImpl);
 }
 
 void StringCache::setReturnValueFromStringSlow(v8::ReturnValue<v8::Value> returnValue, StringImpl* stringImpl)
@@ -101,17 +109,17 @@ void StringCache::setReturnValueFromStringSlow(v8::ReturnValue<v8::Value> return
         return;
     }
 
-    returnValue.Set(createStringAndInsertIntoCache(stringImpl, returnValue.GetIsolate()));
+    returnValue.Set(createStringAndInsertIntoCache(returnValue.GetIsolate(), stringImpl));
 }
 
-v8::Local<v8::String> StringCache::createStringAndInsertIntoCache(StringImpl* stringImpl, v8::Isolate* isolate)
+v8::Local<v8::String> StringCache::createStringAndInsertIntoCache(v8::Isolate* isolate, StringImpl* stringImpl)
 {
     ASSERT(!m_stringCache.Contains(stringImpl));
     ASSERT(stringImpl->length());
 
-    v8::Local<v8::String> newString = makeExternalString(String(stringImpl), isolate);
-    if (newString.IsEmpty())
-        return newString;
+    v8::Local<v8::String> newString = makeExternalString(isolate, String(stringImpl));
+    ASSERT(!newString.IsEmpty());
+    ASSERT(newString->Length());
 
     v8::UniquePersistent<v8::String> wrapper(isolate, newString);
 

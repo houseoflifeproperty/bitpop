@@ -18,21 +18,28 @@ class DrawableTile;
 class CC_EXPORT TiledLayerImpl : public LayerImpl {
  public:
   static scoped_ptr<TiledLayerImpl> Create(LayerTreeImpl* tree_impl, int id) {
-    return make_scoped_ptr(new TiledLayerImpl(tree_impl, id));
+    return make_scoped_ptr(
+        new TiledLayerImpl(tree_impl, id, new LayerImpl::SyncedScrollOffset));
   }
-  virtual ~TiledLayerImpl();
+  static scoped_ptr<TiledLayerImpl> Create(
+      LayerTreeImpl* tree_impl,
+      int id,
+      scoped_refptr<LayerImpl::SyncedScrollOffset> synced_scroll_offset) {
+    return make_scoped_ptr(
+        new TiledLayerImpl(tree_impl, id, synced_scroll_offset));
+  }
+  ~TiledLayerImpl() override;
 
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
-  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
+  void PushPropertiesTo(LayerImpl* layer) override;
 
-  virtual bool WillDraw(DrawMode draw_mode,
-                        ResourceProvider* resource_provider) OVERRIDE;
-  virtual void AppendQuads(RenderPass* render_pass,
-                           const OcclusionTracker<LayerImpl>& occlusion_tracker,
-                           AppendQuadsData* append_quads_data) OVERRIDE;
+  bool WillDraw(DrawMode draw_mode,
+                ResourceProvider* resource_provider) override;
+  void AppendQuads(RenderPass* render_pass,
+                   AppendQuadsData* append_quads_data) override;
 
-  virtual ResourceProvider::ResourceId ContentsResourceId() const OVERRIDE;
+  void GetContentsResourceId(ResourceProvider::ResourceId* resource_id,
+                             gfx::Size* resource_size) const override;
 
   void set_skips_draw(bool skips_draw) { skips_draw_ = skips_draw; }
   void SetTilingData(const LayerTilingData& tiler);
@@ -42,25 +49,28 @@ class CC_EXPORT TiledLayerImpl : public LayerImpl {
                           bool contents_swizzled);
   void PushInvalidTile(int i, int j);
 
-  virtual SimpleEnclosedRegion VisibleContentOpaqueRegion() const OVERRIDE;
-  virtual void ReleaseResources() OVERRIDE;
+  SimpleEnclosedRegion VisibleContentOpaqueRegion() const override;
+  void ReleaseResources() override;
 
   const LayerTilingData* TilingForTesting() const { return tiler_.get(); }
 
-  virtual size_t GPUMemoryUsageInBytes() const OVERRIDE;
+  size_t GPUMemoryUsageInBytes() const override;
 
  protected:
   TiledLayerImpl(LayerTreeImpl* tree_impl, int id);
+  TiledLayerImpl(
+      LayerTreeImpl* tree_impl,
+      int id,
+      scoped_refptr<LayerImpl::SyncedScrollOffset> synced_scroll_offset);
   // Exposed for testing.
   bool HasTileAt(int i, int j) const;
   bool HasResourceIdForTileAt(int i, int j) const;
 
-  virtual void GetDebugBorderProperties(SkColor* color, float* width) const
-      OVERRIDE;
-  virtual void AsValueInto(base::debug::TracedValue* dict) const OVERRIDE;
+  void GetDebugBorderProperties(SkColor* color, float* width) const override;
+  void AsValueInto(base::trace_event::TracedValue* dict) const override;
 
  private:
-  virtual const char* LayerTypeAsString() const OVERRIDE;
+  const char* LayerTypeAsString() const override;
 
   DrawableTile* TileAt(int i, int j) const;
   DrawableTile* CreateTile(int i, int j);

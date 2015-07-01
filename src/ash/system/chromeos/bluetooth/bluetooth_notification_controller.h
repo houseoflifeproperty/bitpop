@@ -27,30 +27,27 @@ class ASH_EXPORT BluetoothNotificationController
       public device::BluetoothDevice::PairingDelegate {
  public:
   BluetoothNotificationController();
-  virtual ~BluetoothNotificationController();
+  ~BluetoothNotificationController() override;
 
   // device::BluetoothAdapter::Observer override.
-  virtual void AdapterDiscoverableChanged(device::BluetoothAdapter* adapter,
-                                          bool discoverable) OVERRIDE;
-  virtual void DeviceAdded(device::BluetoothAdapter* adapter,
-                           device::BluetoothDevice* device) OVERRIDE;
-  virtual void DeviceChanged(device::BluetoothAdapter* adapter,
-                             device::BluetoothDevice* device) OVERRIDE;
-  virtual void DeviceRemoved(device::BluetoothAdapter* adapter,
-                             device::BluetoothDevice* device) OVERRIDE;
+  void AdapterDiscoverableChanged(device::BluetoothAdapter* adapter,
+                                  bool discoverable) override;
+  void DeviceAdded(device::BluetoothAdapter* adapter,
+                   device::BluetoothDevice* device) override;
+  void DeviceChanged(device::BluetoothAdapter* adapter,
+                     device::BluetoothDevice* device) override;
+  void DeviceRemoved(device::BluetoothAdapter* adapter,
+                     device::BluetoothDevice* device) override;
 
   // device::BluetoothDevice::PairingDelegate override.
-  virtual void RequestPinCode(device::BluetoothDevice* device) OVERRIDE;
-  virtual void RequestPasskey(device::BluetoothDevice* device) OVERRIDE;
-  virtual void DisplayPinCode(device::BluetoothDevice* device,
-                              const std::string& pincode) OVERRIDE;
-  virtual void DisplayPasskey(device::BluetoothDevice* device,
-                              uint32 passkey) OVERRIDE;
-  virtual void KeysEntered(device::BluetoothDevice* device,
-                           uint32 entered) OVERRIDE;
-  virtual void ConfirmPasskey(device::BluetoothDevice* device,
-                              uint32 passkey) OVERRIDE;
-  virtual void AuthorizePairing(device::BluetoothDevice* device) OVERRIDE;
+  void RequestPinCode(device::BluetoothDevice* device) override;
+  void RequestPasskey(device::BluetoothDevice* device) override;
+  void DisplayPinCode(device::BluetoothDevice* device,
+                      const std::string& pincode) override;
+  void DisplayPasskey(device::BluetoothDevice* device, uint32 passkey) override;
+  void KeysEntered(device::BluetoothDevice* device, uint32 entered) override;
+  void ConfirmPasskey(device::BluetoothDevice* device, uint32 passkey) override;
+  void AuthorizePairing(device::BluetoothDevice* device) override;
 
  private:
   // Internal method called by BluetoothAdapterFactory to provide the adapter

@@ -37,8 +37,7 @@ static void test_breakText() {
     SkScalar nn = 0;
     for (SkScalar w = 0; w <= width; w += SK_Scalar1) {
         SkScalar m;
-        size_t n = paint.breakText(text, length, w, &m,
-                                    SkPaint::kBackward_TextBufferDirection);
+        size_t n = paint.breakText(text, length, w, &m);
 
         SkASSERT(n <= length);
         SkASSERT(m <= width);
@@ -116,7 +115,7 @@ public:
 
 protected:
     // overrides from SkEventSink
-    virtual bool onQuery(SkEvent* evt) {
+    bool onQuery(SkEvent* evt) override {
         if (SampleCode::TitleQ(*evt)) {
             SampleCode::TitleR(evt, "Text");
             return true;
@@ -144,7 +143,7 @@ protected:
             pts[i].set(rand->nextUScalar1() * 640, rand->nextUScalar1() * 480);
     }
 
-    virtual void onDrawContent(SkCanvas* canvas) {
+    void onDrawContent(SkCanvas* canvas) override {
         SkAutoCanvasRestore restore(canvas, false);
         {
             SkRect r;
@@ -187,13 +186,13 @@ protected:
     }
 
     virtual SkView::Click* onFindClickHandler(SkScalar x, SkScalar y,
-                                              unsigned modi) SK_OVERRIDE {
+                                              unsigned modi) override {
         fClickX = x;
         this->inval(NULL);
         return this->INHERITED::onFindClickHandler(x, y, modi);
     }
 
-    virtual bool onClick(Click* click) {
+    bool onClick(Click* click) override {
         return this->INHERITED::onClick(click);
     }
 

@@ -12,10 +12,10 @@
 #include "chrome/browser/ui/autofill/password_generation_popup_controller.h"
 #include "chrome/browser/ui/autofill/popup_controller_common.h"
 #include "components/autofill/core/common/password_form.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/range/range.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/rect_f.h"
 
 namespace content {
 struct NativeWebKeyboardEvent;
@@ -24,6 +24,7 @@ class WebContents;
 
 namespace password_manager {
 class PasswordManager;
+class PasswordManagerDriver;
 }
 
 namespace autofill {
@@ -52,10 +53,11 @@ class PasswordGenerationPopupControllerImpl
       const PasswordForm& form,
       int max_length,
       password_manager::PasswordManager* password_manager,
+      password_manager::PasswordManagerDriver* driver,
       PasswordGenerationPopupObserver* observer,
       content::WebContents* web_contents,
       gfx::NativeView container_view);
-  virtual ~PasswordGenerationPopupControllerImpl();
+  ~PasswordGenerationPopupControllerImpl() override;
 
   // Create a PasswordGenerationPopupView if one doesn't already exist.
   // If |display_password| is true, a generated password is shown that can be
@@ -70,9 +72,6 @@ class PasswordGenerationPopupControllerImpl
   content::WebContents* web_contents() {
     return controller_common_.web_contents();
   }
-  const gfx::RectF& element_bounds() {
-    return controller_common_.element_bounds();
-  }
 
  protected:
   PasswordGenerationPopupControllerImpl(
@@ -80,6 +79,7 @@ class PasswordGenerationPopupControllerImpl
       const PasswordForm& form,
       int max_length,
       password_manager::PasswordManager* password_manager,
+      password_manager::PasswordManagerDriver* driver,
       PasswordGenerationPopupObserver* observer,
       content::WebContents* web_contents,
       gfx::NativeView container_view);
@@ -89,21 +89,24 @@ class PasswordGenerationPopupControllerImpl
 
  private:
   // PasswordGenerationPopupController implementation:
-  virtual void Hide() OVERRIDE;
-  virtual void ViewDestroyed() OVERRIDE;
-  virtual void SetSelectionAtPoint(const gfx::Point& point) OVERRIDE;
-  virtual bool AcceptSelectedLine() OVERRIDE;
-  virtual void SelectionCleared() OVERRIDE;
-  virtual void OnSavedPasswordsLinkClicked() OVERRIDE;
-  virtual int GetMinimumWidth() OVERRIDE;
-  virtual gfx::NativeView container_view() OVERRIDE;
-  virtual const gfx::Rect& popup_bounds() const OVERRIDE;
-  virtual bool display_password() const OVERRIDE;
-  virtual bool password_selected() const OVERRIDE;
-  virtual base::string16 password() const OVERRIDE;
-  virtual base::string16 SuggestedText() OVERRIDE;
-  virtual const base::string16& HelpText() OVERRIDE;
-  virtual const gfx::Range& HelpTextLinkRange() OVERRIDE;
+  void Hide() override;
+  void ViewDestroyed() override;
+  void SetSelectionAtPoint(const gfx::Point& point) override;
+  bool AcceptSelectedLine() override;
+  void SelectionCleared() override;
+  void PasswordAccepted() override;
+  void OnSavedPasswordsLinkClicked() override;
+  int GetMinimumWidth() override;
+  gfx::NativeView container_view() override;
+  const gfx::Rect& popup_bounds() const override;
+  const gfx::RectF& element_bounds() const override;
+  bool IsRTL() const override;
+  bool display_password() const override;
+  bool password_selected() const override;
+  base::string16 password() const override;
+  base::string16 SuggestedText() override;
+  const base::string16& HelpText() override;
+  const gfx::Range& HelpTextLinkRange() override;
 
   base::WeakPtr<PasswordGenerationPopupControllerImpl> GetWeakPtr();
 
@@ -111,10 +114,6 @@ class PasswordGenerationPopupControllerImpl
 
   // Set if the password is currently selected.
   void PasswordSelected(bool selected);
-
-  // Accept the password. Causes the controller to hide itself as the popup
-  // is no longer necessary.
-  void PasswordAccepted();
 
   // Accept password if it's selected.
   bool PossiblyAcceptPassword();
@@ -125,6 +124,7 @@ class PasswordGenerationPopupControllerImpl
 
   PasswordForm form_;
   password_manager::PasswordManager* password_manager_;
+  password_manager::PasswordManagerDriver* driver_;
 
   // May be NULL.
   PasswordGenerationPopupObserver* observer_;

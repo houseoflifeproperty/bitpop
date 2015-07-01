@@ -32,10 +32,10 @@ gfx::Range ClampRange(gfx::Range range, size_t max) {
 class PreferredSizeLabel : public Label {
  public:
   PreferredSizeLabel() : Label() {}
-  virtual ~PreferredSizeLabel() {}
+  ~PreferredSizeLabel() override {}
 
   // Label:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE {
+  gfx::Size GetPreferredSize() const override {
     return gfx::Size(50, Label::GetPreferredSize().height());
   }
 
@@ -48,19 +48,19 @@ class PreferredSizeLabel : public Label {
 // A simple View that hosts a RenderText object.
 class MultilineExample::RenderTextView : public View {
  public:
-  RenderTextView() : render_text_(gfx::RenderText::CreateInstance()) {
-    render_text_->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+  RenderTextView() : render_text_(gfx::RenderText::CreateInstanceForEditing()) {
+    render_text_->SetHorizontalAlignment(gfx::ALIGN_TO_HEAD);
     render_text_->SetColor(SK_ColorBLACK);
     render_text_->SetMultiline(true);
     SetBorder(Border::CreateSolidBorder(2, SK_ColorGRAY));
   }
 
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
+  void OnPaint(gfx::Canvas* canvas) override {
     View::OnPaint(canvas);
     render_text_->Draw(canvas);
   }
 
-  virtual gfx::Size GetPreferredSize() const OVERRIDE {
+  gfx::Size GetPreferredSize() const override {
     // Turn off multiline mode to get the single-line text size, which is the
     // preferred size for this view.
     render_text_->SetMultiline(false);
@@ -71,7 +71,7 @@ class MultilineExample::RenderTextView : public View {
     return size;
   }
 
-  virtual int GetHeightForWidth(int w) const OVERRIDE {
+  int GetHeightForWidth(int w) const override {
     // TODO(ckocagil): Why does this happen?
     if (w == 0)
       return View::GetHeightForWidth(w);
@@ -104,7 +104,7 @@ class MultilineExample::RenderTextView : public View {
   }
 
  private:
-  virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE {
+  void OnBoundsChanged(const gfx::Rect& previous_bounds) override {
     gfx::Rect bounds = GetLocalBounds();
     bounds.Inset(GetInsets());
     render_text_->SetDisplayRect(bounds);

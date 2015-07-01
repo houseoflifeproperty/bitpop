@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -62,15 +62,16 @@ class RTCCreateSessionDescriptionObserver
     _peerConnection = peerConnection;
   }
 
-  virtual void OnSuccess(SessionDescriptionInterface* desc) OVERRIDE {
+  void OnSuccess(SessionDescriptionInterface* desc) override {
     RTCSessionDescription* session =
         [[RTCSessionDescription alloc] initWithSessionDescription:desc];
     [_delegate peerConnection:_peerConnection
         didCreateSessionDescription:session
                               error:nil];
+    delete desc;
   }
 
-  virtual void OnFailure(const std::string& error) OVERRIDE {
+  void OnFailure(const std::string& error) override {
     NSString* str = @(error.c_str());
     NSError* err =
         [NSError errorWithDomain:kRTCSessionDescriptionDelegateErrorDomain
@@ -94,12 +95,12 @@ class RTCSetSessionDescriptionObserver : public SetSessionDescriptionObserver {
     _peerConnection = peerConnection;
   }
 
-  virtual void OnSuccess() OVERRIDE {
+  void OnSuccess() override {
     [_delegate peerConnection:_peerConnection
         didSetSessionDescriptionWithError:nil];
   }
 
-  virtual void OnFailure(const std::string& error) OVERRIDE {
+  void OnFailure(const std::string& error) override {
     NSString* str = @(error.c_str());
     NSError* err =
         [NSError errorWithDomain:kRTCSessionDescriptionDelegateErrorDomain
@@ -122,12 +123,11 @@ class RTCStatsObserver : public StatsObserver {
     _peerConnection = peerConnection;
   }
 
-  virtual void OnComplete(const std::vector<StatsReport>& reports) OVERRIDE {
+  void OnComplete(const StatsReports& reports) override {
     NSMutableArray* stats = [NSMutableArray arrayWithCapacity:reports.size()];
-    std::vector<StatsReport>::const_iterator it = reports.begin();
-    for (; it != reports.end(); ++it) {
+    for (const auto* report : reports) {
       RTCStatsReport* statsReport =
-          [[RTCStatsReport alloc] initWithStatsReport:*it];
+          [[RTCStatsReport alloc] initWithStatsReport:*report];
       [stats addObject:statsReport];
     }
     [_delegate peerConnection:_peerConnection didGetStats:stats];
@@ -151,10 +151,8 @@ class RTCStatsObserver : public StatsObserver {
   return self.peerConnection->AddIceCandidate(iceCandidate.get());
 }
 
-- (BOOL)addStream:(RTCMediaStream*)stream
-      constraints:(RTCMediaConstraints*)constraints {
-  BOOL ret = self.peerConnection->AddStream(stream.mediaStream,
-                                            constraints.constraints);
+- (BOOL)addStream:(RTCMediaStream*)stream {
+  BOOL ret = self.peerConnection->AddStream(stream.mediaStream);
   if (!ret) {
     return NO;
   }

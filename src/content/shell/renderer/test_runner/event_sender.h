@@ -99,7 +99,10 @@ class EventSender : public base::SupportsWeakPtr<EventSender> {
   void ZoomPageOut();
   void SetPageZoomFactor(double zoom_factor);
 
+  // TODO: Move these into Internals once PageScaleConstraints are moved out of
+  // Source/web. crbug.com/434450.
   void SetPageScaleFactor(float scale_factor, int x, int y);
+  void SetPageScaleFactorLimits(float min_scale, float max_scale);
 
   void ClearTouchPoints();
   void ReleaseTouchPoint(unsigned index);
@@ -112,7 +115,11 @@ class EventSender : public base::SupportsWeakPtr<EventSender> {
   void DumpFilenameBeingDragged();
 
   void GestureFlingCancel();
-  void GestureFlingStart(float x, float y, float velocity_x, float velocity_y);
+  void GestureFlingStart(float x,
+                         float y,
+                         float velocity_x,
+                         float velocity_y,
+                         gin::Arguments* args);
   void GestureScrollFirstPoint(int x, int y);
 
   void TouchStart();
@@ -132,7 +139,9 @@ class EventSender : public base::SupportsWeakPtr<EventSender> {
   void GestureScrollBegin(gin::Arguments* args);
   void GestureScrollEnd(gin::Arguments* args);
   void GestureScrollUpdate(gin::Arguments* args);
-  void GestureScrollUpdateWithoutPropagation(gin::Arguments* args);
+  void GesturePinchBegin(gin::Arguments* args);
+  void GesturePinchEnd(gin::Arguments* args);
+  void GesturePinchUpdate(gin::Arguments* args);
   void GestureTap(gin::Arguments* args);
   void GestureTapDown(gin::Arguments* args);
   void GestureShowPress(gin::Arguments* args);
@@ -143,6 +152,7 @@ class EventSender : public base::SupportsWeakPtr<EventSender> {
 
   void ContinuousMouseScrollBy(gin::Arguments* args);
   void MouseMoveTo(gin::Arguments* args);
+  void MouseLeave();
   void TrackpadScrollBegin();
   void TrackpadScroll(gin::Arguments* args);
   void TrackpadScrollEnd();
@@ -162,7 +172,8 @@ class EventSender : public base::SupportsWeakPtr<EventSender> {
 
   void SendCurrentTouchEvent(blink::WebInputEvent::Type);
 
-  void GestureEvent(blink::WebInputEvent::Type, gin::Arguments*);
+  void GestureEvent(blink::WebInputEvent::Type,
+                    gin::Arguments*);
 
   void UpdateClickCountForButton(blink::WebMouseEvent::Button);
 
@@ -175,6 +186,7 @@ class EventSender : public base::SupportsWeakPtr<EventSender> {
   void DoMouseUp(const blink::WebMouseEvent&);
   void DoMouseMove(const blink::WebMouseEvent&);
   void ReplaySavedEvents();
+  bool HandleInputEventOnViewOrPopup(const blink::WebInputEvent&);
 
   bool force_layout_on_events() const { return force_layout_on_events_; }
   void set_force_layout_on_events(bool force) {
@@ -248,6 +260,7 @@ class EventSender : public base::SupportsWeakPtr<EventSender> {
 
   // Currently pressed mouse button (Left/Right/Middle or None).
   static blink::WebMouseEvent::Button pressed_button_;
+  static int modifiers_;
 
   bool replaying_saved_events_;
 

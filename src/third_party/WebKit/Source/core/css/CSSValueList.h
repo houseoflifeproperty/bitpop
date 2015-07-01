@@ -21,14 +21,18 @@
 #ifndef CSSValueList_h
 #define CSSValueList_h
 
+#include "core/CoreExport.h"
 #include "core/css/CSSValue.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
 
 namespace blink {
 
-class CSSValueList : public CSSValue {
+class CORE_EXPORT CSSValueList : public CSSValue {
 public:
+    using iterator = WillBeHeapVector<RefPtrWillBeMember<CSSValue>, 4>::iterator;
+    using const_iterator = WillBeHeapVector<RefPtrWillBeMember<CSSValue>, 4>::const_iterator;
+
     static PassRefPtrWillBeRawPtr<CSSValueList> createCommaSeparated()
     {
         return adoptRefWillBeNoop(new CSSValueList(CommaSeparator));
@@ -42,10 +46,16 @@ public:
         return adoptRefWillBeNoop(new CSSValueList(SlashSeparator));
     }
 
+    iterator begin() { return m_values.begin(); }
+    iterator end() { return m_values.end(); }
+    const_iterator begin() const { return m_values.begin(); }
+    const_iterator end() const { return m_values.end(); }
+
     size_t length() const { return m_values.size(); }
     CSSValue* item(size_t index) { return m_values[index].get(); }
     const CSSValue* item(size_t index) const { return m_values[index].get(); }
     CSSValue* itemWithBoundsCheck(size_t index) { return index < m_values.size() ? m_values[index].get() : 0; }
+    const CSSValue* itemWithBoundsCheck(size_t index) const { return index < m_values.size() ? m_values[index].get() : 0; }
 
     void append(PassRefPtrWillBeRawPtr<CSSValue> value) { m_values.append(value); }
     void prepend(PassRefPtrWillBeRawPtr<CSSValue> value) { m_values.prepend(value); }
@@ -53,19 +63,15 @@ public:
     bool hasValue(CSSValue*) const;
     PassRefPtrWillBeRawPtr<CSSValueList> copy();
 
-    String customCSSText(CSSTextFormattingFlags = QuoteCSSStringIfNeeded) const;
+    String customCSSText() const;
     bool equals(const CSSValueList&) const;
-    bool equals(const CSSValue&) const;
 
     bool hasFailedOrCanceledSubresources() const;
 
-    PassRefPtrWillBeRawPtr<CSSValueList> cloneForCSSOM() const;
-
-    void traceAfterDispatch(Visitor*);
+    DECLARE_TRACE_AFTER_DISPATCH();
 
 protected:
     CSSValueList(ClassType, ValueListSeparator);
-    CSSValueList(const CSSValueList& cloneFrom);
 
 private:
     explicit CSSValueList(ValueListSeparator);
@@ -74,37 +80,6 @@ private:
 };
 
 DEFINE_CSS_VALUE_TYPE_CASTS(CSSValueList, isValueList());
-
-// Objects of this class are intended to be stack-allocated and scoped to a single function.
-// Please take care not to pass these around as they do hold onto a raw pointer.
-class CSSValueListInspector {
-    STACK_ALLOCATED();
-public:
-    CSSValueListInspector(CSSValue* value) : m_list((value && value->isValueList()) ? toCSSValueList(value) : 0) { }
-    CSSValue* item(size_t index) const { ASSERT_WITH_SECURITY_IMPLICATION(index < length()); return m_list->item(index); }
-    CSSValue* first() const { return item(0); }
-    CSSValue* second() const { return item(1); }
-    size_t length() const { return m_list ? m_list->length() : 0; }
-private:
-    RawPtrWillBeMember<CSSValueList> m_list;
-};
-
-// Wrapper that can be used to iterate over any CSSValue. Non-list values and 0 behave as zero-length lists.
-// Objects of this class are intended to be stack-allocated and scoped to a single function.
-// Please take care not to pass these around as they do hold onto a raw pointer.
-class CSSValueListIterator {
-    STACK_ALLOCATED();
-public:
-    CSSValueListIterator(CSSValue* value) : m_inspector(value), m_position(0) { }
-    bool hasMore() const { return m_position < m_inspector.length(); }
-    CSSValue* value() const { return m_inspector.item(m_position); }
-    bool isPrimitiveValue() const { return value()->isPrimitiveValue(); }
-    void advance() { m_position++; ASSERT(m_position <= m_inspector.length());}
-    size_t index() const { return m_position; }
-private:
-    CSSValueListInspector m_inspector;
-    size_t m_position;
-};
 
 } // namespace blink
 

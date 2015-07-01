@@ -36,20 +36,15 @@ class ExtensionLoaderHandler : public content::WebUIMessageHandler,
                                public content::WebContentsObserver {
  public:
   explicit ExtensionLoaderHandler(Profile* profile);
-  virtual ~ExtensionLoaderHandler();
+  ~ExtensionLoaderHandler() override;
 
   // Fetches the localized values for the page and deposits them into |source|.
   void GetLocalizedValues(content::WebUIDataSource* source);
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
  private:
-  class FileHelper;
-
-  // Handle the 'extensionLoaderLoadUnpacked' message.
-  void HandleLoadUnpacked(const base::ListValue* args);
-
   // Handle the 'extensionLoaderRetry' message.
   void HandleRetry(const base::ListValue* args);
 
@@ -60,17 +55,17 @@ class ExtensionLoaderHandler : public content::WebUIMessageHandler,
   void HandleDisplayFailures(const base::ListValue* args);
 
   // Try to load an unpacked extension from the given |file_path|.
-  void LoadUnpackedExtensionImpl(const base::FilePath& file_path);
+  void LoadUnpackedExtension(const base::FilePath& file_path);
 
   // ExtensionErrorReporter::Observer:
-  virtual void OnLoadFailure(content::BrowserContext* browser_context,
-                             const base::FilePath& file_path,
-                             const std::string& error) OVERRIDE;
+  void OnLoadFailure(content::BrowserContext* browser_context,
+                     const base::FilePath& file_path,
+                     const std::string& error) override;
 
   // content::WebContentsObserver:
-  virtual void DidStartNavigationToPendingEntry(
+  void DidStartNavigationToPendingEntry(
       const GURL& url,
-      content::NavigationController::ReloadType reload_type) OVERRIDE;
+      content::NavigationController::ReloadType reload_type) override;
 
   // Add a failure to |failures_|. If it was a manifest error, |manifest| will
   // hold the manifest contents, and |line_number| will point to the line at
@@ -85,9 +80,6 @@ class ExtensionLoaderHandler : public content::WebUIMessageHandler,
 
   // The profile with which this Handler is associated.
   Profile* profile_;
-
-  // A helper to manage file picking.
-  scoped_ptr<FileHelper> file_helper_;
 
   // Holds information about all unpacked extension install failures that
   // were reported while the extensions page was loading.

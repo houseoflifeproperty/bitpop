@@ -7,6 +7,7 @@
 #include "base/time/time.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/layers/scrollbar_layer_impl_base.h"
+#include "cc/trees/layer_tree_impl.h"
 
 namespace {
 const float kIdleThicknessScale = 0.4f;
@@ -21,18 +22,24 @@ ScrollbarAnimationControllerThinning::Create(
     LayerImpl* scroll_layer,
     ScrollbarAnimationControllerClient* client,
     base::TimeDelta delay_before_starting,
+    base::TimeDelta resize_delay_before_starting,
     base::TimeDelta duration) {
   return make_scoped_ptr(new ScrollbarAnimationControllerThinning(
-      scroll_layer, client, delay_before_starting, duration));
+      scroll_layer, client, delay_before_starting, resize_delay_before_starting,
+      duration));
 }
 
 ScrollbarAnimationControllerThinning::ScrollbarAnimationControllerThinning(
     LayerImpl* scroll_layer,
     ScrollbarAnimationControllerClient* client,
     base::TimeDelta delay_before_starting,
+    base::TimeDelta resize_delay_before_starting,
     base::TimeDelta duration)
-    : ScrollbarAnimationController(client, delay_before_starting, duration),
-      scroll_layer_(scroll_layer),
+    : ScrollbarAnimationController(scroll_layer,
+                                   client,
+                                   delay_before_starting,
+                                   resize_delay_before_starting,
+                                   duration),
       mouse_is_over_scrollbar_(false),
       mouse_is_near_scrollbar_(false),
       thickness_change_(NONE),
@@ -47,9 +54,10 @@ ScrollbarAnimationControllerThinning::~ScrollbarAnimationControllerThinning() {
 
 void ScrollbarAnimationControllerThinning::RunAnimationFrame(float progress) {
   float opacity = OpacityAtAnimationProgress(progress);
-  float thumb_thickness_scale = ThumbThicknessScaleAtAnimationProgress(
-      progress);
+  float thumb_thickness_scale =
+      ThumbThicknessScaleAtAnimationProgress(progress);
   ApplyOpacityAndThumbThicknessScale(opacity, thumb_thickness_scale);
+  client_->SetNeedsRedrawForScrollbarAnimation();
   if (progress == 1.f) {
     opacity_change_ = NONE;
     thickness_change_ = NONE;
@@ -65,10 +73,10 @@ void ScrollbarAnimationControllerThinning::DidMouseMoveOffScrollbar() {
   StartAnimation();
 }
 
-void ScrollbarAnimationControllerThinning::DidScrollUpdate() {
-  ScrollbarAnimationController::DidScrollUpdate();
+void ScrollbarAnimationControllerThinning::DidScrollUpdate(bool on_resize) {
+  ScrollbarAnimationController::DidScrollUpdate(on_resize);
   ApplyOpacityAndThumbThicknessScale(
-    1, mouse_is_near_scrollbar_ ? 1.f : kIdleThicknessScale);
+      1, mouse_is_near_scrollbar_ ? 1.f : kIdleThicknessScale);
 
   if (!mouse_is_over_scrollbar_)
     opacity_change_ = DECREASE;
@@ -105,9 +113,8 @@ float ScrollbarAnimationControllerThinning::OpacityAtAnimationProgress(
   return ret;
 }
 
-float
-ScrollbarAnimationControllerThinning::ThumbThicknessScaleAtAnimationProgress(
-    float progress) {
+float ScrollbarAnimationControllerThinning::
+    ThumbThicknessScaleAtAnimationProgress(float progress) {
   if (thickness_change_ == NONE)
     return mouse_is_near_scrollbar_ ? 1.f : kIdleThicknessScale;
   float factor = thickness_change_ == INCREASE ? progress : (1.f - progress);
@@ -126,22 +133,25 @@ float ScrollbarAnimationControllerThinning::AdjustScale(
 }
 
 void ScrollbarAnimationControllerThinning::ApplyOpacityAndThumbThicknessScale(
-    float opacity, float thumb_thickness_scale) {
+    float opacity,
+    float thumb_thickness_scale) {
   if (!scroll_layer_->scrollbars())
     return;
 
   LayerImpl::ScrollbarSet* scrollbars = scroll_layer_->scrollbars();
   for (LayerImpl::ScrollbarSet::iterator it = scrollbars->begin();
-       it != scrollbars->end();
-       ++it) {
+       it != scrollbars->end(); ++it) {
     ScrollbarLayerImplBase* scrollbar = *it;
     if (scrollbar->is_overlay_scrollbar()) {
-      scrollbar->SetOpacity(
-          AdjustScale(opacity, scrollbar->opacity(), opacity_change_));
-      scrollbar->SetThumbThicknessScaleFactor(
-          AdjustScale(thumb_thickness_scale,
-                      scrollbar->thumb_thickness_scale_factor(),
-                      thickness_change_));
+      float effectiveOpacity =
+          scrollbar->CanScrollOrientation()
+              ? AdjustScale(opacity, scrollbar->opacity(), opacity_change_)
+              : 0;
+
+      scrollbar->SetOpacity(effectiveOpacity);
+      scrollbar->SetThumbThicknessScaleFactor(AdjustScale(
+          thumb_thickness_scale, scrollbar->thumb_thickness_scale_factor(),
+          thickness_change_));
     }
   }
 }

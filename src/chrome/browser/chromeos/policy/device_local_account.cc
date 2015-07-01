@@ -12,6 +12,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
+#include "chrome/browser/chromeos/ownership/owner_settings_service_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chromeos/login/user_names.h"
 #include "chromeos/settings/cros_settings_names.h"
@@ -29,11 +30,13 @@ const char kDeviceLocalAccountDomainSuffix[] = ".device-local.localhost";
 
 DeviceLocalAccount::DeviceLocalAccount(Type type,
                                        const std::string& account_id,
-                                       const std::string& kiosk_app_id)
+                                       const std::string& kiosk_app_id,
+                                       const std::string& kiosk_app_update_url)
     : type(type),
       account_id(account_id),
       user_id(GenerateDeviceLocalAccountUserId(account_id, type)),
-      kiosk_app_id(kiosk_app_id) {
+      kiosk_app_id(kiosk_app_id),
+      kiosk_app_update_url(kiosk_app_update_url) {
 }
 
 DeviceLocalAccount::~DeviceLocalAccount() {
@@ -89,9 +92,8 @@ bool IsDeviceLocalAccountUser(const std::string& user_id,
   return true;
 }
 
-void SetDeviceLocalAccounts(
-    chromeos::CrosSettings* cros_settings,
-    const std::vector<DeviceLocalAccount>& accounts) {
+void SetDeviceLocalAccounts(chromeos::OwnerSettingsServiceChromeOS* service,
+                            const std::vector<DeviceLocalAccount>& accounts) {
   base::ListValue list;
   for (std::vector<DeviceLocalAccount>::const_iterator it = accounts.begin();
        it != accounts.end(); ++it) {
@@ -106,11 +108,16 @@ void SetDeviceLocalAccounts(
       entry->SetStringWithoutPathExpansion(
           chromeos::kAccountsPrefDeviceLocalAccountsKeyKioskAppId,
           it->kiosk_app_id);
+      if (!it->kiosk_app_update_url.empty()) {
+        entry->SetStringWithoutPathExpansion(
+            chromeos::kAccountsPrefDeviceLocalAccountsKeyKioskAppUpdateURL,
+            it->kiosk_app_update_url);
+      }
     }
     list.Append(entry.release());
   }
 
-  cros_settings->Set(chromeos::kAccountsPrefDeviceLocalAccounts, list);
+  service->Set(chromeos::kAccountsPrefDeviceLocalAccounts, list);
 }
 
 std::vector<DeviceLocalAccount> GetDeviceLocalAccounts(
@@ -150,6 +157,7 @@ std::vector<DeviceLocalAccount> GetDeviceLocalAccounts(
     }
 
     std::string kiosk_app_id;
+    std::string kiosk_app_update_url;
     if (type == DeviceLocalAccount::TYPE_KIOSK_APP) {
       if (!entry->GetStringWithoutPathExpansion(
               chromeos::kAccountsPrefDeviceLocalAccountsKeyKioskAppId,
@@ -158,6 +166,9 @@ std::vector<DeviceLocalAccount> GetDeviceLocalAccounts(
                    << i << ".";
         continue;
       }
+      entry->GetStringWithoutPathExpansion(
+          chromeos::kAccountsPrefDeviceLocalAccountsKeyKioskAppUpdateURL,
+          &kiosk_app_update_url);
     }
 
     if (!account_ids.insert(account_id).second) {
@@ -166,8 +177,11 @@ std::vector<DeviceLocalAccount> GetDeviceLocalAccounts(
       continue;
     }
 
-    accounts.push_back(DeviceLocalAccount(
-        static_cast<DeviceLocalAccount::Type>(type), account_id, kiosk_app_id));
+    accounts.push_back(
+        DeviceLocalAccount(static_cast<DeviceLocalAccount::Type>(type),
+                           account_id,
+                           kiosk_app_id,
+                           kiosk_app_update_url));
   }
   return accounts;
 }

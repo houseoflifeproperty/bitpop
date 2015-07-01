@@ -26,11 +26,11 @@
 #include "config.h"
 #include "core/editing/SimplifyMarkupCommand.h"
 
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/dom/NodeTraversal.h"
-#include "core/rendering/RenderInline.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/style/RenderStyle.h"
+#include "core/layout/LayoutInline.h"
+#include "core/layout/LayoutObject.h"
+#include "core/style/ComputedStyle.h"
 
 namespace blink {
 
@@ -42,7 +42,7 @@ SimplifyMarkupCommand::SimplifyMarkupCommand(Document& document, Node* firstNode
 void SimplifyMarkupCommand::doApply()
 {
     ContainerNode* rootNode = m_firstNode->parentNode();
-    WillBeHeapVector<RefPtrWillBeMember<ContainerNode> > nodesToRemove;
+    WillBeHeapVector<RefPtrWillBeMember<ContainerNode>> nodesToRemove;
 
     // Walk through the inserted nodes, to see if there are elements that could be removed
     // without affecting the style. The goal is to produce leaner markup even when starting
@@ -55,11 +55,11 @@ void SimplifyMarkupCommand::doApply()
         ContainerNode* startingNode = node->parentNode();
         if (!startingNode)
             continue;
-        RenderStyle* startingStyle = startingNode->renderStyle();
+        const ComputedStyle* startingStyle = startingNode->computedStyle();
         if (!startingStyle)
             continue;
         ContainerNode* currentNode = startingNode;
-        ContainerNode* topNodeWithStartingStyle = 0;
+        ContainerNode* topNodeWithStartingStyle = nullptr;
         while (currentNode != rootNode) {
             if (currentNode->parentNode() != rootNode && isRemovableBlock(currentNode))
                 nodesToRemove.append(currentNode);
@@ -68,7 +68,7 @@ void SimplifyMarkupCommand::doApply()
             if (!currentNode)
                 break;
 
-            if (!currentNode->renderer() || !currentNode->renderer()->isRenderInline() || toRenderInline(currentNode->renderer())->alwaysCreateLineBoxes())
+            if (!currentNode->layoutObject() || !currentNode->layoutObject()->isLayoutInline() || toLayoutInline(currentNode->layoutObject())->alwaysCreateLineBoxes())
                 continue;
 
             if (currentNode->firstChild() != currentNode->lastChild()) {
@@ -76,7 +76,7 @@ void SimplifyMarkupCommand::doApply()
                 break;
             }
 
-            if (!currentNode->renderStyle()->visualInvalidationDiff(*startingStyle).hasDifference())
+            if (!currentNode->computedStyle()->visualInvalidationDiff(*startingStyle).hasDifference())
                 topNodeWithStartingStyle = currentNode;
 
         }
@@ -97,7 +97,7 @@ void SimplifyMarkupCommand::doApply()
     }
 }
 
-int SimplifyMarkupCommand::pruneSubsequentAncestorsToRemove(WillBeHeapVector<RefPtrWillBeMember<ContainerNode> >& nodesToRemove, size_t startNodeIndex)
+int SimplifyMarkupCommand::pruneSubsequentAncestorsToRemove(WillBeHeapVector<RefPtrWillBeMember<ContainerNode>>& nodesToRemove, size_t startNodeIndex)
 {
     size_t pastLastNodeToRemove = startNodeIndex + 1;
     for (; pastLastNodeToRemove < nodesToRemove.size(); ++pastLastNodeToRemove) {
@@ -121,7 +121,7 @@ int SimplifyMarkupCommand::pruneSubsequentAncestorsToRemove(WillBeHeapVector<Ref
     return pastLastNodeToRemove - startNodeIndex - 1;
 }
 
-void SimplifyMarkupCommand::trace(Visitor* visitor)
+DEFINE_TRACE(SimplifyMarkupCommand)
 {
     visitor->trace(m_firstNode);
     visitor->trace(m_nodeAfterLast);

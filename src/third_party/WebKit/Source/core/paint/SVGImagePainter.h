@@ -8,19 +8,19 @@
 namespace blink {
 
 struct PaintInfo;
-class RenderSVGImage;
+class LayoutSVGImage;
 
 class SVGImagePainter {
 public:
-    SVGImagePainter(RenderSVGImage& renderSVGImage) : m_renderSVGImage(renderSVGImage) { }
+    SVGImagePainter(LayoutSVGImage& layoutSVGImage) : m_layoutSVGImage(layoutSVGImage) { }
 
-    void paint(PaintInfo&);
-
-    // Assumes the PaintInfo context has had all local transforms applied.
-    static void paintForeground(RenderSVGImage&, PaintInfo&);
+    void paint(const PaintInfo&);
 
 private:
-    RenderSVGImage& m_renderSVGImage;
+    // Assumes the PaintInfo context has had all local transforms applied.
+    void paintForeground(const PaintInfo&);
+
+    LayoutSVGImage& m_layoutSVGImage;
 };
 
 } // namespace blink

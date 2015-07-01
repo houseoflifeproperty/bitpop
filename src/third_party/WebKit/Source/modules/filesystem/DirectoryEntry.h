@@ -31,8 +31,8 @@
 #ifndef DirectoryEntry_h
 #define DirectoryEntry_h
 
+#include "modules/ModulesExport.h"
 #include "modules/filesystem/Entry.h"
-#include "modules/filesystem/FileSystemFlags.h"
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
@@ -42,23 +42,24 @@ class DOMFileSystemBase;
 class DirectoryReader;
 class EntryCallback;
 class ErrorCallback;
+class FileSystemFlags;
 class VoidCallback;
 
-class DirectoryEntry FINAL : public Entry {
+class MODULES_EXPORT DirectoryEntry final : public Entry {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static DirectoryEntry* create(DOMFileSystemBase* fileSystem, const String& fullPath)
     {
         return new DirectoryEntry(fileSystem, fullPath);
     }
-    virtual bool isDirectory() const OVERRIDE { return true; }
+    virtual bool isDirectory() const override { return true; }
 
     DirectoryReader* createReader();
-    void getFile(const String& path, const Dictionary&, EntryCallback* = nullptr, ErrorCallback* = nullptr);
-    void getDirectory(const String& path, const Dictionary&, EntryCallback* = nullptr, ErrorCallback* = nullptr);
+    void getFile(const String& path, const FileSystemFlags&, EntryCallback* = nullptr, ErrorCallback* = nullptr);
+    void getDirectory(const String& path, const FileSystemFlags&, EntryCallback* = nullptr, ErrorCallback* = nullptr);
     void removeRecursively(VoidCallback* successCallback = nullptr, ErrorCallback* = nullptr) const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     DirectoryEntry(DOMFileSystemBase*, const String& fullPath);

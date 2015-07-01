@@ -12,6 +12,13 @@ using content::BrowserThread;
 
 namespace system_logs {
 
+SystemLogsSource::SystemLogsSource(const std::string& source_name)
+    : source_name_(source_name) {
+}
+
+SystemLogsSource::~SystemLogsSource() {
+}
+
 SystemLogsFetcherBase::SystemLogsFetcherBase()
     : response_(new SystemLogsResponse),
       num_pending_requests_(0) {
@@ -20,19 +27,24 @@ SystemLogsFetcherBase::SystemLogsFetcherBase()
 SystemLogsFetcherBase::~SystemLogsFetcherBase() {}
 
 void SystemLogsFetcherBase::Fetch(const SysLogsFetcherCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(callback_.is_null());
   DCHECK(!callback.is_null());
 
   callback_ = callback;
   for (size_t i = 0; i < data_sources_.size(); ++i) {
+    VLOG(1) << "Fetching SystemLogSource: " << data_sources_[i]->source_name();
     data_sources_[i]->Fetch(base::Bind(&SystemLogsFetcherBase::AddResponse,
-                                       AsWeakPtr()));
+                                       AsWeakPtr(),
+                                       data_sources_[i]->source_name()));
   }
 }
 
-void SystemLogsFetcherBase::AddResponse(SystemLogsResponse* response) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+void SystemLogsFetcherBase::AddResponse(const std::string& source_name,
+                                        SystemLogsResponse* response) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  VLOG(1) << "Received SystemLogSource: " << source_name;
 
   for (SystemLogsResponse::const_iterator it = response->begin();
        it != response->end();

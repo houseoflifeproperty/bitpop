@@ -391,11 +391,11 @@ bool GetGoogleChromePath(base::FilePath* chrome_exe_path) {
 
   // Now grab the uninstall string from the appropriate ClientState key
   // and use that as the base for a path to chrome.exe.
-  *chrome_exe_path =
-      chrome_launcher_support::GetChromePathForInstallationLevel(
-          install_key == HKEY_LOCAL_MACHINE ?
-              chrome_launcher_support::SYSTEM_LEVEL_INSTALLATION :
-              chrome_launcher_support::USER_LEVEL_INSTALLATION);
+  *chrome_exe_path = chrome_launcher_support::GetChromePathForInstallationLevel(
+      install_key == HKEY_LOCAL_MACHINE
+          ? chrome_launcher_support::SYSTEM_LEVEL_INSTALLATION
+          : chrome_launcher_support::USER_LEVEL_INSTALLATION,
+      false /* is_sxs */);
   return !chrome_exe_path->empty();
 }
 
@@ -504,7 +504,7 @@ BOOL __stdcall LaunchGoogleChrome() {
     }
   }
 
-  CommandLine chrome_command(chrome_exe_path);
+  base::CommandLine chrome_command(chrome_exe_path);
 
   bool ret = false;
   ScopedComPtr<IProcessLauncher> ipl;
@@ -519,8 +519,7 @@ BOOL __stdcall LaunchGoogleChrome() {
     // Couldn't get Omaha's process launcher, Omaha may not be installed at
     // system level. Try just running Chrome instead.
     ret = base::LaunchProcess(chrome_command.GetCommandLineString(),
-                              base::LaunchOptions(),
-                              NULL);
+                              base::LaunchOptions()).IsValid();
   }
 
   if (impersonation_success)
@@ -541,7 +540,7 @@ BOOL __stdcall LaunchGoogleChromeWithDimensions(int x,
     // When launching in the background, use WMI to ensure that chrome.exe is
     // is not our child process. This prevents it from pushing itself to
     // foreground.
-    CommandLine chrome_command(chrome_exe_path);
+    base::CommandLine chrome_command(chrome_exe_path);
 
     ScopedCOMInitializer com_initializer;
     if (!installer::WMIProcess::Launch(chrome_command.GetCommandLineString(),

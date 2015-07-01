@@ -25,16 +25,20 @@
 #include "content/common/sandbox_linux/sandbox_seccomp_bpf_linux.h"
 #include "content/common/set_process_title.h"
 #include "content/public/common/content_switches.h"
+#include "sandbox/linux/bpf_dsl/bpf_dsl.h"
+#include "sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.h"
 #include "sandbox/linux/seccomp-bpf-helpers/syscall_sets.h"
-#include "sandbox/linux/seccomp-bpf/trap.h"
-#include "sandbox/linux/services/broker_process.h"
-#include "sandbox/linux/services/linux_syscalls.h"
+#include "sandbox/linux/syscall_broker/broker_file_permission.h"
+#include "sandbox/linux/syscall_broker/broker_process.h"
+#include "sandbox/linux/system_headers/linux_syscalls.h"
 
-using sandbox::BrokerProcess;
-using sandbox::SyscallSets;
 using sandbox::arch_seccomp_data;
 using sandbox::bpf_dsl::Allow;
 using sandbox::bpf_dsl::ResultExpr;
+using sandbox::bpf_dsl::Trap;
+using sandbox::syscall_broker::BrokerFilePermission;
+using sandbox::syscall_broker::BrokerProcess;
+using sandbox::SyscallSets;
 
 namespace content {
 
@@ -65,23 +69,44 @@ inline bool IsArchitectureI386() {
 }
 
 inline bool IsArchitectureArm() {
-#if defined(__arm__)
+#if defined(__arm__) || defined(__aarch64__)
   return true;
 #else
   return false;
 #endif
 }
 
-bool IsAcceleratedVideoEnabled() {
-  const base::CommandLine& command_line =
-      *base::CommandLine::ForCurrentProcess();
+inline bool IsOzone() {
+#if defined(USE_OZONE)
+  return true;
+#else
+  return false;
+#endif
+}
+
+inline bool UseLibV4L2() {
+#if defined(USE_LIBV4L2)
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool IsAcceleratedVaapiVideoEncodeEnabled() {
   bool accelerated_encode_enabled = false;
 #if defined(OS_CHROMEOS)
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   accelerated_encode_enabled =
       !command_line.HasSwitch(switches::kDisableVaapiAcceleratedVideoEncode);
 #endif
-  return !command_line.HasSwitch(switches::kDisableAcceleratedVideoDecode) ||
-         accelerated_encode_enabled;
+  return accelerated_encode_enabled;
+}
+
+bool IsAcceleratedVideoDecodeEnabled() {
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
+  return !command_line.HasSwitch(switches::kDisableAcceleratedVideoDecode);
 }
 
 intptr_t GpuSIGSYS_Handler(const struct arch_seccomp_data& args,
@@ -90,6 +115,7 @@ intptr_t GpuSIGSYS_Handler(const struct arch_seccomp_data& args,
   BrokerProcess* broker_process =
       static_cast<BrokerProcess*>(aux_broker_process);
   switch (args.nr) {
+#if !defined(__aarch64__)
     case __NR_access:
       return broker_process->Access(reinterpret_cast<const char*>(args.args[0]),
                                     static_cast<int>(args.args[1]));
@@ -100,6 +126,15 @@ intptr_t GpuSIGSYS_Handler(const struct arch_seccomp_data& args,
 #endif
       return broker_process->Open(reinterpret_cast<const char*>(args.args[0]),
                                   static_cast<int>(args.args[1]));
+#endif  // !defined(__aarch64__)
+    case __NR_faccessat:
+      if (static_cast<int>(args.args[0]) == AT_FDCWD) {
+        return
+            broker_process->Access(reinterpret_cast<const char*>(args.args[1]),
+                                    static_cast<int>(args.args[2]));
+      } else {
+        return -EPERM;
+      }
     case __NR_openat:
       // Allow using openat() as open().
       if (static_cast<int>(args.args[0]) == AT_FDCWD) {
@@ -115,14 +150,26 @@ intptr_t GpuSIGSYS_Handler(const struct arch_seccomp_data& args,
   }
 }
 
+void AddV4L2GpuWhitelist(std::vector<BrokerFilePermission>* permissions) {
+  if (IsAcceleratedVideoDecodeEnabled()) {
+    // Device node for V4L2 video decode accelerator drivers.
+    static const char kDevVideoDecPath[] = "/dev/video-dec";
+    permissions->push_back(BrokerFilePermission::ReadWrite(kDevVideoDecPath));
+  }
+
+  // Device node for V4L2 video encode accelerator drivers.
+  static const char kDevVideoEncPath[] = "/dev/video-enc";
+  permissions->push_back(BrokerFilePermission::ReadWrite(kDevVideoEncPath));
+}
+
 class GpuBrokerProcessPolicy : public GpuProcessPolicy {
  public:
-  static sandbox::bpf_dsl::SandboxBPFDSLPolicy* Create() {
+  static sandbox::bpf_dsl::Policy* Create() {
     return new GpuBrokerProcessPolicy();
   }
-  virtual ~GpuBrokerProcessPolicy() {}
+  ~GpuBrokerProcessPolicy() override {}
 
-  virtual ResultExpr EvaluateSyscall(int system_call_number) const OVERRIDE;
+  ResultExpr EvaluateSyscall(int system_call_number) const override;
 
  private:
   GpuBrokerProcessPolicy() {}
@@ -130,13 +177,21 @@ class GpuBrokerProcessPolicy : public GpuProcessPolicy {
 };
 
 // x86_64/i386 or desktop ARM.
-// A GPU broker policy is the same as a GPU policy with open and
-// openat allowed.
+// A GPU broker policy is the same as a GPU policy with access, open,
+// openat and in the non-Chrome OS case unlink allowed.
 ResultExpr GpuBrokerProcessPolicy::EvaluateSyscall(int sysno) const {
   switch (sysno) {
+#if !defined(__aarch64__)
     case __NR_access:
     case __NR_open:
+#endif  // !defined(__aarch64__)
+    case __NR_faccessat:
     case __NR_openat:
+#if !defined(OS_CHROMEOS)
+    // The broker process needs to able to unlink the temporary
+    // files that it may create. This is used by DRI3.
+    case __NR_unlink:
+#endif
       return Allow();
     default:
       return GpuProcessPolicy::EvaluateSyscall(sysno);
@@ -158,24 +213,39 @@ void UpdateProcessTypeToGpuBroker() {
   SetProcessTitleFromCommandLine(NULL);
 }
 
-bool UpdateProcessTypeAndEnableSandbox(sandbox::bpf_dsl::SandboxBPFDSLPolicy* (
-    *broker_sandboxer_allocator)(void)) {
+bool UpdateProcessTypeAndEnableSandbox(
+    sandbox::bpf_dsl::Policy* (*broker_sandboxer_allocator)(void)) {
   DCHECK(broker_sandboxer_allocator);
   UpdateProcessTypeToGpuBroker();
   return SandboxSeccompBPF::StartSandboxWithExternalPolicy(
-      make_scoped_ptr(broker_sandboxer_allocator()));
+      make_scoped_ptr(broker_sandboxer_allocator()), base::ScopedFD());
 }
 
 }  // namespace
 
-GpuProcessPolicy::GpuProcessPolicy() : broker_process_(NULL) {}
+GpuProcessPolicy::GpuProcessPolicy() : GpuProcessPolicy(false) {
+}
+
+GpuProcessPolicy::GpuProcessPolicy(bool allow_mincore)
+    : broker_process_(NULL), allow_mincore_(allow_mincore) {
+}
 
 GpuProcessPolicy::~GpuProcessPolicy() {}
 
 // Main policy for x86_64/i386. Extended by CrosArmGpuProcessPolicy.
 ResultExpr GpuProcessPolicy::EvaluateSyscall(int sysno) const {
   switch (sysno) {
+#if !defined(OS_CHROMEOS)
+    case __NR_ftruncate:
+#endif
     case __NR_ioctl:
+      return Allow();
+    case __NR_mincore:
+      if (allow_mincore_) {
+        return Allow();
+      } else {
+        return SandboxBPFBasePolicy::EvaluateSyscall(sysno);
+      }
 #if defined(__i386__) || defined(__x86_64__) || defined(__mips__)
     // The Nvidia driver uses flags not in the baseline policy
     // (MAP_LOCKED | MAP_EXECUTABLE | MAP_32BIT)
@@ -186,15 +256,18 @@ ResultExpr GpuProcessPolicy::EvaluateSyscall(int sysno) const {
     case __NR_mprotect:
     // TODO(jln): restrict prctl.
     case __NR_prctl:
-    case __NR_sched_getaffinity:
-    case __NR_sched_setaffinity:
-    case __NR_setpriority:
       return Allow();
+#if !defined(__aarch64__)
     case __NR_access:
     case __NR_open:
+#endif  // !defined(__aarch64__)
+    case __NR_faccessat:
     case __NR_openat:
       DCHECK(broker_process_);
       return Trap(GpuSIGSYS_Handler, broker_process_);
+    case __NR_sched_getaffinity:
+    case __NR_sched_setaffinity:
+      return sandbox::RestrictSchedTarget(GetPolicyPid(), sysno);
     default:
       if (SyscallSets::IsEventFd(sysno))
         return Allow();
@@ -215,13 +288,13 @@ bool GpuProcessPolicy::PreSandboxHook() {
   // Create a new broker process.
   InitGpuBrokerProcess(
       GpuBrokerProcessPolicy::Create,
-      std::vector<std::string>(),  // No extra files in whitelist.
-      std::vector<std::string>());
+      std::vector<BrokerFilePermission>());  // No extra files in whitelist.
 
   if (IsArchitectureX86_64() || IsArchitectureI386()) {
     // Accelerated video dlopen()'s some shared objects
     // inside the sandbox, so preload them now.
-    if (IsAcceleratedVideoEnabled()) {
+    if (IsAcceleratedVaapiVideoEncodeEnabled() ||
+        IsAcceleratedVideoDecodeEnabled()) {
       const char* I965DrvVideoPath = NULL;
 
       if (IsArchitectureX86_64()) {
@@ -232,7 +305,11 @@ bool GpuProcessPolicy::PreSandboxHook() {
 
       dlopen(I965DrvVideoPath, RTLD_NOW|RTLD_GLOBAL|RTLD_NODELETE);
       dlopen("libva.so.1", RTLD_NOW|RTLD_GLOBAL|RTLD_NODELETE);
+#if defined(USE_OZONE)
+      dlopen("libva-drm.so.1", RTLD_NOW|RTLD_GLOBAL|RTLD_NODELETE);
+#elif defined(USE_X11)
       dlopen("libva-x11.so.1", RTLD_NOW|RTLD_GLOBAL|RTLD_NODELETE);
+#endif
     }
   }
 
@@ -240,33 +317,37 @@ bool GpuProcessPolicy::PreSandboxHook() {
 }
 
 void GpuProcessPolicy::InitGpuBrokerProcess(
-    sandbox::bpf_dsl::SandboxBPFDSLPolicy* (*broker_sandboxer_allocator)(void),
-    const std::vector<std::string>& read_whitelist_extra,
-    const std::vector<std::string>& write_whitelist_extra) {
+    sandbox::bpf_dsl::Policy* (*broker_sandboxer_allocator)(void),
+    const std::vector<BrokerFilePermission>& permissions_extra) {
   static const char kDriRcPath[] = "/etc/drirc";
   static const char kDriCard0Path[] = "/dev/dri/card0";
+  static const char kDevShm[] = "/dev/shm/";
 
   CHECK(broker_process_ == NULL);
 
   // All GPU process policies need these files brokered out.
-  std::vector<std::string> read_whitelist;
-  read_whitelist.push_back(kDriCard0Path);
-  read_whitelist.push_back(kDriRcPath);
-  // Add eventual extra files from read_whitelist_extra.
-  read_whitelist.insert(read_whitelist.end(),
-                        read_whitelist_extra.begin(),
-                        read_whitelist_extra.end());
+  std::vector<BrokerFilePermission> permissions;
+  permissions.push_back(BrokerFilePermission::ReadWrite(kDriCard0Path));
+  permissions.push_back(BrokerFilePermission::ReadOnly(kDriRcPath));
+  if (!IsChromeOS()) {
+    permissions.push_back(
+        BrokerFilePermission::ReadWriteCreateUnlinkRecursive(kDevShm));
+  } else if (IsArchitectureArm() || IsOzone()){
+    AddV4L2GpuWhitelist(&permissions);
+    if (UseLibV4L2()) {
+      dlopen("/usr/lib/libv4l2.so", RTLD_NOW|RTLD_GLOBAL|RTLD_NODELETE);
+      // This is a device-specific encoder plugin.
+      dlopen("/usr/lib/libv4l/plugins/libv4l-encplugin.so",
+          RTLD_NOW|RTLD_GLOBAL|RTLD_NODELETE);
+    }
+  }
 
-  std::vector<std::string> write_whitelist;
-  write_whitelist.push_back(kDriCard0Path);
-  // Add eventual extra files from write_whitelist_extra.
-  write_whitelist.insert(write_whitelist.end(),
-                         write_whitelist_extra.begin(),
-                         write_whitelist_extra.end());
+  // Add eventual extra files from permissions_extra.
+  for (const auto& perm : permissions_extra) {
+    permissions.push_back(perm);
+  }
 
-  broker_process_ = new BrokerProcess(GetFSDeniedErrno(),
-                                      read_whitelist,
-                                      write_whitelist);
+  broker_process_ = new BrokerProcess(GetFSDeniedErrno(), permissions);
   // The initialization callback will perform generic initialization and then
   // call broker_sandboxer_callback.
   CHECK(broker_process_->Init(base::Bind(&UpdateProcessTypeAndEnableSandbox,

@@ -17,13 +17,13 @@ class DeviceIdentityProvider : public IdentityProvider {
  public:
   explicit DeviceIdentityProvider(
       chromeos::DeviceOAuth2TokenService* token_service);
-  virtual ~DeviceIdentityProvider();
+  ~DeviceIdentityProvider() override;
 
   // IdentityProvider:
-  virtual std::string GetActiveUsername() OVERRIDE;
-  virtual std::string GetActiveAccountId() OVERRIDE;
-  virtual OAuth2TokenService* GetTokenService() OVERRIDE;
-  virtual bool RequestLogin() OVERRIDE;
+  std::string GetActiveUsername() override;
+  std::string GetActiveAccountId() override;
+  OAuth2TokenService* GetTokenService() override;
+  bool RequestLogin() override;
 
  private:
   chromeos::DeviceOAuth2TokenService* token_service_;

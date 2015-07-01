@@ -14,6 +14,7 @@
 #include "base/synchronization/lock.h"
 #include "media/base/byte_queue.h"
 #include "media/base/demuxer.h"
+#include "media/base/demuxer_stream.h"
 #include "media/base/ranges.h"
 #include "media/base/stream_parser.h"
 #include "media/filters/source_buffer_stream.h"
@@ -27,8 +28,8 @@ class MEDIA_EXPORT ChunkDemuxerStream : public DemuxerStream {
  public:
   typedef std::deque<scoped_refptr<StreamParserBuffer> > BufferQueue;
 
-  explicit ChunkDemuxerStream(Type type, bool splice_frames_enabled);
-  virtual ~ChunkDemuxerStream();
+  ChunkDemuxerStream(Type type, Liveness liveness, bool splice_frames_enabled);
+  ~ChunkDemuxerStream() override;
 
   // ChunkDemuxerStream control methods.
   void StartReturningData();
@@ -80,12 +81,13 @@ class MEDIA_EXPORT ChunkDemuxerStream : public DemuxerStream {
   void UnmarkEndOfStream();
 
   // DemuxerStream methods.
-  virtual void Read(const ReadCB& read_cb) OVERRIDE;
-  virtual Type type() OVERRIDE;
-  virtual AudioDecoderConfig audio_decoder_config() OVERRIDE;
-  virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
-  virtual bool SupportsConfigChanges() OVERRIDE;
-  virtual VideoRotation video_rotation() OVERRIDE;
+  void Read(const ReadCB& read_cb) override;
+  Type type() const override;
+  Liveness liveness() const override;
+  AudioDecoderConfig audio_decoder_config() override;
+  VideoDecoderConfig video_decoder_config() override;
+  bool SupportsConfigChanges() override;
+  VideoRotation video_rotation() override;
 
   // Returns the text track configuration.  It is an error to call this method
   // if type() != TEXT.
@@ -99,6 +101,8 @@ class MEDIA_EXPORT ChunkDemuxerStream : public DemuxerStream {
   bool supports_partial_append_window_trimming() const {
     return partial_append_window_trimming_enabled_;
   }
+
+  void SetLiveness(Liveness liveness);
 
  private:
   enum State {
@@ -115,6 +119,8 @@ class MEDIA_EXPORT ChunkDemuxerStream : public DemuxerStream {
 
   // Specifies the type of the stream.
   Type type_;
+
+  Liveness liveness_;
 
   scoped_ptr<SourceBufferStream> stream_;
 
@@ -141,31 +147,30 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
 
   // |open_cb| Run when Initialize() is called to signal that the demuxer
   //   is ready to receive media data via AppenData().
-  // |need_key_cb| Run when the demuxer determines that an encryption key is
-  //   needed to decrypt the content.
+  // |encrypted_media_init_data_cb| Run when the demuxer determines that an
+  //   encryption key is needed to decrypt the content.
   // |enable_text| Process inband text tracks in the normal way when true,
   //   otherwise ignore them.
-  // |log_cb| Run when parsing error messages need to be logged to the error
-  //   console.
+  // |log_cb| Run when the demuxer needs to emit MediaLog messages.
   // |splice_frames_enabled| Indicates that it's okay to generate splice frames
   //   per the MSE specification.  Renderers must understand DecoderBuffer's
   //   splice_timestamp() field.
   ChunkDemuxer(const base::Closure& open_cb,
-               const NeedKeyCB& need_key_cb,
+               const EncryptedMediaInitDataCB& encrypted_media_init_data_cb,
                const LogCB& log_cb,
+               const scoped_refptr<MediaLog>& media_log,
                bool splice_frames_enabled);
-  virtual ~ChunkDemuxer();
+  ~ChunkDemuxer() override;
 
   // Demuxer implementation.
-  virtual void Initialize(DemuxerHost* host,
-                          const PipelineStatusCB& cb,
-                          bool enable_text_tracks) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Seek(base::TimeDelta time, const PipelineStatusCB&  cb) OVERRIDE;
-  virtual base::Time GetTimelineOffset() const OVERRIDE;
-  virtual DemuxerStream* GetStream(DemuxerStream::Type type) OVERRIDE;
-  virtual base::TimeDelta GetStartTime() const OVERRIDE;
-  virtual Liveness GetLiveness() const OVERRIDE;
+  void Initialize(DemuxerHost* host,
+                  const PipelineStatusCB& cb,
+                  bool enable_text_tracks) override;
+  void Stop() override;
+  void Seek(base::TimeDelta time, const PipelineStatusCB& cb) override;
+  base::Time GetTimelineOffset() const override;
+  DemuxerStream* GetStream(DemuxerStream::Type type) override;
+  base::TimeDelta GetStartTime() const override;
 
   // Methods used by an external object to control this demuxer.
   //
@@ -303,8 +308,7 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   bool CanEndOfStream_Locked() const;
 
   // SourceState callbacks.
-  void OnSourceInitDone(bool success,
-                        const StreamParser::InitParameters& params);
+  void OnSourceInitDone(const StreamParser::InitParameters& params);
 
   // Creates a DemuxerStream for the specified |type|.
   // Returns a new ChunkDemuxerStream instance if a stream of this type
@@ -353,11 +357,12 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
 
   DemuxerHost* host_;
   base::Closure open_cb_;
-  NeedKeyCB need_key_cb_;
+  EncryptedMediaInitDataCB encrypted_media_init_data_cb_;
   bool enable_text_;
-  // Callback used to report error strings that can help the web developer
+  // Callback used to report log messages that can help the web developer
   // figure out what is wrong with the content.
   LogCB log_cb_;
+  scoped_refptr<MediaLog> media_log_;
 
   PipelineStatusCB init_cb_;
   // Callback to execute upon seek completion.
@@ -379,7 +384,7 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   double user_specified_duration_;
 
   base::Time timeline_offset_;
-  Liveness liveness_;
+  DemuxerStream::Liveness liveness_;
 
   typedef std::map<std::string, SourceState*> SourceStateMap;
   SourceStateMap source_state_map_;

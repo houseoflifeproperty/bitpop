@@ -9,10 +9,12 @@ import android.test.suitebuilder.annotation.SmallTest;
 
 import org.chromium.android_webview.AwContents;
 import org.chromium.base.test.util.Feature;
+import org.chromium.base.test.util.MinAndroidSdkLevel;
 
 /**
  * TestSuite for EME key systems.
  */
+@MinAndroidSdkLevel(Build.VERSION_CODES.KITKAT)
 public class KeySystemTest extends AwTestBase {
 
     private TestAwContentsClient mContentsClient = new TestAwContentsClient();
@@ -28,16 +30,16 @@ public class KeySystemTest extends AwTestBase {
         enableJavaScriptOnUiThread(mAwContents);
 
         loadDataSync(mAwContents, mContentsClient.getOnPageFinishedHelper(),
-            getKeySystemTestPage(), "text/html", false);
+                getKeySystemTestPage(), "text/html", false);
     }
 
     private String getKeySystemTestPage() {
-        return "<html> <script>" +
-                "function isKeySystemSupported(keySystem) {" +
-                    "var video = document.createElement('video');" +
-                    "return video.canPlayType('video/mp4', keySystem);" +
-                "}" +
-                "</script> </html>";
+        return "<html> <script>"
+                + "function isKeySystemSupported(keySystem) {"
+                + "  var video = document.createElement('video');"
+                + "  return video.canPlayType('video/mp4', keySystem);"
+                + "}"
+                + "</script> </html>";
     }
 
     private String isKeySystemSupported(String keySystem) throws Exception {

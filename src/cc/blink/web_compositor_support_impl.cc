@@ -9,6 +9,7 @@
 #include "cc/animation/transform_operations.h"
 #include "cc/blink/web_animation_impl.h"
 #include "cc/blink/web_content_layer_impl.h"
+#include "cc/blink/web_display_item_list_impl.h"
 #include "cc/blink/web_external_texture_layer_impl.h"
 #include "cc/blink/web_filter_animation_curve_impl.h"
 #include "cc/blink/web_filter_operations_impl.h"
@@ -27,6 +28,7 @@ using blink::WebCompositorAnimation;
 using blink::WebCompositorAnimationCurve;
 using blink::WebContentLayer;
 using blink::WebContentLayerClient;
+using blink::WebDisplayItemList;
 using blink::WebExternalTextureLayer;
 using blink::WebExternalTextureLayerClient;
 using blink::WebFilterAnimationCurve;
@@ -94,8 +96,15 @@ WebScrollbarLayer* WebCompositorSupportImpl::createSolidColorScrollbarLayer(
 WebCompositorAnimation* WebCompositorSupportImpl::createAnimation(
     const blink::WebCompositorAnimationCurve& curve,
     blink::WebCompositorAnimation::TargetProperty target,
+#ifdef WEB_COMPOSITOR_SUPPORT_CREATE_ANIMATION_SUPPORTS_GROUP
+    int group_id,
+#endif
     int animation_id) {
+#ifdef WEB_COMPOSITOR_SUPPORT_CREATE_ANIMATION_SUPPORTS_GROUP
+  return new WebCompositorAnimationImpl(curve, target, animation_id, group_id);
+#else
   return new WebCompositorAnimationImpl(curve, target, animation_id, 0);
+#endif
 }
 
 WebFilterAnimationCurve*

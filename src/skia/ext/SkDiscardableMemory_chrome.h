@@ -5,20 +5,23 @@
 #ifndef SKIA_EXT_SK_DISCARDABLE_MEMORY_CHROME_H_
 #define SKIA_EXT_SK_DISCARDABLE_MEMORY_CHROME_H_
 
-#include "base/memory/discardable_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "third_party/skia/src/core/SkDiscardableMemory.h"
+
+namespace base {
+class DiscardableMemory;
+}
 
 // This class implements the SkDiscardableMemory interface using
 // base::DiscardableMemory.
 class SK_API SkDiscardableMemoryChrome : public SkDiscardableMemory {
 public:
-  virtual ~SkDiscardableMemoryChrome();
+ ~SkDiscardableMemoryChrome() override;
 
   // SkDiscardableMemory:
-  virtual bool lock() OVERRIDE;
-  virtual void* data() OVERRIDE;
-  virtual void unlock() OVERRIDE;
+ bool lock() override;
+ void* data() override;
+ void unlock() override;
 
 private:
   friend class SkDiscardableMemory;

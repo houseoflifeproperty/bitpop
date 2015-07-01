@@ -36,7 +36,6 @@
 #include "public/platform/WebFileSystemType.h"
 #include "public/web/WebLocalFrame.h"
 #include "web/FrameLoaderClientImpl.h"
-#include "web/NotificationPresenterImpl.h"
 #include "web/UserMediaClientImpl.h"
 #include "wtf/Compiler.h"
 #include "wtf/OwnPtr.h"
@@ -47,190 +46,206 @@ namespace blink {
 
 class ChromePrintContext;
 class GeolocationClientProxy;
-class GraphicsContext;
-class HTMLInputElement;
-class HistoryItem;
+class InspectorOverlay;
 class IntSize;
 class KURL;
-class Node;
 class Range;
 class SharedWorkerRepositoryClientImpl;
-class SubstituteData;
 class TextFinder;
+class WebAutofillClient;
 class WebDataSourceImpl;
-class WebInputElement;
+class WebDevToolsAgentImpl;
+class WebDevToolsFrontendImpl;
 class WebFrameClient;
+class WebFrameWidgetImpl;
+class WebNode;
 class WebPerformance;
 class WebPlugin;
 class WebPluginContainerImpl;
+class WebScriptExecutionCallback;
+class WebSuspendableTask;
 class WebView;
 class WebViewImpl;
 struct FrameLoadRequest;
 struct WebPrintParams;
-struct WindowFeatures;
 
 template <typename T> class WebVector;
 
 // Implementation of WebFrame, note that this is a reference counted object.
-class WebLocalFrameImpl FINAL : public RefCountedWillBeGarbageCollectedFinalized<WebLocalFrameImpl>, public WebLocalFrame {
+class WebLocalFrameImpl final : public RefCountedWillBeGarbageCollectedFinalized<WebLocalFrameImpl>, public WebLocalFrame {
 public:
     // WebFrame methods:
-    virtual bool isWebLocalFrame() const OVERRIDE;
-    virtual WebLocalFrame* toWebLocalFrame() OVERRIDE;
-    virtual bool isWebRemoteFrame() const OVERRIDE;
-    virtual WebRemoteFrame* toWebRemoteFrame() OVERRIDE;
-    virtual void close() OVERRIDE;
-    virtual WebString uniqueName() const OVERRIDE;
-    virtual WebString assignedName() const OVERRIDE;
-    virtual void setName(const WebString&) OVERRIDE;
-    virtual WebVector<WebIconURL> iconURLs(int iconTypesMask) const OVERRIDE;
-    virtual void setIsRemote(bool) OVERRIDE;
-    virtual void setRemoteWebLayer(WebLayer*) OVERRIDE;
-    virtual void setPermissionClient(WebPermissionClient*) OVERRIDE;
-    virtual void setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*) OVERRIDE;
-    virtual WebSize scrollOffset() const OVERRIDE;
-    virtual void setScrollOffset(const WebSize&) OVERRIDE;
-    virtual WebSize minimumScrollOffset() const OVERRIDE;
-    virtual WebSize maximumScrollOffset() const OVERRIDE;
-    virtual WebSize contentsSize() const OVERRIDE;
-    virtual bool hasVisibleContent() const OVERRIDE;
-    virtual WebRect visibleContentRect() const OVERRIDE;
-    virtual bool hasHorizontalScrollbar() const OVERRIDE;
-    virtual bool hasVerticalScrollbar() const OVERRIDE;
-    virtual WebView* view() const OVERRIDE;
-    virtual void setOpener(WebFrame*) OVERRIDE;
-    virtual WebDocument document() const OVERRIDE;
-    virtual WebPerformance performance() const OVERRIDE;
-    virtual bool dispatchBeforeUnloadEvent() OVERRIDE;
-    virtual void dispatchUnloadEvent() OVERRIDE;
-    virtual NPObject* windowObject() const OVERRIDE;
-    virtual void bindToWindowObject(const WebString& name, NPObject*) OVERRIDE;
-    virtual void bindToWindowObject(const WebString& name, NPObject*, void*) OVERRIDE;
-    virtual void executeScript(const WebScriptSource&) OVERRIDE;
+    virtual bool isWebLocalFrame() const override;
+    virtual WebLocalFrame* toWebLocalFrame() override;
+    virtual bool isWebRemoteFrame() const override;
+    virtual WebRemoteFrame* toWebRemoteFrame() override;
+    virtual void close() override;
+    virtual WebString uniqueName() const override;
+    virtual WebString assignedName() const override;
+    virtual void setName(const WebString&) override;
+    virtual WebVector<WebIconURL> iconURLs(int iconTypesMask) const override;
+    virtual void setRemoteWebLayer(WebLayer*) override;
+    virtual void setContentSettingsClient(WebContentSettingsClient*) override;
+    virtual void setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*) override;
+    virtual WebSize scrollOffset() const override;
+    virtual void setScrollOffset(const WebSize&) override;
+    virtual WebSize minimumScrollOffset() const override;
+    virtual WebSize maximumScrollOffset() const override;
+    virtual WebSize contentsSize() const override;
+    virtual bool hasVisibleContent() const override;
+    virtual WebRect visibleContentRect() const override;
+    virtual bool hasHorizontalScrollbar() const override;
+    virtual bool hasVerticalScrollbar() const override;
+    virtual WebView* view() const override;
+    virtual void setOpener(WebFrame*) override;
+    virtual WebDocument document() const override;
+    virtual WebPerformance performance() const override;
+    virtual bool dispatchBeforeUnloadEvent() override;
+    virtual void dispatchUnloadEvent() override;
+    virtual NPObject* windowObject() const override;
+    virtual void bindToWindowObject(const WebString& name, NPObject*) override;
+    virtual void bindToWindowObject(const WebString& name, NPObject*, void*) override;
+    virtual void executeScript(const WebScriptSource&) override;
     virtual void executeScriptInIsolatedWorld(
         int worldID, const WebScriptSource* sources, unsigned numSources,
-        int extensionGroup) OVERRIDE;
-    virtual void setIsolatedWorldSecurityOrigin(int worldID, const WebSecurityOrigin&) OVERRIDE;
-    virtual void setIsolatedWorldContentSecurityPolicy(int worldID, const WebString&) OVERRIDE;
-    virtual void setIsolatedWorldHumanReadableName(int worldID, const WebString&) OVERRIDE;
-    virtual void addMessageToConsole(const WebConsoleMessage&) OVERRIDE;
-    virtual void collectGarbage() OVERRIDE;
-    virtual bool checkIfRunInsecureContent(const WebURL&) const OVERRIDE;
-    virtual v8::Handle<v8::Value> executeScriptAndReturnValue(
-        const WebScriptSource&) OVERRIDE;
+        int extensionGroup) override;
+    virtual void setIsolatedWorldSecurityOrigin(int worldID, const WebSecurityOrigin&) override;
+    virtual void setIsolatedWorldContentSecurityPolicy(int worldID, const WebString&) override;
+    virtual void setIsolatedWorldHumanReadableName(int worldID, const WebString&) override;
+    virtual void addMessageToConsole(const WebConsoleMessage&) override;
+    virtual void collectGarbage() override;
+    virtual bool checkIfRunInsecureContent(const WebURL&) const override;
+    virtual v8::Local<v8::Value> executeScriptAndReturnValue(
+        const WebScriptSource&) override;
+    virtual void requestExecuteScriptAndReturnValue(
+        const WebScriptSource&, bool userGesture, WebScriptExecutionCallback*) override;
     virtual void executeScriptInIsolatedWorld(
         int worldID, const WebScriptSource* sourcesIn, unsigned numSources,
-        int extensionGroup, WebVector<v8::Local<v8::Value> >* results) OVERRIDE;
-    virtual v8::Handle<v8::Value> callFunctionEvenIfScriptDisabled(
-        v8::Handle<v8::Function>,
-        v8::Handle<v8::Value>,
+        int extensionGroup, WebVector<v8::Local<v8::Value>>* results) override;
+    virtual void requestExecuteScriptInIsolatedWorld(
+        int worldID, const WebScriptSource* sourceIn, unsigned numSources,
+        int extensionGroup, bool userGesture, WebScriptExecutionCallback*) override;
+    virtual v8::Local<v8::Value> callFunctionEvenIfScriptDisabled(
+        v8::Local<v8::Function>,
+        v8::Local<v8::Value>,
         int argc,
-        v8::Handle<v8::Value> argv[]) OVERRIDE;
-    virtual v8::Local<v8::Context> mainWorldScriptContext() const OVERRIDE;
-    virtual void reload(bool ignoreCache) OVERRIDE;
-    virtual void reloadWithOverrideURL(const WebURL& overrideUrl, bool ignoreCache) OVERRIDE;
-    virtual void loadRequest(const WebURLRequest&) OVERRIDE;
-    virtual void loadHistoryItem(const WebHistoryItem&, WebHistoryLoadType, WebURLRequest::CachePolicy) OVERRIDE;
+        v8::Local<v8::Value> argv[]) override;
+    virtual v8::Local<v8::Context> mainWorldScriptContext() const override;
+    virtual void reload(bool ignoreCache) override;
+    virtual void reloadWithOverrideURL(const WebURL& overrideUrl, bool ignoreCache) override;
+    virtual void reloadImage(const WebNode&) override;
+    virtual void loadRequest(const WebURLRequest&) override;
+    virtual void loadHistoryItem(const WebHistoryItem&, WebHistoryLoadType, WebURLRequest::CachePolicy) override;
     virtual void loadData(
         const WebData&, const WebString& mimeType, const WebString& textEncoding,
-        const WebURL& baseURL, const WebURL& unreachableURL, bool replace) OVERRIDE;
+        const WebURL& baseURL, const WebURL& unreachableURL, bool replace) override;
     virtual void loadHTMLString(
         const WebData& html, const WebURL& baseURL, const WebURL& unreachableURL,
-        bool replace) OVERRIDE;
-    virtual void stopLoading() OVERRIDE;
-    virtual WebDataSource* provisionalDataSource() const OVERRIDE;
-    virtual WebDataSource* dataSource() const OVERRIDE;
-    virtual void enableViewSourceMode(bool enable) OVERRIDE;
-    virtual bool isViewSourceModeEnabled() const OVERRIDE;
-    virtual void setReferrerForRequest(WebURLRequest&, const WebURL& referrer) OVERRIDE;
-    virtual void dispatchWillSendRequest(WebURLRequest&) OVERRIDE;
-    virtual WebURLLoader* createAssociatedURLLoader(const WebURLLoaderOptions&) OVERRIDE;
-    virtual unsigned unloadListenerCount() const OVERRIDE;
-    virtual void replaceSelection(const WebString&) OVERRIDE;
-    virtual void insertText(const WebString&) OVERRIDE;
-    virtual void setMarkedText(const WebString&, unsigned location, unsigned length) OVERRIDE;
-    virtual void unmarkText() OVERRIDE;
-    virtual bool hasMarkedText() const OVERRIDE;
-    virtual WebRange markedRange() const OVERRIDE;
-    virtual bool firstRectForCharacterRange(unsigned location, unsigned length, WebRect&) const OVERRIDE;
-    virtual size_t characterIndexForPoint(const WebPoint&) const OVERRIDE;
-    virtual bool executeCommand(const WebString&, const WebNode& = WebNode()) OVERRIDE;
-    virtual bool executeCommand(const WebString&, const WebString& value, const WebNode& = WebNode()) OVERRIDE;
-    virtual bool isCommandEnabled(const WebString&) const OVERRIDE;
-    virtual void enableContinuousSpellChecking(bool) OVERRIDE;
-    virtual bool isContinuousSpellCheckingEnabled() const OVERRIDE;
-    virtual void requestTextChecking(const WebElement&) OVERRIDE;
-    virtual void replaceMisspelledRange(const WebString&) OVERRIDE;
-    virtual void removeSpellingMarkers() OVERRIDE;
-    virtual bool hasSelection() const OVERRIDE;
-    virtual WebRange selectionRange() const OVERRIDE;
-    virtual WebString selectionAsText() const OVERRIDE;
-    virtual WebString selectionAsMarkup() const OVERRIDE;
-    virtual bool selectWordAroundCaret() OVERRIDE;
-    virtual void selectRange(const WebPoint& base, const WebPoint& extent) OVERRIDE;
-    virtual void selectRange(const WebRange&) OVERRIDE;
-    virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent) OVERRIDE;
-    virtual void moveCaretSelection(const WebPoint&) OVERRIDE;
-    virtual bool setEditableSelectionOffsets(int start, int end) OVERRIDE;
-    virtual bool setCompositionFromExistingText(int compositionStart, int compositionEnd, const WebVector<WebCompositionUnderline>& underlines) OVERRIDE;
-    virtual void extendSelectionAndDelete(int before, int after) OVERRIDE;
-    virtual void setCaretVisible(bool) OVERRIDE;
-    virtual int printBegin(const WebPrintParams&, const WebNode& constrainToNode) OVERRIDE;
-    virtual float printPage(int pageToPrint, WebCanvas*) OVERRIDE;
-    virtual float getPrintPageShrink(int page) OVERRIDE;
-    virtual void printEnd() OVERRIDE;
-    virtual bool isPrintScalingDisabledForPlugin(const WebNode&) OVERRIDE;
-    virtual int getPrintCopiesForPlugin(const WebNode&) OVERRIDE;
-    virtual bool hasCustomPageSizeStyle(int pageIndex) OVERRIDE;
-    virtual bool isPageBoxVisible(int pageIndex) OVERRIDE;
+        bool replace) override;
+    virtual void stopLoading() override;
+    virtual WebDataSource* provisionalDataSource() const override;
+    virtual WebDataSource* dataSource() const override;
+    virtual void enableViewSourceMode(bool enable) override;
+    virtual bool isViewSourceModeEnabled() const override;
+    virtual void setReferrerForRequest(WebURLRequest&, const WebURL& referrer) override;
+    virtual void dispatchWillSendRequest(WebURLRequest&) override;
+    virtual WebURLLoader* createAssociatedURLLoader(const WebURLLoaderOptions&) override;
+    virtual unsigned unloadListenerCount() const override;
+    virtual void replaceSelection(const WebString&) override;
+    virtual void insertText(const WebString&) override;
+    virtual void setMarkedText(const WebString&, unsigned location, unsigned length) override;
+    virtual void unmarkText() override;
+    virtual bool hasMarkedText() const override;
+    virtual WebRange markedRange() const override;
+    virtual bool firstRectForCharacterRange(unsigned location, unsigned length, WebRect&) const override;
+    virtual size_t characterIndexForPoint(const WebPoint&) const override;
+    virtual bool executeCommand(const WebString&, const WebNode& = WebNode()) override;
+    virtual bool executeCommand(const WebString&, const WebString& value, const WebNode& = WebNode()) override;
+    virtual bool isCommandEnabled(const WebString&) const override;
+    virtual void enableContinuousSpellChecking(bool) override;
+    virtual bool isContinuousSpellCheckingEnabled() const override;
+    virtual void requestTextChecking(const WebElement&) override;
+    virtual void replaceMisspelledRange(const WebString&) override;
+    virtual void removeSpellingMarkers() override;
+    virtual bool hasSelection() const override;
+    virtual WebRange selectionRange() const override;
+    virtual WebString selectionAsText() const override;
+    virtual WebString selectionAsMarkup() const override;
+    virtual bool selectWordAroundCaret() override;
+    virtual void selectRange(const WebPoint& base, const WebPoint& extent) override;
+    virtual void selectRange(const WebRange&) override;
+    virtual void moveRangeSelectionExtent(const WebPoint&) override;
+    virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent, WebFrame::TextGranularity = CharacterGranularity) override;
+    virtual void moveCaretSelection(const WebPoint&) override;
+    virtual bool setEditableSelectionOffsets(int start, int end) override;
+    virtual bool setCompositionFromExistingText(int compositionStart, int compositionEnd, const WebVector<WebCompositionUnderline>& underlines) override;
+    virtual void extendSelectionAndDelete(int before, int after) override;
+    virtual void setCaretVisible(bool) override;
+    virtual int printBegin(const WebPrintParams&, const WebNode& constrainToNode) override;
+    virtual float printPage(int pageToPrint, WebCanvas*) override;
+    virtual float getPrintPageShrink(int page) override;
+    virtual void printEnd() override;
+    virtual bool isPrintScalingDisabledForPlugin(const WebNode&) override;
+    virtual bool getPrintPresetOptionsForPlugin(const WebNode&, WebPrintPresetOptions*) override;
+    virtual bool hasCustomPageSizeStyle(int pageIndex) override;
+    virtual bool isPageBoxVisible(int pageIndex) override;
     virtual void pageSizeAndMarginsInPixels(
         int pageIndex,
         WebSize& pageSize,
         int& marginTop,
         int& marginRight,
         int& marginBottom,
-        int& marginLeft) OVERRIDE;
-    virtual WebString pageProperty(const WebString& propertyName, int pageIndex) OVERRIDE;
-    virtual void printPagesWithBoundaries(WebCanvas*, const WebSize&) OVERRIDE;
+        int& marginLeft) override;
+    virtual WebString pageProperty(const WebString& propertyName, int pageIndex) override;
+    virtual void printPagesWithBoundaries(WebCanvas*, const WebSize&) override;
     virtual bool find(
         int identifier, const WebString& searchText, const WebFindOptions&,
-        bool wrapWithinFrame, WebRect* selectionRect) OVERRIDE;
-    virtual void stopFinding(bool clearSelection) OVERRIDE;
+        bool wrapWithinFrame, WebRect* selectionRect) override;
+    virtual void stopFinding(bool clearSelection) override;
     virtual void scopeStringMatches(
         int identifier, const WebString& searchText, const WebFindOptions&,
-        bool reset) OVERRIDE;
-    virtual void cancelPendingScopingEffort() OVERRIDE;
-    virtual void increaseMatchCount(int count, int identifier) OVERRIDE;
-    virtual void resetMatchCount() OVERRIDE;
-    virtual int findMatchMarkersVersion() const OVERRIDE;
-    virtual WebFloatRect activeFindMatchRect() OVERRIDE;
-    virtual void findMatchRects(WebVector<WebFloatRect>&) OVERRIDE;
-    virtual int selectNearestFindMatch(const WebFloatPoint&, WebRect* selectionRect) OVERRIDE;
-    virtual void setTickmarks(const WebVector<WebRect>&) OVERRIDE;
+        bool reset) override;
+    virtual void cancelPendingScopingEffort() override;
+    virtual void increaseMatchCount(int count, int identifier) override;
+    virtual void resetMatchCount() override;
+    virtual int findMatchMarkersVersion() const override;
+    virtual WebFloatRect activeFindMatchRect() override;
+    virtual void findMatchRects(WebVector<WebFloatRect>&) override;
+    virtual int selectNearestFindMatch(const WebFloatPoint&, WebRect* selectionRect) override;
+    virtual void setTickmarks(const WebVector<WebRect>&) override;
 
     virtual void dispatchMessageEventWithOriginCheck(
         const WebSecurityOrigin& intendedTargetOrigin,
-        const WebDOMEvent&) OVERRIDE;
+        const WebDOMEvent&) override;
 
-    virtual WebString contentAsText(size_t maxChars) const OVERRIDE;
-    virtual WebString contentAsMarkup() const OVERRIDE;
-    virtual WebString renderTreeAsText(RenderAsTextControls toShow = RenderAsTextNormal) const OVERRIDE;
-    virtual WebString markerTextForListItem(const WebElement&) const OVERRIDE;
-    virtual WebRect selectionBoundsRect() const OVERRIDE;
+    virtual WebString contentAsText(size_t maxChars) const override;
+    virtual WebString contentAsMarkup() const override;
+    virtual WebString layoutTreeAsText(LayoutAsTextControls toShow = LayoutAsTextNormal) const override;
 
-    virtual bool selectionStartHasSpellingMarkerFor(int from, int length) const OVERRIDE;
-    virtual WebString layerTreeAsText(bool showDebugInfo = false) const OVERRIDE;
+    virtual WebString markerTextForListItem(const WebElement&) const override;
+    virtual WebRect selectionBoundsRect() const override;
+
+    virtual bool selectionStartHasSpellingMarkerFor(int from, int length) const override;
+    virtual WebString layerTreeAsText(bool showDebugInfo = false) const override;
 
     // WebLocalFrame methods:
-    virtual void sendPings(const WebNode& linkNode, const WebURL& destinationURL) OVERRIDE;
-    virtual bool isLoading() const OVERRIDE;
-    virtual bool isResourceLoadInProgress() const OVERRIDE;
-    virtual void addStyleSheetByURL(const WebString& url) OVERRIDE;
-    virtual void navigateToSandboxedMarkup(const WebData& markup) OVERRIDE;
-    virtual void sendOrientationChangeEvent() OVERRIDE;
-    virtual v8::Handle<v8::Value> executeScriptAndReturnValueForTests(
-        const WebScriptSource&) OVERRIDE;
+    virtual void initializeToReplaceRemoteFrame(WebRemoteFrame*, const WebString& name, WebSandboxFlags) override;
+    virtual void setAutofillClient(WebAutofillClient*) override;
+    virtual WebAutofillClient* autofillClient() override;
+    virtual void setDevToolsAgentClient(WebDevToolsAgentClient*) override;
+    virtual WebDevToolsAgent* devToolsAgent() override;
+    virtual void sendPings(const WebNode& linkNode, const WebURL& destinationURL) override;
+    virtual bool isLoading() const override;
+    virtual bool isResourceLoadInProgress() const override;
+    virtual void setCommittedFirstRealLoad() override;
+    virtual void addStyleSheetByURL(const WebString& url) override;
+    virtual void navigateToSandboxedMarkup(const WebData& markup) override;
+    virtual void sendOrientationChangeEvent() override;
+    virtual void willShowInstallBannerPrompt(int requestId, const WebVector<WebString>& platforms, WebAppBannerPromptReply*) override;
+    virtual void willShowInstallBannerPrompt(const WebVector<WebString>& platforms, WebAppBannerPromptReply*) override;
+    void requestRunTask(WebSuspendableTask*) const override;
 
+    void willBeDetached();
     void willDetachParent();
 
     static WebLocalFrameImpl* create(WebFrameClient*);
@@ -238,7 +253,7 @@ public:
 
     PassRefPtrWillBeRawPtr<LocalFrame> initializeCoreFrame(FrameHost*, FrameOwner*, const AtomicString& name, const AtomicString& fallbackName);
 
-    PassRefPtrWillBeRawPtr<LocalFrame> createChildFrame(const FrameLoadRequest&, HTMLFrameOwnerElement*);
+    PassRefPtrWillBeRawPtr<LocalFrame> createChildFrame(const FrameLoadRequest&, const AtomicString& name, HTMLFrameOwnerElement*);
 
     void didChangeContentsSize(const IntSize&);
 
@@ -260,6 +275,9 @@ public:
     WebViewImpl* viewImpl() const;
 
     FrameView* frameView() const { return frame() ? frame()->view() : 0; }
+
+    InspectorOverlay* inspectorOverlay();
+    WebDevToolsAgentImpl* devToolsAgentImpl() const { return m_devToolsAgent.get(); }
 
     // Getters for the impls corresponding to Get(Provisional)DataSource. They
     // may return 0 if there is no corresponding data source.
@@ -283,18 +301,18 @@ public:
     // allows us to navigate by pressing Enter after closing the Find box.
     void setFindEndstateFocusAndSelection();
 
-    void didFail(const ResourceError&, bool wasProvisional);
+    void didFail(const ResourceError&, bool wasProvisional, HistoryCommitType);
 
     // Sets whether the WebLocalFrameImpl allows its document to be scrolled.
     // If the parameter is true, allow the document to be scrolled.
     // Otherwise, disallow scrolling.
-    virtual void setCanHaveScrollbars(bool) OVERRIDE;
+    virtual void setCanHaveScrollbars(bool) override;
 
     LocalFrame* frame() const { return m_frame.get(); }
     WebFrameClient* client() const { return m_client; }
     void setClient(WebFrameClient* client) { m_client = client; }
 
-    WebPermissionClient* permissionClient() { return m_permissionClient; }
+    WebContentSettingsClient* contentSettingsClient() { return m_contentSettingsClient; }
     SharedWorkerRepositoryClientImpl* sharedWorkerRepositoryClient() const { return m_sharedWorkerRepositoryClient.get(); }
 
     void setInputEventsTransformForEmulation(const IntSize&, float);
@@ -305,16 +323,19 @@ public:
     // Otherwise creates it and then returns.
     TextFinder& ensureTextFinder();
 
-    // Invalidates vertical scrollbar only.
-    void invalidateScrollbar() const;
-
-    // Invalidates both content area and the scrollbar.
-    void invalidateAll() const;
-
     // Returns a hit-tested VisiblePosition for the given point
-    VisiblePosition visiblePositionForWindowPoint(const WebPoint&);
+    VisiblePosition visiblePositionForViewportPoint(const WebPoint&);
 
-    void trace(Visitor*);
+    void setFrameWidget(WebFrameWidgetImpl*);
+    WebFrameWidgetImpl* frameWidget() const;
+
+    // DevTools front-end bindings.
+    void setDevToolsFrontend(WebDevToolsFrontendImpl* frontend) { m_webDevToolsFrontend = frontend; }
+    WebDevToolsFrontendImpl* devToolsFrontend() { return m_webDevToolsFrontend; }
+
+#if ENABLE(OILPAN)
+    DECLARE_TRACE();
+#endif
 
 private:
     friend class FrameLoaderClientImpl;
@@ -335,16 +356,19 @@ private:
     // FIXME: These will need to change to WebFrame when we introduce WebFrameProxy.
     RefPtrWillBeMember<LocalFrame> m_frame;
 
-    // Indicate whether the current LocalFrame is local or remote. Remote frames are
-    // rendered in a different process from their parent frames.
-    bool m_isRemote;
+    OwnPtrWillBeMember<InspectorOverlay> m_inspectorOverlay;
+    OwnPtrWillBeMember<WebDevToolsAgentImpl> m_devToolsAgent;
+
+    // This is set if the frame is the root of a local frame tree, and requires a widget for layout.
+    WebFrameWidgetImpl* m_frameWidget;
 
     WebFrameClient* m_client;
-    WebPermissionClient* m_permissionClient;
+    WebAutofillClient* m_autofillClient;
+    WebContentSettingsClient* m_contentSettingsClient;
     OwnPtr<SharedWorkerRepositoryClientImpl> m_sharedWorkerRepositoryClient;
 
     // Will be initialized after first call to find() or scopeStringMatches().
-    OwnPtr<TextFinder> m_textFinder;
+    OwnPtrWillBeMember<TextFinder> m_textFinder;
 
     // Valid between calls to BeginPrint() and EndPrint(). Containts the print
     // information. Is used by PrintPage().
@@ -357,6 +381,8 @@ private:
     UserMediaClientImpl m_userMediaClientImpl;
 
     OwnPtrWillBeMember<GeolocationClientProxy> m_geolocationClientProxy;
+
+    WebDevToolsFrontendImpl* m_webDevToolsFrontend;
 
 #if ENABLE(OILPAN)
     // Oilpan: to provide the guarantee of having the frame live until

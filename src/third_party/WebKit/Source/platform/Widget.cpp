@@ -27,13 +27,12 @@
 #include "config.h"
 #include "platform/Widget.h"
 
-
 #include "wtf/Assertions.h"
 
 namespace blink {
 
 Widget::Widget()
-    : m_parent(0)
+    : m_parent(nullptr)
     , m_selfVisible(false)
     , m_parentVisible(false)
 {
@@ -41,7 +40,14 @@ Widget::Widget()
 
 Widget::~Widget()
 {
+#if !ENABLE(OILPAN)
     ASSERT(!parent());
+#endif
+}
+
+DEFINE_TRACE(Widget)
+{
+    visitor->trace(m_parent);
 }
 
 void Widget::setParent(Widget* widget)

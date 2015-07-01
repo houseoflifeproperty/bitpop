@@ -37,27 +37,27 @@ namespace blink {
 class BaseChooserOnlyDateAndTimeInputType : public BaseDateAndTimeInputType, public DateTimeChooserClient {
 protected:
     BaseChooserOnlyDateAndTimeInputType(HTMLInputElement& element) : BaseDateAndTimeInputType(element) { }
-    virtual ~BaseChooserOnlyDateAndTimeInputType();
+    ~BaseChooserOnlyDateAndTimeInputType() override;
 
 private:
     void closeDateTimeChooser();
 
     // InputType functions:
-    virtual void createShadowSubtree() OVERRIDE;
-    virtual void closePopupView() OVERRIDE;
-    virtual void setValue(const String&, bool valueChanged, TextFieldEventBehavior) OVERRIDE;
-    virtual void handleDOMActivateEvent(Event*) OVERRIDE;
-    virtual void handleKeydownEvent(KeyboardEvent*) OVERRIDE;
-    virtual void handleKeypressEvent(KeyboardEvent*) OVERRIDE;
-    virtual void handleKeyupEvent(KeyboardEvent*) OVERRIDE;
-    virtual void accessKeyAction(bool sendMouseEvents) OVERRIDE;
-    virtual void updateView() OVERRIDE;
+    void createShadowSubtree() override;
+    void closePopupView() override;
+    void setValue(const String&, bool valueChanged, TextFieldEventBehavior) override;
+    void handleDOMActivateEvent(Event*) override;
+    void handleKeydownEvent(KeyboardEvent*) override;
+    void handleKeypressEvent(KeyboardEvent*) override;
+    void handleKeyupEvent(KeyboardEvent*) override;
+    void accessKeyAction(bool sendMouseEvents) override;
+    void updateView() override;
 
     // DateTimeChooserClient functions:
-    virtual Element& ownerElement() const OVERRIDE;
-    virtual void didChooseValue(const String&) OVERRIDE;
-    virtual void didChooseValue(double) OVERRIDE;
-    virtual void didEndChooser() OVERRIDE;
+    Element& ownerElement() const override;
+    void didChooseValue(const String&) override;
+    void didChooseValue(double) override;
+    void didEndChooser() override;
 
     RefPtr<DateTimeChooser> m_dateTimeChooser;
 };

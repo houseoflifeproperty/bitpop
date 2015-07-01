@@ -27,7 +27,7 @@ class EchoDialogView : public views::DialogDelegateView,
                        public views::StyledLabelListener {
  public:
   explicit EchoDialogView(EchoDialogListener* listener);
-  virtual ~EchoDialogView();
+  ~EchoDialogView() override;
 
   // Initializes dialog layout that will be showed when echo extension is
   // allowed to redeem offers. |service_name| is the name of the service that
@@ -50,23 +50,23 @@ class EchoDialogView : public views::DialogDelegateView,
   friend class ExtensionEchoPrivateApiTest;
 
   // views::DialogDelegate overrides.
-  virtual int GetDialogButtons() const OVERRIDE;
-  virtual int GetDefaultDialogButton() const OVERRIDE;
-  virtual base::string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
-  virtual bool Cancel() OVERRIDE;
-  virtual bool Accept() OVERRIDE;
+  int GetDialogButtons() const override;
+  int GetDefaultDialogButton() const override;
+  base::string16 GetDialogButtonLabel(ui::DialogButton button) const override;
+  bool Cancel() override;
+  bool Accept() override;
 
   // views::WidgetDelegate overrides.
-  virtual ui::ModalType GetModalType() const OVERRIDE;
-  virtual bool ShouldShowWindowTitle() const OVERRIDE;
-  virtual bool ShouldShowWindowIcon() const OVERRIDE;
+  ui::ModalType GetModalType() const override;
+  bool ShouldShowWindowTitle() const override;
+  bool ShouldShowWindowIcon() const override;
 
   // views::LinkListener override.
-  virtual void StyledLabelLinkClicked(const gfx::Range& range,
-                                      int event_flags) OVERRIDE;
+  void StyledLabelLinkClicked(const gfx::Range& range,
+                              int event_flags) override;
 
   // views::View override.
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
 
   // Sets the border and bounds for the styled label containing the dialog
   // text.

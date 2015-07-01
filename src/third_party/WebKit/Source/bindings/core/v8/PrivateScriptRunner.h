@@ -6,20 +6,21 @@
 #define PrivateScriptRunner_h
 
 #include "bindings/core/v8/ExceptionState.h"
+#include "core/CoreExport.h"
 #include "wtf/text/WTFString.h"
 #include <v8.h>
 
 namespace blink {
 
-class LocalFrame;
+class Document;
 class ScriptState;
 
-class PrivateScriptRunner {
+class CORE_EXPORT PrivateScriptRunner {
 public:
-    static v8::Handle<v8::Value> installClassIfNeeded(LocalFrame*, String className);
-    static v8::Handle<v8::Value> runDOMAttributeGetter(ScriptState*, ScriptState* scriptStateInUserScript, const char* className, const char* attributeName, v8::Handle<v8::Value> holder);
-    static bool runDOMAttributeSetter(ScriptState*, ScriptState* scriptStateInUserScript, const char* className, const char* attributeName, v8::Handle<v8::Value> holder, v8::Handle<v8::Value> v8Value);
-    static v8::Handle<v8::Value> runDOMMethod(ScriptState*, ScriptState* scriptStateInUserScript, const char* className, const char* methodName, v8::Handle<v8::Value> holder, int argc, v8::Handle<v8::Value> argv[]);
+    static v8::Local<v8::Value> installClassIfNeeded(Document*, String className);
+    static v8::Local<v8::Value> runDOMAttributeGetter(ScriptState*, ScriptState* scriptStateInUserScript, const char* className, const char* attributeName, v8::Local<v8::Value> holder);
+    static bool runDOMAttributeSetter(ScriptState*, ScriptState* scriptStateInUserScript, const char* className, const char* attributeName, v8::Local<v8::Value> holder, v8::Local<v8::Value> v8Value);
+    static v8::Local<v8::Value> runDOMMethod(ScriptState*, ScriptState* scriptStateInUserScript, const char* className, const char* methodName, v8::Local<v8::Value> holder, int argc, v8::Local<v8::Value> argv[]);
 };
 
 } // namespace blink

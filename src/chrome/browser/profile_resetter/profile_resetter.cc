@@ -10,7 +10,6 @@
 #include "base/prefs/scoped_user_pref_update.h"
 #include "base/synchronization/cancellation_flag.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/profile_resetter/brandcoded_default_settings.h"
@@ -21,7 +20,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/util/browser_distribution.h"
-#include "components/google/core/browser/google_pref_names.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/google/core/browser/google_url_tracker.h"
 #include "components/search_engines/search_engines_pref_names.h"
 #include "components/search_engines/template_url_prepopulate_data.h"
@@ -38,7 +37,7 @@
 namespace {
 
 void ResetShortcutsOnFileThread() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::FILE);
   // Get full path of chrome.
   base::FilePath chrome_exe;
   if (!PathService::Get(base::FILE_EXE, &chrome_exe))
@@ -117,7 +116,7 @@ void ProfileResetter::Reset(
   };
 
   ResettableFlags reset_triggered_for_flags = 0;
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(flagToMethod); ++i) {
+  for (size_t i = 0; i < arraysize(flagToMethod); ++i) {
     if (resettable_flags & flagToMethod[i].flag) {
       reset_triggered_for_flags |= flagToMethod[i].flag;
       (this->*flagToMethod[i].method)();
@@ -128,7 +127,7 @@ void ProfileResetter::Reset(
 }
 
 bool ProfileResetter::IsActive() const {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   return pending_reset_flags_ != 0;
 }
 
@@ -171,7 +170,6 @@ void ProfileResetter::ResetDefaultSearchEngine() {
     template_url_service_->RepairPrepopulatedSearchEngines();
 
     // Reset Google search URL.
-    prefs->ClearPref(prefs::kLastPromptedGoogleURL);
     const TemplateURL* default_search_provider =
         template_url_service_->GetDefaultSearchProvider();
     if (default_search_provider &&
@@ -328,7 +326,7 @@ void ProfileResetter::OnBrowsingDataRemoverDone() {
 
 std::vector<ShortcutCommand> GetChromeLaunchShortcuts(
     const scoped_refptr<SharedCancellationFlag>& cancel) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::FILE);
 #if defined(OS_WIN)
   // Get full path of chrome.
   base::FilePath chrome_exe;
@@ -339,7 +337,7 @@ std::vector<ShortcutCommand> GetChromeLaunchShortcuts(
   std::vector<ShortcutCommand> shortcuts;
   for (int location = ShellUtil::SHORTCUT_LOCATION_FIRST;
        location < ShellUtil::NUM_SHORTCUT_LOCATIONS; ++location) {
-    if (cancel && cancel->data.IsSet())
+    if (cancel.get() && cancel->data.IsSet())
       break;
     ShellUtil::ShortcutListMaybeRemoveUnknownArgs(
         static_cast<ShellUtil::ShortcutLocation>(location),

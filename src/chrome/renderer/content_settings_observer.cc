@@ -6,14 +6,12 @@
 
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
-#include "chrome/common/chrome_switches.h"
-#include "chrome/common/render_messages.h"
-#include "chrome/common/url_constants.h"
+#include "components/content_settings/content/common/content_settings_messages.h"
+#include "content/public/common/url_constants.h"
 #include "content/public/renderer/document_state.h"
-#include "content/public/renderer/navigation_state.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_view.h"
-#include "third_party/WebKit/public/platform/WebPermissionCallbacks.h"
+#include "third_party/WebKit/public/platform/WebContentSettingCallbacks.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -21,6 +19,7 @@
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebView.h"
+#include "url/url_constants.h"
 
 #if defined(ENABLE_EXTENSIONS)
 #include "chrome/common/extensions/chrome_extension_messages.h"
@@ -31,10 +30,10 @@
 #include "extensions/renderer/dispatcher.h"
 #endif
 
+using blink::WebContentSettingCallbacks;
 using blink::WebDataSource;
 using blink::WebDocument;
 using blink::WebFrame;
-using blink::WebPermissionCallbacks;
 using blink::WebSecurityOrigin;
 using blink::WebString;
 using blink::WebURL;
@@ -115,9 +114,12 @@ static bool IsHostInDomain(const std::string& host, const std::string& domain) {
 }
 
 GURL GetOriginOrURL(const WebFrame* frame) {
-  WebString top_origin = frame->top()->document().securityOrigin().toString();
-  // The the |top_origin| is unique ("null") e.g., for file:// URLs. Use the
+  WebString top_origin = frame->top()->securityOrigin().toString();
+  // The |top_origin| is unique ("null") e.g., for file:// URLs. Use the
   // document URL as the primary URL in those cases.
+  // TODO(alexmos): This is broken for --site-per-process, since top() can be a
+  // WebRemoteFrame which does not have a document(), and the WebRemoteFrame's
+  // URL is not replicated.
   if (top_origin == "null")
     return frame->top()->document().url();
   return GURL(top_origin);
@@ -150,7 +152,8 @@ ContentSetting GetContentSettingFromRules(
 
 ContentSettingsObserver::ContentSettingsObserver(
     content::RenderFrame* render_frame,
-    extensions::Dispatcher* extension_dispatcher)
+    extensions::Dispatcher* extension_dispatcher,
+    bool should_whitelist)
     : content::RenderFrameObserver(render_frame),
       content::RenderFrameObserverTracker<ContentSettingsObserver>(
           render_frame),
@@ -162,9 +165,10 @@ ContentSettingsObserver::ContentSettingsObserver(
       content_setting_rules_(NULL),
       is_interstitial_page_(false),
       npapi_plugins_blocked_(false),
-      current_request_id_(0) {
+      current_request_id_(0),
+      should_whitelist_(should_whitelist) {
   ClearBlockedContentSettings();
-  render_frame->GetWebFrame()->setPermissionClient(this);
+  render_frame->GetWebFrame()->setContentSettingsClient(this);
 
   if (render_frame->GetRenderView()->GetMainRenderFrame() != render_frame) {
     // Copy all the settings from the main render frame to avoid race conditions
@@ -190,7 +194,7 @@ void ContentSettingsObserver::SetContentSettingRules(
 
 bool ContentSettingsObserver::IsPluginTemporarilyAllowed(
     const std::string& identifier) {
-  // If the empty string is in here, it means all plug-ins are allowed.
+  // If the empty string is in here, it means all plugins are allowed.
   // TODO(bauerb): Remove this once we only pass in explicit identifiers.
   return (temporarily_allowed_plugins_.find(identifier) !=
           temporarily_allowed_plugins_.end()) ||
@@ -200,9 +204,17 @@ bool ContentSettingsObserver::IsPluginTemporarilyAllowed(
 
 void ContentSettingsObserver::DidBlockContentType(
     ContentSettingsType settings_type) {
-  if (!content_blocked_[settings_type]) {
+  DidBlockContentType(settings_type, base::string16());
+}
+
+void ContentSettingsObserver::DidBlockContentType(
+    ContentSettingsType settings_type,
+    const base::string16& details) {
+  // Send multiple ContentBlocked messages if details are provided.
+  if (!content_blocked_[settings_type] || !details.empty()) {
     content_blocked_[settings_type] = true;
-    Send(new ChromeViewHostMsg_ContentBlocked(routing_id(), settings_type));
+    Send(new ChromeViewHostMsg_ContentBlocked(routing_id(), settings_type,
+                                              details));
   }
 }
 
@@ -232,15 +244,14 @@ bool ContentSettingsObserver::OnMessageReceived(const IPC::Message& message) {
   return false;
 }
 
-void ContentSettingsObserver::DidCommitProvisionalLoad(bool is_new_navigation) {
+void ContentSettingsObserver::DidCommitProvisionalLoad(
+    bool is_new_navigation,
+    bool is_same_page_navigation) {
   WebFrame* frame = render_frame()->GetWebFrame();
   if (frame->parent())
     return;  // Not a top-level navigation.
 
-  DocumentState* document_state = DocumentState::FromDataSource(
-      frame->dataSource());
-  NavigationState* navigation_state = document_state->navigation_state();
-  if (!navigation_state->was_within_same_page()) {
+  if (!is_same_page_navigation) {
     // Clear "block" flags for the new page. This needs to happen before any of
     // |allowScript()|, |allowScriptFromSource()|, |allowImage()|, or
     // |allowPlugins()| is called for the new page so that these functions can
@@ -261,24 +272,24 @@ bool ContentSettingsObserver::allowDatabase(const WebString& name,
                                             const WebString& display_name,
                                             unsigned long estimated_size) {
   WebFrame* frame = render_frame()->GetWebFrame();
-  if (frame->document().securityOrigin().isUnique() ||
-      frame->top()->document().securityOrigin().isUnique())
+  if (frame->securityOrigin().isUnique() ||
+      frame->top()->securityOrigin().isUnique())
     return false;
 
   bool result = false;
   Send(new ChromeViewHostMsg_AllowDatabase(
-      routing_id(), GURL(frame->document().securityOrigin().toString()),
-      GURL(frame->top()->document().securityOrigin().toString()),
-      name, display_name, &result));
+      routing_id(), GURL(frame->securityOrigin().toString()),
+      GURL(frame->top()->securityOrigin().toString()), name, display_name,
+      &result));
   return result;
 }
 
 void ContentSettingsObserver::requestFileSystemAccessAsync(
-    const WebPermissionCallbacks& callbacks) {
+    const WebContentSettingCallbacks& callbacks) {
   WebFrame* frame = render_frame()->GetWebFrame();
-  if (frame->document().securityOrigin().isUnique() ||
-      frame->top()->document().securityOrigin().isUnique()) {
-    WebPermissionCallbacks permissionCallbacks(callbacks);
+  if (frame->securityOrigin().isUnique() ||
+      frame->top()->securityOrigin().isUnique()) {
+    WebContentSettingCallbacks permissionCallbacks(callbacks);
     permissionCallbacks.doDeny();
     return;
   }
@@ -291,10 +302,9 @@ void ContentSettingsObserver::requestFileSystemAccessAsync(
   DCHECK(insert_result.second);
 
   Send(new ChromeViewHostMsg_RequestFileSystemAccessAsync(
-      routing_id(),
-      current_request_id_,
-      GURL(frame->document().securityOrigin().toString()),
-      GURL(frame->top()->document().securityOrigin().toString())));
+      routing_id(), current_request_id_,
+      GURL(frame->securityOrigin().toString()),
+      GURL(frame->top()->securityOrigin().toString())));
 }
 
 bool ContentSettingsObserver::allowImage(bool enabled_per_settings,
@@ -304,7 +314,7 @@ bool ContentSettingsObserver::allowImage(bool enabled_per_settings,
     if (is_interstitial_page_)
       return true;
 
-    if (IsWhitelistedForContentSettings(render_frame()))
+    if (IsWhitelistedForContentSettings())
       return true;
 
     if (content_setting_rules_) {
@@ -323,15 +333,14 @@ bool ContentSettingsObserver::allowImage(bool enabled_per_settings,
 bool ContentSettingsObserver::allowIndexedDB(const WebString& name,
                                              const WebSecurityOrigin& origin) {
   WebFrame* frame = render_frame()->GetWebFrame();
-  if (frame->document().securityOrigin().isUnique() ||
-      frame->top()->document().securityOrigin().isUnique())
+  if (frame->securityOrigin().isUnique() ||
+      frame->top()->securityOrigin().isUnique())
     return false;
 
   bool result = false;
   Send(new ChromeViewHostMsg_AllowIndexedDB(
-      routing_id(), GURL(frame->document().securityOrigin().toString()),
-      GURL(frame->top()->document().securityOrigin().toString()),
-      name, &result));
+      routing_id(), GURL(frame->securityOrigin().toString()),
+      GURL(frame->top()->securityOrigin().toString()), name, &result));
   return result;
 }
 
@@ -362,7 +371,7 @@ bool ContentSettingsObserver::allowScript(bool enabled_per_settings) {
         GURL(frame->document().securityOrigin().toString()));
     allow = setting != CONTENT_SETTING_BLOCK;
   }
-  allow = allow || IsWhitelistedForContentSettings(render_frame());
+  allow = allow || IsWhitelistedForContentSettings();
 
   cached_script_permissions_[frame] = allow;
   return allow;
@@ -384,13 +393,13 @@ bool ContentSettingsObserver::allowScriptFromSource(
                                    GURL(script_url));
     allow = setting != CONTENT_SETTING_BLOCK;
   }
-  return allow || IsWhitelistedForContentSettings(render_frame());
+  return allow || IsWhitelistedForContentSettings();
 }
 
 bool ContentSettingsObserver::allowStorage(bool local) {
   WebFrame* frame = render_frame()->GetWebFrame();
-  if (frame->document().securityOrigin().isUnique() ||
-      frame->top()->document().securityOrigin().isUnique())
+  if (frame->securityOrigin().isUnique() ||
+      frame->top()->securityOrigin().isUnique())
     return false;
   bool result = false;
 
@@ -402,31 +411,27 @@ bool ContentSettingsObserver::allowStorage(bool local) {
     return permissions->second;
 
   Send(new ChromeViewHostMsg_AllowDOMStorage(
-      routing_id(), GURL(frame->document().securityOrigin().toString()),
-      GURL(frame->top()->document().securityOrigin().toString()),
-      local, &result));
+      routing_id(), GURL(frame->securityOrigin().toString()),
+      GURL(frame->top()->securityOrigin().toString()), local, &result));
   cached_storage_permissions_[key] = result;
   return result;
 }
 
 bool ContentSettingsObserver::allowReadFromClipboard(bool default_value) {
-  bool allowed = false;
+  bool allowed = default_value;
 #if defined(ENABLE_EXTENSIONS)
   extensions::ScriptContext* calling_context =
       extension_dispatcher_->script_context_set().GetCalling();
   if (calling_context) {
-    const extensions::Extension* extension =
-        calling_context->effective_extension();
-    allowed = extension &&
-              extension->permissions_data()->HasAPIPermission(
-                  extensions::APIPermission::kClipboardRead);
+    allowed |= calling_context->HasAPIPermission(
+        extensions::APIPermission::kClipboardRead);
   }
 #endif
   return allowed;
 }
 
 bool ContentSettingsObserver::allowWriteToClipboard(bool default_value) {
-  bool allowed = false;
+  bool allowed = default_value;
 #if defined(ENABLE_EXTENSIONS)
   // All blessed extension pages could historically write to the clipboard, so
   // preserve that for compatibility.
@@ -437,11 +442,8 @@ bool ContentSettingsObserver::allowWriteToClipboard(bool default_value) {
         extensions::Feature::BLESSED_EXTENSION_CONTEXT) {
       allowed = true;
     } else {
-      const extensions::Extension* extension =
-          calling_context->effective_extension();
-      allowed = extension &&
-                extension->permissions_data()->HasAPIPermission(
-                    extensions::APIPermission::kClipboardWrite);
+      allowed |= calling_context->HasAPIPermission(
+          extensions::APIPermission::kClipboardWrite);
     }
   }
 #endif
@@ -450,10 +452,6 @@ bool ContentSettingsObserver::allowWriteToClipboard(bool default_value) {
 
 bool ContentSettingsObserver::allowMutationEvents(bool default_value) {
   return IsPlatformApp() ? false : default_value;
-}
-
-bool ContentSettingsObserver::allowPushState() {
-  return !IsPlatformApp();
 }
 
 static void SendInsecureContentSignal(int signal) {
@@ -576,7 +574,7 @@ bool ContentSettingsObserver::allowRunningInsecureContent(
     SendInsecureContentSignal(INSECURE_CONTENT_RUN_SWF);
 
   if (!allow_running_insecure_content_ && !allowed_per_settings) {
-    DidBlockContentType(CONTENT_SETTINGS_TYPE_MIXEDSCRIPT);
+    DidBlockContentType(CONTENT_SETTINGS_TYPE_MIXEDSCRIPT, origin.host());
     return false;
   }
 
@@ -630,7 +628,7 @@ void ContentSettingsObserver::OnRequestFileSystemAccessAsyncResponse(
   if (it == permission_requests_.end())
     return;
 
-  WebPermissionCallbacks callbacks = it->second;
+  WebContentSettingCallbacks callbacks = it->second;
   permission_requests_.erase(it);
 
   if (allowed) {
@@ -672,18 +670,16 @@ const extensions::Extension* ContentSettingsObserver::GetExtension(
 }
 #endif
 
-bool ContentSettingsObserver::IsWhitelistedForContentSettings(
-    content::RenderFrame* frame) {
-  // Whitelist Instant processes.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kInstantProcess))
+bool ContentSettingsObserver::IsWhitelistedForContentSettings() const {
+  if (should_whitelist_)
     return true;
 
   // Whitelist ftp directory listings, as they require JavaScript to function
   // properly.
-  if (frame->IsFTPDirectoryListing())
+  if (render_frame()->IsFTPDirectoryListing())
     return true;
 
-  WebFrame* web_frame = frame->GetWebFrame();
+  WebFrame* web_frame = render_frame()->GetWebFrame();
   return IsWhitelistedForContentSettings(web_frame->document().securityOrigin(),
                                          web_frame->document().url());
 }

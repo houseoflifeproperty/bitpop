@@ -30,6 +30,7 @@
 #include "wtf/text/ASCIIFastPath.h"
 #include "wtf/text/StringImpl.h"
 #include "wtf/text/StringView.h"
+#include <algorithm>
 
 #ifdef __OBJC__
 #include <objc/objc.h>
@@ -50,8 +51,6 @@ WTF_EXPORT int64_t charactersToInt64Strict(const LChar*, size_t, bool* ok = 0, i
 WTF_EXPORT int64_t charactersToInt64Strict(const UChar*, size_t, bool* ok = 0, int base = 10);
 WTF_EXPORT uint64_t charactersToUInt64Strict(const LChar*, size_t, bool* ok = 0, int base = 10);
 WTF_EXPORT uint64_t charactersToUInt64Strict(const UChar*, size_t, bool* ok = 0, int base = 10);
-WTF_EXPORT intptr_t charactersToIntPtrStrict(const LChar*, size_t, bool* ok = 0, int base = 10);
-WTF_EXPORT intptr_t charactersToIntPtrStrict(const UChar*, size_t, bool* ok = 0, int base = 10);
 
 WTF_EXPORT int charactersToInt(const LChar*, size_t, bool* ok = 0); // ignores trailing garbage
 WTF_EXPORT int charactersToInt(const UChar*, size_t, bool* ok = 0); // ignores trailing garbage
@@ -61,8 +60,6 @@ WTF_EXPORT int64_t charactersToInt64(const LChar*, size_t, bool* ok = 0); // ign
 WTF_EXPORT int64_t charactersToInt64(const UChar*, size_t, bool* ok = 0); // ignores trailing garbage
 WTF_EXPORT uint64_t charactersToUInt64(const LChar*, size_t, bool* ok = 0); // ignores trailing garbage
 WTF_EXPORT uint64_t charactersToUInt64(const UChar*, size_t, bool* ok = 0); // ignores trailing garbage
-WTF_EXPORT intptr_t charactersToIntPtr(const LChar*, size_t, bool* ok = 0); // ignores trailing garbage
-WTF_EXPORT intptr_t charactersToIntPtr(const UChar*, size_t, bool* ok = 0); // ignores trailing garbage
 
 // FIXME: Like the strict functions above, these give false for "ok" when there is trailing garbage.
 // Like the non-strict functions above, these return the value when there is trailing garbage.
@@ -231,12 +228,12 @@ public:
         { return m_impl ? m_impl->reverseFindIgnoringCase(str.impl(), start) : kNotFound; }
 
     // Wrappers for find & reverseFind adding dynamic sensitivity check.
-    size_t find(const LChar* str, unsigned start, bool caseSensitive) const
-        { return caseSensitive ? find(str, start) : findIgnoringCase(str, start); }
-    size_t find(const String& str, unsigned start, bool caseSensitive) const
-        { return caseSensitive ? find(str, start) : findIgnoringCase(str, start); }
-    size_t reverseFind(const String& str, unsigned start, bool caseSensitive) const
-        { return caseSensitive ? reverseFind(str, start) : reverseFindIgnoringCase(str, start); }
+    size_t find(const LChar* str, unsigned start, TextCaseSensitivity caseSensitivity) const
+        { return (caseSensitivity == TextCaseSensitive) ? find(str, start) : findIgnoringCase(str, start); }
+    size_t find(const String& str, unsigned start, TextCaseSensitivity caseSensitivity) const
+        { return (caseSensitivity == TextCaseSensitive) ? find(str, start) : findIgnoringCase(str, start); }
+    size_t reverseFind(const String& str, unsigned start, TextCaseSensitivity caseSensitivity) const
+        { return (caseSensitivity == TextCaseSensitive) ? reverseFind(str, start) : reverseFindIgnoringCase(str, start); }
 
     Vector<UChar> charactersWithNullTermination() const;
     unsigned copyTo(UChar* buffer, unsigned pos, unsigned maxLength) const;
@@ -253,24 +250,24 @@ public:
     UChar32 characterStartingAt(unsigned) const;
 
     bool contains(UChar c) const { return find(c) != kNotFound; }
-    bool contains(const LChar* str, bool caseSensitive = true) const { return find(str, 0, caseSensitive) != kNotFound; }
-    bool contains(const String& str, bool caseSensitive = true) const { return find(str, 0, caseSensitive) != kNotFound; }
+    bool contains(const LChar* str, TextCaseSensitivity caseSensitivity = TextCaseSensitive) const { return find(str, 0, caseSensitivity) != kNotFound; }
+    bool contains(const String& str, TextCaseSensitivity caseSensitivity = TextCaseSensitive) const { return find(str, 0, caseSensitivity) != kNotFound; }
 
-    bool startsWith(const String& s, bool caseSensitive = true) const
-        { return m_impl ? m_impl->startsWith(s.impl(), caseSensitive) : s.isEmpty(); }
+    bool startsWith(const String& s, TextCaseSensitivity caseSensitivity = TextCaseSensitive) const
+        { return m_impl ? m_impl->startsWith(s.impl(), caseSensitivity) : s.isEmpty(); }
     bool startsWith(UChar character) const
         { return m_impl ? m_impl->startsWith(character) : false; }
     template<unsigned matchLength>
-    bool startsWith(const char (&prefix)[matchLength], bool caseSensitive = true) const
-        { return m_impl ? m_impl->startsWith<matchLength>(prefix, caseSensitive) : !matchLength; }
+    bool startsWith(const char (&prefix)[matchLength], TextCaseSensitivity caseSensitivity = TextCaseSensitive) const
+        { return m_impl ? m_impl->startsWith<matchLength>(prefix, caseSensitivity) : !matchLength; }
 
-    bool endsWith(const String& s, bool caseSensitive = true) const
-        { return m_impl ? m_impl->endsWith(s.impl(), caseSensitive) : s.isEmpty(); }
+    bool endsWith(const String& s, TextCaseSensitivity caseSensitivity = TextCaseSensitive) const
+        { return m_impl ? m_impl->endsWith(s.impl(), caseSensitivity) : s.isEmpty(); }
     bool endsWith(UChar character) const
         { return m_impl ? m_impl->endsWith(character) : false; }
     template<unsigned matchLength>
-    bool endsWith(const char (&prefix)[matchLength], bool caseSensitive = true) const
-        { return m_impl ? m_impl->endsWith<matchLength>(prefix, caseSensitive) : !matchLength; }
+    bool endsWith(const char (&prefix)[matchLength], TextCaseSensitivity caseSensitivity = TextCaseSensitive) const
+        { return m_impl ? m_impl->endsWith<matchLength>(prefix, caseSensitivity) : !matchLength; }
 
     void append(const String&);
     void append(LChar);
@@ -352,21 +349,17 @@ public:
     unsigned toUIntStrict(bool* ok = 0, int base = 10) const;
     int64_t toInt64Strict(bool* ok = 0, int base = 10) const;
     uint64_t toUInt64Strict(bool* ok = 0, int base = 10) const;
-    intptr_t toIntPtrStrict(bool* ok = 0, int base = 10) const;
 
     int toInt(bool* ok = 0) const;
     unsigned toUInt(bool* ok = 0) const;
     int64_t toInt64(bool* ok = 0) const;
     uint64_t toUInt64(bool* ok = 0) const;
-    intptr_t toIntPtr(bool* ok = 0) const;
 
     // FIXME: Like the strict functions above, these give false for "ok" when there is trailing garbage.
     // Like the non-strict functions above, these return the value when there is trailing garbage.
     // It would be better if these were more consistent with the above functions instead.
     double toDouble(bool* ok = 0) const;
     float toFloat(bool* ok = 0) const;
-
-    bool percentage(int& percentage) const;
 
     String isolatedCopy() const;
     bool isSafeToSendToAnotherThread() const;
@@ -558,27 +551,6 @@ inline void append(Vector<UChar, inlineCapacity>& vector, const String& string)
     }
 }
 
-template<typename CharacterType>
-inline void appendNumber(Vector<CharacterType>& vector, unsigned char number)
-{
-    int numberLength = number > 99 ? 3 : (number > 9 ? 2 : 1);
-    size_t vectorSize = vector.size();
-    vector.grow(vectorSize + numberLength);
-
-    switch (numberLength) {
-    case 3:
-        vector[vectorSize + 2] = number % 10 + '0';
-        number /= 10;
-
-    case 2:
-        vector[vectorSize + 1] = number % 10 + '0';
-        number /= 10;
-
-    case 1:
-        vector[vectorSize] = number % 10 + '0';
-    }
-}
-
 template<bool isSpecialCharacter(UChar), typename CharacterType>
 inline bool isAllSpecialCharacters(const CharacterType* characters, size_t length)
 {
@@ -670,18 +642,15 @@ using WTF::String;
 using WTF::emptyString;
 using WTF::emptyString16Bit;
 using WTF::append;
-using WTF::appendNumber;
 using WTF::charactersAreAllASCII;
 using WTF::charactersToIntStrict;
 using WTF::charactersToUIntStrict;
 using WTF::charactersToInt64Strict;
 using WTF::charactersToUInt64Strict;
-using WTF::charactersToIntPtrStrict;
 using WTF::charactersToInt;
 using WTF::charactersToUInt;
 using WTF::charactersToInt64;
 using WTF::charactersToUInt64;
-using WTF::charactersToIntPtr;
 using WTF::charactersToDouble;
 using WTF::charactersToFloat;
 using WTF::equal;

@@ -207,8 +207,8 @@ void GCMNetworkChannel::OnGetTokenComplete(
   access_token_ = token;
 
   DVLOG(2) << "Got access token, sending message";
-  fetcher_.reset(net::URLFetcher::Create(
-      BuildUrl(registration_id_), net::URLFetcher::POST, this));
+  fetcher_ = net::URLFetcher::Create(BuildUrl(registration_id_),
+                                     net::URLFetcher::POST, this);
   fetcher_->SetRequestContext(request_context_getter_.get());
   const std::string auth_header("Authorization: Bearer " + access_token_);
   fetcher_->AddExtraRequestHeader(auth_header);
@@ -446,7 +446,6 @@ std::string GCMNetworkChannelDiagnostic::GCMClientResultToString(
     ENUM_CASE(gcm::GCMClient::SERVER_ERROR);
     ENUM_CASE(gcm::GCMClient::TTL_EXCEEDED);
     ENUM_CASE(gcm::GCMClient::UNKNOWN_ERROR);
-    ENUM_CASE(gcm::GCMClient::NOT_SIGNED_IN);
     ENUM_CASE(gcm::GCMClient::INVALID_PARAMETER);
     ENUM_CASE(gcm::GCMClient::ASYNC_OPERATION_PENDING);
     ENUM_CASE(gcm::GCMClient::GCM_DISABLED);

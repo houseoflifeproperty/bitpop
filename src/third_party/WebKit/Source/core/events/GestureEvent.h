@@ -26,36 +26,37 @@
 #ifndef GestureEvent_h
 #define GestureEvent_h
 
+#include "core/CoreExport.h"
 #include "core/events/EventDispatcher.h"
 #include "core/events/MouseRelatedEvent.h"
 #include "platform/PlatformGestureEvent.h"
 
 namespace blink {
 
-class GestureEvent FINAL : public MouseRelatedEvent {
+class CORE_EXPORT GestureEvent final : public MouseRelatedEvent {
 public:
     virtual ~GestureEvent() { }
 
     static PassRefPtrWillBeRawPtr<GestureEvent> create(PassRefPtrWillBeRawPtr<AbstractView>, const PlatformGestureEvent&);
 
-    virtual bool isGestureEvent() const OVERRIDE;
+    virtual bool isGestureEvent() const override;
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
     float deltaX() const { return m_deltaX; }
     float deltaY() const { return m_deltaY; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     GestureEvent();
-    GestureEvent(const AtomicString& type, PassRefPtrWillBeRawPtr<AbstractView>, int screenX, int screenY, int clientX, int clientY, bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, float deltaX, float deltaY);
+    GestureEvent(const AtomicString& type, PassRefPtrWillBeRawPtr<AbstractView>, int screenX, int screenY, int clientX, int clientY, bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, float deltaX, float deltaY, double uiTimeStamp);
 
     float m_deltaX;
     float m_deltaY;
 };
 
-class GestureEventDispatchMediator FINAL : public EventDispatchMediator {
+class GestureEventDispatchMediator final : public EventDispatchMediator {
 public:
     static PassRefPtrWillBeRawPtr<GestureEventDispatchMediator> create(PassRefPtrWillBeRawPtr<GestureEvent> gestureEvent)
     {
@@ -65,9 +66,9 @@ public:
 private:
     explicit GestureEventDispatchMediator(PassRefPtrWillBeRawPtr<GestureEvent>);
 
-    GestureEvent* event() const;
+    GestureEvent& event() const;
 
-    virtual bool dispatchEvent(EventDispatcher*) const OVERRIDE;
+    virtual bool dispatchEvent(EventDispatcher&) const override;
 };
 
 DEFINE_EVENT_TYPE_CASTS(GestureEvent);

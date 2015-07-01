@@ -1,8 +1,14 @@
 // Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 #include "base/command_line.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profile_window.h"
+#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
@@ -22,19 +28,19 @@ class UserManagerUIBrowserTest : public InProcessBrowserTest,
   UserManagerUIBrowserTest() {}
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     InProcessBrowserTest::SetUp();
     DCHECK(switches::IsNewAvatarMenu());
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     switches::EnableNewAvatarMenuForTesting(command_line);
   }
 };
 
 IN_PROC_BROWSER_TEST_F(UserManagerUIBrowserTest, PageLoads) {
-  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(
-      browser(), GURL(chrome::kChromeUIUserManagerURL), 1);
+  ui_test_utils::NavigateToURL(
+      browser(), GURL(chrome::kChromeUIUserManagerURL));
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
 
@@ -61,3 +67,32 @@ IN_PROC_BROWSER_TEST_F(UserManagerUIBrowserTest, PageLoads) {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   EXPECT_EQ(num_pods, static_cast<int>(profile_manager->GetNumberOfProfiles()));
 }
+
+IN_PROC_BROWSER_TEST_F(UserManagerUIBrowserTest, PageRedirectsToAboutChrome) {
+  std::string user_manager_url = chrome::kChromeUIUserManagerURL;
+  user_manager_url += profiles::kUserManagerSelectProfileAboutChrome;
+
+  ui_test_utils::NavigateToURL(browser(), GURL(user_manager_url));
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+
+  // If this is a Windows style path, escape all the slashes.
+  std::string profile_path;
+  base::ReplaceChars(browser()->profile()->GetPath().MaybeAsASCII(),
+      "\\", "\\\\", &profile_path);
+
+  std::string launch_js =
+      base::StringPrintf("Oobe.launchUser('%s')", profile_path.c_str());
+
+  bool result = content::ExecuteScript(web_contents, launch_js);
+  EXPECT_TRUE(result);
+  base::RunLoop().RunUntilIdle();
+
+  content::WebContents* about_chrome_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  GURL current_URL = about_chrome_contents->GetVisibleURL();
+  EXPECT_EQ(GURL(chrome::kChromeUIUberURL), current_URL);
+}
+
+// TODO(mlerman): Test that unlocking a locked profile causes the extensions
+// service to become unblocked.

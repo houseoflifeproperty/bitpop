@@ -135,11 +135,6 @@ void SyncBackendHostCore::DoRefreshTypes(syncer::ModelTypeSet types) {
   sync_manager_->RefreshTypes(types);
 }
 
-void SyncBackendHostCore::OnControlTypesDownloadRetry() {
-  host_.Call(FROM_HERE,
-             &SyncBackendHostImpl::HandleControlTypesDownloadRetry);
-}
-
 void SyncBackendHostCore::OnInitializationComplete(
     const syncer::WeakHandle<syncer::JsBackend>& js_backend,
     const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>&
@@ -222,8 +217,7 @@ void SyncBackendHostCore::OnInitializationComplete(
       routing_info,
       base::Bind(&SyncBackendHostCore::DoInitialProcessControlTypes,
                  weak_ptr_factory_.GetWeakPtr()),
-      base::Bind(&SyncBackendHostCore::OnControlTypesDownloadRetry,
-                 weak_ptr_factory_.GetWeakPtr()));
+      base::Closure());
 }
 
 void SyncBackendHostCore::OnConnectionStatusChange(
@@ -463,9 +457,10 @@ void SyncBackendHostCore::DoUpdateCredentials(
 }
 
 void SyncBackendHostCore::DoStartSyncing(
-    const syncer::ModelSafeRoutingInfo& routing_info) {
+    const syncer::ModelSafeRoutingInfo& routing_info,
+    base::Time last_poll_time) {
   DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
-  sync_manager_->StartSyncingNormally(routing_info);
+  sync_manager_->StartSyncingNormally(routing_info, last_poll_time);
 }
 
 void SyncBackendHostCore::DoSetEncryptionPassphrase(

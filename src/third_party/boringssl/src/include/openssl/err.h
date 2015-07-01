@@ -109,9 +109,9 @@
 #ifndef OPENSSL_HEADER_ERR_H
 #define OPENSSL_HEADER_ERR_H
 
+#include <stdio.h>
+
 #include <openssl/base.h>
-#include <openssl/thread.h>
-#include <openssl/lhash.h>
 
 #if defined(__cplusplus)
 extern "C" {
@@ -142,14 +142,18 @@ extern "C" {
 
 /* Startup and shutdown. */
 
-/* ERR_load_crypto_strings initialises the error string hash with builtin
- * values. If this is not called then the string forms of errors produced by
- * the functions below will contain numeric identifiers rather than
- * human-readable strings. */
+/* ERR_load_BIO_strings does nothing.
+ *
+ * TODO(fork): remove. libjingle calls this. */
+OPENSSL_EXPORT void ERR_load_BIO_strings(void);
+
+/* ERR_load_ERR_strings does nothing. */
+OPENSSL_EXPORT void ERR_load_ERR_strings(void);
+
+/* ERR_load_crypto_strings does nothing. */
 OPENSSL_EXPORT void ERR_load_crypto_strings(void);
 
-/* ERR_free_strings frees any internal error values that have been loaded. This
- * should only be called at process shutdown. */
+/* ERR_free_strings does nothing. */
 OPENSSL_EXPORT void ERR_free_strings(void);
 
 
@@ -166,9 +170,12 @@ OPENSSL_EXPORT uint32_t ERR_get_error_line(const char **file, int *line);
 
 /* ERR_get_error_line_data acts like |ERR_get_error_line|, but also returns the
  * error-specific data pointer and flags. The flags are a bitwise-OR of
- * |ERR_FLAG_*| values. */
+ * |ERR_FLAG_*| values. The error-specific data is owned by the error queue
+ * and the pointer becomes invalid after the next call that affects the same
+ * thread's error queue. If |*flags| contains |ERR_FLAG_STRING| then |*data| is
+ * human-readable. */
 OPENSSL_EXPORT uint32_t ERR_get_error_line_data(const char **file, int *line,
-                                                char **data, int *flags);
+                                                const char **data, int *flags);
 
 /* The "peek" functions act like the |ERR_get_error| functions, above, but they
  * do not remove the error from the queue. */
@@ -181,9 +188,10 @@ OPENSSL_EXPORT uint32_t ERR_peek_error_line_data(const char **file, int *line,
  * they return the most recent error. */
 OPENSSL_EXPORT uint32_t ERR_peek_last_error(void);
 OPENSSL_EXPORT uint32_t ERR_peek_last_error_line(const char **file, int *line);
-OPENSSL_EXPORT uint32_t
-    ERR_peek_last_error_line_data(const char **file, int *line,
-                                  const char **data, int *flags);
+OPENSSL_EXPORT uint32_t ERR_peek_last_error_line_data(const char **file,
+                                                      int *line,
+                                                      const char **data,
+                                                      int *flags);
 
 /* ERR_error_string generates a human-readable string representing
  * |packed_error|, places it at |buf| (which must be at least
@@ -251,13 +259,21 @@ OPENSSL_EXPORT void ERR_print_errors_cb(ERR_print_errors_callback_t callback,
                                         void *ctx);
 
 
+/* ERR_print_errors_fp prints the current contents of the error stack to |file|
+ * using human readable strings where possible. */
+OPENSSL_EXPORT void ERR_print_errors_fp(FILE *file);
+
 /* Clearing errors. */
 
 /* ERR_clear_error clears the error queue for the current thread. */
 OPENSSL_EXPORT void ERR_clear_error(void);
 
-/* ERR_remove_thread_state deletes the error queue for the given thread. If
- * |tid| is NULL then the error queue for the current thread is deleted. */
+/* ERR_remove_thread_state clears the error queue for the current thread if
+ * |tid| is NULL. Otherwise it calls |assert(0)|, because it's no longer
+ * possible to delete the error queue for other threads.
+ *
+ * Error queues are thread-local data and are deleted automatically. You do not
+ * need to call this function. Use |ERR_clear_error|. */
 OPENSSL_EXPORT void ERR_remove_thread_state(const CRYPTO_THREADID *tid);
 
 
@@ -267,6 +283,12 @@ OPENSSL_EXPORT void ERR_remove_thread_state(const CRYPTO_THREADID *tid);
  * |library| argument to |ERR_put_error|. This is intended for code that wishes
  * to push its own, non-standard errors to the error queue. */
 OPENSSL_EXPORT int ERR_get_next_error_library(void);
+
+
+/* Deprecated functions. */
+
+/* |ERR_remove_state| calls |ERR_clear_error|. */
+OPENSSL_EXPORT void ERR_remove_state(unsigned long pid);
 
 
 /* Private functions. */
@@ -325,12 +347,9 @@ struct err_error_st {
   uint8_t flags;
 };
 
-/* ERR_FLAG_MALLOCED means the the |data| member must be freed when no longer
- * needed. */
-#define ERR_FLAG_MALLOCED 1
 /* ERR_FLAG_STRING means that the |data| member is a NUL-terminated string that
  * can be printed. */
-#define ERR_FLAG_STRING 2
+#define ERR_FLAG_STRING 1
 /* ERR_TXT_STRING is provided for compatibility with code that assumes that
  * it's using OpenSSL. */
 #define ERR_TXT_STRING ERR_FLAG_STRING
@@ -342,18 +361,18 @@ struct err_error_st {
 /* The following flag values are internal and are masked when flags are
  * returned from functions like |ERR_get_error_line_data|. */
 
+/* ERR_FLAG_MALLOCED means the the |data| member must be freed when no longer
+ * needed. */
+#define ERR_FLAG_MALLOCED 16
 /* ERR_FLAG_MARK is used to indicate a reversion point in the queue. See
  * |ERR_pop_to_mark|. */
-#define ERR_FLAG_MARK 16
+#define ERR_FLAG_MARK 32
 
 /* ERR_NUM_ERRORS is the limit of the number of errors in the queue. */
 #define ERR_NUM_ERRORS 16
 
 /* ERR_STATE contains the per-thread, error queue. */
 typedef struct err_state_st {
-  /* tid is the identifier of the thread that owns this queue. */
-  CRYPTO_THREADID tid;
-
   /* errors contains the ERR_NUM_ERRORS most recent errors, organised as a ring
    * buffer. */
   struct err_error_st errors[ERR_NUM_ERRORS];
@@ -362,6 +381,10 @@ typedef struct err_state_st {
   unsigned top;
   /* bottom contains the index of the last error in the queue. */
   unsigned bottom;
+
+  /* to_free, if not NULL, contains a pointer owned by this structure that was
+   * previously a |data| pointer of one of the elements of |errors|. */
+  void *to_free;
 } ERR_STATE;
 
 enum {
@@ -385,7 +408,6 @@ enum {
   ERR_LIB_PKCS7,
   ERR_LIB_PKCS8,
   ERR_LIB_X509V3,
-  ERR_LIB_PKCS12,
   ERR_LIB_RAND,
   ERR_LIB_ENGINE,
   ERR_LIB_OCSP,
@@ -397,6 +419,7 @@ enum {
   ERR_LIB_DIGEST,
   ERR_LIB_CIPHER,
   ERR_LIB_USER,
+  ERR_LIB_HKDF,
   ERR_NUM_LIBS
 };
 
@@ -419,7 +442,6 @@ enum {
 #define ERR_R_PKCS7_LIB ERR_LIB_PKCS7
 #define ERR_R_PKCS8_LIB ERR_LIB_PKCS8
 #define ERR_R_X509V3_LIB ERR_LIB_X509V3
-#define ERR_R_PKCS12_LIB ERR_LIB_PKCS12
 #define ERR_R_RAND_LIB ERR_LIB_RAND
 #define ERR_R_DSO_LIB ERR_LIB_DSO
 #define ERR_R_ENGINE_LIB ERR_LIB_ENGINE
@@ -437,6 +459,7 @@ enum {
 #define ERR_R_USER_LIB ERR_LIB_USER
 #define ERR_R_DIGEST_LIB ERR_LIB_DIGEST
 #define ERR_R_CIPHER_LIB ERR_LIB_CIPHER
+#define ERR_R_HKDF_LIB ERR_LIB_HKDF
 
 /* Global reasons. */
 #define ERR_R_FATAL 64
@@ -460,43 +483,9 @@ enum {
   (((((uint32_t)lib) & 0xff) << 24) | ((((uint32_t)func) & 0xfff) << 12) | \
    ((((uint32_t)reason) & 0xfff)))
 
-#define ERR_GET_LIB(packed_error) (((packed_error) >> 24) & 0xff)
-#define ERR_GET_FUNC(packed_error) (((packed_error) >> 12) & 0xfff)
-#define ERR_GET_REASON(packed_error) ((packed_error) & 0xfff)
-
-/* ERR_STRING_DATA is the type of an lhash node that contains a mapping from a
- * library, function or reason code to a string representation of it. */
-typedef struct err_string_data_st {
-  uint32_t error;
-  const char *string;
-} ERR_STRING_DATA;
-
-/* ERR_load_strings loads an array of ERR_STRING_DATA into the hash table. The
- * array must be terminated by an entry with a NULL string. */
-OPENSSL_EXPORT void ERR_load_strings(const ERR_STRING_DATA *str);
-
-/* ERR_FNS_st is a structure of function pointers that contains the actual
- * implementation of the error queue handling functions. */
-struct ERR_FNS_st {
-  void (*shutdown)(void);
-  ERR_STRING_DATA *(*get_item)(uint32_t packed_error);
-  ERR_STRING_DATA *(*set_item)(const ERR_STRING_DATA *);
-  ERR_STRING_DATA *(*del_item)(uint32_t packed_error);
-
-  /* get_state returns the ERR_STATE for the current thread. This function
-   * never returns NULL. */
-  ERR_STATE *(*get_state)(void);
-
-  /* release_state returns the |ERR_STATE| for the given thread, or NULL if
-   * none exists. It the return value is not NULL, it also returns ownership of
-   * the |ERR_STATE| and deletes it from its data structures. */
-  ERR_STATE *(*release_state)(const CRYPTO_THREADID *tid);
-
-  /* get_next_library returns a unique value suitable for passing as the
-   * |library| to error calls. It will be distinct from all built-in library
-   * values. */
-  int (*get_next_library)(void);
-};
+#define ERR_GET_LIB(packed_error) ((int)(((packed_error) >> 24) & 0xff))
+#define ERR_GET_FUNC(packed_error) ((int)(((packed_error) >> 12) & 0xfff))
+#define ERR_GET_REASON(packed_error) ((int)((packed_error) & 0xfff))
 
 /* OPENSSL_DECLARE_ERROR_REASON is used by util/make_errors.h (which generates
  * the error defines) to recognise that an additional reason value is needed.
@@ -511,11 +500,6 @@ struct ERR_FNS_st {
  * |OPENSSL_PUT_ERROR| * macro. The resulting define will be
  * ${lib}_F_${reason}. */
 #define OPENSSL_DECLARE_ERROR_FUNCTION(lib, function_name)
-
-/* ERR_load_BIO_strings does nothing.
- *
- * TODO(fork): remove. libjingle calls this. */
-OPENSSL_EXPORT void ERR_load_BIO_strings(void);
 
 
 #if defined(__cplusplus)

@@ -42,8 +42,8 @@
     ((__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__) >=   \
      ((major) * 10000 + (minor) * 100 + (patchlevel)))
 #elif defined(__GNUC__) && defined(__GNUC_MINOR__)
-# define V8_GNUC_PREREQ(major, minor, patchlevel)       \
-    ((__GNUC__ * 10000 + __GNUC_MINOR__) >=             \
+# define V8_GNUC_PREREQ(major, minor, patchlevel)      \
+    ((__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >=      \
      ((major) * 10000 + (minor) * 100 + (patchlevel)))
 #else
 # define V8_GNUC_PREREQ(major, minor, patchlevel) 0
@@ -67,6 +67,7 @@
 //  V8_OS_POSIX         - POSIX compatible (mostly everything except Windows)
 //  V8_OS_QNX           - QNX Neutrino
 //  V8_OS_SOLARIS       - Sun Solaris and OpenSolaris
+//  V8_OS_AIX           - AIX
 //  V8_OS_WIN           - Microsoft Windows
 
 #if defined(__ANDROID__)
@@ -89,6 +90,9 @@
 #elif defined(__sun)
 # define V8_OS_POSIX 1
 # define V8_OS_SOLARIS 1
+#elif defined(_AIX)
+#define V8_OS_POSIX 1
+#define V8_OS_AIX 1
 #elif defined(__FreeBSD__)
 # define V8_OS_BSD 1
 # define V8_OS_FREEBSD 1
@@ -134,6 +138,7 @@
 # define V8_LIBC_BIONIC 1
 # define V8_LIBC_BSD 1
 #elif defined(__UCLIBC__)
+// Must test for UCLIBC before GLIBC, as UCLIBC pretends to be GLIBC.
 # define V8_LIBC_UCLIBC 1
 #elif defined(__GLIBC__) || defined(__GNU_LIBRARY__)
 # define V8_LIBC_GLIBC 1
@@ -145,22 +150,18 @@
 // -----------------------------------------------------------------------------
 // Compiler detection
 //
-//  V8_CC_CLANG   - Clang
-//  V8_CC_GNU     - GNU C++
+//  V8_CC_GNU     - GCC, or clang in gcc mode
 //  V8_CC_INTEL   - Intel C++
 //  V8_CC_MINGW   - Minimalist GNU for Windows
 //  V8_CC_MINGW32 - Minimalist GNU for Windows (mingw32)
 //  V8_CC_MINGW64 - Minimalist GNU for Windows (mingw-w64)
-//  V8_CC_MSVC    - Microsoft Visual C/C++
+//  V8_CC_MSVC    - Microsoft Visual C/C++, or clang in cl.exe mode
 //
 // C++11 feature detection
 //
 //  V8_HAS_CXX11_ALIGNAS        - alignas specifier supported
 //  V8_HAS_CXX11_ALIGNOF        - alignof(type) operator supported
 //  V8_HAS_CXX11_STATIC_ASSERT  - static_assert() supported
-//  V8_HAS_CXX11_DELETE         - deleted functions supported
-//  V8_HAS_CXX11_FINAL          - final marker supported
-//  V8_HAS_CXX11_OVERRIDE       - override marker supported
 //
 // Compiler-specific feature detection
 //
@@ -178,15 +179,15 @@
 //  V8_HAS_BUILTIN_CLZ                  - __builtin_clz() supported
 //  V8_HAS_BUILTIN_CTZ                  - __builtin_ctz() supported
 //  V8_HAS_BUILTIN_EXPECT               - __builtin_expect() supported
+//  V8_HAS_BUILTIN_FRAME_ADDRESS        - __builtin_frame_address() supported
 //  V8_HAS_BUILTIN_POPCOUNT             - __builtin_popcount() supported
 //  V8_HAS_BUILTIN_SADD_OVERFLOW        - __builtin_sadd_overflow() supported
 //  V8_HAS_BUILTIN_SSUB_OVERFLOW        - __builtin_ssub_overflow() supported
 //  V8_HAS_DECLSPEC_ALIGN               - __declspec(align(n)) supported
 //  V8_HAS_DECLSPEC_DEPRECATED          - __declspec(deprecated) supported
 //  V8_HAS_DECLSPEC_NOINLINE            - __declspec(noinline) supported
-//  V8_HAS___FINAL                      - __final supported in non-C++11 mode
+//  V8_HAS_DECLSPEC_SELECTANY           - __declspec(selectany) supported
 //  V8_HAS___FORCEINLINE                - __forceinline supported
-//  V8_HAS_SEALED                       - MSVC style sealed marker supported
 //
 // Note that testing for compilers and/or features must be done using #if
 // not #ifdef. For example, to test for Intel C++ Compiler, use:
@@ -196,7 +197,11 @@
 
 #if defined(__clang__)
 
-# define V8_CC_CLANG 1
+#if defined(__GNUC__)  // Clang in gcc mode.
+# define V8_CC_GNU 1
+#elif defined(_MSC_VER)  // Clang in cl mode.
+# define V8_CC_MSVC 1
+#endif
 
 // Clang defines __alignof__ as alias for __alignof
 # define V8_HAS___ALIGNOF 1
@@ -214,15 +219,13 @@
 # define V8_HAS_BUILTIN_CLZ (__has_builtin(__builtin_clz))
 # define V8_HAS_BUILTIN_CTZ (__has_builtin(__builtin_ctz))
 # define V8_HAS_BUILTIN_EXPECT (__has_builtin(__builtin_expect))
+# define V8_HAS_BUILTIN_FRAME_ADDRESS (__has_builtin(__builtin_frame_address))
 # define V8_HAS_BUILTIN_POPCOUNT (__has_builtin(__builtin_popcount))
 # define V8_HAS_BUILTIN_SADD_OVERFLOW (__has_builtin(__builtin_sadd_overflow))
 # define V8_HAS_BUILTIN_SSUB_OVERFLOW (__has_builtin(__builtin_ssub_overflow))
 
 # define V8_HAS_CXX11_ALIGNAS (__has_feature(cxx_alignas))
 # define V8_HAS_CXX11_STATIC_ASSERT (__has_feature(cxx_static_assert))
-# define V8_HAS_CXX11_DELETE (__has_feature(cxx_deleted_functions))
-# define V8_HAS_CXX11_FINAL (__has_feature(cxx_override_control))
-# define V8_HAS_CXX11_OVERRIDE (__has_feature(cxx_override_control))
 
 #elif defined(__GNUC__)
 
@@ -251,6 +254,7 @@
 # define V8_HAS_BUILTIN_CLZ (V8_GNUC_PREREQ(3, 4, 0))
 # define V8_HAS_BUILTIN_CTZ (V8_GNUC_PREREQ(3, 4, 0))
 # define V8_HAS_BUILTIN_EXPECT (V8_GNUC_PREREQ(2, 96, 0))
+# define V8_HAS_BUILTIN_FRAME_ADDRESS (V8_GNUC_PREREQ(2, 96, 0))
 # define V8_HAS_BUILTIN_POPCOUNT (V8_GNUC_PREREQ(3, 4, 0))
 
 // g++ requires -std=c++0x or -std=gnu++0x to support C++11 functionality
@@ -263,12 +267,6 @@
 #  define V8_HAS_CXX11_ALIGNAS (V8_GNUC_PREREQ(4, 8, 0))
 #  define V8_HAS_CXX11_ALIGNOF (V8_GNUC_PREREQ(4, 8, 0))
 #  define V8_HAS_CXX11_STATIC_ASSERT (V8_GNUC_PREREQ(4, 3, 0))
-#  define V8_HAS_CXX11_DELETE (V8_GNUC_PREREQ(4, 4, 0))
-#  define V8_HAS_CXX11_OVERRIDE (V8_GNUC_PREREQ(4, 7, 0))
-#  define V8_HAS_CXX11_FINAL (V8_GNUC_PREREQ(4, 7, 0))
-# else
-// '__final' is a non-C++11 GCC synonym for 'final', per GCC r176655.
-#  define V8_HAS___FINAL (V8_GNUC_PREREQ(4, 7, 0))
 # endif
 
 #elif defined(_MSC_VER)
@@ -277,15 +275,10 @@
 
 # define V8_HAS___ALIGNOF 1
 
-// Override control was added with Visual Studio 2005, but
-// Visual Studio 2010 and earlier spell "final" as "sealed".
-# define V8_HAS_CXX11_FINAL (_MSC_VER >= 1700)
-# define V8_HAS_CXX11_OVERRIDE (_MSC_VER >= 1400)
-# define V8_HAS_SEALED (_MSC_VER >= 1400)
-
 # define V8_HAS_DECLSPEC_ALIGN 1
-# define V8_HAS_DECLSPEC_DEPRECATED (_MSC_VER >= 1300)
+# define V8_HAS_DECLSPEC_DEPRECATED 1
 # define V8_HAS_DECLSPEC_NOINLINE 1
+# define V8_HAS_DECLSPEC_SELECTANY 1
 
 # define V8_HAS___FORCEINLINE 1
 
@@ -334,6 +327,10 @@ declarator __attribute__((deprecated))
 #endif
 
 
+// a macro to make it easier to see what will be deprecated.
+#define V8_DEPRECATE_SOON(message, declarator) declarator
+
+
 // A macro to provide the compiler with branch prediction information.
 #if V8_HAS_BUILTIN_EXPECT
 # define V8_UNLIKELY(condition) (__builtin_expect(!!(condition), 0))
@@ -341,26 +338,6 @@ declarator __attribute__((deprecated))
 #else
 # define V8_UNLIKELY(condition) (condition)
 # define V8_LIKELY(condition) (condition)
-#endif
-
-
-// A macro to specify that a method is deleted from the corresponding class.
-// Any attempt to use the method will always produce an error at compile time
-// when this macro can be implemented (i.e. if the compiler supports C++11).
-// If the current compiler does not support C++11, use of the annotated method
-// will still cause an error, but the error will most likely occur at link time
-// rather than at compile time. As a backstop, method declarations using this
-// macro should be private.
-// Use like:
-//   class A {
-//    private:
-//     A(const A& other) V8_DELETE;
-//     A& operator=(const A& other) V8_DELETE;
-//   };
-#if V8_HAS_CXX11_DELETE
-# define V8_DELETE = delete
-#else
-# define V8_DELETE /* NOT SUPPORTED */
 #endif
 
 
@@ -414,6 +391,15 @@ declarator __attribute__((deprecated))
 // should only be used as a last resort.
 namespace v8 { template <typename T> class AlignOfHelper { char c; T t; }; }
 # define V8_ALIGNOF(type) (sizeof(::v8::AlignOfHelper<type>) - sizeof(type))
+#endif
+
+// Annotate a function indicating the caller must examine the return value.
+// Use like:
+//   int foo() WARN_UNUSED_RESULT;
+#if V8_HAS_ATTRIBUTE_WARN_UNUSED_RESULT
+#define V8_WARN_UNUSED_RESULT __attribute__((warn_unused_result))
+#else
+#define V8_WARN_UNUSED_RESULT /* NOT SUPPORTED */
 #endif
 
 #endif  // V8CONFIG_H_

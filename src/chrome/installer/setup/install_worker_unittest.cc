@@ -119,7 +119,7 @@ class MockProductState : public ProductState {
   }
   void clear_oem_install() { has_oem_install_ = false; }
   void SetUninstallProgram(const base::FilePath& setup_exe) {
-    uninstall_command_ = CommandLine(setup_exe);
+    uninstall_command_ = base::CommandLine(setup_exe);
   }
   void AddUninstallSwitch(const std::string& option) {
     uninstall_command_.AppendSwitch(option);
@@ -166,7 +166,7 @@ class MockInstallerState : public InstallerState {
 
 class InstallWorkerTest : public testing::Test {
  public:
-  virtual void SetUp() {
+  void SetUp() override {
     current_version_.reset(new Version("1.0.0.0"));
     new_version_.reset(new Version("42.0.0.0"));
 
@@ -186,8 +186,7 @@ class InstallWorkerTest : public testing::Test {
     temp_dir_ = base::FilePath(L"C:\\UnlikelyPath\\Temp\\chrome_123");
   }
 
-  virtual void TearDown() {
-  }
+  void TearDown() override {}
 
   void MaybeAddBinariesToInstallationState(
       bool system_level,
@@ -491,7 +490,7 @@ const wchar_t old_elevation_key[] =
 class OldIELowRightsTests : public InstallWorkerTest,
   public ::testing::WithParamInterface<std::tr1::tuple<bool, bool> > {
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     InstallWorkerTest::SetUp();
 
     const ParamType& param = GetParam();

@@ -24,6 +24,8 @@
       ['chromeos==1', {
         'pak_inputs': [
           '<(SHARED_INTERMEDIATE_DIR)/ui/file_manager/file_manager_resources.pak',
+          '<(SHARED_INTERMEDIATE_DIR)/components/chrome_apps/chrome_apps_resources.pak',
+          '<(SHARED_INTERMEDIATE_DIR)/ui/oobe/oobe_resources.pak',
         ],
       }],
       ['OS != "ios"', {
@@ -31,23 +33,25 @@
           '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_resources.pak',
           '<(SHARED_INTERMEDIATE_DIR)/content/browser/tracing/tracing_resources.pak',
           '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.pak',
-          '<(SHARED_INTERMEDIATE_DIR)/extensions/extensions_renderer_resources.pak',
-          '<(SHARED_INTERMEDIATE_DIR)/extensions/extensions_resources.pak',
         ],
       }],
       ['OS != "ios" and OS != "android"', {
         # New paks should be added here by default.
         'pak_inputs': [
-          '<(SHARED_INTERMEDIATE_DIR)/webkit/devtools_resources.pak',
+          '<(SHARED_INTERMEDIATE_DIR)/blink/devtools_resources.pak',
           '<(grit_out_dir)/component_extension_resources.pak',
           '<(grit_out_dir)/options_resources.pak',
           '<(grit_out_dir)/quota_internals_resources.pak',
+          '<(grit_out_dir)/settings_resources.pak',
           '<(grit_out_dir)/sync_file_system_internals_resources.pak',
           '<(grit_out_dir)/tor_options_resources.pak',
+          '<(grit_out_dir)/webrtc_device_provider_resources.pak',
         ],
       }],
       ['enable_extensions==1', {
         'pak_inputs': [
+          '<(SHARED_INTERMEDIATE_DIR)/extensions/extensions_renderer_resources.pak',
+          '<(SHARED_INTERMEDIATE_DIR)/extensions/extensions_resources.pak',
           '<(grit_out_dir)/extensions_api_resources.pak',
         ],
       }],

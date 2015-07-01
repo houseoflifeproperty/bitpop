@@ -16,9 +16,12 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/prefs/browser_prefs.h"
+#include "chrome/browser/signin/account_tracker_service_factory.h"
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
+#include "chrome/browser/signin/fake_account_tracker_service.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
+#include "chrome/browser/signin/gaia_cookie_manager_service_factory.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/test_signin_client_builder.h"
@@ -26,6 +29,7 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/test_signin_client.h"
 #include "content/public/browser/child_process_security_policy.h"
@@ -49,7 +53,9 @@ KeyedService* SigninManagerBuild(content::BrowserContext* context) {
   Profile* profile = static_cast<Profile*>(context);
   service = new SigninManager(
       ChromeSigninClientFactory::GetInstance()->GetForProfile(profile),
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile));
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
+      AccountTrackerServiceFactory::GetForProfile(profile),
+      GaiaCookieManagerServiceFactory::GetForProfile(profile));
   service->Initialize(NULL);
   return service;
 }
@@ -61,7 +67,7 @@ class TestSigninManagerObserver : public SigninManagerBase::Observer {
                                 num_signouts_(0) {
   }
 
-  virtual ~TestSigninManagerObserver() {}
+  ~TestSigninManagerObserver() override {}
 
   int num_failed_signins_;
   int num_successful_signins_;
@@ -69,20 +75,18 @@ class TestSigninManagerObserver : public SigninManagerBase::Observer {
 
  private:
   // SigninManagerBase::Observer:
-  virtual void GoogleSigninFailed(
-      const GoogleServiceAuthError& error) OVERRIDE {
+  void GoogleSigninFailed(const GoogleServiceAuthError& error) override {
     num_failed_signins_++;
   }
 
-  virtual void GoogleSigninSucceeded(
-      const std::string& account_id,
-      const std::string& username,
-      const std::string& password) OVERRIDE {
+  void GoogleSigninSucceeded(const std::string& account_id,
+                             const std::string& username,
+                             const std::string& password) override {
     num_successful_signins_++;
   }
 
-  virtual void GoogleSignedOut(const std::string& account_id,
-                               const std::string& username) OVERRIDE {
+  void GoogleSignedOut(const std::string& account_id,
+                       const std::string& username) override {
     num_signouts_++;
   }
 };
@@ -93,9 +97,9 @@ class TestSigninManagerObserver : public SigninManagerBase::Observer {
 class SigninManagerTest : public testing::Test {
  public:
   SigninManagerTest() : manager_(NULL) {}
-  virtual ~SigninManagerTest() {}
+  ~SigninManagerTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     manager_ = NULL;
     prefs_.reset(new TestingPrefServiceSimple);
     chrome::RegisterLocalState(prefs_->registry());
@@ -108,14 +112,17 @@ class SigninManagerTest : public testing::Test {
                               signin::BuildTestSigninClient);
     builder.AddTestingFactory(SigninManagerFactory::GetInstance(),
                               SigninManagerBuild);
+    builder.AddTestingFactory(AccountTrackerServiceFactory::GetInstance(),
+                              FakeAccountTrackerService::Build);
     profile_ = builder.Build();
 
-    static_cast<TestSigninClient*>(
-        ChromeSigninClientFactory::GetInstance()->GetForProfile(profile()))->
-            SetURLRequestContext(profile_->GetRequestContext());
+    TestSigninClient* client =
+        static_cast<TestSigninClient*>(
+            ChromeSigninClientFactory::GetForProfile(profile()));
+    client->SetURLRequestContext(profile_->GetRequestContext());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     if (manager_)
       manager_->RemoveObserver(&test_observer_);
 
@@ -136,6 +143,22 @@ class SigninManagerTest : public testing::Test {
 
   TestingProfile* profile() { return profile_.get(); }
 
+  TestSigninClient* signin_client() {
+      return static_cast<TestSigninClient*>(
+          ChromeSigninClientFactory::GetInstance()->GetForProfile(profile()));
+  }
+
+  // Seed the account tracker with information from logged in user.  Normally
+  // this is done by UI code before calling SigninManager.  Returns the string
+  // to use as the account_id.
+  std::string AddToAccountTracker(const std::string& gaia_id,
+                                  const std::string& email) {
+    AccountTrackerService* service =
+        AccountTrackerServiceFactory::GetForProfile(profile());
+    service->SeedAccountInfo(gaia_id, email);
+    return service->PickAccountIdForAccount(gaia_id, email);
+  }
+
   // Sets up the signin manager as a service if other code will try to get it as
   // a PKS.
   void SetUpSigninManagerAsService() {
@@ -151,7 +174,9 @@ class SigninManagerTest : public testing::Test {
     DCHECK(!manager_);
     naked_manager_.reset(new SigninManager(
         ChromeSigninClientFactory::GetInstance()->GetForProfile(profile()),
-        ProfileOAuth2TokenServiceFactory::GetForProfile(profile())));
+        ProfileOAuth2TokenServiceFactory::GetForProfile(profile()),
+        AccountTrackerServiceFactory::GetForProfile(profile()),
+        GaiaCookieManagerServiceFactory::GetForProfile(profile())));
 
     manager_ = naked_manager_.get();
     manager_->AddObserver(&test_observer_);
@@ -169,11 +194,13 @@ class SigninManagerTest : public testing::Test {
 
   void ExpectSignInWithRefreshTokenSuccess() {
     EXPECT_TRUE(manager_->IsAuthenticated());
+    EXPECT_FALSE(manager_->GetAuthenticatedAccountId().empty());
+    EXPECT_FALSE(manager_->GetAuthenticatedUsername().empty());
 
     ProfileOAuth2TokenService* token_service =
         ProfileOAuth2TokenServiceFactory::GetForProfile(profile());
     EXPECT_TRUE(token_service->RefreshTokenIsAvailable(
-        manager_->GetAuthenticatedUsername()));
+        manager_->GetAuthenticatedAccountId()));
 
     // Should go into token service and stop.
     EXPECT_EQ(1, test_observer_.num_successful_signins_);
@@ -200,8 +227,10 @@ TEST_F(SigninManagerTest, SignInWithRefreshToken) {
   SetUpSigninManagerAsService();
   EXPECT_FALSE(manager_->IsAuthenticated());
 
+  std::string account_id = AddToAccountTracker("gaia_id", "user@gmail.com");
   manager_->StartSignInWithRefreshToken(
-      "rt1",
+      "rt",
+      "gaia_id",
       "user@gmail.com",
       "password",
       SigninManager::OAuthTokenFetchedCallback());
@@ -212,7 +241,7 @@ TEST_F(SigninManagerTest, SignInWithRefreshToken) {
   ShutDownManager();
   CreateNakedSigninManager();
   manager_->Initialize(NULL);
-  EXPECT_EQ("user@gmail.com", manager_->GetAuthenticatedUsername());
+  EXPECT_EQ(account_id, manager_->GetAuthenticatedAccountId());
 }
 
 TEST_F(SigninManagerTest, SignInWithRefreshTokenCallbackComplete) {
@@ -224,60 +253,88 @@ TEST_F(SigninManagerTest, SignInWithRefreshTokenCallbackComplete) {
       base::Bind(&SigninManagerTest::CompleteSigninCallback,
                  base::Unretained(this));
   manager_->StartSignInWithRefreshToken(
-      "rt1",
+      "rt",
+      "gaia_id",
       "user@gmail.com",
       "password",
       callback);
 
   ExpectSignInWithRefreshTokenSuccess();
   ASSERT_EQ(1U, oauth_tokens_fetched_.size());
-  EXPECT_EQ(oauth_tokens_fetched_[0], "rt1");
+  EXPECT_EQ(oauth_tokens_fetched_[0], "rt");
+}
+
+TEST_F(SigninManagerTest, SignInWithRefreshTokenCallsPostSignout) {
+  SetUpSigninManagerAsService();
+  EXPECT_FALSE(manager_->IsAuthenticated());
+
+  std::string gaia_id = "12345";
+  std::string email = "user@google.com";
+
+  FakeAccountTrackerService* account_tracker_service =
+    static_cast<FakeAccountTrackerService*>(
+        AccountTrackerServiceFactory::GetForProfile(profile()));
+  account_tracker_service->SeedAccountInfo(gaia_id, email);
+  account_tracker_service->EnableNetworkFetches();
+  std::string account_id = account_tracker_service->PickAccountIdForAccount(
+      gaia_id, email);
+
+  ASSERT_TRUE(signin_client()->get_signed_in_password().empty());
+
+  manager_->StartSignInWithRefreshToken(
+      "rt1",
+      gaia_id,
+      email,
+      "password",
+      SigninManager::OAuthTokenFetchedCallback());
+
+  // PostSignedIn is not called until the AccountTrackerService returns.
+  ASSERT_EQ("", signin_client()->get_signed_in_password());
+
+  account_tracker_service->FakeUserInfoFetchSuccess(
+      account_id, email, gaia_id, "google.com");
+
+  // AccountTracker and SigninManager are both done and PostSignedIn was called.
+  ASSERT_EQ("password", signin_client()->get_signed_in_password());
+
+  ExpectSignInWithRefreshTokenSuccess();
+
 }
 
 TEST_F(SigninManagerTest, SignOut) {
   SetUpSigninManagerAsService();
   manager_->StartSignInWithRefreshToken(
-      "rt1",
+      "rt",
+      "gaia_id",
       "user@gmail.com",
       "password",
       SigninManager::OAuthTokenFetchedCallback());
   manager_->SignOut(signin_metrics::SIGNOUT_TEST);
   EXPECT_FALSE(manager_->IsAuthenticated());
+  EXPECT_TRUE(manager_->GetAuthenticatedUsername().empty());
+  EXPECT_TRUE(manager_->GetAuthenticatedAccountId().empty());
   // Should not be persisted anymore
   ShutDownManager();
   CreateNakedSigninManager();
   manager_->Initialize(NULL);
   EXPECT_FALSE(manager_->IsAuthenticated());
+  EXPECT_TRUE(manager_->GetAuthenticatedUsername().empty());
+  EXPECT_TRUE(manager_->GetAuthenticatedAccountId().empty());
 }
 
 TEST_F(SigninManagerTest, SignOutWhileProhibited) {
   SetUpSigninManagerAsService();
   EXPECT_FALSE(manager_->IsAuthenticated());
+  EXPECT_TRUE(manager_->GetAuthenticatedUsername().empty());
+  EXPECT_TRUE(manager_->GetAuthenticatedAccountId().empty());
 
-  manager_->SetAuthenticatedUsername("user@gmail.com");
+  manager_->SetAuthenticatedAccountInfo("gaia_id", "user@gmail.com");
   manager_->ProhibitSignout(true);
   manager_->SignOut(signin_metrics::SIGNOUT_TEST);
   EXPECT_TRUE(manager_->IsAuthenticated());
   manager_->ProhibitSignout(false);
   manager_->SignOut(signin_metrics::SIGNOUT_TEST);
   EXPECT_FALSE(manager_->IsAuthenticated());
-}
-
-TEST_F(SigninManagerTest, TestIsWebBasedSigninFlowURL) {
-  EXPECT_FALSE(SigninManager::IsWebBasedSigninFlowURL(
-      GURL("http://www.google.com")));
-  EXPECT_TRUE(SigninManager::IsWebBasedSigninFlowURL(
-      GURL("https://accounts.google.com/ServiceLogin?service=chromiumsync")));
-  EXPECT_FALSE(SigninManager::IsWebBasedSigninFlowURL(
-      GURL("http://accounts.google.com/ServiceLogin?service=chromiumsync")));
-  // http, not https, should not be treated as web based signin.
-  EXPECT_FALSE(SigninManager::IsWebBasedSigninFlowURL(
-      GURL("http://accounts.google.com/ServiceLogin?service=googlemail")));
-  // chromiumsync is double-embedded in a continue query param.
-  EXPECT_TRUE(SigninManager::IsWebBasedSigninFlowURL(
-      GURL("https://accounts.google.com/CheckCookie?"
-           "continue=https%3A%2F%2Fwww.google.com%2Fintl%2Fen-US%2Fchrome"
-           "%2Fblank.html%3Fsource%3D3%26nonadv%3D1&service=chromiumsync")));
 }
 
 TEST_F(SigninManagerTest, Prohibited) {
@@ -307,47 +364,80 @@ TEST_F(SigninManagerTest, TestAlternateWildcard) {
 }
 
 TEST_F(SigninManagerTest, ProhibitedAtStartup) {
-  profile()->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
-                                   "monkey@invalid.com");
+  std::string account_id = AddToAccountTracker("gaia_id", "user@gmail.com");
+  profile()->GetPrefs()->SetString(prefs::kGoogleServicesAccountId, account_id);
   g_browser_process->local_state()->SetString(
       prefs::kGoogleServicesUsernamePattern, ".*@google.com");
   CreateNakedSigninManager();
   manager_->Initialize(g_browser_process->local_state());
   // Currently signed in user is prohibited by policy, so should be signed out.
   EXPECT_EQ("", manager_->GetAuthenticatedUsername());
+  EXPECT_EQ("", manager_->GetAuthenticatedAccountId());
 }
 
 TEST_F(SigninManagerTest, ProhibitedAfterStartup) {
-  std::string user("monkey@invalid.com");
-  profile()->GetPrefs()->SetString(prefs::kGoogleServicesUsername, user);
+  std::string account_id = AddToAccountTracker("gaia_id", "user@gmail.com");
+  profile()->GetPrefs()->SetString(prefs::kGoogleServicesAccountId, account_id);
   CreateNakedSigninManager();
   manager_->Initialize(g_browser_process->local_state());
-  EXPECT_EQ(user, manager_->GetAuthenticatedUsername());
+  EXPECT_EQ("user@gmail.com", manager_->GetAuthenticatedUsername());
+  EXPECT_EQ(account_id, manager_->GetAuthenticatedAccountId());
   // Update the profile - user should be signed out.
   g_browser_process->local_state()->SetString(
       prefs::kGoogleServicesUsernamePattern, ".*@google.com");
   EXPECT_EQ("", manager_->GetAuthenticatedUsername());
+  EXPECT_EQ("", manager_->GetAuthenticatedAccountId());
 }
 
 TEST_F(SigninManagerTest, ExternalSignIn) {
   CreateNakedSigninManager();
   manager_->Initialize(g_browser_process->local_state());
-  EXPECT_EQ("",
-            profile()->GetPrefs()->GetString(prefs::kGoogleServicesUsername));
   EXPECT_EQ("", manager_->GetAuthenticatedUsername());
+  EXPECT_EQ("", manager_->GetAuthenticatedAccountId());
   EXPECT_EQ(0, test_observer_.num_successful_signins_);
 
-  manager_->OnExternalSigninCompleted("external@example.com");
+  std::string account_id = AddToAccountTracker("gaia_id", "user@gmail.com");
+  manager_->OnExternalSigninCompleted(account_id);
   EXPECT_EQ(1, test_observer_.num_successful_signins_);
   EXPECT_EQ(0, test_observer_.num_failed_signins_);
-  EXPECT_EQ("external@example.com",
-            profile()->GetPrefs()->GetString(prefs::kGoogleServicesUsername));
-  EXPECT_EQ("external@example.com", manager_->GetAuthenticatedUsername());
+  EXPECT_EQ("user@gmail.com", manager_->GetAuthenticatedUsername());
+  EXPECT_EQ(account_id, manager_->GetAuthenticatedAccountId());
 }
 
 TEST_F(SigninManagerTest, SigninNotAllowed) {
   std::string user("user@google.com");
-  profile()->GetPrefs()->SetString(prefs::kGoogleServicesUsername, user);
+  profile()->GetPrefs()->SetString(prefs::kGoogleServicesAccountId, user);
   profile()->GetPrefs()->SetBoolean(prefs::kSigninAllowed, false);
-  SetUpSigninManagerAsService();
+  CreateNakedSigninManager();
+  AddToAccountTracker("gaia_id", user);
+  manager_->Initialize(g_browser_process->local_state());
+  // Currently signing in is prohibited by policy, so should be signed out.
+  EXPECT_EQ("", manager_->GetAuthenticatedUsername());
+  EXPECT_EQ("", manager_->GetAuthenticatedAccountId());
+}
+
+TEST_F(SigninManagerTest, UpgradeToNewPrefs) {
+  profile()->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
+                                   "user@gmail.com");
+  profile()->GetPrefs()->SetString(prefs::kGoogleServicesUserAccountId,
+                                   "account_id");
+  CreateNakedSigninManager();
+  manager_->Initialize(g_browser_process->local_state());
+  EXPECT_EQ("user@gmail.com", manager_->GetAuthenticatedUsername());
+
+  // TODO(rogerta): until the migration to gaia id, the account id will remain
+  // the old username.
+  EXPECT_EQ("user@gmail.com", manager_->GetAuthenticatedAccountId());
+  EXPECT_EQ("user@gmail.com",
+            profile()->GetPrefs()->GetString(prefs::kGoogleServicesAccountId));
+  EXPECT_EQ("",
+            profile()->GetPrefs()->GetString(prefs::kGoogleServicesUsername));
+
+  // Make sure account tracker was updated.
+  AccountTrackerService* service =
+      AccountTrackerServiceFactory::GetForProfile(profile());
+  AccountTrackerService::AccountInfo info = service->GetAccountInfo(
+      manager_->GetAuthenticatedAccountId());
+  EXPECT_EQ("user@gmail.com", info.email);
+  EXPECT_EQ("account_id", info.gaia);
 }

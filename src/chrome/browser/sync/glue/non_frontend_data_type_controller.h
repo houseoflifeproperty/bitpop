@@ -23,6 +23,7 @@ class ProfileSyncComponentsFactory;
 
 namespace base {
 class TimeDelta;
+class SingleThreadTaskRunner;
 }
 
 namespace syncer {
@@ -50,26 +51,25 @@ class NonFrontendDataTypeController : public sync_driver::DataTypeController {
   class BackendComponentsContainer;
 
   NonFrontendDataTypeController(
-      scoped_refptr<base::MessageLoopProxy> ui_thread,
+      scoped_refptr<base::SingleThreadTaskRunner> ui_thread,
       const base::Closure& error_callback,
       ProfileSyncComponentsFactory* profile_sync_factory,
       Profile* profile,
       ProfileSyncService* sync_service);
 
   // DataTypeController interface.
-  virtual void LoadModels(
-      const ModelLoadCallback& model_load_callback) OVERRIDE;
-  virtual void StartAssociating(const StartCallback& start_callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual syncer::ModelType type() const = 0;
-  virtual syncer::ModelSafeGroup model_safe_group() const = 0;
-  virtual std::string name() const OVERRIDE;
-  virtual State state() const OVERRIDE;
+  void LoadModels(const ModelLoadCallback& model_load_callback) override;
+  void StartAssociating(const StartCallback& start_callback) override;
+  void Stop() override;
+  syncer::ModelType type() const override = 0;
+  syncer::ModelSafeGroup model_safe_group() const override = 0;
+  std::string name() const override;
+  State state() const override;
 
   // DataTypeErrorHandler interface.
   // Note: this is performed on the datatype's thread.
-  virtual void OnSingleDataTypeUnrecoverableError(
-      const syncer::SyncError& error) OVERRIDE;
+  void OnSingleDataTypeUnrecoverableError(
+      const syncer::SyncError& error) override;
 
   // Callback to receive background association results.
   struct AssociationResult {
@@ -91,10 +91,10 @@ class NonFrontendDataTypeController : public sync_driver::DataTypeController {
   // For testing only.
   NonFrontendDataTypeController();
 
-  virtual ~NonFrontendDataTypeController();
+  ~NonFrontendDataTypeController() override;
 
   // DataTypeController interface.
-  virtual void OnModelLoaded() OVERRIDE;
+  void OnModelLoaded() override;
 
   // Start any dependent services that need to be running before we can
   // associate models. The default implementation is a no-op.
@@ -168,7 +168,7 @@ class NonFrontendDataTypeController : public sync_driver::DataTypeController {
   void set_state(State state);
 
   virtual sync_driver::AssociatorInterface* associator() const;
-  virtual sync_driver::ChangeProcessor* GetChangeProcessor() const OVERRIDE;
+  sync_driver::ChangeProcessor* GetChangeProcessor() const override;
 
   State state_;
   StartCallback start_callback_;

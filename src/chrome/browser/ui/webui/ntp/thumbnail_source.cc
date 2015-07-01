@@ -7,7 +7,6 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/message_loop/message_loop.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/instant_io_context.h"
 #include "chrome/browser/thumbnails/thumbnail_service.h"
 #include "chrome/browser/thumbnails/thumbnail_service_factory.h"
@@ -15,12 +14,9 @@
 #include "net/url_request/url_request.h"
 #include "url/gurl.h"
 
-using content::BrowserThread;
-
 // Set ThumbnailService now as Profile isn't thread safe.
 ThumbnailSource::ThumbnailSource(Profile* profile, bool capture_thumbnails)
     : thumbnail_service_(ThumbnailServiceFactory::GetForProfile(profile)),
-      profile_(profile),
       capture_thumbnails_(capture_thumbnails) {
 }
 

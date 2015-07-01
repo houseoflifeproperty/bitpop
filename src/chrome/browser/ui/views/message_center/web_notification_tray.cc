@@ -20,16 +20,21 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/image/image_skia_operations.h"
-#include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
-#include "ui/gfx/size.h"
 #include "ui/message_center/message_center_tray.h"
 #include "ui/message_center/message_center_tray_delegate.h"
 #include "ui/message_center/views/desktop_popup_alignment_delegate.h"
 #include "ui/message_center/views/message_popup_collection.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/widget/widget.h"
+
+#if defined(OS_LINUX)
+#include "base/environment.h"
+#include "base/nix/xdg_util.h"
+#endif
 
 namespace {
 
@@ -58,6 +63,20 @@ gfx::ImageSkia* GetIcon(int unread_count, bool is_quiet_mode) {
   }
 
   return rb.GetImageSkiaNamed(resource_id);
+}
+
+bool CanDestroyStatusIcon() {
+#if defined(OS_LINUX)
+  // Avoid creating multiple system tray icons on KDE4 and newer versions of KDE
+  // because the OS does not support removing system tray icons.
+  // TODO(pkotwicz): This is a hack for the sake of M40. Fix this properly.
+  scoped_ptr<base::Environment> env(base::Environment::Create());
+  base::nix::DesktopEnvironment desktop_environment =
+      base::nix::GetDesktopEnvironment(env.get());
+  return desktop_environment != base::nix::DESKTOP_ENVIRONMENT_KDE4;
+#else
+  return true;
+#endif
 }
 
 }  // namespace
@@ -276,7 +295,8 @@ void WebNotificationTray::UpdateStatusIcon() {
     tool_tip = l10n_util::GetStringUTF16(IDS_MESSAGE_CENTER_TOOLTIP);
   }
 
-  if (message_center()->GetVisibleNotifications().empty()) {
+  if (message_center()->GetVisibleNotifications().empty() &&
+      CanDestroyStatusIcon()) {
     DestroyStatusIcon();
     return;
   }

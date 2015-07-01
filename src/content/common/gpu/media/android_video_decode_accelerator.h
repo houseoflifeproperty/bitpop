@@ -37,16 +37,18 @@ class CONTENT_EXPORT AndroidVideoDecodeAccelerator
       const base::Callback<bool(void)>& make_context_current);
 
   // media::VideoDecodeAccelerator implementation.
-  virtual bool Initialize(media::VideoCodecProfile profile,
-                          Client* client) OVERRIDE;
-  virtual void Decode(const media::BitstreamBuffer& bitstream_buffer) OVERRIDE;
-  virtual void AssignPictureBuffers(
-      const std::vector<media::PictureBuffer>& buffers) OVERRIDE;
-  virtual void ReusePictureBuffer(int32 picture_buffer_id) OVERRIDE;
-  virtual void Flush() OVERRIDE;
-  virtual void Reset() OVERRIDE;
-  virtual void Destroy() OVERRIDE;
-  virtual bool CanDecodeOnIOThread() OVERRIDE;
+  bool Initialize(media::VideoCodecProfile profile, Client* client) override;
+  void Decode(const media::BitstreamBuffer& bitstream_buffer) override;
+  void AssignPictureBuffers(
+      const std::vector<media::PictureBuffer>& buffers) override;
+  void ReusePictureBuffer(int32 picture_buffer_id) override;
+  void Flush() override;
+  void Reset() override;
+  void Destroy() override;
+  bool CanDecodeOnIOThread() override;
+
+  static media::VideoDecodeAccelerator::SupportedProfiles
+      GetSupportedProfiles();
 
  private:
   enum State {
@@ -56,7 +58,7 @@ class CONTENT_EXPORT AndroidVideoDecodeAccelerator
 
   static const base::TimeDelta kDecodePollDelay;
 
-  virtual ~AndroidVideoDecodeAccelerator();
+  ~AndroidVideoDecodeAccelerator() override;
 
   // Configures |media_codec_| with the given codec parameters from the client.
   bool ConfigureMediaCodec();

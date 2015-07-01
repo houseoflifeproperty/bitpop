@@ -11,13 +11,12 @@
 #ifndef WEBRTC_MODULES_RTP_RTCP_INTERFACE_REMOTE_NTP_TIME_ESTIMATOR_H_
 #define WEBRTC_MODULES_RTP_RTCP_INTERFACE_REMOTE_NTP_TIME_ESTIMATOR_H_
 
+#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/system_wrappers/interface/rtp_to_ntp.h"
-#include "webrtc/system_wrappers/interface/scoped_ptr.h"
 
 namespace webrtc {
 
 class Clock;
-class RtpRtcp;
 class TimestampExtrapolator;
 
 // RemoteNtpTimeEstimator can be used to estimate a given RTP timestamp's NTP
@@ -30,9 +29,10 @@ class RemoteNtpTimeEstimator {
 
   ~RemoteNtpTimeEstimator();
 
-  // Updates the estimator with the timestamp from newly received RTCP SR for
-  // |ssrc|. The RTCP SR is read from |rtp_rtcp|.
-  bool UpdateRtcpTimestamp(uint32_t ssrc, RtpRtcp* rtp_rtcp);
+  // Updates the estimator with round trip time |rtt|, NTP seconds |ntp_secs|,
+  // NTP fraction |ntp_frac| and RTP timestamp |rtcp_timestamp|.
+  bool UpdateRtcpTimestamp(int64_t rtt, uint32_t ntp_secs, uint32_t ntp_frac,
+                           uint32_t rtp_timestamp);
 
   // Estimates the NTP timestamp in local timebase from |rtp_timestamp|.
   // Returns the NTP timestamp in ms when success. -1 if failed.
@@ -40,8 +40,9 @@ class RemoteNtpTimeEstimator {
 
  private:
   Clock* clock_;
-  scoped_ptr<TimestampExtrapolator> ts_extrapolator_;
+  rtc::scoped_ptr<TimestampExtrapolator> ts_extrapolator_;
   RtcpList rtcp_list_;
+  int64_t last_timing_log_ms_;
   DISALLOW_COPY_AND_ASSIGN(RemoteNtpTimeEstimator);
 };
 

@@ -115,7 +115,6 @@
         'usrsctplib/user_recv_thread.c',
         'usrsctplib/user_recv_thread.h',
         'usrsctplib/user_route.h',
-        'usrsctplib/user_sctp_timer_iterate.c',
         'usrsctplib/user_socket.c',
         'usrsctplib/user_socketvar.h',
         'usrsctplib/user_uma.h',
@@ -156,8 +155,8 @@
           ],
           'defines!': [
             # Remove Chrome's WINVER defines to avoid redefinition warnings.
-            'WINVER=0x0602',
-            '_WIN32_WINNT=0x0602',
+            'WINVER=0x0603',
+            '_WIN32_WINNT=0x0603',
           ],
           'cflags!': [ '/W3', '/WX' ],
           'cflags': [ '/w' ],

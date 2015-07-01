@@ -9,7 +9,6 @@
 #include "base/stl_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/plugins/plugin_finder.h"
 #include "chrome/browser/plugins/plugin_metadata.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
@@ -17,6 +16,7 @@
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
 #include "chrome/browser/ui/content_settings/content_setting_media_menu_model.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "skia/ext/skia_utils_mac.h"
@@ -184,9 +184,9 @@ class ContentSettingBubbleWebContentsObserverBridge
 
  protected:
   // WebContentsObserver:
-  virtual void DidNavigateMainFrame(
+  void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
-      const content::FrameNavigateParams& params) OVERRIDE {
+      const content::FrameNavigateParams& params) override {
     // Content settings are based on the main frame, so if it switches then
     // close up shop.
     [controller_ closeBubble:nil];
@@ -210,7 +210,7 @@ class ContentSettingBubbleWebContentsObserverBridge
 - (void)initializeBlockedPluginsList;
 - (void)initializeTitle;
 - (void)initializeRadioGroup;
-- (void)initializePopupList;
+- (void)initializeItemList;
 - (void)initializeGeoLists;
 - (void)initializeMediaMenus;
 - (void)initializeMIDISysExLists;
@@ -285,6 +285,7 @@ class ContentSettingBubbleWebContentsObserverBridge
     // is implemented
     case CONTENT_SETTINGS_TYPE_PUSH_MESSAGING:
     case CONTENT_SETTINGS_TYPE_SSL_CERT_DECISIONS:
+    case CONTENT_SETTINGS_TYPE_APP_BANNER:
       NOTREACHED();
   }
   if ((self = [super initWithWindowNibPath:nibPath
@@ -383,19 +384,20 @@ class ContentSettingBubbleWebContentsObserverBridge
 }
 
 - (void)initializeBlockedPluginsList {
-  int delta = NSMinY([titleLabel_ frame]) -
-              NSMinY([blockedResourcesField_ frame]);
+  // Hide the empty label at the top of the dialog.
+  int delta =
+      NSMinY([titleLabel_ frame]) - NSMinY([blockedResourcesField_ frame]);
   [blockedResourcesField_ removeFromSuperview];
   NSRect frame = [[self window] frame];
   frame.size.height -= delta;
   [[self window] setFrame:frame display:NO];
 }
 
-- (void)initializePopupList {
+- (void)initializeItemList {
   // I didn't put the buttons into a NSMatrix because then they are only one
   // entity in the key view loop. This way, one can tab through all of them.
-  const ContentSettingBubbleModel::PopupItems& popupItems =
-      contentSettingBubbleModel_->bubble_content().popup_items;
+  const ContentSettingBubbleModel::ListItems& listItems =
+      contentSettingBubbleModel_->bubble_content().list_items;
 
   // Get the pre-resize frame of the radio group. Its origin is where the
   // popup list should go.
@@ -405,37 +407,36 @@ class ContentSettingBubbleWebContentsObserverBridge
   // themselves when the window is enlarged.
   // Heading and radio box are already 1 * kLinkOuterPadding apart in the nib,
   // so only 1 * kLinkOuterPadding more is needed.
-  int delta = popupItems.size() * kLinkLineHeight - kLinkPadding +
-              kLinkOuterPadding;
+  int delta =
+      listItems.size() * kLinkLineHeight - kLinkPadding + kLinkOuterPadding;
   NSSize deltaSize = NSMakeSize(0, delta);
   deltaSize = [[[self window] contentView] convertSize:deltaSize toView:nil];
   NSRect windowFrame = [[self window] frame];
   windowFrame.size.height += deltaSize.height;
   [[self window] setFrame:windowFrame display:NO];
 
-  // Create popup list.
+  // Create item list.
   int topLinkY = NSMaxY(radioFrame) + delta - kLinkHeight;
   int row = 0;
-  for (std::vector<ContentSettingBubbleModel::PopupItem>::const_iterator
-       it(popupItems.begin()); it != popupItems.end(); ++it, ++row) {
-    NSImage* image = it->image.AsNSImage();
-
-    std::string title(it->title);
-    // The popup may not have committed a load yet, in which case it won't
-    // have a URL or title.
-    if (title.empty())
-      title = l10n_util::GetStringUTF8(IDS_TAB_LOADING_TITLE);
-
-    NSRect linkFrame =
-        NSMakeRect(NSMinX(radioFrame), topLinkY - kLinkLineHeight * row,
-                   200, kLinkHeight);
-    NSButton* button = [self
-        hyperlinkButtonWithFrame:linkFrame
-                           title:base::SysUTF8ToNSString(title)
-                            icon:image
-                  referenceFrame:radioFrame];
-    [[self bubble] addSubview:button];
-    popupLinks_[button] = row;
+  for (const ContentSettingBubbleModel::ListItem& listItem : listItems) {
+    NSImage* image = listItem.image.AsNSImage();
+    NSRect frame = NSMakeRect(
+        NSMinX(radioFrame), topLinkY - kLinkLineHeight * row, 200, kLinkHeight);
+    if (listItem.has_link) {
+      NSButton* button =
+          [self hyperlinkButtonWithFrame:frame
+                                   title:base::SysUTF8ToNSString(listItem.title)
+                                    icon:image
+                          referenceFrame:radioFrame];
+      [[self bubble] addSubview:button];
+      popupLinks_[button] = row++;
+    } else {
+      NSTextField* label =
+          LabelWithFrame(base::SysUTF8ToNSString(listItem.title), frame);
+      SetControlSize(label, NSSmallControlSize);
+      [[self bubble] addSubview:label];
+      row++;
+    }
   }
 }
 
@@ -533,12 +534,13 @@ class ContentSettingBubbleWebContentsObserverBridge
   CGFloat maxMenuWidth = 0;
   CGFloat maxMenuHeight = 0;
   NSRect radioFrame = [allowBlockRadioGroup_ frame];
-  for (ContentSettingBubbleModel::MediaMenuMap::const_iterator it(
-       media_menus.begin()); it != media_menus.end(); ++it) {
+  for (const std::pair<content::MediaStreamType,
+                       ContentSettingBubbleModel::MediaMenu>& map_entry :
+       media_menus) {
     // |labelFrame| will be resized later on in this function.
     NSRect labelFrame = NSMakeRect(NSMinX(radioFrame), 0, 0, 0);
-    NSTextField* label =
-        LabelWithFrame(base::SysUTF8ToNSString(it->second.label), labelFrame);
+    NSTextField* label = LabelWithFrame(
+        base::SysUTF8ToNSString(map_entry.second.label), labelFrame);
     SetControlSize(label, NSSmallControlSize);
     NSCell* cell = [label cell];
     [cell setAlignment:NSRightTextAlignment];
@@ -552,18 +554,21 @@ class ContentSettingBubbleWebContentsObserverBridge
         [[NSPopUpButton alloc] initWithFrame:buttonFrame]);
     [button setTarget:self];
 
+    // Set the map_entry's key value to |button| tag.
+    // MediaMenuPartsMap uses this value to order its elements.
+    [button setTag:static_cast<NSInteger>(map_entry.first)];
+
     // Store the |label| and |button| into MediaMenuParts struct and build
     // the popup menu from the menu model.
     content_setting_bubble::MediaMenuParts* menuParts =
-        new content_setting_bubble::MediaMenuParts(it->first, label);
+        new content_setting_bubble::MediaMenuParts(map_entry.first, label);
     menuParts->model.reset(new ContentSettingMediaMenuModel(
-        it->first, contentSettingBubbleModel_.get(),
+        map_entry.first, contentSettingBubbleModel_.get(),
         ContentSettingMediaMenuModel::MenuLabelChangedCallback()));
     mediaMenus_[button] = menuParts;
-    CGFloat width = BuildPopUpMenuFromModel(button,
-                                            menuParts->model.get(),
-                                            it->second.selected_device.name,
-                                            it->second.disabled);
+    CGFloat width = BuildPopUpMenuFromModel(
+        button, menuParts->model.get(), map_entry.second.selected_device.name,
+        map_entry.second.disabled);
     maxMenuWidth = std::max(maxMenuWidth, width);
 
     [[self bubble] addSubview:button
@@ -595,20 +600,20 @@ class ContentSettingBubbleWebContentsObserverBridge
   // Resize and reposition the media menus layout.
   CGFloat topMenuY = NSMinY(radioFrame) - kMediaMenuVerticalPadding;
   maxMenuWidth = std::max(maxMenuWidth, kMinMediaMenuButtonWidth);
-  for (content_setting_bubble::MediaMenuPartsMap::const_iterator i =
-       mediaMenus_.begin(); i != mediaMenus_.end(); ++i) {
-    NSRect labelFrame = [i->second->label frame];
+  for (const std::pair<NSPopUpButton*, content_setting_bubble::MediaMenuParts*>&
+           map_entry : mediaMenus_) {
+    NSRect labelFrame = [map_entry.second->label frame];
     // Align the label text with the button text.
     labelFrame.origin.y =
         topMenuY + (maxMenuHeight - labelFrame.size.height) / 2 + 1;
     labelFrame.size.width = maxLabelWidth;
-    [i->second->label setFrame:labelFrame];
-    NSRect menuFrame = [i->first frame];
+    [map_entry.second->label setFrame:labelFrame];
+    NSRect menuFrame = [map_entry.first frame];
     menuFrame.origin.y = topMenuY;
     menuFrame.origin.x = NSMinX(radioFrame) + maxLabelWidth;
     menuFrame.size.width = maxMenuWidth;
     menuFrame.size.height = maxMenuHeight;
-    [i->first setFrame:menuFrame];
+    [map_entry.first setFrame:menuFrame];
     topMenuY -= (maxMenuHeight + kMediaMenuElementVerticalPadding);
   }
 }
@@ -750,8 +755,9 @@ class ContentSettingBubbleWebContentsObserverBridge
   if (allowBlockRadioGroup_)  // not bound in cookie bubble xib
     [self initializeRadioGroup];
 
-  if (type == CONTENT_SETTINGS_TYPE_POPUPS)
-    [self initializePopupList];
+  if (type == CONTENT_SETTINGS_TYPE_POPUPS ||
+      type == CONTENT_SETTINGS_TYPE_PLUGINS)
+    [self initializeItemList];
   if (type == CONTENT_SETTINGS_TYPE_GEOLOCATION)
     [self initializeGeoLists];
   if (type == CONTENT_SETTINGS_TYPE_MEDIASTREAM)
@@ -771,7 +777,7 @@ class ContentSettingBubbleWebContentsObserverBridge
 - (void)popupLinkClicked:(id)sender {
   content_setting_bubble::PopupLinks::iterator i(popupLinks_.find(sender));
   DCHECK(i != popupLinks_.end());
-  contentSettingBubbleModel_->OnPopupClicked(i->second);
+  contentSettingBubbleModel_->OnListItemClicked(i->second);
 }
 
 - (void)clearGeolocationForCurrentHost:(id)sender {

@@ -6,7 +6,6 @@
 
 #include <errno.h>
 #include <netinet/in.h>
-#include <string.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <string>
@@ -23,23 +22,21 @@ namespace net {
 namespace tools {
 
 // static
-IPAddressNumber QuicSocketUtils::GetAddressFromMsghdr(struct msghdr *hdr) {
+IPAddressNumber QuicSocketUtils::GetAddressFromMsghdr(struct msghdr* hdr) {
   if (hdr->msg_controllen > 0) {
     for (cmsghdr* cmsg = CMSG_FIRSTHDR(hdr);
-         cmsg != NULL;
+         cmsg != nullptr;
          cmsg = CMSG_NXTHDR(hdr, cmsg)) {
-      const uint8* addr_data = NULL;
+      const uint8* addr_data = nullptr;
       int len = 0;
       if (cmsg->cmsg_type == IPV6_PKTINFO) {
         in6_pktinfo* info = reinterpret_cast<in6_pktinfo*>CMSG_DATA(cmsg);
-        in6_addr addr = info->ipi6_addr;
-        addr_data = reinterpret_cast<const uint8*>(&addr);
-        len = sizeof(addr);
+        addr_data = reinterpret_cast<const uint8*>(&info->ipi6_addr);
+        len = sizeof(in6_addr);
       } else if (cmsg->cmsg_type == IP_PKTINFO) {
         in_pktinfo* info = reinterpret_cast<in_pktinfo*>CMSG_DATA(cmsg);
-        in_addr addr = info->ipi_addr;
-        addr_data = reinterpret_cast<const uint8*>(&addr);
-        len = sizeof(addr);
+        addr_data = reinterpret_cast<const uint8*>(&info->ipi_addr);
+        len = sizeof(in_addr);
       } else {
         continue;
       }
@@ -51,12 +48,12 @@ IPAddressNumber QuicSocketUtils::GetAddressFromMsghdr(struct msghdr *hdr) {
 }
 
 // static
-bool QuicSocketUtils::GetOverflowFromMsghdr(struct msghdr *hdr,
-                                            uint32 *dropped_packets) {
+bool QuicSocketUtils::GetOverflowFromMsghdr(struct msghdr* hdr,
+                                            QuicPacketCount* dropped_packets) {
   if (hdr->msg_controllen > 0) {
-    struct cmsghdr *cmsg;
+    struct cmsghdr* cmsg;
     for (cmsg = CMSG_FIRSTHDR(hdr);
-         cmsg != NULL;
+         cmsg != nullptr;
          cmsg = CMSG_NXTHDR(hdr, cmsg)) {
       if (cmsg->cmsg_type == SO_RXQ_OVFL) {
         *dropped_packets = *(reinterpret_cast<int*>CMSG_DATA(cmsg));
@@ -99,10 +96,10 @@ bool QuicSocketUtils::SetReceiveBufferSize(int fd, size_t size) {
 
 // static
 int QuicSocketUtils::ReadPacket(int fd, char* buffer, size_t buf_len,
-                                uint32* dropped_packets,
+                                QuicPacketCount* dropped_packets,
                                 IPAddressNumber* self_address,
                                 IPEndPoint* peer_address) {
-  CHECK(peer_address != NULL);
+  DCHECK(peer_address != nullptr);
   const int kSpaceForOverflowAndIp =
       CMSG_SPACE(sizeof(int)) + CMSG_SPACE(sizeof(in6_pktinfo));
   char cbuf[kSpaceForOverflowAndIp];
@@ -118,7 +115,7 @@ int QuicSocketUtils::ReadPacket(int fd, char* buffer, size_t buf_len,
   hdr.msg_iovlen = 1;
   hdr.msg_flags = 0;
 
-  struct cmsghdr *cmsg = (struct cmsghdr *) cbuf;
+  struct cmsghdr* cmsg = (struct cmsghdr*)cbuf;
   cmsg->cmsg_len = arraysize(cbuf);
   hdr.msg_control = cmsg;
   hdr.msg_controllen = arraysize(cbuf);
@@ -134,10 +131,10 @@ int QuicSocketUtils::ReadPacket(int fd, char* buffer, size_t buf_len,
     return -1;
   }
 
-  if (dropped_packets != NULL) {
+  if (dropped_packets != nullptr) {
     GetOverflowFromMsghdr(&hdr, dropped_packets);
   }
-  if (self_address != NULL) {
+  if (self_address != nullptr) {
     *self_address = QuicSocketUtils::GetAddressFromMsghdr(&hdr);
   }
 
@@ -208,7 +205,7 @@ WriteResult QuicSocketUtils::WritePacket(int fd,
   } else {
     hdr.msg_control = cbuf;
     hdr.msg_controllen = kSpaceForIp;
-    cmsghdr *cmsg = CMSG_FIRSTHDR(&hdr);
+    cmsghdr* cmsg = CMSG_FIRSTHDR(&hdr);
     SetIpInfoInCmsg(self_address, cmsg);
     hdr.msg_controllen = cmsg->cmsg_len;
   }

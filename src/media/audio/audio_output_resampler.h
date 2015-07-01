@@ -10,9 +10,10 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_manager.h"
-#include "media/audio/audio_output_dispatcher.h"
+#include "media/audio/audio_output_dispatcher_impl.h"
 #include "media/audio/audio_parameters.h"
 
 namespace media {
@@ -24,17 +25,12 @@ class OnMoreDataConverter;
 // AudioConverter class for details on the conversion process.
 //
 // AOR works by intercepting the AudioSourceCallback provided to StartStream()
-// and redirecting it through an AudioConverter instance.  AudioBuffersState is
-// adjusted for buffer delay caused by the conversion process.
+// and redirecting it through an AudioConverter instance.  |total_bytes_delay|
+// is adjusted for buffer delay caused by the conversion process.
 //
 // AOR will automatically fall back from AUDIO_PCM_LOW_LATENCY to
 // AUDIO_PCM_LINEAR if the output device fails to open at the requested output
-// parameters.
-//
-// TODO(dalecurtis): Ideally the low latency path will be as reliable as the
-// high latency path once we have channel mixing and support querying for the
-// hardware's configured bit depth.  Monitor the UMA stats for fallback and
-// remove fallback support once it's stable.  http://crbug.com/148418
+// parameters. If opening still fails, it will fallback to AUDIO_FAKE.
 class MEDIA_EXPORT AudioOutputResampler : public AudioOutputDispatcher {
  public:
   AudioOutputResampler(AudioManager* audio_manager,
@@ -44,28 +40,30 @@ class MEDIA_EXPORT AudioOutputResampler : public AudioOutputDispatcher {
                        const base::TimeDelta& close_delay);
 
   // AudioOutputDispatcher interface.
-  virtual bool OpenStream() OVERRIDE;
-  virtual bool StartStream(AudioOutputStream::AudioSourceCallback* callback,
-                           AudioOutputProxy* stream_proxy) OVERRIDE;
-  virtual void StopStream(AudioOutputProxy* stream_proxy) OVERRIDE;
-  virtual void StreamVolumeSet(AudioOutputProxy* stream_proxy,
-                               double volume) OVERRIDE;
-  virtual void CloseStream(AudioOutputProxy* stream_proxy) OVERRIDE;
-  virtual void Shutdown() OVERRIDE;
+  bool OpenStream() override;
+  bool StartStream(AudioOutputStream::AudioSourceCallback* callback,
+                   AudioOutputProxy* stream_proxy) override;
+  void StopStream(AudioOutputProxy* stream_proxy) override;
+  void StreamVolumeSet(AudioOutputProxy* stream_proxy, double volume) override;
+  void CloseStream(AudioOutputProxy* stream_proxy) override;
+  void Shutdown() override;
 
  private:
   friend class base::RefCountedThreadSafe<AudioOutputResampler>;
-  virtual ~AudioOutputResampler();
+  ~AudioOutputResampler() override;
 
   // Converts low latency based output parameters into high latency
   // appropriate output parameters in error situations.
   void SetupFallbackParams();
 
-  // Used to initialize and reinitialize |dispatcher_|.
+  // Used to reinitialize |dispatcher_|.
+  void Reinitialize();
+
+  // Used to initialize |dispatcher_|.
   void Initialize();
 
   // Dispatcher to proxy all AudioOutputDispatcher calls too.
-  scoped_refptr<AudioOutputDispatcher> dispatcher_;
+  scoped_refptr<AudioOutputDispatcherImpl> dispatcher_;
 
   // Map of outstanding OnMoreDataConverter objects.  A new object is created
   // on every StartStream() call and destroyed on CloseStream().
@@ -75,12 +73,21 @@ class MEDIA_EXPORT AudioOutputResampler : public AudioOutputDispatcher {
   // Used by AudioOutputDispatcherImpl; kept so we can reinitialize on the fly.
   base::TimeDelta close_delay_;
 
-  // AudioParameters used to setup the output stream.
+  // AudioParameters used to setup the output stream; changed upon fallback.
   AudioParameters output_params_;
+
+  // The original AudioParameters we were constructed with.
+  const AudioParameters original_output_params_;
 
   // Whether any streams have been opened through |dispatcher_|, if so we can't
   // fallback on future OpenStream() failures.
   bool streams_opened_;
+
+  // The reinitialization timer provides a way to recover from temporary failure
+  // states by clearing the dispatcher if all proxies have been closed and none
+  // have been created within |close_delay_|.  Without this, audio may be lost
+  // to a fake stream indefinitely for transient errors.
+  base::Timer reinitialize_timer_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioOutputResampler);
 };

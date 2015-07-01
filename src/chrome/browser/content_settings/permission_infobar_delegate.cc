@@ -12,7 +12,7 @@
 
 PermissionInfobarDelegate::~PermissionInfobarDelegate() {
   if (!action_taken_)
-    PermissionContextUmaUtil::PermissionIgnored(type_);
+    PermissionContextUmaUtil::PermissionIgnored(type_, requesting_origin_);
 }
 
 PermissionInfobarDelegate::PermissionInfobarDelegate(
@@ -25,13 +25,18 @@ PermissionInfobarDelegate::PermissionInfobarDelegate(
       type_(type) {
 }
 
+infobars::InfoBarDelegate::Type
+PermissionInfobarDelegate::GetInfoBarType() const {
+  return PAGE_ACTION_TYPE;
+}
+
 void PermissionInfobarDelegate::InfoBarDismissed() {
   SetPermission(false, false);
 }
 
-infobars::InfoBarDelegate::Type
-PermissionInfobarDelegate::GetInfoBarType() const {
-  return PAGE_ACTION_TYPE;
+PermissionInfobarDelegate*
+PermissionInfobarDelegate::AsPermissionInfobarDelegate() {
+  return this;
 }
 
 base::string16 PermissionInfobarDelegate::GetButtonLabel(

@@ -23,12 +23,15 @@ class CONTENT_EXPORT BrowserURLHandlerImpl : public BrowserURLHandler {
   static BrowserURLHandlerImpl* GetInstance();
 
   // BrowserURLHandler implementation:
-  virtual void RewriteURLIfNecessary(GURL* url,
-                                     BrowserContext* browser_context,
-                                     bool* reverse_on_redirect) OVERRIDE;
+  void RewriteURLIfNecessary(GURL* url,
+                             BrowserContext* browser_context,
+                             bool* reverse_on_redirect) override;
+  void SetFixupHandler(URLHandler handler) override;
   // Add the specified handler pair to the list of URL handlers.
-  virtual void AddHandlerPair(URLHandler handler,
-                              URLHandler reverse_handler) OVERRIDE;
+  void AddHandlerPair(URLHandler handler, URLHandler reverse_handler) override;
+
+  // Fixes up the URL before rewriting occurs.
+  void FixupURLBeforeRewrite(GURL* url, BrowserContext* browser_context);
 
   // Reverses the rewriting that was done for |original| using the new |url|.
   bool ReverseURLRewrite(GURL* url, const GURL& original,
@@ -37,8 +40,11 @@ class CONTENT_EXPORT BrowserURLHandlerImpl : public BrowserURLHandler {
  private:
   // This object is a singleton:
   BrowserURLHandlerImpl();
-  virtual ~BrowserURLHandlerImpl();
+  ~BrowserURLHandlerImpl() override;
   friend struct DefaultSingletonTraits<BrowserURLHandlerImpl>;
+
+  // A URLHandler to run in a preliminary phase, before rewriting is done.
+  URLHandler fixup_handler_;
 
   // The list of known URLHandlers, optionally with reverse-rewriters.
   typedef std::pair<URLHandler, URLHandler> HandlerPair;
@@ -46,6 +52,7 @@ class CONTENT_EXPORT BrowserURLHandlerImpl : public BrowserURLHandler {
 
   FRIEND_TEST_ALL_PREFIXES(BrowserURLHandlerImplTest, BasicRewriteAndReverse);
   FRIEND_TEST_ALL_PREFIXES(BrowserURLHandlerImplTest, NullHandlerReverse);
+  FRIEND_TEST_ALL_PREFIXES(BrowserURLHandlerImplTest, ViewSourceReverse);
 
   DISALLOW_COPY_AND_ASSIGN(BrowserURLHandlerImpl);
 };

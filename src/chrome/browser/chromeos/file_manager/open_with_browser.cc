@@ -21,6 +21,7 @@
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
+#include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
@@ -52,6 +53,9 @@ const base::FilePath::CharType* kFileExtensionsViewableInBrowser[] = {
   FILE_PATH_LITERAL(".htm"),
   FILE_PATH_LITERAL(".mhtml"),
   FILE_PATH_LITERAL(".mht"),
+  FILE_PATH_LITERAL(".xhtml"),
+  FILE_PATH_LITERAL(".xht"),
+  FILE_PATH_LITERAL(".shtml"),
   FILE_PATH_LITERAL(".svg"),
 };
 
@@ -83,8 +87,8 @@ bool IsPepperPluginEnabled(Profile* profile,
 bool IsPdfPluginEnabled(Profile* profile) {
   DCHECK(profile);
 
-  base::FilePath plugin_path;
-  PathService::Get(chrome::FILE_PDF_PLUGIN, &plugin_path);
+  base::FilePath plugin_path = base::FilePath::FromUTF8Unsafe(
+      ChromeContentClient::kPDFPluginPath);
   return IsPepperPluginEnabled(profile, plugin_path);
 }
 
@@ -92,7 +96,7 @@ bool IsFlashPluginEnabled(Profile* profile) {
   DCHECK(profile);
 
   base::FilePath plugin_path(
-      CommandLine::ForCurrentProcess()->GetSwitchValueNative(
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueNative(
           switches::kPpapiFlashPath));
   if (plugin_path.empty())
     PathService::Get(chrome::FILE_PEPPER_FLASH_PLUGIN, &plugin_path);

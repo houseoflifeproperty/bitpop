@@ -14,7 +14,7 @@
 #include "base/observer_list.h"
 #include "base/threading/thread_checker.h"
 #include "base/timer/timer.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
 #include "net/udp/udp_socket.h"
 
 namespace net {
@@ -89,7 +89,7 @@ class DialService {
   // Called by listeners to this service to add/remove themselves as observers.
   virtual void AddObserver(Observer* observer) = 0;
   virtual void RemoveObserver(Observer* observer) = 0;
-  virtual bool HasObserver(Observer* observer) = 0;
+  virtual bool HasObserver(const Observer* observer) const = 0;
 };
 
 // Implements DialService.
@@ -102,13 +102,13 @@ class DialServiceImpl : public DialService,
                         public base::SupportsWeakPtr<DialServiceImpl> {
  public:
   explicit DialServiceImpl(net::NetLog* net_log);
-  virtual ~DialServiceImpl();
+  ~DialServiceImpl() override;
 
   // DialService implementation
-  virtual bool Discover() OVERRIDE;
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual bool HasObserver(Observer* observer) OVERRIDE;
+  bool Discover() override;
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
+  bool HasObserver(const Observer* observer) const override;
 
  private:
   // Represents a socket binding to a single network interface.

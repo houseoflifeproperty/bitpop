@@ -38,25 +38,29 @@ namespace blink {
 
 class WorkerGlobalScope;
 
-class WorkerConsoleAgent FINAL : public InspectorConsoleAgent {
+class WorkerConsoleAgent final : public InspectorConsoleAgent {
     WTF_MAKE_NONCOPYABLE(WorkerConsoleAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<WorkerConsoleAgent> create(InspectorTimelineAgent* timelineAgent, InjectedScriptManager* injectedScriptManager, WorkerGlobalScope* workerGlobalScope)
+    static PassOwnPtrWillBeRawPtr<WorkerConsoleAgent> create(InjectedScriptManager* injectedScriptManager, WorkerGlobalScope* workerGlobalScope)
     {
-        return adoptPtrWillBeNoop(new WorkerConsoleAgent(timelineAgent, injectedScriptManager, workerGlobalScope));
+        return adoptPtrWillBeNoop(new WorkerConsoleAgent(injectedScriptManager, workerGlobalScope));
     }
     virtual ~WorkerConsoleAgent();
+    DECLARE_VIRTUAL_TRACE();
 
-    virtual bool isWorkerAgent() OVERRIDE { return true; }
+    virtual void enable(ErrorString*) override;
+    virtual void clearMessages(ErrorString*) override;
 
 protected:
-    virtual ConsoleMessageStorage* messageStorage() OVERRIDE;
+    virtual ConsoleMessageStorage* messageStorage() override;
+
+    virtual void enableStackCapturingIfNeeded() override;
+    virtual void disableStackCapturingIfNeeded() override;
 
 private:
-    WorkerConsoleAgent(InspectorTimelineAgent*, InjectedScriptManager*, WorkerGlobalScope*);
-    virtual void addInspectedNode(ErrorString*, int nodeId) OVERRIDE;
+    WorkerConsoleAgent(InjectedScriptManager*, WorkerGlobalScope*);
 
-    WorkerGlobalScope* m_workerGlobalScope;
+    RawPtrWillBeMember<WorkerGlobalScope> m_workerGlobalScope;
 };
 
 } // namespace blink

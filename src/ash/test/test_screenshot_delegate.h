@@ -8,7 +8,7 @@
 #include "ash/screenshot_delegate.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace ash {
 namespace test {
@@ -16,13 +16,13 @@ namespace test {
 class TestScreenshotDelegate : public ScreenshotDelegate {
  public:
   TestScreenshotDelegate();
-  virtual ~TestScreenshotDelegate();
+  ~TestScreenshotDelegate() override;
 
   // Overridden from ScreenshotDelegate:
-  virtual void HandleTakeScreenshotForAllRootWindows() OVERRIDE;
-  virtual void HandleTakePartialScreenshot(
-      aura::Window* window, const gfx::Rect& rect) OVERRIDE;
-  virtual bool CanTakeScreenshot() OVERRIDE;
+  void HandleTakeScreenshotForAllRootWindows() override;
+  void HandleTakePartialScreenshot(aura::Window* window,
+                                   const gfx::Rect& rect) override;
+  bool CanTakeScreenshot() override;
 
   int handle_take_screenshot_count() const {
     return handle_take_screenshot_count_;

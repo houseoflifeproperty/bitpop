@@ -259,6 +259,10 @@ int32_t PepperURLLoaderHost::InternalOnHostMsgOpen(
 
   web_request.setRequestContext(WebURLRequest::RequestContextPlugin);
   web_request.setRequestorProcessID(renderer_ppapi_host_->GetPluginPID());
+  // The requests from the plugins with private permission which can bypass same
+  // origin must skip the ServiceWorker.
+  web_request.setSkipServiceWorker(
+      host()->permissions().HasPermission(ppapi::PERMISSION_PRIVATE));
 
   WebURLLoaderOptions options;
   if (has_universal_access_) {
@@ -374,9 +378,10 @@ void PepperURLLoaderHost::Close() {
 }
 
 blink::WebLocalFrame* PepperURLLoaderHost::GetFrame() {
-  PepperPluginInstance* instance_object =
-      renderer_ppapi_host_->GetPluginInstance(pp_instance());
-  if (!instance_object)
+  PepperPluginInstanceImpl* instance_object =
+      static_cast<PepperPluginInstanceImpl*>(
+          renderer_ppapi_host_->GetPluginInstance(pp_instance()));
+  if (!instance_object || instance_object->is_deleted())
     return NULL;
   return instance_object->GetContainer()->element().document().frame();
 }

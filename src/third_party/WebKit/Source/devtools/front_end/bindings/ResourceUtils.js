@@ -66,7 +66,7 @@ WebInspector.displayNameForURL = function(url)
     if (resource)
         return resource.displayName;
 
-    var uiSourceCode = WebInspector.workspace.uiSourceCodeForURL(url);
+    var uiSourceCode = WebInspector.networkMapping.uiSourceCodeForURLForAnyTarget(url);
     if (uiSourceCode)
         return uiSourceCode.displayName();
 
@@ -96,9 +96,8 @@ WebInspector.displayNameForURL = function(url)
  */
 WebInspector.linkifyStringAsFragmentWithCustomLinkifier = function(string, linkifier)
 {
-    var container = document.createDocumentFragment();
+    var container = createDocumentFragment();
     var linkStringRegEx = /(?:[a-zA-Z][a-zA-Z0-9+.-]{2,}:\/\/|data:|www\.)[\w$\-_+*'=\|\/\\(){}[\]^%@&#~,:;.!?]{2,}[\w$\-_+*=\|\/\\({^%@&#~]/;
-    var lineColumnRegEx = /:(\d+)(:(\d+))?$/;
 
     while (string) {
         var linkString = linkStringRegEx.exec(string);
@@ -108,31 +107,23 @@ WebInspector.linkifyStringAsFragmentWithCustomLinkifier = function(string, linki
         linkString = linkString[0];
         var linkIndex = string.indexOf(linkString);
         var nonLink = string.substring(0, linkIndex);
-        container.appendChild(document.createTextNode(nonLink));
+        container.appendChild(createTextNode(nonLink));
 
         var title = linkString;
         var realURL = (linkString.startsWith("www.") ? "http://" + linkString : linkString);
-        var lineColumnMatch = lineColumnRegEx.exec(realURL);
-        var lineNumber;
-        var columnNumber;
-        if (lineColumnMatch) {
-            realURL = realURL.substring(0, realURL.length - lineColumnMatch[0].length);
-            lineNumber = parseInt(lineColumnMatch[1], 10);
-            // Immediately convert line and column to 0-based numbers.
-            lineNumber = isNaN(lineNumber) ? undefined : lineNumber - 1;
-            if (typeof(lineColumnMatch[3]) === "string") {
-                columnNumber = parseInt(lineColumnMatch[3], 10);
-                columnNumber = isNaN(columnNumber) ? undefined : columnNumber - 1;
-            }
-        }
+        var splitResult = WebInspector.ParsedURL.splitLineAndColumn(realURL);
+        var linkNode;
+        if (splitResult)
+            linkNode = linkifier(title, splitResult.url, splitResult.lineNumber, splitResult.columnNumber);
+        else
+            linkNode = linkifier(title, realURL);
 
-        var linkNode = linkifier(title, realURL, lineNumber, columnNumber);
         container.appendChild(linkNode);
         string = string.substring(linkIndex + linkString.length, string.length);
     }
 
     if (string)
-        container.appendChild(document.createTextNode(string));
+        container.appendChild(createTextNode(string));
 
     return container;
 }
@@ -152,7 +143,7 @@ WebInspector.linkifyStringAsFragment = function(string)
      */
     function linkifier(title, url, lineNumber, columnNumber)
     {
-        var isExternal = !WebInspector.resourceForURL(url) && !WebInspector.workspace.uiSourceCodeForURL(url);
+        var isExternal = !WebInspector.resourceForURL(url) && !WebInspector.networkMapping.uiSourceCodeForURLForAnyTarget(url);
         var urlNode = WebInspector.linkifyURLAsNode(url, title, undefined, isExternal);
         if (typeof lineNumber !== "undefined") {
             urlNode.lineNumber = lineNumber;
@@ -181,7 +172,7 @@ WebInspector.linkifyURLAsNode = function(url, linkText, classes, isExternal, too
     classes = (classes ? classes + " " : "");
     classes += isExternal ? "webkit-html-external-link" : "webkit-html-resource-link";
 
-    var a = document.createElement("a");
+    var a = createElement("a");
     var href = sanitizeHref(url);
     if (href !== null)
         a.href = href;
@@ -198,16 +189,13 @@ WebInspector.linkifyURLAsNode = function(url, linkText, classes, isExternal, too
 }
 
 /**
- * @param {string} url
- * @param {number=} lineNumber
- * @return {string}
+ * @param {string} article
+ * @param {string} title
+ * @return {!Element}
  */
-WebInspector.formatLinkText = function(url, lineNumber)
+WebInspector.linkifyDocumentationURLAsNode = function(article, title)
 {
-    var text = url ? WebInspector.displayNameForURL(url) : WebInspector.UIString("(program)");
-    if (typeof lineNumber === "number")
-        text += ":" + (lineNumber + 1);
-    return text;
+    return WebInspector.linkifyURLAsNode("https://developer.chrome.com/devtools/docs/" + article, title, undefined, true);
 }
 
 /**
@@ -215,11 +203,14 @@ WebInspector.formatLinkText = function(url, lineNumber)
  * @param {number=} lineNumber
  * @param {string=} classes
  * @param {string=} tooltipText
+ * @param {string=} urlDisplayName
  * @return {!Element}
  */
-WebInspector.linkifyResourceAsNode = function(url, lineNumber, classes, tooltipText)
+WebInspector.linkifyResourceAsNode = function(url, lineNumber, classes, tooltipText, urlDisplayName)
 {
-    var linkText = WebInspector.formatLinkText(url, lineNumber);
+    var linkText = urlDisplayName ? urlDisplayName : url ? WebInspector.displayNameForURL(url) : WebInspector.UIString("(program)");
+    if (typeof lineNumber === "number")
+        linkText += ":" + (lineNumber + 1);
     var anchor = WebInspector.linkifyURLAsNode(url, linkText, classes, false, tooltipText);
     anchor.lineNumber = lineNumber;
     return anchor;

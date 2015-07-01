@@ -15,41 +15,45 @@
 
 namespace media {
 
-// This class acts as a MojoRendererService-side stub for a real
-// media::DemuxerStream that is part of a media::Pipeline in a remote
-// application. Roughly speaking, it takes a mojo::DemuxerStreamPtr and exposes
-// it as a media::DemuxerStream for use by media components.
-class MojoDemuxerStreamAdapter : public media::DemuxerStream,
-                                 public mojo::DemuxerStreamClient {
+// This class acts as a MojoRendererService-side stub for a real DemuxerStream
+// that is part of a Pipeline in a remote application. Roughly speaking, it
+// takes a mojo::DemuxerStreamPtr and exposes it as a DemuxerStream for use by
+// media components.
+class MojoDemuxerStreamAdapter : public DemuxerStream {
  public:
   // |demuxer_stream| is connected to the mojo::DemuxerStream that |this| will
   //     become the client of.
-  // |stream_ready_cb| will be invoked when |stream| has fully initialized
-  //     and |this| is ready for use.
+  // |stream_ready_cb| will be invoked when |demuxer_stream| has fully
+  //     initialized and |this| is ready for use.
   // NOTE: Illegal to call any methods until |stream_ready_cb| is invoked.
   MojoDemuxerStreamAdapter(mojo::DemuxerStreamPtr demuxer_stream,
                            const base::Closure& stream_ready_cb);
-  virtual ~MojoDemuxerStreamAdapter();
+  ~MojoDemuxerStreamAdapter() override;
 
-  // media::DemuxerStream implementation.
-  virtual void Read(const ReadCB& read_cb) OVERRIDE;
-  virtual AudioDecoderConfig audio_decoder_config() OVERRIDE;
-  virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
-  virtual Type type() OVERRIDE;
-  virtual void EnableBitstreamConverter() OVERRIDE;
-  virtual bool SupportsConfigChanges() OVERRIDE;
-  virtual VideoRotation video_rotation() OVERRIDE;
-
-  // mojo::DemuxerStreamClient implementation.
-  virtual void OnStreamReady(mojo::ScopedDataPipeConsumerHandle pipe) OVERRIDE;
-  virtual void OnAudioDecoderConfigChanged(
-      mojo::AudioDecoderConfigPtr config) OVERRIDE;
+  // DemuxerStream implementation.
+  void Read(const ReadCB& read_cb) override;
+  AudioDecoderConfig audio_decoder_config() override;
+  VideoDecoderConfig video_decoder_config() override;
+  Type type() const override;
+  void EnableBitstreamConverter() override;
+  bool SupportsConfigChanges() override;
+  VideoRotation video_rotation() override;
 
  private:
+  void OnStreamReady(mojo::DemuxerStream::Type type,
+                     mojo::ScopedDataPipeConsumerHandle pipe,
+                     mojo::AudioDecoderConfigPtr audio_config,
+                     mojo::VideoDecoderConfigPtr video_config);
+
   // The callback from |demuxer_stream_| that a read operation has completed.
   // |read_cb| is a callback from the client who invoked Read() on |this|.
   void OnBufferReady(mojo::DemuxerStream::Status status,
-                     mojo::MediaDecoderBufferPtr buffer);
+                     mojo::MediaDecoderBufferPtr buffer,
+                     mojo::AudioDecoderConfigPtr audio_config,
+                     mojo::VideoDecoderConfigPtr video_config);
+
+  void UpdateConfig(mojo::AudioDecoderConfigPtr audio_config,
+                    mojo::VideoDecoderConfigPtr video_config);
 
   // See constructor for descriptions.
   mojo::DemuxerStreamPtr demuxer_stream_;
@@ -62,9 +66,14 @@ class MojoDemuxerStreamAdapter : public media::DemuxerStream,
   // on to the caller of Read() until OnAudioDecoderConfigChanged is observed.
   DemuxerStream::ReadCB read_cb_;
 
-  // The front of the queue is the current config. We pop when we observe
-  // DemuxerStatus::CONFIG_CHANGED.
-  std::queue<media::AudioDecoderConfig> config_queue_;
+  // The current config.
+  AudioDecoderConfig audio_config_;
+  VideoDecoderConfig video_config_;
+
+  DemuxerStream::Type type_;
+
+  // DataPipe for deserializing the data section of DecoderBuffers from.
+  mojo::ScopedDataPipeConsumerHandle stream_pipe_;
 
   base::WeakPtrFactory<MojoDemuxerStreamAdapter> weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(MojoDemuxerStreamAdapter);

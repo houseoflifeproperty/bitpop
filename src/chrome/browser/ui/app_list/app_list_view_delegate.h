@@ -10,6 +10,7 @@
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "base/compiler_specific.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/observer_list.h"
@@ -18,6 +19,8 @@
 #include "chrome/browser/search/hotword_client.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/app_list/start_page_observer.h"
+#include "components/search_engines/template_url_service.h"
+#include "components/search_engines/template_url_service_observer.h"
 #include "components/signin/core/browser/signin_manager_base.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -31,12 +34,18 @@ class CustomLauncherPageContents;
 }
 
 namespace app_list {
+class LauncherPageEventDispatcher;
 class SearchController;
+class SearchResourceManager;
 class SpeechUIModel;
 }
 
 namespace base {
 class FilePath;
+}
+
+namespace content {
+struct SpeechRecognitionSessionPreamble;
 }
 
 namespace gfx {
@@ -53,16 +62,65 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
                             public ProfileInfoCacheObserver,
                             public SigninManagerBase::Observer,
                             public SigninManagerFactory::Observer,
-                            public content::NotificationObserver {
+                            public content::NotificationObserver,
+                            public TemplateURLServiceObserver {
  public:
   // Constructs Chrome's AppListViewDelegate with a NULL Profile.
   // Does not take ownership of |controller|. TODO(tapted): It should.
   explicit AppListViewDelegate(AppListControllerDelegate* controller);
-  virtual ~AppListViewDelegate();
+  ~AppListViewDelegate() override;
 
   // Configure the AppList for the given |profile|.
   void SetProfile(Profile* profile);
   Profile* profile() { return profile_; }
+
+  // Invoked to toggle the status of speech recognition based on a hotword
+  // trigger.
+  void ToggleSpeechRecognitionForHotword(
+      const scoped_refptr<content::SpeechRecognitionSessionPreamble>& preamble);
+
+  // Overridden from app_list::AppListViewDelegate:
+  bool ForceNativeDesktop() const override;
+  void SetProfileByPath(const base::FilePath& profile_path) override;
+  app_list::AppListModel* GetModel() override;
+  app_list::SpeechUIModel* GetSpeechUI() override;
+  void GetShortcutPathForApp(
+      const std::string& app_id,
+      const base::Callback<void(const base::FilePath&)>& callback) override;
+  void StartSearch() override;
+  void StopSearch() override;
+  void OpenSearchResult(app_list::SearchResult* result,
+                        bool auto_launch,
+                        int event_flags) override;
+  void InvokeSearchResultAction(app_list::SearchResult* result,
+                                int action_index,
+                                int event_flags) override;
+  base::TimeDelta GetAutoLaunchTimeout() override;
+  void AutoLaunchCanceled() override;
+  void ViewInitialized() override;
+  void Dismiss() override;
+  void ViewClosing() override;
+  gfx::ImageSkia GetWindowIcon() override;
+  void OpenSettings() override;
+  void OpenHelp() override;
+  void OpenFeedback() override;
+  void ToggleSpeechRecognition() override;
+  void ShowForProfileByPath(const base::FilePath& profile_path) override;
+#if defined(TOOLKIT_VIEWS)
+  views::View* CreateStartPageWebView(const gfx::Size& size) override;
+  std::vector<views::View*> CreateCustomPageWebViews(
+      const gfx::Size& size) override;
+  void CustomLauncherPageAnimationChanged(double progress) override;
+  void CustomLauncherPagePopSubpage() override;
+#endif
+  bool IsSpeechRecognitionEnabled() override;
+  const Users& GetUsers() const override;
+  bool ShouldCenterWindow() const override;
+  void AddObserver(app_list::AppListViewDelegateObserver* observer) override;
+  void RemoveObserver(app_list::AppListViewDelegateObserver* observer) override;
+
+  // Overridden from TemplateURLServiceObserver:
+  void OnTemplateURLServiceChanged() override;
 
  private:
   // Updates the speech webview and start page for the current |profile_|.
@@ -74,82 +132,41 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   // Updates the app list's custom launcher pages for the current |profile_|.
   void SetUpCustomLauncherPages();
 
-  // Overridden from app_list::AppListViewDelegate:
-  virtual bool ForceNativeDesktop() const OVERRIDE;
-  virtual void SetProfileByPath(const base::FilePath& profile_path) OVERRIDE;
-  virtual app_list::AppListModel* GetModel() OVERRIDE;
-  virtual app_list::SpeechUIModel* GetSpeechUI() OVERRIDE;
-  virtual void GetShortcutPathForApp(
-      const std::string& app_id,
-      const base::Callback<void(const base::FilePath&)>& callback) OVERRIDE;
-  virtual void StartSearch() OVERRIDE;
-  virtual void StopSearch() OVERRIDE;
-  virtual void OpenSearchResult(app_list::SearchResult* result,
-                                bool auto_launch,
-                                int event_flags) OVERRIDE;
-  virtual void InvokeSearchResultAction(app_list::SearchResult* result,
-                                        int action_index,
-                                        int event_flags) OVERRIDE;
-  virtual base::TimeDelta GetAutoLaunchTimeout() OVERRIDE;
-  virtual void AutoLaunchCanceled() OVERRIDE;
-  virtual void ViewInitialized() OVERRIDE;
-  virtual void Dismiss() OVERRIDE;
-  virtual void ViewClosing() OVERRIDE;
-  virtual gfx::ImageSkia GetWindowIcon() OVERRIDE;
-  virtual void OpenSettings() OVERRIDE;
-  virtual void OpenHelp() OVERRIDE;
-  virtual void OpenFeedback() OVERRIDE;
-  virtual void ToggleSpeechRecognition() OVERRIDE;
-  virtual void ShowForProfileByPath(
-      const base::FilePath& profile_path) OVERRIDE;
-#if defined(TOOLKIT_VIEWS)
-  virtual views::View* CreateStartPageWebView(const gfx::Size& size) OVERRIDE;
-  virtual std::vector<views::View*> CreateCustomPageWebViews(
-      const gfx::Size& size) OVERRIDE;
-#endif
-  virtual bool IsSpeechRecognitionEnabled() OVERRIDE;
-  virtual const Users& GetUsers() const OVERRIDE;
-  virtual bool ShouldCenterWindow() const OVERRIDE;
-  virtual void AddObserver(
-      app_list::AppListViewDelegateObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(
-      app_list::AppListViewDelegateObserver* observer) OVERRIDE;
-
   // Overridden from app_list::StartPageObserver:
-  virtual void OnSpeechResult(const base::string16& result,
-                              bool is_final) OVERRIDE;
-  virtual void OnSpeechSoundLevelChanged(int16 level) OVERRIDE;
-  virtual void OnSpeechRecognitionStateChanged(
-      app_list::SpeechRecognitionState new_state) OVERRIDE;
+  void OnSpeechResult(const base::string16& result, bool is_final) override;
+  void OnSpeechSoundLevelChanged(int16 level) override;
+  void OnSpeechRecognitionStateChanged(
+      app_list::SpeechRecognitionState new_state) override;
 
   // Overridden from HotwordClient:
-  virtual void OnHotwordStateChanged(bool started) OVERRIDE;
-  virtual void OnHotwordRecognized() OVERRIDE;
+  void OnHotwordStateChanged(bool started) override;
+  void OnHotwordRecognized(
+      const scoped_refptr<content::SpeechRecognitionSessionPreamble>& preamble)
+      override;
 
   // Overridden from SigninManagerFactory::Observer:
-  virtual void SigninManagerCreated(SigninManagerBase* manager) OVERRIDE;
-  virtual void SigninManagerShutdown(SigninManagerBase* manager) OVERRIDE;
+  void SigninManagerCreated(SigninManagerBase* manager) override;
+  void SigninManagerShutdown(SigninManagerBase* manager) override;
 
   // Overridden from SigninManagerBase::Observer:
-  virtual void GoogleSigninFailed(const GoogleServiceAuthError& error) OVERRIDE;
-  virtual void GoogleSigninSucceeded(const std::string& account_id,
-                                     const std::string& username,
-                                     const std::string& password) OVERRIDE;
-  virtual void GoogleSignedOut(const std::string& account_id,
-                               const std::string& username) OVERRIDE;
+  void GoogleSigninFailed(const GoogleServiceAuthError& error) override;
+  void GoogleSigninSucceeded(const std::string& account_id,
+                             const std::string& username,
+                             const std::string& password) override;
+  void GoogleSignedOut(const std::string& account_id,
+                       const std::string& username) override;
 
   // Overridden from ProfileInfoCacheObserver:
-  virtual void OnProfileAdded(const base::FilePath& profile_path) OVERRIDE;
-  virtual void OnProfileWasRemoved(const base::FilePath& profile_path,
-                                   const base::string16& profile_name) OVERRIDE;
-  virtual void OnProfileNameChanged(
-      const base::FilePath& profile_path,
-      const base::string16& old_profile_name) OVERRIDE;
+  void OnProfileAdded(const base::FilePath& profile_path) override;
+  void OnProfileWasRemoved(const base::FilePath& profile_path,
+                           const base::string16& profile_name) override;
+  void OnProfileNameChanged(const base::FilePath& profile_path,
+                            const base::string16& old_profile_name) override;
 
   // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // Unowned pointer to the controller.
   AppListControllerDelegate* controller_;
@@ -160,11 +177,18 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   // if |profile_| changes.
   app_list::AppListModel* model_;
 
-  // Note: order ensures |search_controller_| is destroyed before |speech_ui_|.
+  // Note: order ensures |search_resource_manager_| is destroyed before
+  // |speech_ui_|.
   scoped_ptr<app_list::SpeechUIModel> speech_ui_;
+  scoped_ptr<app_list::SearchResourceManager> search_resource_manager_;
   scoped_ptr<app_list::SearchController> search_controller_;
 
+  scoped_ptr<app_list::LauncherPageEventDispatcher>
+      launcher_page_event_dispatcher_;
+
   base::TimeDelta auto_launch_timeout_;
+  // Determines whether the current search was initiated by speech.
+  bool is_voice_query_;
 
   Users users_;
 
@@ -173,6 +197,9 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
 #endif
 
   ObserverList<app_list::AppListViewDelegateObserver> observers_;
+
+  ScopedObserver<TemplateURLService, AppListViewDelegate>
+      template_url_service_observer_;
 
   // Used to track the SigninManagers that this instance is observing so that
   // this instance can be removed as an observer on its destruction.

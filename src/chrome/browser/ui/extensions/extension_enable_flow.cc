@@ -6,10 +6,11 @@
 
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow_delegate.h"
-#include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
+#include "chrome/browser/ui/user_manager.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/extension_prefs.h"
@@ -89,6 +90,19 @@ void ExtensionEnableFlow::CheckPermissionAndMaybePromptUser() {
     return;
   }
 
+  // Supervised users can't re-enable custodian-installed extensions.
+  if (extensions::util::IsExtensionSupervised(extension, profile_)) {
+    delegate_->ExtensionEnableFlowAborted(false);  // |delegate_| may delete us.
+    return;
+  }
+
+  if (profiles::IsProfileLocked(profile_)) {
+    UserManager::Show(base::FilePath(),
+                      profiles::USER_MANAGER_NO_TUTORIAL,
+                      profiles::USER_MANAGER_SELECT_PROFILE_APP_LAUNCHER);
+    return;
+  }
+
   extensions::ExtensionPrefs* prefs = extensions::ExtensionPrefs::Get(profile_);
   if (!prefs->DidExtensionEscalatePermissions(extension_id_)) {
     // Enable the extension immediately if its privileges weren't escalated.
@@ -108,7 +122,7 @@ void ExtensionEnableFlow::CreatePrompt() {
     parent_window_ = window_getter_.Run();
   prompt_.reset(parent_contents_ ?
       new ExtensionInstallPrompt(parent_contents_) :
-      new ExtensionInstallPrompt(profile_, parent_window_, this));
+      new ExtensionInstallPrompt(profile_, parent_window_));
 }
 
 void ExtensionEnableFlow::StartObserving() {
@@ -170,11 +184,4 @@ void ExtensionEnableFlow::InstallUIProceed() {
 void ExtensionEnableFlow::InstallUIAbort(bool user_initiated) {
   delegate_->ExtensionEnableFlowAborted(user_initiated);
   // |delegate_| may delete us.
-}
-
-content::WebContents* ExtensionEnableFlow::OpenURL(
-    const content::OpenURLParams& params) {
-  chrome::ScopedTabbedBrowserDisplayer displayer(
-      profile_, chrome::GetActiveDesktop());
-  return displayer.browser()->OpenURL(params);
 }

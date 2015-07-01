@@ -28,8 +28,8 @@
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "google_apis/drive/drive_api_error_codes.h"
 #include "google_apis/drive/drive_api_parser.h"
-#include "google_apis/drive/gdata_errorcode.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
 #include "third_party/leveldatabase/src/include/leveldb/env.h"
@@ -52,9 +52,9 @@ class ConflictResolverTest : public testing::Test {
 
   ConflictResolverTest()
       : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP) {}
-  virtual ~ConflictResolverTest() {}
+  ~ConflictResolverTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(database_dir_.CreateUniqueTempDir());
     in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
 
@@ -68,12 +68,12 @@ class ConflictResolverTest : public testing::Test {
                                    kSyncRootFolderTitle));
     remote_change_processor_.reset(new FakeRemoteChangeProcessor);
 
-    context_.reset(new SyncEngineContext(
-        fake_drive_service.PassAs<drive::DriveServiceInterface>(),
-        drive_uploader.Pass(),
-        NULL,
-        base::ThreadTaskRunnerHandle::Get(),
-        base::ThreadTaskRunnerHandle::Get()));
+    context_.reset(new SyncEngineContext(fake_drive_service.Pass(),
+                                         drive_uploader.Pass(),
+                                         nullptr /* task_logger */,
+                                         base::ThreadTaskRunnerHandle::Get(),
+                                         base::ThreadTaskRunnerHandle::Get(),
+                                         nullptr /* worker_pool */));
     context_->SetRemoteChangeProcessor(remote_change_processor_.get());
 
     RegisterSyncableFileSystem();
@@ -81,11 +81,12 @@ class ConflictResolverTest : public testing::Test {
     sync_task_manager_.reset(new SyncTaskManager(
         base::WeakPtr<SyncTaskManager::Client>(),
         10 /* maximum_background_task */,
-        base::ThreadTaskRunnerHandle::Get()));
+        base::ThreadTaskRunnerHandle::Get(),
+        nullptr /* worker_pool */));
     sync_task_manager_->Initialize(SYNC_STATUS_OK);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     sync_task_manager_.reset();
     RevokeSyncableFileSystem();
     fake_drive_helper_.reset();
@@ -158,10 +159,10 @@ class ConflictResolverTest : public testing::Test {
                         SYNC_FILE_TYPE_FILE));
   }
 
-  google_apis::GDataErrorCode AddFileToFolder(
+  google_apis::DriveApiErrorCode AddFileToFolder(
       const std::string& parent_folder_id,
       const std::string& file_id) {
-    google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
+    google_apis::DriveApiErrorCode error = google_apis::DRIVE_OTHER_ERROR;
     context_->GetDriveService()->AddResourceToDirectory(
         parent_folder_id, file_id,
         CreateResultReceiver(&error));
@@ -239,10 +240,10 @@ class ConflictResolverTest : public testing::Test {
     return status;
   }
 
-  ScopedVector<google_apis::ResourceEntry>
+  ScopedVector<google_apis::FileResource>
   GetResourceEntriesForParentAndTitle(const std::string& parent_folder_id,
                                       const std::string& title) {
-    ScopedVector<google_apis::ResourceEntry> entries;
+    ScopedVector<google_apis::FileResource> entries;
     EXPECT_EQ(google_apis::HTTP_SUCCESS,
               fake_drive_helper_->SearchByTitle(
                   parent_folder_id, title, &entries));
@@ -253,14 +254,14 @@ class ConflictResolverTest : public testing::Test {
       const std::string& parent_folder_id,
       const std::string& title,
       const std::string& primary_file_id,
-      google_apis::ResourceEntry::ResourceEntryKind kind) {
-    ScopedVector<google_apis::ResourceEntry> entries;
+      test_util::FileResourceKind kind) {
+    ScopedVector<google_apis::FileResource> entries;
     EXPECT_EQ(google_apis::HTTP_SUCCESS,
               fake_drive_helper_->SearchByTitle(
                   parent_folder_id, title, &entries));
     ASSERT_EQ(1u, entries.size());
-    EXPECT_EQ(primary_file_id, entries[0]->resource_id());
-    EXPECT_EQ(kind, entries[0]->kind());
+    EXPECT_EQ(primary_file_id, entries[0]->file_id());
+    EXPECT_EQ(kind, test_util::GetFileResourceKind(*entries[0]));
   }
 
   void VerifyLocalChangeConsistency(
@@ -309,14 +310,14 @@ TEST_F(ConflictResolverTest, ResolveConflict_Files) {
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
   RunRemoteToLocalSyncerUntilIdle();
 
-  ScopedVector<google_apis::ResourceEntry> entries =
+  ScopedVector<google_apis::FileResource> entries =
       GetResourceEntriesForParentAndTitle(app_root, kTitle);
   ASSERT_EQ(4u, entries.size());
 
   // Only primary file should survive.
   EXPECT_EQ(SYNC_STATUS_OK, RunConflictResolver());
   VerifyConflictResolution(app_root, kTitle, primary,
-                           google_apis::ResourceEntry::ENTRY_KIND_FILE);
+                           test_util::RESOURCE_KIND_FILE);
 }
 
 TEST_F(ConflictResolverTest, ResolveConflict_Folders) {
@@ -335,14 +336,14 @@ TEST_F(ConflictResolverTest, ResolveConflict_Folders) {
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
   RunRemoteToLocalSyncerUntilIdle();
 
-  ScopedVector<google_apis::ResourceEntry> entries =
+  ScopedVector<google_apis::FileResource> entries =
       GetResourceEntriesForParentAndTitle(app_root, kTitle);
   ASSERT_EQ(4u, entries.size());
 
   // Only primary file should survive.
   EXPECT_EQ(SYNC_STATUS_OK, RunConflictResolver());
   VerifyConflictResolution(app_root, kTitle, primary,
-                           google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
+                           test_util::RESOURCE_KIND_FOLDER);
 }
 
 TEST_F(ConflictResolverTest, ResolveConflict_FilesAndFolders) {
@@ -361,14 +362,14 @@ TEST_F(ConflictResolverTest, ResolveConflict_FilesAndFolders) {
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
   RunRemoteToLocalSyncerUntilIdle();
 
-  ScopedVector<google_apis::ResourceEntry> entries =
+  ScopedVector<google_apis::FileResource> entries =
       GetResourceEntriesForParentAndTitle(app_root, kTitle);
   ASSERT_EQ(4u, entries.size());
 
   // Only primary file should survive.
   EXPECT_EQ(SYNC_STATUS_OK, RunConflictResolver());
   VerifyConflictResolution(app_root, kTitle, primary,
-                           google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
+                           test_util::RESOURCE_KIND_FOLDER);
 }
 
 TEST_F(ConflictResolverTest, ResolveConflict_RemoteFolderOnLocalFile) {
@@ -393,14 +394,14 @@ TEST_F(ConflictResolverTest, ResolveConflict_RemoteFolderOnLocalFile) {
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
   RunRemoteToLocalSyncerUntilIdle();
 
-  ScopedVector<google_apis::ResourceEntry> entries =
+  ScopedVector<google_apis::FileResource> entries =
       GetResourceEntriesForParentAndTitle(app_root, kTitle);
   ASSERT_EQ(2u, entries.size());
 
   // Run conflict resolver. Only primary file should survive.
   EXPECT_EQ(SYNC_STATUS_OK, RunConflictResolver());
   VerifyConflictResolution(app_root, kTitle, primary,
-                           google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
+                           test_util::RESOURCE_KIND_FOLDER);
 
   // Continue to run remote-to-local sync.
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
@@ -441,14 +442,14 @@ TEST_F(ConflictResolverTest, ResolveConflict_RemoteNestedFolderOnLocalFile) {
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
   RunRemoteToLocalSyncerUntilIdle();
 
-  ScopedVector<google_apis::ResourceEntry> entries =
+  ScopedVector<google_apis::FileResource> entries =
       GetResourceEntriesForParentAndTitle(app_root, kTitle);
   ASSERT_EQ(2u, entries.size());
 
   // Run conflict resolver. Only primary file should survive.
   EXPECT_EQ(SYNC_STATUS_OK, RunConflictResolver());
   VerifyConflictResolution(app_root, kTitle, primary,
-                           google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
+                           test_util::RESOURCE_KIND_FOLDER);
 
   // Continue to run remote-to-local sync.
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());

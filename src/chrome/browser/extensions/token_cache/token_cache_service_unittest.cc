@@ -7,6 +7,7 @@
 #include "base/time/time.h"
 #include "chrome/browser/extensions/token_cache/token_cache_service.h"
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::Time;
@@ -17,7 +18,7 @@ namespace extensions {
 class TokenCacheTest : public testing::Test {
  public:
   TokenCacheTest() : cache_(&profile_) {}
-  virtual ~TokenCacheTest() { cache_.Shutdown(); }
+  ~TokenCacheTest() override { cache_.Shutdown(); }
 
   size_t CacheSize() {
     return cache_.token_cache_.size();
@@ -44,6 +45,7 @@ class TokenCacheTest : public testing::Test {
   }
 
  protected:
+  content::TestBrowserThreadBundle thread_bundle_;
   TestingProfile profile_;
   TokenCacheService cache_;
 };

@@ -80,7 +80,7 @@ UsbGnubbyDevice.prototype.destroy = function() {
     if (chrome.runtime.lastError) {
       console.warn(UTIL_fmt('Device ' + dev.handle +
           ' couldn\'t be released:'));
-      console.warn(chrome.runtime.lastError);
+      console.warn(UTIL_fmt(chrome.runtime.lastError.message));
       return;
     }
     console.log(UTIL_fmt('Device ' + dev.handle + ' released'));
@@ -88,7 +88,7 @@ UsbGnubbyDevice.prototype.destroy = function() {
       if (chrome.runtime.lastError) {
         console.warn(UTIL_fmt('Device ' + dev.handle +
             ' couldn\'t be closed:'));
-        console.warn(chrome.runtime.lastError);
+        console.warn(UTIL_fmt(chrome.runtime.lastError.message));
         return;
       }
       console.log(UTIL_fmt('Device ' + dev.handle + ' closed'));
@@ -114,7 +114,7 @@ UsbGnubbyDevice.prototype.publishFrame_ = function(f) {
     } else {
       changes = true;
       console.log(UTIL_fmt(
-          '[' + client.cid.toString(16) + '] left?'));
+          '[' + Gnubby.hexCid(client.cid) + '] left?'));
     }
   }
   if (changes) this.clients = remaining;
@@ -147,8 +147,8 @@ UsbGnubbyDevice.prototype.readOneReply_ = function() {
     if (!self.readyToUse_()) return;  // No point in continuing.
 
     if (chrome.runtime.lastError) {
-      console.warn(UTIL_fmt('lastError: ' + chrome.runtime.lastError));
-      console.log(chrome.runtime.lastError);
+      console.warn(UTIL_fmt('in bulkTransfer got lastError: '));
+      console.warn(UTIL_fmt(chrome.runtime.lastError.message));
       window.setTimeout(function() { self.destroy(); }, 0);
       return;
     }
@@ -244,8 +244,8 @@ UsbGnubbyDevice.prototype.writeOneRequest_ = function() {
     if (!self.readyToUse_()) return;  // No point in continuing.
 
     if (chrome.runtime.lastError) {
-      console.warn(UTIL_fmt('lastError: ' + chrome.runtime.lastError));
-      console.log(chrome.runtime.lastError);
+      console.warn(UTIL_fmt('out bulkTransfer lastError: '));
+      console.warn(UTIL_fmt(chrome.runtime.lastError.message));
       window.setTimeout(function() { self.destroy(); }, 0);
       return;
     }
@@ -346,7 +346,7 @@ UsbGnubbyDevice.prototype.updateLock_ = function(cid, cmd, arg) {
       this.lockTID = window.setTimeout(
           function() {
             console.warn(UTIL_fmt(
-                'lock for CID ' + cid.toString(16) + ' expired!'));
+                'lock for CID ' + Gnubby.hexCid(cid) + ' expired!'));
             self.lockTID = null;
             self.lockCID = 0;
           },
@@ -436,7 +436,7 @@ var InterfaceEndpoint;
  *   interfaceSubclass: number,
  *   interfaceProtocol: number,
  *   description: (string|undefined),
- *   endpoints: !Array.<!InterfaceEndpoint>
+ *   endpoints: !Array<!InterfaceEndpoint>
  * }}
  * @see http://developer.chrome.com/apps/usb.html#method-listInterfaces
  */
@@ -454,6 +454,8 @@ UsbGnubbyDevice.open = function(gnubbies, which, dev, cb) {
   /** @param {chrome.usb.ConnectionHandle=} handle Connection handle */
   function deviceOpened(handle) {
     if (chrome.runtime.lastError) {
+      console.warn(UTIL_fmt('openDevice got lastError:'));
+      console.warn(UTIL_fmt(chrome.runtime.lastError.message));
       console.warn(UTIL_fmt('failed to open device. permissions issue?'));
       cb(-GnubbyDevice.NODEVICE);
       return;

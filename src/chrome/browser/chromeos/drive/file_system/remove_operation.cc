@@ -10,6 +10,7 @@
 #include "chrome/browser/chromeos/drive/file_change.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_delegate.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -69,17 +70,17 @@ RemoveOperation::RemoveOperation(
       metadata_(metadata),
       cache_(cache),
       weak_ptr_factory_(this) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 }
 
 RemoveOperation::~RemoveOperation() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 }
 
 void RemoveOperation::Remove(const base::FilePath& path,
                              bool is_recursive,
                              const FileOperationCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!callback.is_null());
 
   std::string* local_id = new std::string;
@@ -110,7 +111,7 @@ void RemoveOperation::RemoveAfterUpdateLocalState(
     const ResourceEntry* entry,
     const base::FilePath* changed_path,
     FileError error) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!callback.is_null());
 
   if (!changed_path->empty()) {
@@ -118,7 +119,8 @@ void RemoveOperation::RemoveAfterUpdateLocalState(
     changed_file.Update(*changed_path, *entry, FileChange::DELETE);
     if (error == FILE_ERROR_OK) {
       delegate_->OnFileChangedByOperation(changed_file);
-      delegate_->OnEntryUpdatedByOperation(*local_id);
+      delegate_->OnEntryUpdatedByOperation(ClientContext(USER_INITIATED),
+                                           *local_id);
     }
   }
 

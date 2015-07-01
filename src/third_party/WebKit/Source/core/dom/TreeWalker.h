@@ -36,7 +36,7 @@ namespace blink {
 
 class ExceptionState;
 
-class TreeWalker FINAL : public RefCountedWillBeGarbageCollected<TreeWalker>, public ScriptWrappable, public NodeIteratorBase {
+class TreeWalker final : public RefCountedWillBeGarbageCollected<TreeWalker>, public ScriptWrappable, public NodeIteratorBase {
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(TreeWalker);
 public:
@@ -56,7 +56,7 @@ public:
     Node* previousNode(ExceptionState&);
     Node* nextNode(ExceptionState&);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     TreeWalker(PassRefPtrWillBeRawPtr<Node>, unsigned whatToShow, PassRefPtrWillBeRawPtr<NodeFilter>);

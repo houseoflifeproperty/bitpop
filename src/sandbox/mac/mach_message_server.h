@@ -7,14 +7,13 @@
 
 #include <mach/mach.h>
 
+#include "base/mac/dispatch_source_mach.h"
 #include "base/mac/scoped_mach_port.h"
 #include "base/mac/scoped_mach_vm.h"
 #include "base/memory/scoped_ptr.h"
 #include "sandbox/mac/message_server.h"
 
 namespace sandbox {
-
-class DispatchSourceMach;
 
 // A Mach message server that operates a receive port. Messages are received
 // and then passed to the MessageDemuxer for handling. The Demuxer
@@ -30,19 +29,18 @@ class MachMessageServer : public MessageServer {
   MachMessageServer(MessageDemuxer* demuxer,
                     mach_port_t server_receive_right,
                     mach_msg_size_t buffer_size);
-  virtual ~MachMessageServer();
+  ~MachMessageServer() override;
 
   // MessageServer:
-  virtual bool Initialize() OVERRIDE;
-  virtual pid_t GetMessageSenderPID(IPCMessage request) OVERRIDE;
-  virtual IPCMessage CreateReply(IPCMessage request) OVERRIDE;
-  virtual bool SendReply(IPCMessage reply) OVERRIDE;
-  virtual void ForwardMessage(IPCMessage request,
-                              mach_port_t destination) OVERRIDE;
+  bool Initialize() override;
+  pid_t GetMessageSenderPID(IPCMessage request) override;
+  IPCMessage CreateReply(IPCMessage request) override;
+  bool SendReply(IPCMessage reply) override;
+  void ForwardMessage(IPCMessage request, mach_port_t destination) override;
   // Replies to the message with the specified |error_code| as a MIG
   // error_reply RetCode.
-  virtual void RejectMessage(IPCMessage request, int error_code) OVERRIDE;
-  virtual mach_port_t GetServerPort() const OVERRIDE;
+  void RejectMessage(IPCMessage request, int error_code) override;
+  mach_port_t GetServerPort() const override;
 
  private:
   // Event handler for the |server_source_| that reads a message from the queue
@@ -63,7 +61,7 @@ class MachMessageServer : public MessageServer {
   base::mac::ScopedMachVM reply_buffer_;
 
   // MACH_RECV dispatch source that handles the |server_port_|.
-  scoped_ptr<DispatchSourceMach> dispatch_source_;
+  scoped_ptr<base::DispatchSourceMach> dispatch_source_;
 
   // Whether or not ForwardMessage() was called during ReceiveMessage().
   bool did_forward_message_;

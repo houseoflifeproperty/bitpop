@@ -62,18 +62,6 @@ class GTestProgressReporter(progress_reporter.ProgressReporter):
           page.display_name, self._GetMs())
     self._output_stream.flush()
 
-  def WillAttemptPageRun(self, page_test_results, attempt_count, max_attempts):
-    super(GTestProgressReporter, self).WillAttemptPageRun(
-        page_test_results, attempt_count, max_attempts)
-    # A failed attempt will have at least 1 value.
-    if attempt_count != 1:
-      print >> self._output_stream, (
-          '===== RETRYING PAGE RUN (attempt %s out of %s allowed) =====' % (
-              attempt_count, max_attempts))
-      print >> self._output_stream, (
-          'Page run attempt failed and will be retried. '
-          'Discarding previous results.')
-
   def DidFinishAllTests(self, page_test_results):
     super(GTestProgressReporter, self).DidFinishAllTests(page_test_results)
     successful_runs = []
@@ -93,7 +81,7 @@ class GTestProgressReporter(progress_reporter.ProgressReporter):
           (len(page_test_results.failures), unit))
       for failed_run in failed_runs:
         print >> self._output_stream, '[  FAILED  ]  %s' % (
-            failed_run.page.display_name)
+            failed_run.user_story.display_name)
       print >> self._output_stream
       count = len(failed_runs)
       unit = 'TEST' if count == 1 else 'TESTS'

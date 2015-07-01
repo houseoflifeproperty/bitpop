@@ -29,25 +29,18 @@ class TestObserver : public AppListModelObserver {
         items_removed_(0),
         items_updated_(0) {
   }
-  virtual ~TestObserver() {
-  }
+  ~TestObserver() override {}
 
   // AppListModelObserver
-  virtual void OnAppListModelStatusChanged() OVERRIDE {
-    ++status_changed_count_;
-  }
+  void OnAppListModelStatusChanged() override { ++status_changed_count_; }
 
-  virtual void OnAppListItemAdded(AppListItem* item) OVERRIDE {
-    items_added_++;
-  }
+  void OnAppListItemAdded(AppListItem* item) override { items_added_++; }
 
-  virtual void OnAppListItemWillBeDeleted(AppListItem* item) OVERRIDE {
+  void OnAppListItemWillBeDeleted(AppListItem* item) override {
     items_removed_++;
   }
 
-  virtual void OnAppListItemUpdated(AppListItem* item) OVERRIDE {
-    items_updated_++;
-  }
+  void OnAppListItemUpdated(AppListItem* item) override { items_updated_++; }
 
   int status_changed_count() const { return status_changed_count_; }
   size_t items_added() { return items_added_; }
@@ -75,20 +68,16 @@ class TestObserver : public AppListModelObserver {
 class AppListModelTest : public testing::Test {
  public:
   AppListModelTest() {}
-  virtual ~AppListModelTest() {}
+  ~AppListModelTest() override {}
 
   // testing::Test overrides:
-  virtual void SetUp() OVERRIDE {
-    model_.AddObserver(&observer_);
-  }
-  virtual void TearDown() OVERRIDE {
-    model_.RemoveObserver(&observer_);
-  }
+  void SetUp() override { model_.AddObserver(&observer_); }
+  void TearDown() override { model_.RemoveObserver(&observer_); }
 
  protected:
-  bool ItemObservedByFolder(AppListFolderItem* folder,
-                            AppListItem* item) {
-    return item->observers_.HasObserver(folder);
+  static bool ItemObservedByFolder(const AppListFolderItem* folder,
+                                   const AppListItem* item) {
+    return item->observers_.HasObserver(&folder->folder_image());
   }
 
   std::string GetItemListContents(AppListItemList* item_list) {
@@ -234,15 +223,11 @@ class AppListModelFolderTest : public AppListModelTest {
   AppListModelFolderTest() {
     model_.SetFoldersEnabled(true);
   }
-  virtual ~AppListModelFolderTest() {}
+  ~AppListModelFolderTest() override {}
 
   // testing::Test overrides:
-  virtual void SetUp() OVERRIDE {
-    AppListModelTest::SetUp();
-  }
-  virtual void TearDown() OVERRIDE {
-    AppListModelTest::TearDown();
-  }
+  void SetUp() override { AppListModelTest::SetUp(); }
+  void TearDown() override { AppListModelTest::TearDown(); }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AppListModelFolderTest);
@@ -292,11 +277,32 @@ TEST_F(AppListModelFolderTest, MergeItems) {
   AppListItem* item1 = model_.top_level_item_list()->item_at(1);
   AppListItem* item2 = model_.top_level_item_list()->item_at(2);
 
+  // Merge an item onto a non-existent target.
+  EXPECT_EQ(std::string(), model_.MergeItems("nonexistent", item0->id()));
+  ASSERT_EQ(3u, model_.top_level_item_list()->item_count());
+
+  // Merge a non-existent item onto a target.
+  EXPECT_EQ(std::string(), model_.MergeItems(item0->id(), "nonexistent"));
+  ASSERT_EQ(3u, model_.top_level_item_list()->item_count());
+
+  // Merge an item onto itself (should have no effect). This should not be
+  // possible, but there have been bugs in the past that made it possible (see
+  // http://crbug.com/415530), so it should be handled correctly.
+  EXPECT_EQ(std::string(), model_.MergeItems(item0->id(), item0->id()));
+  ASSERT_EQ(3u, model_.top_level_item_list()->item_count());
+
   // Merge two items.
   std::string folder1_id = model_.MergeItems(item0->id(), item1->id());
   ASSERT_EQ(2u, model_.top_level_item_list()->item_count());  // Folder + 1 item
   AppListFolderItem* folder1_item = model_.FindFolderItem(folder1_id);
   ASSERT_TRUE(folder1_item);
+  EXPECT_EQ("Item 0,Item 1", GetItemListContents(folder1_item->item_list()));
+
+  // Merge an item onto an item that is already in a folder (should have no
+  // effect). This should not be possible, but it should be handled correctly
+  // if it does happen.
+  EXPECT_EQ(std::string(), model_.MergeItems(item1->id(), item2->id()));
+  ASSERT_EQ(2u, model_.top_level_item_list()->item_count());  // Folder + 1 item
   EXPECT_EQ("Item 0,Item 1", GetItemListContents(folder1_item->item_list()));
 
   // Merge an item from the new folder into the third item.
@@ -315,6 +321,7 @@ TEST_F(AppListModelFolderTest, MergeItems) {
   // The empty folder should be deleted.
   folder1_item = model_.FindFolderItem(folder1_id);
   EXPECT_FALSE(folder1_item);
+  EXPECT_EQ(1u, model_.top_level_item_list()->item_count());  // 1 folder
 }
 
 TEST_F(AppListModelFolderTest, AddItemToFolder) {
@@ -429,6 +436,49 @@ TEST_F(AppListModelFolderTest, MoveItemFromFolderToFolder) {
   EXPECT_EQ("folder2", item1->folder_id());
   AppListFolderItem* folder2 = model_.FindFolderItem("folder2");
   ASSERT_TRUE(folder2);
+}
+
+TEST_F(AppListModelFolderTest, UninstallFolderItems) {
+  AppListItem* item0 = model_.CreateAndAddItem("Item 0");
+  AppListItem* item1 = model_.CreateAndAddItem("Item 1");
+  AppListItem* item2 = model_.CreateAndAddItem("Item 2");
+  AppListFolderItem* folder1 = static_cast<AppListFolderItem*>(model_.AddItem(
+      new AppListFolderItem("folder1", AppListFolderItem::FOLDER_TYPE_NORMAL)));
+  EXPECT_EQ("Item 0,Item 1,Item 2,folder1", GetModelContents());
+
+  // Move all items to folder1.
+  model_.MoveItemToFolderAt(item0, folder1->id(), item0->position());
+  model_.MoveItemToFolderAt(item1, folder1->id(), item1->position());
+  model_.MoveItemToFolderAt(item2, folder1->id(), item2->position());
+  EXPECT_EQ("Item 0,Item 1,Item 2", GetItemListContents(folder1->item_list()));
+  EXPECT_EQ("folder1", GetModelContents());
+
+  // Delete Item 2 from folder.
+  model_.DeleteUninstalledItem("Item 2");
+  EXPECT_EQ("Item 0,Item 1", GetItemListContents(folder1->item_list()));
+  EXPECT_EQ("folder1", GetModelContents());
+
+  // Delete Item 1 from folder, should reparent Item 0 and delete folder1.
+  model_.DeleteUninstalledItem("Item 1");
+  EXPECT_EQ(nullptr, model_.FindItem("folder1"));
+  EXPECT_EQ("Item 0", GetModelContents());
+}
+
+TEST_F(AppListModelFolderTest, UninstallSingleItemFolderItem) {
+  AppListItem* item0 = model_.CreateAndAddItem("Item 0");
+  AppListFolderItem* folder1 = static_cast<AppListFolderItem*>(model_.AddItem(
+      new AppListFolderItem("folder1", AppListFolderItem::FOLDER_TYPE_NORMAL)));
+  EXPECT_EQ("Item 0,folder1", GetModelContents());
+
+  // Move item0 to folder1.
+  model_.MoveItemToFolderAt(item0, folder1->id(), item0->position());
+  EXPECT_EQ("Item 0", GetItemListContents(folder1->item_list()));
+  EXPECT_EQ("folder1", GetModelContents());
+
+  // Delete only item from folder, folder should also be removed.
+  model_.DeleteUninstalledItem("Item 0");
+  EXPECT_EQ(nullptr, model_.FindItem("folder1"));
+  EXPECT_EQ("", GetModelContents());
 }
 
 TEST_F(AppListModelFolderTest, FindItemInFolder) {

@@ -33,7 +33,7 @@
 
 namespace blink {
 
-class TextMetrics FINAL : public RefCountedWillBeGarbageCollected<TextMetrics>, public ScriptWrappable {
+class TextMetrics final : public RefCountedWillBeGarbageCollected<TextMetrics>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<TextMetrics> create() { return adoptRefWillBeNoop(new TextMetrics); }
@@ -74,7 +74,7 @@ public:
     float ideographicBaseline() const { return m_ideographicBaseline; }
     void setIdeographicBaseline(float ideographicBaseline) { m_ideographicBaseline = ideographicBaseline; }
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     TextMetrics()

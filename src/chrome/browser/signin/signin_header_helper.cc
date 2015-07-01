@@ -9,6 +9,7 @@
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile_io_data.h"
+#include "chrome/browser/signin/chrome_signin_client.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/url_constants.h"
@@ -23,9 +24,10 @@
 
 #if defined(OS_ANDROID)
 #include "chrome/browser/android/signin/account_management_screen_helper.h"
-#else
+#elif !defined(OS_IOS)
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "extensions/browser/guest_view/web_view/web_view_renderer_state.h"
 #endif  // defined(OS_ANDROID)
 
 namespace {
@@ -123,7 +125,7 @@ signin::ManageAccountsParams BuildManageAccountsParams(
 void ProcessMirrorHeaderUIThread(
     int child_id, int route_id,
     signin::ManageAccountsParams manage_accounts_params) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   signin::GAIAServiceType service_type = manage_accounts_params.service_type;
   DCHECK_NE(signin::GAIA_SERVICE_TYPE_NONE, service_type);
@@ -171,7 +173,7 @@ void ProcessMirrorHeaderUIThread(
 #endif // !defined(OS_IOS)
 
 bool IsDriveOrigin(const GURL& url) {
-  if (!url.SchemeIsSecure())
+  if (!url.SchemeIsCryptographic())
     return false;
 
   const GURL kGoogleDriveURL("https://drive.google.com");
@@ -195,26 +197,36 @@ ManageAccountsParams::ManageAccountsParams() :
 bool AppendMirrorRequestHeaderIfPossible(
     net::URLRequest* request,
     const GURL& redirect_url,
-    ProfileIOData* io_data) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+    ProfileIOData* io_data,
+    int child_id,
+    int route_id) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
 
-  if (io_data->IsOffTheRecord() ||
-      io_data->google_services_username()->GetValue().empty()) {
+  if (io_data->IsOffTheRecord())
+    return false;
+
+  std::string account_id(io_data->google_services_account_id()->GetValue());
+
+  if (account_id.empty())
+    return false;
+
+  // If signin cookies are not allowed, don't add the header.
+  if (!ChromeSigninClient::SettingsAllowSigninCookies(
+          io_data->GetCookieSettings())) {
     return false;
   }
 
-  // Only set the header for Drive always, and other Google properties if
-  // new-profile-management is enabled.
+  // Only set the header for Drive and Gaia always, and other Google properties
+  // if account consistency is enabled.
   // Vasquette, which is integrated with most Google properties, needs the
-  // header to redirect certain user actions to Chrome native UI. Drive needs
-  // the header to tell if the current user is connected. The drive path is a
-  // temporary workaround until the more generic chrome.principals API is
+  // header to redirect certain user actions to Chrome native UI. Drive and Gaia
+  // need the header to tell if the current user is connected. The drive path is
+  // a temporary workaround until the more generic chrome.principals API is
   // available.
   const GURL& url = redirect_url.is_empty() ? request->url() : redirect_url;
   GURL origin(url.GetOrigin());
   bool is_enable_account_consistency = switches::IsEnableAccountConsistency();
   bool is_google_url =
-      !switches::IsEnableWebBasedSignin() &&
       is_enable_account_consistency &&
       (google_util::IsGoogleDomainUrl(
            url,
@@ -224,19 +236,31 @@ bool AppendMirrorRequestHeaderIfPossible(
            url,
            google_util::ALLOW_SUBDOMAIN,
            google_util::DISALLOW_NON_STANDARD_PORTS));
-  if (!is_google_url && !IsDriveOrigin(origin))
+  if (!is_google_url && !IsDriveOrigin(origin) &&
+      !gaia::IsGaiaSignonRealm(origin)) {
     return false;
+  }
 
-  std::string account_id(io_data->google_services_account_id()->GetValue());
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+  extensions::WebViewRendererState::WebViewInfo webview_info;
+  bool is_guest =  extensions::WebViewRendererState::GetInstance()->GetInfo(
+      child_id, route_id, &webview_info);
+  // Do not set the x-chrome-connected header on requests from a native signin
+  // webview, as identified by an empty extension id which means the webview is
+  // embedded in a webui page, otherwise user may end up with a blank page as
+  // gaia uses the header to decide whether it returns 204 for certain end
+  // points.
+  if (is_guest && webview_info.owner_host.empty())
+    return false;
+#endif // !OS_ANDROID && !OS_IOS
 
   int profile_mode_mask = PROFILE_MODE_DEFAULT;
   if (io_data->incognito_availibility()->GetValue() ==
           IncognitoModePrefs::DISABLED ||
-      IncognitoModePrefs::ArePlatformParentalControlsEnabledCached()) {
+      IncognitoModePrefs::ArePlatformParentalControlsEnabled()) {
     profile_mode_mask |= PROFILE_MODE_INCOGNITO_DISABLED;
   }
 
-  // TODO(guohui): needs to make a new flag for enabling account consistency.
   std::string header_value(base::StringPrintf("%s=%s,%s=%s,%s=%s",
       kGaiaIdAttrName, account_id.c_str(),
       kProfileModeAttrName, base::IntToString(profile_mode_mask).c_str(),
@@ -255,7 +279,7 @@ void ProcessMirrorResponseHeaderIfExists(
 #if defined(OS_IOS)
   NOTREACHED();
 #else
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
   if (!gaia::IsGaiaSignonRealm(request->url().GetOrigin()))
     return;
 

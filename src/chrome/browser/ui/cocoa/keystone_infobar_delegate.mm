@@ -44,20 +44,19 @@ class KeystonePromotionInfoBarDelegate : public ConfirmInfoBarDelegate {
 
  private:
   explicit KeystonePromotionInfoBarDelegate(PrefService* prefs);
-  virtual ~KeystonePromotionInfoBarDelegate();
+  ~KeystonePromotionInfoBarDelegate() override;
 
   // Sets this info bar to be able to expire.  Called a predetermined amount
   // of time after this object is created.
   void SetCanExpire() { can_expire_ = true; }
 
   // ConfirmInfoBarDelegate
-  virtual int GetIconID() const OVERRIDE;
-  virtual base::string16 GetMessageText() const OVERRIDE;
-  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
-  virtual bool Accept() OVERRIDE;
-  virtual bool Cancel() OVERRIDE;
-  virtual bool ShouldExpireInternal(
-      const NavigationDetails& details) const OVERRIDE;
+  int GetIconID() const override;
+  bool ShouldExpireInternal(const NavigationDetails& details) const override;
+  base::string16 GetMessageText() const override;
+  base::string16 GetButtonLabel(InfoBarButton button) const override;
+  bool Accept() override;
+  bool Cancel() override;
 
   // The prefs to use.
   PrefService* prefs_;  // weak
@@ -82,7 +81,7 @@ void KeystonePromotionInfoBarDelegate::Create() {
     return;
   InfoBarService* infobar_service =
       InfoBarService::FromWebContents(webContents);
-  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+  infobar_service->AddInfoBar(infobar_service->CreateConfirmInfoBar(
       scoped_ptr<ConfirmInfoBarDelegate>(new KeystonePromotionInfoBarDelegate(
           Profile::FromBrowserContext(
               webContents->GetBrowserContext())->GetPrefs()))));
@@ -109,6 +108,11 @@ int KeystonePromotionInfoBarDelegate::GetIconID() const {
   return IDR_PRODUCT_LOGO_32;
 }
 
+bool KeystonePromotionInfoBarDelegate::ShouldExpireInternal(
+    const NavigationDetails& details) const {
+  return can_expire_;
+}
+
 base::string16 KeystonePromotionInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringFUTF16(IDS_PROMOTE_INFOBAR_TEXT,
       l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
@@ -128,11 +132,6 @@ bool KeystonePromotionInfoBarDelegate::Accept() {
 bool KeystonePromotionInfoBarDelegate::Cancel() {
   prefs_->SetBoolean(prefs::kShowUpdatePromotionInfoBar, false);
   return true;
-}
-
-bool KeystonePromotionInfoBarDelegate::ShouldExpireInternal(
-    const NavigationDetails& details) const {
-  return can_expire_;
 }
 
 }  // namespace
@@ -161,7 +160,7 @@ bool KeystonePromotionInfoBarDelegate::ShouldExpireInternal(
   // don't want to be nagged about the default browser also don't want to be
   // nagged about the update check.  (Automated testers, I'm thinking of
   // you...)
-  CommandLine* commandLine = CommandLine::ForCurrentProcess();
+  base::CommandLine* commandLine = base::CommandLine::ForCurrentProcess();
   if (first_run::IsChromeFirstRun() ||
       !profile->GetPrefs()->GetBoolean(prefs::kShowUpdatePromotionInfoBar) ||
       commandLine->HasSwitch(switches::kNoDefaultBrowserCheck)) {

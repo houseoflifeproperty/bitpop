@@ -10,26 +10,27 @@
 #include "base/strings/string16.h"
 #include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/history/history_backend.h"
-#include "chrome/browser/history/history_db_task.h"
-#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/bookmarks/browser/bookmark_model.h"
+#include "components/history/core/browser/history_backend.h"
+#include "components/history/core/browser/history_db_task.h"
+#include "components/history/core/browser/history_service.h"
 #include "components/history/core/browser/history_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/native_theme/native_theme.h"
 
 #if defined(ENABLE_EXTENSIONS)
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/sync_helper.h"
-#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
 #endif
+
+using bookmarks::BookmarkModel;
 
 namespace {
 
@@ -42,8 +43,8 @@ class HasTypedURLsTask : public history::HistoryDBTask {
       : has_typed_urls_(false), cb_(cb) {
   }
 
-  virtual bool RunOnDBThread(history::HistoryBackend* backend,
-                             history::HistoryDatabase* db) OVERRIDE {
+  bool RunOnDBThread(history::HistoryBackend* backend,
+                     history::HistoryDatabase* db) override {
     history::URLRows rows;
     backend->GetAllTypedURLs(&rows);
     if (!rows.empty()) {
@@ -54,12 +55,10 @@ class HasTypedURLsTask : public history::HistoryDBTask {
     return true;
   }
 
-  virtual void DoneRunOnMainThread() OVERRIDE {
-    cb_.Run(has_typed_urls_);
-  }
+  void DoneRunOnMainThread() override { cb_.Run(has_typed_urls_); }
 
  private:
-  virtual ~HasTypedURLsTask() {}
+  ~HasTypedURLsTask() override {}
 
   bool has_typed_urls_;
   base::Callback<void(bool)> cb_;
@@ -114,7 +113,7 @@ ProfileSigninConfirmationHelper::ProfileSigninConfirmationHelper(
 }
 
 ProfileSigninConfirmationHelper::~ProfileSigninConfirmationHelper() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 }
 
 void ProfileSigninConfirmationHelper::OnHistoryQueryResults(
@@ -131,7 +130,7 @@ void ProfileSigninConfirmationHelper::OnHistoryQueryResults(
 }
 
 void ProfileSigninConfirmationHelper::CheckHasHistory(int max_entries) {
-  HistoryService* service =
+  history::HistoryService* service =
       HistoryServiceFactory::GetForProfileWithoutCreating(profile_);
   pending_requests_++;
   if (!service) {
@@ -150,7 +149,7 @@ void ProfileSigninConfirmationHelper::CheckHasHistory(int max_entries) {
 }
 
 void ProfileSigninConfirmationHelper::CheckHasTypedURLs() {
-  HistoryService* service =
+  history::HistoryService* service =
       HistoryServiceFactory::GetForProfileWithoutCreating(profile_);
   pending_requests_++;
   if (!service) {
@@ -165,7 +164,7 @@ void ProfileSigninConfirmationHelper::CheckHasTypedURLs() {
 }
 
 void ProfileSigninConfirmationHelper::ReturnResult(bool result) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   // Pass |true| into the callback as soon as one of the tasks passes a
   // result of |true|, otherwise pass the last returned result.
   if (--pending_requests_ == 0 || result) {
@@ -206,21 +205,19 @@ bool HasBeenShutdown(Profile* profile) {
 
 bool HasSyncedExtensions(Profile* profile) {
 #if defined(ENABLE_EXTENSIONS)
-  extensions::ExtensionSystem* system =
-      extensions::ExtensionSystem::Get(profile);
-  if (system && system->extension_service()) {
-    const extensions::ExtensionSet* extensions =
-        system->extension_service()->extensions();
-    for (extensions::ExtensionSet::const_iterator iter = extensions->begin();
-         iter != extensions->end(); ++iter) {
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(profile);
+  if (registry) {
+    for (const scoped_refptr<const extensions::Extension>& extension :
+         registry->enabled_extensions()) {
       // The webstore is synced so that it stays put on the new tab
       // page, but since it's installed by default we don't want to
       // consider it when determining if the profile is dirty.
-      if (extensions::sync_helper::IsSyncable(iter->get()) &&
-          (*iter)->id() != extensions::kWebStoreAppId &&
-          (*iter)->id() != extension_misc::kChromeAppId) {
+      if (extensions::sync_helper::IsSyncable(extension.get()) &&
+          extension->id() != extensions::kWebStoreAppId &&
+          extension->id() != extension_misc::kChromeAppId) {
         DVLOG(1) << "ProfileSigninConfirmationHelper: "
-                 << "profile contains a synced extension: " << (*iter)->id();
+                 << "profile contains a synced extension: " << extension->id();
         return true;
       }
     }
@@ -232,7 +229,7 @@ bool HasSyncedExtensions(Profile* profile) {
 void CheckShouldPromptForNewProfile(
     Profile* profile,
     const base::Callback<void(bool)>& return_result) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   if (HasBeenShutdown(profile) ||
       HasBookmarks(profile) ||

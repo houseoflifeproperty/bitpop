@@ -9,6 +9,7 @@
 
 #include "base/threading/thread_checker.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_error_controller.h"
 
 class OAuth2AccessTokenFetcher;
 
@@ -27,49 +28,69 @@ class ProfileOAuth2TokenServiceIOSProvider;
 class ProfileOAuth2TokenServiceIOS : public ProfileOAuth2TokenService {
  public:
   // KeyedService
-  virtual void Shutdown() OVERRIDE;
+  void Shutdown() override;
 
   // OAuth2TokenService
-  virtual bool RefreshTokenIsAvailable(
-      const std::string& account_id) const OVERRIDE;
+  bool RefreshTokenIsAvailable(const std::string& account_id) const override;
 
-  virtual void InvalidateOAuth2Token(const std::string& account_id,
-                                     const std::string& client_id,
-                                     const ScopeSet& scopes,
-                                     const std::string& access_token) OVERRIDE;
+  void InvalidateOAuth2Token(const std::string& account_id,
+                             const std::string& client_id,
+                             const ScopeSet& scopes,
+                             const std::string& access_token) override;
 
   // ProfileOAuth2TokenService
-  virtual void Initialize(SigninClient* client) OVERRIDE;
-  virtual void LoadCredentials(const std::string& primary_account_id) OVERRIDE;
-  virtual std::vector<std::string> GetAccounts() OVERRIDE;
-  virtual void UpdateAuthError(const std::string& account_id,
-                               const GoogleServiceAuthError& error) OVERRIDE;
+  void Initialize(SigninClient* client,
+                  SigninErrorController* signin_error_controller) override;
+  void LoadCredentials(const std::string& primary_account_id) override;
+  std::vector<std::string> GetAccounts() override;
+  void UpdateAuthError(const std::string& account_id,
+                       const GoogleServiceAuthError& error) override;
 
   // This method should not be called when using shared authentication.
-  virtual void UpdateCredentials(const std::string& account_id,
-                                 const std::string& refresh_token) OVERRIDE;
+  void UpdateCredentials(const std::string& account_id,
+                         const std::string& refresh_token) override;
 
   // Removes all credentials from this instance of |ProfileOAuth2TokenService|,
   // however, it does not revoke the identities from the device.
   // Subsequent calls to |RefreshTokenIsAvailable| will return |false|.
-  virtual void RevokeAllCredentials() OVERRIDE;
+  void RevokeAllCredentials() override;
 
   // Reloads accounts from the provider. Fires |OnRefreshTokenAvailable| for
   // each new account. Fires |OnRefreshTokenRevoked| for each account that was
   // removed.
+  // It expects that there is already a primary account id.
   void ReloadCredentials();
+
+  // Sets the primary account and then reloads the accounts from the provider.
+  // Should be called when the user signs in to a new account.
+  // |primary_account_id| must not be an empty string.
+  void ReloadCredentials(const std::string& primary_account_id);
+
+  // Sets the account that should be ignored by this token service.
+  // |ReloadCredentials| needs to be called for this change to be effective.
+  void ExcludeSecondaryAccount(const std::string& account_id);
+  void IncludeSecondaryAccount(const std::string& account_id);
+  void ExcludeSecondaryAccounts(const std::vector<std::string>& account_ids);
+
+  // Excludes all secondary accounts. |ReloadCredentials| needs to be called for
+  // this change to be effective.
+  void ExcludeAllSecondaryAccounts();
 
  protected:
   friend class ProfileOAuth2TokenServiceFactory;
   friend class ProfileOAuth2TokenServiceIOSTest;
+  FRIEND_TEST_ALL_PREFIXES(ProfileOAuth2TokenServiceIOSTest,
+                           ExcludeSecondaryAccounts);
+  FRIEND_TEST_ALL_PREFIXES(ProfileOAuth2TokenServiceIOSTest,
+                           LoadRevokeCredentialsClearsExcludedAccounts);
 
   ProfileOAuth2TokenServiceIOS();
-  virtual ~ProfileOAuth2TokenServiceIOS();
+  ~ProfileOAuth2TokenServiceIOS() override;
 
-  virtual OAuth2AccessTokenFetcher* CreateAccessTokenFetcher(
+  OAuth2AccessTokenFetcher* CreateAccessTokenFetcher(
       const std::string& account_id,
       net::URLRequestContextGetter* getter,
-      OAuth2AccessTokenConsumer* consumer) OVERRIDE;
+      OAuth2AccessTokenConsumer* consumer) override;
 
   // Protected and virtual to be overriden by fake for testing.
 
@@ -85,21 +106,26 @@ class ProfileOAuth2TokenServiceIOS : public ProfileOAuth2TokenService {
  private:
   class AccountInfo : public SigninErrorController::AuthStatusProvider {
    public:
-    AccountInfo(ProfileOAuth2TokenService* token_service,
+    AccountInfo(SigninErrorController* signin_error_controller,
                 const std::string& account_id);
-    virtual ~AccountInfo();
+    ~AccountInfo() override;
 
     void SetLastAuthError(const GoogleServiceAuthError& error);
 
     // SigninErrorController::AuthStatusProvider implementation.
-    virtual std::string GetAccountId() const OVERRIDE;
-    virtual std::string GetUsername() const OVERRIDE;
-    virtual GoogleServiceAuthError GetAuthStatus() const OVERRIDE;
+    std::string GetAccountId() const override;
+    GoogleServiceAuthError GetAuthStatus() const override;
+
+    bool marked_for_removal() const { return marked_for_removal_; }
+    void set_marked_for_removal(bool marked_for_removal) {
+      marked_for_removal_ = marked_for_removal;
+    }
 
    private:
-    ProfileOAuth2TokenService* token_service_;
+    SigninErrorController* signin_error_controller_;
     std::string account_id_;
     GoogleServiceAuthError last_auth_error_;
+    bool marked_for_removal_;
 
     DISALLOW_COPY_AND_ASSIGN(AccountInfo);
   };
@@ -110,6 +136,18 @@ class ProfileOAuth2TokenServiceIOS : public ProfileOAuth2TokenService {
 
   // Returns the iOS provider;
   ios::ProfileOAuth2TokenServiceIOSProvider* GetProvider();
+
+  // Returns the account ids that should be ignored by this token service.
+  std::set<std::string> GetExcludedSecondaryAccounts();
+
+  // Returns true if this token service should exclude all secondary accounts.
+  bool GetExcludeAllSecondaryAccounts();
+
+  // Clears exclude secondary accounts preferences.
+  void ClearExcludedSecondaryAccounts();
+
+  // The primary account id.
+  std::string primary_account_id_;
 
   // Info about the existing accounts.
   AccountInfoMap accounts_;

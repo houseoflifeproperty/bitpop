@@ -35,29 +35,32 @@ namespace blink {
 class CSSParserContext;
 class ResourceClient;
 class StyleSheetContents;
-class TextResourceDecoder;
 
-class CSSStyleSheetResource FINAL : public StyleSheetResource {
+class CSSStyleSheetResource final : public StyleSheetResource {
 public:
+    enum class MIMETypeCheck { Strict, Lax };
+
     CSSStyleSheetResource(const ResourceRequest&, const String& charset);
     virtual ~CSSStyleSheetResource();
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
-    const String sheetText(bool enforceMIMEType = true, bool* hasValidMIMEType = 0) const;
+    const String sheetText(MIMETypeCheck = MIMETypeCheck::Strict) const;
 
-    virtual void didAddClient(ResourceClient*) OVERRIDE;
+    const AtomicString mimeType() const;
+
+    virtual void didAddClient(ResourceClient*) override;
 
     PassRefPtrWillBeRawPtr<StyleSheetContents> restoreParsedStyleSheet(const CSSParserContext&);
     void saveParsedStyleSheet(PassRefPtrWillBeRawPtr<StyleSheetContents>);
 
 protected:
-    virtual bool isSafeToUnlock() const OVERRIDE;
-    virtual void destroyDecodedDataIfPossible() OVERRIDE;
+    virtual bool isSafeToUnlock() const override;
+    virtual void destroyDecodedDataIfPossible() override;
 
 private:
-    bool canUseSheet(bool enforceMIMEType, bool* hasValidMIMEType) const;
-    virtual void dispose() OVERRIDE;
-    virtual void checkNotify() OVERRIDE;
+    bool canUseSheet(MIMETypeCheck) const;
+    virtual void dispose() override;
+    virtual void checkNotify() override;
 
     String m_decodedSheetText;
 

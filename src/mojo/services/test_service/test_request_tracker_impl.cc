@@ -2,21 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/bind.h"
 #include "mojo/services/test_service/test_request_tracker_impl.h"
 
 namespace mojo {
 namespace test {
 
- TrackingContext::TrackingContext() : next_id(1) {}
- TrackingContext::~TrackingContext() {}
+TrackingContext::TrackingContext() : next_id(1) {
+}
 
- TestRequestTrackerImpl::TestRequestTrackerImpl(TrackingContext* context)
-     : context_(context), weak_factory_(this) {
- }
+TrackingContext::~TrackingContext() {
+}
 
- TestRequestTrackerImpl::~TestRequestTrackerImpl() {
- }
+TestRequestTrackerImpl::TestRequestTrackerImpl(
+    InterfaceRequest<TestRequestTracker> request,
+    TrackingContext* context)
+    : context_(context), binding_(this, request.Pass()), weak_factory_(this) {
+}
+
+TestRequestTrackerImpl::~TestRequestTrackerImpl() {
+}
 
 void TestRequestTrackerImpl::RecordStats(
       uint64_t client_id,
@@ -26,23 +30,19 @@ void TestRequestTrackerImpl::RecordStats(
   context_->records[client_id].push_back(*stats);
 }
 
-void TestRequestTrackerImpl::OnConnectionEstablished() {
+void TestRequestTrackerImpl::SetNameAndReturnId(
+    const String& service_name,
+    const Callback<void(uint64_t id)>& callback) {
   uint64_t id = context_->next_id++;
-  client()->SetIdAndReturnName(id,
-      base::Bind(&TestRequestTrackerImpl::UploaderNameCallback,
-                 weak_factory_.GetWeakPtr(),
-                 id));
-}
-
-void TestRequestTrackerImpl::UploaderNameCallback(
-    uint64_t id, const mojo::String& name) {
+  callback.Run(id);
   DCHECK(context_->ids_to_names.find(id) == context_->ids_to_names.end());
-  context_->ids_to_names[id] = name;
+  context_->ids_to_names[id] = service_name;
 }
 
 TestTrackedRequestServiceImpl::TestTrackedRequestServiceImpl(
+    InterfaceRequest<TestTrackedRequestService> request,
     TrackingContext* context)
-    : context_(context) {
+    : context_(context), binding_(this, request.Pass()) {
 }
 
 TestTrackedRequestServiceImpl::~TestTrackedRequestServiceImpl() {

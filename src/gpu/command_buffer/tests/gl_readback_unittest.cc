@@ -10,8 +10,10 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/message_loop/message_loop.h"
+#include "base/location.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "gpu/command_buffer/tests/gl_manager.h"
 #include "gpu/command_buffer/tests/gl_test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -21,13 +23,9 @@ namespace gpu {
 
 class GLReadbackTest : public testing::Test {
  protected:
-  virtual void SetUp() {
-    gl_.Initialize(GLManager::Options());
-  }
+  void SetUp() override { gl_.Initialize(GLManager::Options()); }
 
-  virtual void TearDown() {
-    gl_.Destroy();
-  }
+  void TearDown() override { gl_.Destroy(); }
 
   static void WaitForQueryCallback(int q, base::Closure cb) {
     unsigned int done = 0;
@@ -35,9 +33,8 @@ class GLReadbackTest : public testing::Test {
     if (done) {
       cb.Run();
     } else {
-      base::MessageLoop::current()->PostDelayedTask(
-          FROM_HERE,
-          base::Bind(&WaitForQueryCallback, q, cb),
+      base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+          FROM_HERE, base::Bind(&WaitForQueryCallback, q, cb),
           base::TimeDelta::FromMilliseconds(3));
     }
   }

@@ -22,6 +22,13 @@ IN_PROC_BROWSER_TEST_F(ExecuteScriptApiTest, ExecuteScriptBasic) {
   ASSERT_TRUE(RunExtensionTest("executescript/basic")) << message_;
 }
 
+IN_PROC_BROWSER_TEST_F(ExecuteScriptApiTest, ExecuteScriptBadEncoding) {
+  SetupDelayedHostResolver();
+  ASSERT_TRUE(StartEmbeddedTestServer());
+  // data/extensions/api_test/../bad = data/extensions/bad
+  ASSERT_TRUE(RunExtensionTest("../bad")) << message_;
+}
+
 // If failing, mark disabled and update http://crbug.com/92105.
 IN_PROC_BROWSER_TEST_F(ExecuteScriptApiTest, ExecuteScriptInFrame) {
   SetupDelayedHostResolver();
@@ -53,7 +60,7 @@ IN_PROC_BROWSER_TEST_F(ExecuteScriptApiTest, ExecuteScriptFileAfterClose) {
 // If crashing, mark disabled and update http://crbug.com/67774.
 IN_PROC_BROWSER_TEST_F(ExecuteScriptApiTest, ExecuteScriptFragmentNavigation) {
   ASSERT_TRUE(StartEmbeddedTestServer());
-  const char* extension_name = "executescript/fragment";
+  const char extension_name[] = "executescript/fragment";
   ASSERT_TRUE(RunExtensionTest(extension_name)) << message_;
 }
 

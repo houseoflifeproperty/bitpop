@@ -36,38 +36,31 @@ class SkKTXImageDecoder : public SkImageDecoder {
 public:
     SkKTXImageDecoder() { }
 
-    virtual Format getFormat() const SK_OVERRIDE {
+    Format getFormat() const override {
         return kKTX_Format;
     }
 
 protected:
-    virtual bool onDecode(SkStream* stream, SkBitmap* bm, Mode) SK_OVERRIDE;
+    Result onDecode(SkStream* stream, SkBitmap* bm, Mode) override;
 
 private:
     typedef SkImageDecoder INHERITED;
 };
 
-bool SkKTXImageDecoder::onDecode(SkStream* stream, SkBitmap* bm, Mode mode) {
+SkImageDecoder::Result SkKTXImageDecoder::onDecode(SkStream* stream, SkBitmap* bm, Mode mode) {
     // TODO: Implement SkStream::copyToData() that's cheap for memory and file streams
     SkAutoDataUnref data(SkCopyStreamToData(stream));
     if (NULL == data) {
-        return false;
+        return kFailure;
     }
 
     SkKTXFile ktxFile(data);
     if (!ktxFile.valid()) {
-        return false;
+        return kFailure;
     }
 
     const unsigned short width = ktxFile.width();
     const unsigned short height = ktxFile.height();
-
-#ifdef SK_SUPPORT_LEGACY_IMAGEDECODER_CHOOSER
-    // should we allow the Chooser (if present) to pick a config for us???
-    if (!this->chooseFromOneChoice(kN32_SkColorType, width, height)) {
-        return false;
-    }
-#endif
 
     // Set a flag if our source is premultiplied alpha
     const SkString premulKey("KTXPremultipliedAlpha");
@@ -84,7 +77,7 @@ bool SkKTXImageDecoder::onDecode(SkStream* stream, SkBitmap* bm, Mode mode) {
             // If the client wants unpremul colors and we only have
             // premul, then we cannot honor their wish.
             if (bSrcIsPremul) {
-                return false;
+                return kFailure;
             }
         } else {
             alphaType = kPremul_SkAlphaType;
@@ -121,12 +114,12 @@ bool SkKTXImageDecoder::onDecode(SkStream* stream, SkBitmap* bm, Mode mode) {
     }
     
     if (SkImageDecoder::kDecodeBounds_Mode == mode) {
-        return true;
+        return kSuccess;
     }
 
     // If we've made it this far, then we know how to grok the data.
     if (!this->allocPixelRef(bm, NULL)) {
-        return false;
+        return kFailure;
     }
 
     // Lock the pixels, since we're about to write to them...
@@ -134,7 +127,7 @@ bool SkKTXImageDecoder::onDecode(SkStream* stream, SkBitmap* bm, Mode mode) {
 
     if (isCompressedAlpha) {
         if (!sampler.begin(bm, SkScaledBitmapSampler::kGray, *this)) {
-            return false;
+            return kFailure;
         }
 
         // Alpha data is only a single byte per pixel.
@@ -146,7 +139,7 @@ bool SkKTXImageDecoder::onDecode(SkStream* stream, SkBitmap* bm, Mode mode) {
         const uint8_t *buf = reinterpret_cast<const uint8_t *>(ktxFile.pixelData());
         if (!SkTextureCompressor::DecompressBufferFromFormat(
                 outRGBDataPtr, width, buf, width, height, ktxCompressedFormat)) {
-            return false;
+            return kFailure;
         }
 
         // Set each of the pixels...
@@ -159,11 +152,11 @@ bool SkKTXImageDecoder::onDecode(SkStream* stream, SkBitmap* bm, Mode mode) {
             srcRow += sampler.srcDY() * srcRowBytes;
         }
 
-        return true;
+        return kSuccess;
 
     } else if (ktxFile.isCompressedFormat(SkTextureCompressor::kETC1_Format)) {
         if (!sampler.begin(bm, SkScaledBitmapSampler::kRGB, *this)) {
-            return false;
+            return kFailure;
         }
 
         // ETC1 Data is encoded as RGB pixels, so we should extract it as such
@@ -175,7 +168,7 @@ bool SkKTXImageDecoder::onDecode(SkStream* stream, SkBitmap* bm, Mode mode) {
         const uint8_t *buf = reinterpret_cast<const uint8_t *>(ktxFile.pixelData());
         if (!SkTextureCompressor::DecompressBufferFromFormat(
                 outRGBDataPtr, width*3, buf, width, height, SkTextureCompressor::kETC1_Format)) {
-            return false;
+            return kFailure;
         }
 
         // Set each of the pixels...
@@ -188,13 +181,13 @@ bool SkKTXImageDecoder::onDecode(SkStream* stream, SkBitmap* bm, Mode mode) {
             srcRow += sampler.srcDY() * srcRowBytes;
         }
 
-        return true;
+        return kSuccess;
 
     } else if (ktxFile.isRGB8()) {
 
         // Uncompressed RGB data (without alpha)
         if (!sampler.begin(bm, SkScaledBitmapSampler::kRGB, *this)) {
-            return false;
+            return kFailure;
         }
 
         // Just need to read RGB pixels
@@ -207,7 +200,7 @@ bool SkKTXImageDecoder::onDecode(SkStream* stream, SkBitmap* bm, Mode mode) {
             srcRow += sampler.srcDY() * srcRowBytes;
         }
 
-        return true;
+        return kSuccess;
 
     } else if (ktxFile.isRGBA8()) {
 
@@ -224,7 +217,7 @@ bool SkKTXImageDecoder::onDecode(SkStream* stream, SkBitmap* bm, Mode mode) {
         } 
 
         if (!sampler.begin(bm, SkScaledBitmapSampler::kRGBA, opts)) {
-            return false;
+            return kFailure;
         }
 
         // Just need to read RGBA pixels
@@ -237,10 +230,10 @@ bool SkKTXImageDecoder::onDecode(SkStream* stream, SkBitmap* bm, Mode mode) {
             srcRow += sampler.srcDY() * srcRowBytes;
         }
 
-        return true;
+        return kSuccess;
     }
 
-    return false;
+    return kFailure;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -258,7 +251,7 @@ bool SkKTXImageDecoder::onDecode(SkStream* stream, SkBitmap* bm, Mode mode) {
 
 class SkKTXImageEncoder : public SkImageEncoder {
 protected:
-    virtual bool onEncode(SkWStream* stream, const SkBitmap& bm, int quality) SK_OVERRIDE;
+    bool onEncode(SkWStream* stream, const SkBitmap& bm, int quality) override;
 
 private:
     virtual bool encodePKM(SkWStream* stream, const SkData *data);

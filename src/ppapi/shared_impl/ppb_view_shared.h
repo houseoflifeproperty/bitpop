@@ -36,21 +36,21 @@ class PPAPI_SHARED_EXPORT PPB_View_Shared : public Resource,
   PPB_View_Shared(ResourceObjectType type,
                   PP_Instance instance,
                   const ViewData& data);
-  virtual ~PPB_View_Shared();
+  ~PPB_View_Shared() override;
 
   // Resource overrides.
-  virtual thunk::PPB_View_API* AsPPB_View_API() OVERRIDE;
+  thunk::PPB_View_API* AsPPB_View_API() override;
 
   // PPB_View_API implementation.
-  virtual const ViewData& GetData() const OVERRIDE;
-  virtual PP_Bool GetRect(PP_Rect* viewport) const OVERRIDE;
-  virtual PP_Bool IsFullscreen() const OVERRIDE;
-  virtual PP_Bool IsVisible() const OVERRIDE;
-  virtual PP_Bool IsPageVisible() const OVERRIDE;
-  virtual PP_Bool GetClipRect(PP_Rect* clip) const OVERRIDE;
-  virtual float GetDeviceScale() const OVERRIDE;
-  virtual float GetCSSScale() const OVERRIDE;
-  virtual PP_Bool GetScrollOffset(PP_Point* scroll_offset) const OVERRIDE;
+  const ViewData& GetData() const override;
+  PP_Bool GetRect(PP_Rect* viewport) const override;
+  PP_Bool IsFullscreen() const override;
+  PP_Bool IsVisible() const override;
+  PP_Bool IsPageVisible() const override;
+  PP_Bool GetClipRect(PP_Rect* clip) const override;
+  float GetDeviceScale() const override;
+  float GetCSSScale() const override;
+  PP_Bool GetScrollOffset(PP_Point* scroll_offset) const override;
 
  private:
   ViewData data_;

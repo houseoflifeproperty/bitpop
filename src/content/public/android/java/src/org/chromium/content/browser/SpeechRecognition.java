@@ -8,7 +8,6 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
 import android.os.Bundle;
@@ -19,6 +18,8 @@ import android.speech.SpeechRecognizer;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
+import org.chromium.base.PackageUtils;
+import org.chromium.content_public.common.SpeechRecognitionErrorCode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -89,30 +90,30 @@ public class SpeechRecognition {
 
         @Override
         public void onError(int error) {
-            int code = SpeechRecognitionError.NONE;
+            int code = SpeechRecognitionErrorCode.NONE;
 
             // Translate Android SpeechRecognizer errors to Web Speech API errors.
             switch(error) {
                 case SpeechRecognizer.ERROR_AUDIO:
-                    code = SpeechRecognitionError.AUDIO;
+                    code = SpeechRecognitionErrorCode.AUDIO_CAPTURE;
                     break;
                 case SpeechRecognizer.ERROR_CLIENT:
-                    code = SpeechRecognitionError.ABORTED;
+                    code = SpeechRecognitionErrorCode.ABORTED;
                     break;
                 case SpeechRecognizer.ERROR_RECOGNIZER_BUSY:
                 case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS:
-                    code = SpeechRecognitionError.NOT_ALLOWED;
+                    code = SpeechRecognitionErrorCode.NOT_ALLOWED;
                     break;
                 case SpeechRecognizer.ERROR_NETWORK_TIMEOUT:
                 case SpeechRecognizer.ERROR_NETWORK:
                 case SpeechRecognizer.ERROR_SERVER:
-                    code = SpeechRecognitionError.NETWORK;
+                    code = SpeechRecognitionErrorCode.NETWORK;
                     break;
                 case SpeechRecognizer.ERROR_NO_MATCH:
-                    code = SpeechRecognitionError.NO_MATCH;
+                    code = SpeechRecognitionErrorCode.NO_MATCH;
                     break;
                 case SpeechRecognizer.ERROR_SPEECH_TIMEOUT:
-                    code = SpeechRecognitionError.NO_SPEECH;
+                    code = SpeechRecognitionErrorCode.NO_SPEECH;
                     break;
                 default:
                     assert false;
@@ -142,7 +143,7 @@ public class SpeechRecognition {
             // We assume that onResults is called only once, at the end of a session, thus we
             // terminate. If one day the recognition provider changes dictation mode behavior to
             // call onResults several times, we should terminate only if (!mContinuous).
-            terminate(SpeechRecognitionError.NONE);
+            terminate(SpeechRecognitionErrorCode.NONE);
         }
 
         @Override
@@ -173,8 +174,7 @@ public class SpeechRecognition {
      * continuous recognition.
      */
     public static boolean initialize(Context context) {
-        if (!SpeechRecognizer.isRecognitionAvailable(context))
-            return false;
+        if (!SpeechRecognizer.isRecognitionAvailable(context)) return false;
 
         PackageManager pm = context.getPackageManager();
         Intent intent = new Intent(RecognitionService.SERVICE_INTERFACE);
@@ -183,17 +183,9 @@ public class SpeechRecognition {
         for (ResolveInfo resolve : list) {
             ServiceInfo service = resolve.serviceInfo;
 
-            if (!service.packageName.equals(PROVIDER_PACKAGE_NAME))
-                continue;
+            if (!service.packageName.equals(PROVIDER_PACKAGE_NAME)) continue;
 
-            int versionCode;
-            try {
-                versionCode = pm.getPackageInfo(service.packageName, 0).versionCode;
-            } catch (NameNotFoundException e) {
-                continue;
-            }
-
-            if (versionCode < PROVIDER_MIN_VERSION)
+            if (PackageUtils.getPackageVersion(context, service.packageName) < PROVIDER_MIN_VERSION)
                 continue;
 
             sRecognitionProvider = new ComponentName(service.packageName, service.name);
@@ -237,8 +229,9 @@ public class SpeechRecognition {
             mState = STATE_IDLE;
         }
 
-        if (error != SpeechRecognitionError.NONE)
+        if (error != SpeechRecognitionErrorCode.NONE) {
             nativeOnRecognitionError(mNativeSpeechRecognizerImplAndroid, error);
+        }
 
         mRecognizer.destroy();
         mRecognizer = null;
@@ -254,8 +247,7 @@ public class SpeechRecognition {
 
     @CalledByNative
     private void startRecognition(String language, boolean continuous, boolean interimResults) {
-        if (mRecognizer == null)
-            return;
+        if (mRecognizer == null) return;
 
         mContinuous = continuous;
         mIntent.putExtra("android.speech.extra.DICTATION_MODE", continuous);
@@ -266,17 +258,15 @@ public class SpeechRecognition {
 
     @CalledByNative
     private void abortRecognition() {
-        if (mRecognizer == null)
-            return;
+        if (mRecognizer == null) return;
 
         mRecognizer.cancel();
-        terminate(SpeechRecognitionError.ABORTED);
+        terminate(SpeechRecognitionErrorCode.ABORTED);
     }
 
     @CalledByNative
     private void stopRecognition() {
-        if (mRecognizer == null)
-            return;
+        if (mRecognizer == null) return;
 
         mContinuous = false;
         mRecognizer.stopListening();
@@ -288,9 +278,9 @@ public class SpeechRecognition {
     private native void nativeOnSoundEnd(long nativeSpeechRecognizerImplAndroid);
     private native void nativeOnAudioEnd(long nativeSpeechRecognizerImplAndroid);
     private native void nativeOnRecognitionResults(long nativeSpeechRecognizerImplAndroid,
-                                                   String[] results,
-                                                   float[] scores,
-                                                   boolean provisional);
+            String[] results,
+            float[] scores,
+            boolean provisional);
     private native void nativeOnRecognitionError(long nativeSpeechRecognizerImplAndroid, int error);
     private native void nativeOnRecognitionEnd(long nativeSpeechRecognizerImplAndroid);
 }

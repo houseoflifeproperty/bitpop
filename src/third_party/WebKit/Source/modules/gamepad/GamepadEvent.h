@@ -7,16 +7,11 @@
 
 #include "modules/EventModules.h"
 #include "modules/gamepad/Gamepad.h"
+#include "modules/gamepad/GamepadEventInit.h"
 
 namespace blink {
 
-struct GamepadEventInit : public EventInit {
-    GamepadEventInit();
-
-    Member<Gamepad> gamepad;
-};
-
-class GamepadEvent FINAL : public Event {
+class GamepadEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<GamepadEvent> create()
@@ -35,9 +30,9 @@ public:
 
     Gamepad* gamepad() const { return m_gamepad.get(); }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     GamepadEvent();

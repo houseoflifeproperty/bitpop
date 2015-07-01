@@ -8,7 +8,9 @@
 
 #include <string>
 
+#import "base/mac/mac_util.h"
 #import "base/mac/scoped_sending_event.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "base/message_loop/message_loop.h"
 #import "base/message_loop/message_pump_mac.h"
 #include "content/browser/frame_host/popup_menu_helper_mac.h"
@@ -41,16 +43,16 @@ using content::WebContentsViewMac;
 
 // Ensure that the blink::WebDragOperation enum values stay in sync with
 // NSDragOperation constants, since the code below static_casts between 'em.
-#define COMPILE_ASSERT_MATCHING_ENUM(name) \
-  COMPILE_ASSERT(int(NS##name) == int(blink::Web##name), enum_mismatch_##name)
-COMPILE_ASSERT_MATCHING_ENUM(DragOperationNone);
-COMPILE_ASSERT_MATCHING_ENUM(DragOperationCopy);
-COMPILE_ASSERT_MATCHING_ENUM(DragOperationLink);
-COMPILE_ASSERT_MATCHING_ENUM(DragOperationGeneric);
-COMPILE_ASSERT_MATCHING_ENUM(DragOperationPrivate);
-COMPILE_ASSERT_MATCHING_ENUM(DragOperationMove);
-COMPILE_ASSERT_MATCHING_ENUM(DragOperationDelete);
-COMPILE_ASSERT_MATCHING_ENUM(DragOperationEvery);
+#define STATIC_ASSERT_MATCHING_ENUM(name) \
+  static_assert(int(NS##name) == int(blink::Web##name), "enum mismatch: " #name)
+STATIC_ASSERT_MATCHING_ENUM(DragOperationNone);
+STATIC_ASSERT_MATCHING_ENUM(DragOperationCopy);
+STATIC_ASSERT_MATCHING_ENUM(DragOperationLink);
+STATIC_ASSERT_MATCHING_ENUM(DragOperationGeneric);
+STATIC_ASSERT_MATCHING_ENUM(DragOperationPrivate);
+STATIC_ASSERT_MATCHING_ENUM(DragOperationMove);
+STATIC_ASSERT_MATCHING_ENUM(DragOperationDelete);
+STATIC_ASSERT_MATCHING_ENUM(DragOperationEvery);
 
 @interface WebContentsViewCocoa (Private)
 - (id)initWithWebContentsViewMac:(WebContentsViewMac*)w;
@@ -106,7 +108,8 @@ gfx::NativeView WebContentsViewMac::GetContentNativeView() const {
 }
 
 gfx::NativeWindow WebContentsViewMac::GetTopLevelNativeWindow() const {
-  return [cocoa_view_.get() window];
+  NSWindow* window = [cocoa_view_.get() window];
+  return window ? window : delegate_->GetNativeWindow();
 }
 
 void WebContentsViewMac::GetContainerBounds(gfx::Rect* out) const {
@@ -158,9 +161,18 @@ void WebContentsViewMac::SizeContents(const gfx::Size& size) {
   // previous implementation.
 }
 
+gfx::NativeView WebContentsViewMac::GetNativeViewForFocus() const {
+  RenderWidgetHostView* rwhv =
+      web_contents_->GetFullscreenRenderWidgetHostView();
+  if (!rwhv)
+    rwhv = web_contents_->GetRenderWidgetHostView();
+  return rwhv ? rwhv->GetNativeView() : nil;
+}
+
 void WebContentsViewMac::Focus() {
-  NSWindow* window = [cocoa_view_.get() window];
-  [window makeFirstResponder:GetContentNativeView()];
+  gfx::NativeView native_view = GetNativeViewForFocus();
+  NSWindow* window = [native_view window];
+  [window makeFirstResponder:native_view];
   if (![window isVisible])
     return;
   [window makeKeyAndOrderFront:nil];
@@ -170,21 +182,23 @@ void WebContentsViewMac::SetInitialFocus() {
   if (web_contents_->FocusLocationBarByDefault())
     web_contents_->SetFocusToLocationBar(false);
   else
-    [[cocoa_view_.get() window] makeFirstResponder:GetContentNativeView()];
+    Focus();
 }
 
 void WebContentsViewMac::StoreFocus() {
+  gfx::NativeView native_view = GetNativeViewForFocus();
   // We're explicitly being asked to store focus, so don't worry if there's
   // already a view saved.
   focus_tracker_.reset(
-      [[FocusTracker alloc] initWithWindow:[cocoa_view_ window]]);
+      [[FocusTracker alloc] initWithWindow:[native_view window]]);
 }
 
 void WebContentsViewMac::RestoreFocus() {
+  gfx::NativeView native_view = GetNativeViewForFocus();
   // TODO(avi): Could we be restoring a view that's no longer in the key view
   // chain?
   if (!(focus_tracker_.get() &&
-        [focus_tracker_ restoreFocusInWindow:[cocoa_view_ window]])) {
+        [focus_tracker_ restoreFocusInWindow:[native_view window]])) {
     // Fall back to the default focus behavior if we could not restore focus.
     // TODO(shess): If location-bar gets focus by default, this will
     // select-all in the field.  If there was a specific selection in
@@ -284,7 +298,7 @@ void WebContentsViewMac::CreateView(
 }
 
 RenderWidgetHostViewBase* WebContentsViewMac::CreateViewForWidget(
-    RenderWidgetHost* render_widget_host) {
+    RenderWidgetHost* render_widget_host, bool is_guest_view_hack) {
   if (render_widget_host->GetView()) {
     // During testing, the view will already be set up in most cases to the
     // test view, so we don't want to clobber it with a real one. To verify that
@@ -297,7 +311,7 @@ RenderWidgetHostViewBase* WebContentsViewMac::CreateViewForWidget(
   }
 
   RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(
-      render_widget_host);
+      render_widget_host, is_guest_view_hack);
   if (delegate()) {
     base::scoped_nsobject<NSObject<RenderWidgetHostViewMacDelegate> >
         rw_delegate(
@@ -331,7 +345,7 @@ RenderWidgetHostViewBase* WebContentsViewMac::CreateViewForWidget(
 
 RenderWidgetHostViewBase* WebContentsViewMac::CreateViewForPopupWidget(
     RenderWidgetHost* render_widget_host) {
-  return new RenderWidgetHostViewMac(render_widget_host);
+  return new RenderWidgetHostViewMac(render_widget_host, false);
 }
 
 void WebContentsViewMac::SetPageTitle(const base::string16& title) {
@@ -409,6 +423,14 @@ void WebContentsViewMac::CloseTab() {
   [super dealloc];
 }
 
+- (BOOL)allowsVibrancy {
+  // Returning YES will allow rendering this view with vibrancy effect if it is
+  // incorporated into a view hierarchy that uses vibrancy, it will have no
+  // effect otherwise.
+  // For details see Apple documentation on NSView and NSVisualEffectView.
+  return YES;
+}
+
 // Registers for the view for the appropriate drag types.
 - (void)registerDragTypes {
   NSArray* types = [NSArray arrayWithObjects:
@@ -463,6 +485,13 @@ void WebContentsViewMac::CloseTab() {
   // saves us the effort of overriding this method in every possible
   // subview.
   return mouseDownCanMoveWindow_;
+}
+
+- (void)setOpaque:(BOOL)opaque {
+  RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
+      webContentsView_->web_contents()->GetRenderWidgetHostView());
+  DCHECK(view);
+  [view->cocoa_view() setOpaque:opaque];
 }
 
 - (void)pasteboard:(NSPasteboard*)sender provideDataForType:(NSString*)type {
@@ -565,8 +594,8 @@ void WebContentsViewMac::CloseTab() {
     return;
 
   NSSelectionDirection direction =
-      [[[notification userInfo] objectForKey:kSelectionDirection]
-        unsignedIntegerValue];
+      static_cast<NSSelectionDirection>([[[notification userInfo]
+          objectForKey:kSelectionDirection] unsignedIntegerValue]);
   if (direction == NSDirectSelection)
     return;
 
@@ -581,6 +610,45 @@ void WebContentsViewMac::CloseTab() {
 - (void)resizeSubviewsWithOldSize:(NSSize)oldBoundsSize {
   for (NSView* subview in self.subviews)
     [subview setFrame:self.bounds];
+}
+
+- (void)viewWillMoveToWindow:(NSWindow*)newWindow {
+  NSWindow* oldWindow = [self window];
+
+  NSNotificationCenter* notificationCenter =
+      [NSNotificationCenter defaultCenter];
+
+  // Occlusion notification APIs are new in Mavericks.
+  bool supportsOcclusionAPIs = base::mac::IsOSMavericksOrLater();
+
+  if (supportsOcclusionAPIs) {
+    if (oldWindow) {
+      [notificationCenter
+          removeObserver:self
+                    name:NSWindowDidChangeOcclusionStateNotification
+                  object:oldWindow];
+    }
+    if (newWindow) {
+      [notificationCenter
+          addObserver:self
+             selector:@selector(windowChangedOcclusionState:)
+                 name:NSWindowDidChangeOcclusionStateNotification
+               object:newWindow];
+    }
+  }
+}
+
+- (void)windowChangedOcclusionState:(NSNotification*)notification {
+  DCHECK(base::mac::IsOSMavericksOrLater());
+  NSWindow* window = [notification object];
+  WebContentsImpl* webContents = [self webContents];
+  if (window && webContents && !webContents->IsBeingDestroyed()) {
+    if ([window occlusionState] & NSWindowOcclusionStateVisible) {
+      webContents->WasUnOccluded();
+    } else {
+      webContents->WasOccluded();
+    }
+  }
 }
 
 @end

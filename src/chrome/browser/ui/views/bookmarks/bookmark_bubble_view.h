@@ -40,29 +40,28 @@ class BookmarkBubbleView : public views::BubbleDelegateView,
                          const GURL& url,
                          bool newly_bookmarked);
 
-  static bool IsShowing();
-
   static void Hide();
 
-  virtual ~BookmarkBubbleView();
+  static BookmarkBubbleView* bookmark_bubble() { return bookmark_bubble_; }
 
-  // views::BubbleDelegateView method.
-  virtual views::View* GetInitiallyFocusedView() OVERRIDE;
+  ~BookmarkBubbleView() override;
 
-  // views::WidgetDelegate method.
-  virtual void WindowClosing() OVERRIDE;
-
-  // views::View method.
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
+  // views::WidgetDelegate:
+  void WindowClosing() override;
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
 
  protected:
   // views::BubbleDelegateView method.
-  virtual void Init() OVERRIDE;
+  void Init() override;
 
  private:
   friend class BookmarkBubbleViewTest;
   FRIEND_TEST_ALL_PREFIXES(BookmarkBubbleViewTest, SyncPromoSignedIn);
   FRIEND_TEST_ALL_PREFIXES(BookmarkBubbleViewTest, SyncPromoNotSignedIn);
+
+  // views::BubbleDelegateView:
+  const char* GetClassName() const override;
+  views::View* GetInitiallyFocusedView() override;
 
   // Creates a BookmarkBubbleView.
   BookmarkBubbleView(views::View* anchor_view,
@@ -76,15 +75,14 @@ class BookmarkBubbleView : public views::BubbleDelegateView,
   base::string16 GetTitle();
 
   // Overridden from views::View:
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  void GetAccessibleState(ui::AXViewState* state) override;
 
   // Overridden from views::ButtonListener:
   // Closes the bubble or opens the edit dialog.
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   // Overridden from views::ComboboxListener:
-  virtual void OnPerformAction(views::Combobox* combobox) OVERRIDE;
+  void OnPerformAction(views::Combobox* combobox) override;
 
   // Handle the message when the user presses a button.
   void HandleButtonPressed(views::Button* sender);

@@ -27,18 +27,11 @@
 #define OverflowEvent_h
 
 #include "core/events/Event.h"
+#include "core/events/OverflowEventInit.h"
 
 namespace blink {
 
-struct OverflowEventInit : public EventInit {
-    OverflowEventInit();
-
-    unsigned short orient;
-    bool horizontalOverflow;
-    bool verticalOverflow;
-};
-
-class OverflowEvent FINAL : public Event {
+class OverflowEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
     enum orientType {
@@ -64,9 +57,9 @@ public:
     bool horizontalOverflow() const { return m_horizontalOverflow; }
     bool verticalOverflow() const { return m_verticalOverflow; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     OverflowEvent();

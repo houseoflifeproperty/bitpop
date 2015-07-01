@@ -21,6 +21,7 @@
 #ifndef HTMLFrameOwnerElement_h
 #define HTMLFrameOwnerElement_h
 
+#include "core/CoreExport.h"
 #include "core/dom/Document.h"
 #include "core/frame/FrameOwner.h"
 #include "core/html/HTMLElement.h"
@@ -33,27 +34,27 @@ namespace blink {
 class LocalDOMWindow;
 class ExceptionState;
 class Frame;
-class RenderPart;
+class LayoutPart;
 class Widget;
 
-class HTMLFrameOwnerElement : public HTMLElement, public FrameOwner {
+class CORE_EXPORT HTMLFrameOwnerElement : public HTMLElement, public FrameOwner {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLFrameOwnerElement);
 public:
     virtual ~HTMLFrameOwnerElement();
 
     Frame* contentFrame() const { return m_contentFrame; }
-    LocalDOMWindow* contentWindow() const;
+    DOMWindow* contentWindow() const;
     Document* contentDocument() const;
 
     void setContentFrame(Frame&);
     void clearContentFrame();
 
-    void disconnectContentFrame();
+    virtual void disconnectContentFrame();
 
-    // Most subclasses use RenderPart (either RenderEmbeddedObject or RenderIFrame)
+    // Most subclasses use LayoutPart (either LayoutEmbeddedObject or LayoutIFrame)
     // except for HTMLObjectElement and HTMLEmbedElement which may return any
-    // RenderObject when using fallback content.
-    RenderPart* renderPart() const;
+    // LayoutObject when using fallback content.
+    LayoutPart* layoutPart() const;
 
     Document* getSVGDocument(ExceptionState&) const;
 
@@ -62,10 +63,7 @@ public:
     virtual bool loadedNonEmptyDocument() const { return false; }
     virtual void didLoadNonEmptyDocument() { }
 
-    virtual void renderFallbackContent() { }
-
-    virtual bool isObjectElement() const { return false; }
-    void setWidget(PassRefPtr<Widget>);
+    void setWidget(PassRefPtrWillBeRawPtr<Widget>);
     Widget* ownedWidget() const;
 
     class UpdateSuspendScope {
@@ -77,7 +75,13 @@ public:
         void performDeferredWidgetTreeOperations();
     };
 
-    virtual void trace(Visitor*) OVERRIDE;
+    // FrameOwner overrides:
+    bool isLocal() const override { return true; }
+    void dispatchLoad() override;
+    SandboxFlags sandboxFlags() const override { return m_sandboxFlags; }
+    void renderFallbackContent() override { }
+
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     HTMLFrameOwnerElement(const QualifiedName& tagName, Document&);
@@ -86,16 +90,11 @@ protected:
     bool loadOrRedirectSubframe(const KURL&, const AtomicString& frameName, bool lockBackForwardList);
 
 private:
-    virtual bool isKeyboardFocusable() const OVERRIDE;
-    virtual bool isFrameOwnerElement() const OVERRIDE FINAL { return true; }
-
-    // FrameOwner overrides:
-    virtual bool isLocal() const { return true; }
-    virtual SandboxFlags sandboxFlags() const OVERRIDE { return m_sandboxFlags; }
-    virtual void dispatchLoad() OVERRIDE;
+    virtual bool isKeyboardFocusable() const override;
+    virtual bool isFrameOwnerElement() const override final { return true; }
 
     RawPtrWillBeMember<Frame> m_contentFrame;
-    RefPtr<Widget> m_widget;
+    RefPtrWillBeMember<Widget> m_widget;
     SandboxFlags m_sandboxFlags;
 };
 
@@ -127,7 +126,7 @@ public:
     }
 
 private:
-    static WillBeHeapHashCountedSet<RawPtrWillBeMember<Node> >& disabledSubtreeRoots();
+    static WillBeHeapHashCountedSet<RawPtrWillBeMember<Node>>& disabledSubtreeRoots();
 
     RawPtrWillBeMember<Node> m_root;
 };

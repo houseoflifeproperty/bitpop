@@ -13,6 +13,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/signin_client.h"
 #include "components/signin/core/common/signin_pref_names.h"
 #include "components/signin/core/common/signin_switches.h"
@@ -22,8 +23,16 @@
 
 using namespace signin_internals_util;
 
-SigninManagerBase::SigninManagerBase(SigninClient* client)
-    : client_(client), initialized_(false), weak_pointer_factory_(this) {}
+SigninManagerBase::SigninManagerBase(
+    SigninClient* client,
+    AccountTrackerService* account_tracker_service)
+    : client_(client),
+      account_tracker_service_(account_tracker_service),
+      initialized_(false),
+      weak_pointer_factory_(this) {
+  DCHECK(client_);
+  DCHECK(account_tracker_service_);
+}
 
 SigninManagerBase::~SigninManagerBase() {}
 
@@ -35,22 +44,61 @@ void SigninManagerBase::Initialize(PrefService* local_state) {
   // If the user is clearing the token service from the command line, then
   // clear their login info also (not valid to be logged in without any
   // tokens).
-  CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-  if (cmd_line->HasSwitch(switches::kClearTokenService))
+  base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
+  if (cmd_line->HasSwitch(switches::kClearTokenService)) {
+    client_->GetPrefs()->ClearPref(prefs::kGoogleServicesAccountId);
     client_->GetPrefs()->ClearPref(prefs::kGoogleServicesUsername);
-
-  std::string user =
-      client_->GetPrefs()->GetString(prefs::kGoogleServicesUsername);
-  if (!user.empty()) {
-#if defined(OS_IOS)
-    // Prior to M38, Chrome on iOS did not normalize the email before setting
-    // it in SigninManager. |AccountReconcilor| expects the authenticated email
-    // to be normalized as it used as an account identifier and is compared
-    // to the accounts available in the cookies.
-    user = gaia::CanonicalizeEmail(gaia::SanitizeEmail(user));
-#endif
-    SetAuthenticatedUsername(user);
+    client_->GetPrefs()->ClearPref(prefs::kGoogleServicesUserAccountId);
   }
+
+  std::string account_id =
+      client_->GetPrefs()->GetString(prefs::kGoogleServicesAccountId);
+
+  // Handle backward compatibility: if kGoogleServicesAccountId is empty, but
+  // kGoogleServicesUsername is not, then this is an old profile that needs to
+  // be updated.  kGoogleServicesUserAccountId should not be empty, and contains
+  // the gaia_id.  Use both properties to prime the account tracker before
+  // proceeding.
+  if (account_id.empty()) {
+    std::string pref_account_username =
+        client_->GetPrefs()->GetString(prefs::kGoogleServicesUsername);
+    if (!pref_account_username.empty()) {
+      // This is an old profile connected to a google account.  Migrate from
+      // kGoogleServicesUsername to kGoogleServicesAccountId.
+      std::string pref_gaia_id =
+          client_->GetPrefs()->GetString(prefs::kGoogleServicesUserAccountId);
+
+      // If kGoogleServicesUserAccountId is empty, then this is either a cros
+      // machine or a really old profile on one of the other platforms.  However
+      // in this case the account tracker should have the gaia_id so fetch it
+      // from there.
+      if (pref_gaia_id.empty()) {
+        AccountTrackerService::AccountInfo info =
+            account_tracker_service_->GetAccountInfo(pref_account_username);
+        pref_gaia_id = info.gaia;
+      }
+
+      // If |pref_gaia_id| is still empty, this means the profile has been in
+      // an auth error state for some time (since M39).  It could also mean
+      // a profile that has not been used since M33.  Before migration to gaia
+      // id is complete, the returned value will be the normalized email, which
+      // is correct.  After the migration, the returned value will be empty,
+      // which means the user is essentially signed out.
+      // TODO(rogerta): may want to show a toast or something.
+      account_id = account_tracker_service_->SeedAccountInfo(
+          pref_gaia_id, pref_account_username);
+
+      // Now remove obsolete preferences.
+      client_->GetPrefs()->ClearPref(prefs::kGoogleServicesUsername);
+    }
+
+    // TODO(rogerta): once migration to gaia id is complete, remove
+    // kGoogleServicesUserAccountId and change all uses of that pref to
+    // kGoogleServicesAccountId.
+  }
+
+  if (!account_id.empty())
+    SetAuthenticatedAccountId(account_id);
 }
 
 bool SigninManagerBase::IsInitialized() const { return initialized_; }
@@ -59,53 +107,65 @@ bool SigninManagerBase::IsSigninAllowed() const {
   return client_->GetPrefs()->GetBoolean(prefs::kSigninAllowed);
 }
 
-const std::string& SigninManagerBase::GetAuthenticatedUsername() const {
-  return authenticated_username_;
+std::string SigninManagerBase::GetAuthenticatedUsername() const {
+  return account_tracker_service_->GetAccountInfo(
+      GetAuthenticatedAccountId()).email;
 }
 
 const std::string& SigninManagerBase::GetAuthenticatedAccountId() const {
-  return GetAuthenticatedUsername();
+  return authenticated_account_id_;
 }
 
-void SigninManagerBase::SetAuthenticatedUsername(const std::string& username) {
-  if (!authenticated_username_.empty()) {
-    DLOG_IF(ERROR, !gaia::AreEmailsSame(username, authenticated_username_))
-        << "Tried to change the authenticated username to something different: "
-        << "Current: " << authenticated_username_ << ", New: " << username;
+void SigninManagerBase::SetAuthenticatedAccountInfo(const std::string& gaia_id,
+                                                    const std::string& email) {
+  DCHECK(!gaia_id.empty());
+  DCHECK(!email.empty());
 
-#if defined(OS_IOS)
-    // Prior to M26, chrome on iOS did not normalize the email before setting
-    // it in SigninManager.  If the emails are the same as given by
-    // gaia::AreEmailsSame() but not the same as given by std::string::op==(),
-    // make sure to set the authenticated name below.
-    if (!gaia::AreEmailsSame(username, authenticated_username_) ||
-        username == authenticated_username_) {
-      return;
-    }
-#else
+  std::string account_id =
+      account_tracker_service_->SeedAccountInfo(gaia_id, email);
+  SetAuthenticatedAccountId(account_id);
+}
+
+void SigninManagerBase::SetAuthenticatedAccountId(
+    const std::string& account_id) {
+  DCHECK(!account_id.empty());
+  if (!authenticated_account_id_.empty()) {
+    DLOG_IF(ERROR, account_id != authenticated_account_id_)
+        << "Tried to change the authenticated id to something different: "
+        << "Current: " << authenticated_account_id_ << ", New: " << account_id;
     return;
-#endif
   }
-  std::string pref_username =
-      client_->GetPrefs()->GetString(prefs::kGoogleServicesUsername);
-  DCHECK(pref_username.empty() || gaia::AreEmailsSame(username, pref_username))
-      << "username: " << username << "; pref_username: " << pref_username;
-  authenticated_username_ = username;
-  client_->GetPrefs()->SetString(prefs::kGoogleServicesUsername, username);
-  NotifyDiagnosticsObservers(USERNAME, username);
 
-  // Go ahead and update the last signed in username here as well. Once a
+  std::string pref_account_id =
+      client_->GetPrefs()->GetString(prefs::kGoogleServicesAccountId);
+
+  DCHECK(pref_account_id.empty() || pref_account_id == account_id)
+      << "account_id=" << account_id
+      << " pref_account_id=" << pref_account_id;
+  authenticated_account_id_ = account_id;
+  client_->GetPrefs()->SetString(prefs::kGoogleServicesAccountId, account_id);
+
+  // This preference is set so that code on I/O thread has access to the
+  // Gaia id of the signed in user.
+  AccountTrackerService::AccountInfo info =
+      account_tracker_service_->GetAccountInfo(account_id);
+
+  // When this function is called from Initialize(), it's possible for
+  // |info.gaia| to be empty when migrating from a really old profile.
+  if (!info.gaia.empty()) {
+    client_->GetPrefs()->SetString(prefs::kGoogleServicesUserAccountId,
+                                   info.gaia);
+  }
+
+  // Go ahead and update the last signed in account info here as well. Once a
   // user is signed in the two preferences should match. Doing it here as
   // opposed to on signin allows us to catch the upgrade scenario.
-  client_->GetPrefs()->SetString(prefs::kGoogleServicesLastUsername, username);
-}
-
-void SigninManagerBase::clear_authenticated_username() {
-  authenticated_username_.clear();
+  client_->GetPrefs()->SetString(prefs::kGoogleServicesLastUsername,
+                                 info.email);
 }
 
 bool SigninManagerBase::IsAuthenticated() const {
-  return !GetAuthenticatedAccountId().empty();
+  return !authenticated_account_id_.empty();
 }
 
 bool SigninManagerBase::AuthInProgress() const {
@@ -131,14 +191,6 @@ void SigninManagerBase::AddSigninDiagnosticsObserver(
 void SigninManagerBase::RemoveSigninDiagnosticsObserver(
     SigninDiagnosticsObserver* observer) {
   signin_diagnostics_observers_.RemoveObserver(observer);
-}
-
-void SigninManagerBase::NotifyDiagnosticsObservers(
-    const UntimedSigninStatusField& field,
-    const std::string& value) {
-  FOR_EACH_OBSERVER(SigninDiagnosticsObserver,
-                    signin_diagnostics_observers_,
-                    NotifySigninValueChanged(field, value));
 }
 
 void SigninManagerBase::NotifyDiagnosticsObservers(

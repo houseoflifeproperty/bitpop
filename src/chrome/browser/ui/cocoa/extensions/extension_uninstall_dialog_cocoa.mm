@@ -8,7 +8,8 @@
 
 #include <string>
 
-#include "base/strings/sys_string_conversions.h"
+#import "base/mac/scoped_nsobject.h"
+#import "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/grit/generated_resources.h"
 #include "extensions/common/extension.h"
@@ -25,20 +26,17 @@ namespace {
 class ExtensionUninstallDialogCocoa
     : public extensions::ExtensionUninstallDialog {
  public:
-  ExtensionUninstallDialogCocoa(Profile* profile,
-                                gfx::NativeWindow parent,
-                                Delegate* delegate);
-  virtual ~ExtensionUninstallDialogCocoa() OVERRIDE;
+  ExtensionUninstallDialogCocoa(Profile* profile, Delegate* delegate);
+  ~ExtensionUninstallDialogCocoa() override;
 
  private:
-  virtual void Show() OVERRIDE;
+  void Show() override;
 };
 
 ExtensionUninstallDialogCocoa::ExtensionUninstallDialogCocoa(
     Profile* profile,
-    gfx::NativeWindow parent,
     extensions::ExtensionUninstallDialog::Delegate* delegate)
-    : extensions::ExtensionUninstallDialog(profile, parent, delegate) {
+    : extensions::ExtensionUninstallDialog(profile, delegate) {
 }
 
 ExtensionUninstallDialogCocoa::~ExtensionUninstallDialogCocoa() {}
@@ -60,10 +58,28 @@ void ExtensionUninstallDialogCocoa::Show() {
   [alert setAlertStyle:NSWarningAlertStyle];
   [alert setIcon:gfx::NSImageFromImageSkia(icon_)];
 
-  if ([alert runModal] == NSAlertFirstButtonReturn)
+  base::scoped_nsobject<NSButton> reportAbuseCheckbox;
+  if (ShouldShowReportAbuseCheckbox()) {
+    reportAbuseCheckbox.reset([[NSButton alloc] initWithFrame:NSZeroRect]);
+    [reportAbuseCheckbox setButtonType:NSSwitchButton];
+    [reportAbuseCheckbox setTitle:l10n_util::GetNSString(
+        IDS_EXTENSION_PROMPT_UNINSTALL_REPORT_ABUSE)];
+    [reportAbuseCheckbox sizeToFit];
+    [alert setAccessoryView:reportAbuseCheckbox];
+  }
+
+  if ([alert runModal] == NSAlertFirstButtonReturn) {
+    bool report_abuse_checked =
+        reportAbuseCheckbox.get() && [reportAbuseCheckbox state] == NSOnState;
+    if (report_abuse_checked)
+      HandleReportAbuse();
+    OnDialogClosed(report_abuse_checked ?
+        CLOSE_ACTION_UNINSTALL_AND_REPORT_ABUSE : CLOSE_ACTION_UNINSTALL);
     delegate_->ExtensionUninstallAccepted();
-  else
+  } else {
+    OnDialogClosed(CLOSE_ACTION_CANCELED);
     delegate_->ExtensionUninstallCanceled();
+  }
 }
 
 }  // namespace
@@ -73,5 +89,5 @@ extensions::ExtensionUninstallDialog*
 extensions::ExtensionUninstallDialog::Create(Profile* profile,
                                              gfx::NativeWindow parent,
                                              Delegate* delegate) {
-  return new ExtensionUninstallDialogCocoa(profile, parent, delegate);
+  return new ExtensionUninstallDialogCocoa(profile, delegate);
 }

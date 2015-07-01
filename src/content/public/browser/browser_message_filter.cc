@@ -8,7 +8,6 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/process/kill.h"
 #include "base/process/process_handle.h"
 #include "base/task_runner.h"
 #include "content/browser/browser_child_process_host_impl.h"
@@ -27,29 +26,27 @@ class BrowserMessageFilter::Internal : public IPC::MessageFilter {
   explicit Internal(BrowserMessageFilter* filter) : filter_(filter) {}
 
  private:
-  virtual ~Internal() {}
+  ~Internal() override {}
 
   // IPC::MessageFilter implementation:
-  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE {
+  void OnFilterAdded(IPC::Sender* sender) override {
     filter_->sender_ = sender;
     filter_->OnFilterAdded(sender);
   }
 
-  virtual void OnFilterRemoved() OVERRIDE {
-    filter_->OnFilterRemoved();
-  }
+  void OnFilterRemoved() override { filter_->OnFilterRemoved(); }
 
-  virtual void OnChannelClosing() OVERRIDE {
-    filter_->sender_ = NULL;
+  void OnChannelClosing() override {
+    filter_->sender_ = nullptr;
     filter_->OnChannelClosing();
   }
 
-  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE {
-    filter_->peer_pid_ = peer_pid;
+  void OnChannelConnected(int32 peer_pid) override {
+    filter_->peer_process_ = base::Process::OpenWithExtraPrivileges(peer_pid);
     filter_->OnChannelConnected(peer_pid);
   }
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     BrowserThread::ID thread = BrowserThread::IO;
     filter_->OverrideThreadForMessage(message, &thread);
 
@@ -78,8 +75,8 @@ class BrowserMessageFilter::Internal : public IPC::MessageFilter {
     return true;
   }
 
-  virtual bool GetSupportedMessageClasses(
-      std::vector<uint32>* supported_message_classes) const OVERRIDE {
+  bool GetSupportedMessageClasses(
+      std::vector<uint32>* supported_message_classes) const override {
     supported_message_classes->assign(
         filter_->message_classes_to_filter().begin(),
         filter_->message_classes_to_filter().end());
@@ -100,23 +97,15 @@ class BrowserMessageFilter::Internal : public IPC::MessageFilter {
 };
 
 BrowserMessageFilter::BrowserMessageFilter(uint32 message_class_to_filter)
-    : internal_(NULL),
-      sender_(NULL),
-#if defined(OS_WIN)
-      peer_handle_(base::kNullProcessHandle),
-#endif
-      peer_pid_(base::kNullProcessId),
+    : internal_(nullptr),
+      sender_(nullptr),
       message_classes_to_filter_(1, message_class_to_filter) {}
 
 BrowserMessageFilter::BrowserMessageFilter(
     const uint32* message_classes_to_filter,
     size_t num_message_classes_to_filter)
-    : internal_(NULL),
-      sender_(NULL),
-#if defined(OS_WIN)
-      peer_handle_(base::kNullProcessHandle),
-#endif
-      peer_pid_(base::kNullProcessId),
+    : internal_(nullptr),
+      sender_(nullptr),
       message_classes_to_filter_(
           message_classes_to_filter,
           message_classes_to_filter + num_message_classes_to_filter) {
@@ -124,19 +113,8 @@ BrowserMessageFilter::BrowserMessageFilter(
 }
 
 base::ProcessHandle BrowserMessageFilter::PeerHandle() {
-#if defined(OS_WIN)
-  base::AutoLock lock(peer_handle_lock_);
-  if (peer_handle_ == base::kNullProcessHandle)
-    base::OpenPrivilegedProcessHandle(peer_pid_, &peer_handle_);
-
-  return peer_handle_;
-#else
-  base::ProcessHandle result = base::kNullProcessHandle;
-  base::OpenPrivilegedProcessHandle(peer_pid_, &result);
-  return result;
-#endif
+  return peer_process_.Handle();
 }
-
 
 void BrowserMessageFilter::OnDestruct() const {
   delete this;
@@ -170,7 +148,7 @@ bool BrowserMessageFilter::Send(IPC::Message* message) {
 
 base::TaskRunner* BrowserMessageFilter::OverrideTaskRunnerForMessage(
     const IPC::Message& message) {
-  return NULL;
+  return nullptr;
 }
 
 bool BrowserMessageFilter::CheckCanDispatchOnUI(const IPC::Message& message,
@@ -199,21 +177,16 @@ bool BrowserMessageFilter::CheckCanDispatchOnUI(const IPC::Message& message,
 }
 
 void BrowserMessageFilter::BadMessageReceived() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kDisableKillAfterBadIPC))
     return;
 
   BrowserChildProcessHostImpl::HistogramBadMessageTerminated(
       PROCESS_TYPE_RENDERER);
-  base::KillProcess(PeerHandle(), content::RESULT_CODE_KILLED_BAD_MESSAGE,
-                    false);
+  peer_process_.Terminate(content::RESULT_CODE_KILLED_BAD_MESSAGE, false);
 }
 
 BrowserMessageFilter::~BrowserMessageFilter() {
-#if defined(OS_WIN)
-  if (peer_handle_ != base::kNullProcessHandle)
-    base::CloseProcessHandle(peer_handle_);
-#endif
 }
 
 IPC::MessageFilter* BrowserMessageFilter::GetFilter() {

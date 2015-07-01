@@ -9,6 +9,7 @@
 #include "chrome/browser/thumbnails/thumbnailing_context.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/readback_types.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 
@@ -22,7 +23,7 @@ class ThumbnailTabHelper
       public content::WebContentsObserver,
       public content::WebContentsUserData<ThumbnailTabHelper> {
  public:
-  virtual ~ThumbnailTabHelper();
+  ~ThumbnailTabHelper() override;
 
   // Enables or disables the function of taking thumbnails.
   // A disabled ThumbnailTabHelper generates no thumbnails although it still
@@ -34,16 +35,14 @@ class ThumbnailTabHelper
   friend class content::WebContentsUserData<ThumbnailTabHelper>;
 
   // content::NotificationObserver overrides.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // content::WebContentsObserver overrides.
-  virtual void RenderViewDeleted(
-      content::RenderViewHost* render_view_host) OVERRIDE;
-  virtual void DidStartLoading(
-      content::RenderViewHost* render_view_host) OVERRIDE;
-  virtual void NavigationStopped() OVERRIDE;
+  void RenderViewDeleted(content::RenderViewHost* render_view_host) override;
+  void DidStartLoading() override;
+  void NavigationStopped() override;
 
   // Update the thumbnail of the given tab contents if necessary.
   void UpdateThumbnailIfNecessary(content::WebContents* web_contents);

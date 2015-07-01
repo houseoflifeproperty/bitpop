@@ -6,6 +6,7 @@ import os
 
 from telemetry import benchmark
 from telemetry.core import util
+from telemetry import page as page_module
 from telemetry.page import page_set
 from telemetry.page import page_test
 from telemetry.value import list_of_scalar_values
@@ -16,7 +17,7 @@ BLINK_PERF_BASE_DIR = os.path.join(util.GetChromiumSrcDir(),
 SKIPPED_FILE = os.path.join(BLINK_PERF_BASE_DIR, 'Skipped')
 
 
-def _CreatePageSetFromPath(path, skipped_file):
+def CreatePageSetFromPath(path, skipped_file):
   assert os.path.exists(path)
 
   page_urls = []
@@ -53,16 +54,17 @@ def _CreatePageSetFromPath(path, skipped_file):
     _AddDir(path, tuple(skipped))
   else:
     _AddPage(path)
-  ps = page_set.PageSet(file_path=os.getcwd()+os.sep, serving_dirs=serving_dirs)
+  ps = page_set.PageSet(file_path=os.getcwd()+os.sep,
+                        serving_dirs=serving_dirs)
   for url in page_urls:
-    ps.AddPageWithDefaultRunNavigate(url)
+    ps.AddUserStory(page_module.Page(url, ps, ps.base_dir))
   return ps
 
 
 class _BlinkPerfMeasurement(page_test.PageTest):
   """Tuns a blink performance test and reports the results."""
   def __init__(self):
-    super(_BlinkPerfMeasurement, self).__init__('')
+    super(_BlinkPerfMeasurement, self).__init__()
     with open(os.path.join(os.path.dirname(__file__),
                            'blink_perf.js'), 'r') as f:
       self._blink_perf_js = f.read()
@@ -76,6 +78,8 @@ class _BlinkPerfMeasurement(page_test.PageTest):
         '--enable-experimental-web-platform-features',
         '--disable-gesture-requirement-for-media-playback'
     ])
+    if 'content-shell' in options.browser_type:
+      options.AppendExtraBrowserArgs('--expose-internals-for-testing')
 
   def ValidateAndMeasurePage(self, page, tab, results):
     tab.WaitForJavaScriptExpression('testRunner.isDone', 600)
@@ -97,118 +101,209 @@ class _BlinkPerfMeasurement(page_test.PageTest):
     print log
 
 
+class _BlinkPerfFullFrameMeasurement(_BlinkPerfMeasurement):
+  def __init__(self):
+    super(_BlinkPerfFullFrameMeasurement, self).__init__()
+    self._blink_perf_js += '\nwindow.fullFrameMeasurement = true;'
+
+  def CustomizeBrowserOptions(self, options):
+    super(_BlinkPerfFullFrameMeasurement, self).CustomizeBrowserOptions(
+        options)
+    # Full layout measurement needs content_shell with internals testing API.
+    assert 'content-shell' in options.browser_type
+    options.AppendExtraBrowserArgs(['--expose-internals-for-testing'])
+
+
 class BlinkPerfAnimation(benchmark.Benchmark):
   tag = 'animation'
   test = _BlinkPerfMeasurement
 
+  @classmethod
+  def Name(cls):
+    return 'blink_perf.animation'
+
   def CreatePageSet(self, options):
     path = os.path.join(BLINK_PERF_BASE_DIR, 'Animation')
-    return _CreatePageSetFromPath(path, SKIPPED_FILE)
+    return CreatePageSetFromPath(path, SKIPPED_FILE)
 
 
 class BlinkPerfBindings(benchmark.Benchmark):
   tag = 'bindings'
   test = _BlinkPerfMeasurement
 
+  @classmethod
+  def Name(cls):
+    return 'blink_perf.bindings'
+
   def CreatePageSet(self, options):
     path = os.path.join(BLINK_PERF_BASE_DIR, 'Bindings')
-    return _CreatePageSetFromPath(path, SKIPPED_FILE)
+    return CreatePageSetFromPath(path, SKIPPED_FILE)
+
+
+@benchmark.Enabled('content-shell')
+class BlinkPerfBlinkGC(benchmark.Benchmark):
+  tag = 'blink_gc'
+  test = _BlinkPerfMeasurement
+
+  @classmethod
+  def Name(cls):
+    return 'blink_perf.blink_gc'
+
+  def CreatePageSet(self, options):
+    path = os.path.join(BLINK_PERF_BASE_DIR, 'BlinkGC')
+    return CreatePageSetFromPath(path, SKIPPED_FILE)
 
 
 class BlinkPerfCSS(benchmark.Benchmark):
   tag = 'css'
   test = _BlinkPerfMeasurement
 
+  @classmethod
+  def Name(cls):
+    return 'blink_perf.css'
+
   def CreatePageSet(self, options):
     path = os.path.join(BLINK_PERF_BASE_DIR, 'CSS')
-    return _CreatePageSetFromPath(path, SKIPPED_FILE)
+    return CreatePageSetFromPath(path, SKIPPED_FILE)
 
 
+@benchmark.Disabled('win')  # http://crbug.com/488493
 class BlinkPerfCanvas(benchmark.Benchmark):
   tag = 'canvas'
   test = _BlinkPerfMeasurement
 
+  @classmethod
+  def Name(cls):
+    return 'blink_perf.canvas'
+
   def CreatePageSet(self, options):
     path = os.path.join(BLINK_PERF_BASE_DIR, 'Canvas')
-    return _CreatePageSetFromPath(path, SKIPPED_FILE)
+    return CreatePageSetFromPath(path, SKIPPED_FILE)
 
 
 class BlinkPerfDOM(benchmark.Benchmark):
   tag = 'dom'
   test = _BlinkPerfMeasurement
 
+  @classmethod
+  def Name(cls):
+    return 'blink_perf.dom'
+
   def CreatePageSet(self, options):
     path = os.path.join(BLINK_PERF_BASE_DIR, 'DOM')
-    return _CreatePageSetFromPath(path, SKIPPED_FILE)
+    return CreatePageSetFromPath(path, SKIPPED_FILE)
 
 
+@benchmark.Disabled('release_x64')  # http://crbug.com/480999
 class BlinkPerfEvents(benchmark.Benchmark):
   tag = 'events'
   test = _BlinkPerfMeasurement
 
+  @classmethod
+  def Name(cls):
+    return 'blink_perf.events'
+
   def CreatePageSet(self, options):
     path = os.path.join(BLINK_PERF_BASE_DIR, 'Events')
-    return _CreatePageSetFromPath(path, SKIPPED_FILE)
+    return CreatePageSetFromPath(path, SKIPPED_FILE)
 
 
-class BlinkPerfInteractive(benchmark.Benchmark):
-  tag = 'interactive'
-  test = _BlinkPerfMeasurement
-
-  def CreatePageSet(self, options):
-    path = os.path.join(BLINK_PERF_BASE_DIR, 'Interactive')
-    return _CreatePageSetFromPath(path, SKIPPED_FILE)
-
-
+@benchmark.Disabled('win8')  # http://crbug.com/462350
 class BlinkPerfLayout(benchmark.Benchmark):
   tag = 'layout'
   test = _BlinkPerfMeasurement
 
+  @classmethod
+  def Name(cls):
+    return 'blink_perf.layout'
+
   def CreatePageSet(self, options):
     path = os.path.join(BLINK_PERF_BASE_DIR, 'Layout')
-    return _CreatePageSetFromPath(path, SKIPPED_FILE)
+    return CreatePageSetFromPath(path, SKIPPED_FILE)
+
+
+@benchmark.Enabled('content-shell')
+class BlinkPerfLayoutFullLayout(BlinkPerfLayout):
+  tag = 'layout_full_frame'
+  test = _BlinkPerfFullFrameMeasurement
+
+  @classmethod
+  def Name(cls):
+    return 'blink_perf.layout_full_frame'
 
 
 class BlinkPerfMutation(benchmark.Benchmark):
   tag = 'mutation'
   test = _BlinkPerfMeasurement
 
+  @classmethod
+  def Name(cls):
+    return 'blink_perf.mutation'
+
   def CreatePageSet(self, options):
     path = os.path.join(BLINK_PERF_BASE_DIR, 'Mutation')
-    return _CreatePageSetFromPath(path, SKIPPED_FILE)
+    return CreatePageSetFromPath(path, SKIPPED_FILE)
 
 
 class BlinkPerfParser(benchmark.Benchmark):
   tag = 'parser'
   test = _BlinkPerfMeasurement
 
+  @classmethod
+  def Name(cls):
+    return 'blink_perf.parser'
+
   def CreatePageSet(self, options):
     path = os.path.join(BLINK_PERF_BASE_DIR, 'Parser')
-    return _CreatePageSetFromPath(path, SKIPPED_FILE)
+    return CreatePageSetFromPath(path, SKIPPED_FILE)
 
 
 class BlinkPerfSVG(benchmark.Benchmark):
   tag = 'svg'
   test = _BlinkPerfMeasurement
 
+  @classmethod
+  def Name(cls):
+    return 'blink_perf.svg'
+
   def CreatePageSet(self, options):
     path = os.path.join(BLINK_PERF_BASE_DIR, 'SVG')
-    return _CreatePageSetFromPath(path, SKIPPED_FILE)
+    return CreatePageSetFromPath(path, SKIPPED_FILE)
+
+
+@benchmark.Enabled('content-shell')
+class BlinkPerfSVGFullLayout(BlinkPerfSVG):
+  tag = 'svg_full_frame'
+  test = _BlinkPerfFullFrameMeasurement
+
+  @classmethod
+  def Name(cls):
+    return 'blink_perf.svg_full_frame'
 
 
 class BlinkPerfShadowDOM(benchmark.Benchmark):
   tag = 'shadow_dom'
   test = _BlinkPerfMeasurement
 
+  @classmethod
+  def Name(cls):
+    return 'blink_perf.shadow_dom'
+
   def CreatePageSet(self, options):
     path = os.path.join(BLINK_PERF_BASE_DIR, 'ShadowDOM')
-    return _CreatePageSetFromPath(path, SKIPPED_FILE)
+    return CreatePageSetFromPath(path, SKIPPED_FILE)
 
 
+# This benchmark is for local testing, doesn't need to run on bots.
+@benchmark.Disabled()
 class BlinkPerfXMLHttpRequest(benchmark.Benchmark):
   tag = 'xml_http_request'
   test = _BlinkPerfMeasurement
 
+  @classmethod
+  def Name(cls):
+    return 'blink_perf.xml_http_request'
+
   def CreatePageSet(self, options):
     path = os.path.join(BLINK_PERF_BASE_DIR, 'XMLHttpRequest')
-    return _CreatePageSetFromPath(path, SKIPPED_FILE)
+    return CreatePageSetFromPath(path, SKIPPED_FILE)

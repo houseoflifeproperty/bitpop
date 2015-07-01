@@ -43,7 +43,7 @@ namespace blink {
 
 MediaStreamTrack* MediaStreamTrack::create(ExecutionContext* context, MediaStreamComponent* component)
 {
-    MediaStreamTrack* track = adoptRefCountedGarbageCollectedWillBeNoop(new MediaStreamTrack(context, component));
+    MediaStreamTrack* track = new MediaStreamTrack(context, component);
     track->suspendIfNeeded();
     return track;
 }
@@ -110,6 +110,16 @@ bool MediaStreamTrack::muted() const
     return m_component->muted();
 }
 
+bool MediaStreamTrack::remote() const
+{
+    return m_component->source()->remote();
+}
+
+bool MediaStreamTrack::readonly() const
+{
+    return m_component->source()->readonly();
+}
+
 String MediaStreamTrack::readyState() const
 {
     if (ended())
@@ -172,9 +182,11 @@ void MediaStreamTrack::sourceChangedState()
     m_readyState = m_component->source()->readyState();
     switch (m_readyState) {
     case MediaStreamSource::ReadyStateLive:
+        m_component->setMuted(false);
         dispatchEvent(Event::create(EventTypeNames::unmute));
         break;
     case MediaStreamSource::ReadyStateMuted:
+        m_component->setMuted(true);
         dispatchEvent(Event::create(EventTypeNames::mute));
         break;
     case MediaStreamSource::ReadyStateEnded:
@@ -188,7 +200,7 @@ void MediaStreamTrack::propagateTrackEnded()
 {
     RELEASE_ASSERT(!m_isIteratingRegisteredMediaStreams);
     m_isIteratingRegisteredMediaStreams = true;
-    for (HeapHashSet<Member<MediaStream> >::iterator iter = m_registeredMediaStreams.begin(); iter != m_registeredMediaStreams.end(); ++iter)
+    for (HeapHashSet<Member<MediaStream>>::iterator iter = m_registeredMediaStreams.begin(); iter != m_registeredMediaStreams.end(); ++iter)
         (*iter)->trackEnded();
     m_isIteratingRegisteredMediaStreams = false;
 }
@@ -218,7 +230,7 @@ void MediaStreamTrack::registerMediaStream(MediaStream* mediaStream)
 void MediaStreamTrack::unregisterMediaStream(MediaStream* mediaStream)
 {
     RELEASE_ASSERT(!m_isIteratingRegisteredMediaStreams);
-    HeapHashSet<Member<MediaStream> >::iterator iter = m_registeredMediaStreams.find(mediaStream);
+    HeapHashSet<Member<MediaStream>>::iterator iter = m_registeredMediaStreams.find(mediaStream);
     RELEASE_ASSERT(iter != m_registeredMediaStreams.end());
     m_registeredMediaStreams.remove(iter);
 }
@@ -233,10 +245,11 @@ ExecutionContext* MediaStreamTrack::executionContext() const
     return ActiveDOMObject::executionContext();
 }
 
-void MediaStreamTrack::trace(Visitor* visitor)
+DEFINE_TRACE(MediaStreamTrack)
 {
     visitor->trace(m_registeredMediaStreams);
-    EventTargetWithInlineData::trace(visitor);
+    RefCountedGarbageCollectedEventTargetWithInlineData<MediaStreamTrack>::trace(visitor);
+    ActiveDOMObject::trace(visitor);
 }
 
 } // namespace blink

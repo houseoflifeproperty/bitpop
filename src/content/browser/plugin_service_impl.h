@@ -69,58 +69,57 @@ class CONTENT_EXPORT PluginServiceImpl
   static PluginServiceImpl* GetInstance();
 
   // PluginService implementation:
-  virtual void Init() OVERRIDE;
-  virtual void StartWatchingPlugins() OVERRIDE;
-  virtual bool GetPluginInfoArray(
-      const GURL& url,
-      const std::string& mime_type,
-      bool allow_wildcard,
-      std::vector<WebPluginInfo>* info,
-      std::vector<std::string>* actual_mime_types) OVERRIDE;
-  virtual bool GetPluginInfo(int render_process_id,
-                             int render_frame_id,
-                             ResourceContext* context,
-                             const GURL& url,
-                             const GURL& page_url,
-                             const std::string& mime_type,
-                             bool allow_wildcard,
-                             bool* is_stale,
-                             WebPluginInfo* info,
-                             std::string* actual_mime_type) OVERRIDE;
-  virtual bool GetPluginInfoByPath(const base::FilePath& plugin_path,
-                                   WebPluginInfo* info) OVERRIDE;
-  virtual base::string16 GetPluginDisplayNameByPath(
-      const base::FilePath& path) OVERRIDE;
-  virtual void GetPlugins(const GetPluginsCallback& callback) OVERRIDE;
-  virtual PepperPluginInfo* GetRegisteredPpapiPluginInfo(
-      const base::FilePath& plugin_path) OVERRIDE;
-  virtual void SetFilter(PluginServiceFilter* filter) OVERRIDE;
-  virtual PluginServiceFilter* GetFilter() OVERRIDE;
-  virtual void ForcePluginShutdown(const base::FilePath& plugin_path) OVERRIDE;
-  virtual bool IsPluginUnstable(const base::FilePath& plugin_path) OVERRIDE;
-  virtual void RefreshPlugins() OVERRIDE;
-  virtual void AddExtraPluginPath(const base::FilePath& path) OVERRIDE;
-  virtual void RemoveExtraPluginPath(const base::FilePath& path) OVERRIDE;
-  virtual void AddExtraPluginDir(const base::FilePath& path) OVERRIDE;
-  virtual void RegisterInternalPlugin(
-      const WebPluginInfo& info, bool add_at_beginning) OVERRIDE;
-  virtual void UnregisterInternalPlugin(const base::FilePath& path) OVERRIDE;
-  virtual void GetInternalPlugins(
-      std::vector<WebPluginInfo>* plugins) OVERRIDE;
-  virtual bool NPAPIPluginsSupported() OVERRIDE;
-  virtual void DisablePluginsDiscoveryForTesting() OVERRIDE;
+  void Init() override;
+  void StartWatchingPlugins() override;
+  bool GetPluginInfoArray(const GURL& url,
+                          const std::string& mime_type,
+                          bool allow_wildcard,
+                          std::vector<WebPluginInfo>* info,
+                          std::vector<std::string>* actual_mime_types) override;
+  bool GetPluginInfo(int render_process_id,
+                     int render_frame_id,
+                     ResourceContext* context,
+                     const GURL& url,
+                     const GURL& page_url,
+                     const std::string& mime_type,
+                     bool allow_wildcard,
+                     bool* is_stale,
+                     WebPluginInfo* info,
+                     std::string* actual_mime_type) override;
+  bool GetPluginInfoByPath(const base::FilePath& plugin_path,
+                           WebPluginInfo* info) override;
+  base::string16 GetPluginDisplayNameByPath(
+      const base::FilePath& path) override;
+  void GetPlugins(const GetPluginsCallback& callback) override;
+  PepperPluginInfo* GetRegisteredPpapiPluginInfo(
+      const base::FilePath& plugin_path) override;
+  void SetFilter(PluginServiceFilter* filter) override;
+  PluginServiceFilter* GetFilter() override;
+  void ForcePluginShutdown(const base::FilePath& plugin_path) override;
+  bool IsPluginUnstable(const base::FilePath& plugin_path) override;
+  void RefreshPlugins() override;
+  void AddExtraPluginPath(const base::FilePath& path) override;
+  void RemoveExtraPluginPath(const base::FilePath& path) override;
+  void AddExtraPluginDir(const base::FilePath& path) override;
+  void RegisterInternalPlugin(const WebPluginInfo& info,
+                              bool add_at_beginning) override;
+  void UnregisterInternalPlugin(const base::FilePath& path) override;
+  void GetInternalPlugins(std::vector<WebPluginInfo>* plugins) override;
+  bool NPAPIPluginsSupported() override;
+  void EnableNpapiPlugins() override;
+  void DisablePluginsDiscoveryForTesting() override;
 #if defined(OS_MACOSX)
-  virtual void AppActivated() OVERRIDE;
+  void AppActivated() override;
 #elif defined(OS_WIN)
-  virtual bool GetPluginInfoFromWindow(HWND window,
-                                       base::string16* plugin_name,
-                                       base::string16* plugin_version) OVERRIDE;
+  bool GetPluginInfoFromWindow(HWND window,
+                               base::string16* plugin_name,
+                               base::string16* plugin_version) override;
 
   // Returns true iff the given HWND is a plugin.
   bool IsPluginWindow(HWND window);
 #endif
-  virtual bool PpapiDevChannelSupported(BrowserContext* browser_context,
-                                        const GURL& document_url) OVERRIDE;
+  bool PpapiDevChannelSupported(BrowserContext* browser_context,
+                                const GURL& document_url) override;
 
   // Returns the plugin process host corresponding to the plugin process that
   // has been started by this service. This will start a process to host the
@@ -155,7 +154,7 @@ class CONTENT_EXPORT PluginServiceImpl
   // Cancels opening a channel to a NPAPI plugin.
   void CancelOpenChannelToNpapiPlugin(PluginProcessHost::Client* client);
 
-  // Used to monitor plug-in stability.
+  // Used to monitor plugin stability.
   void RegisterPluginCrash(const base::FilePath& plugin_path);
 
  private:
@@ -164,9 +163,11 @@ class CONTENT_EXPORT PluginServiceImpl
   // Creates the PluginServiceImpl object, but doesn't actually build the plugin
   // list yet.  It's generated lazily.
   PluginServiceImpl();
-  virtual ~PluginServiceImpl();
+  ~PluginServiceImpl() override;
 
-  void OnWaitableEventSignaled(base::WaitableEvent* waitable_event);
+#if defined(OS_WIN)
+  void OnKeyChanged(base::win::RegKey* key);
+#endif
 
   // Returns the plugin process host corresponding to the plugin process that
   // has been started by this service. Returns NULL if no process has been
@@ -224,11 +225,9 @@ class CONTENT_EXPORT PluginServiceImpl
   // Registry keys for getting notifications when new plugins are installed.
   base::win::RegKey hkcu_key_;
   base::win::RegKey hklm_key_;
-  scoped_ptr<base::WaitableEvent> hkcu_event_;
-  scoped_ptr<base::WaitableEvent> hklm_event_;
-  base::WaitableEventWatcher hkcu_watcher_;
-  base::WaitableEventWatcher hklm_watcher_;
 #endif
+
+  bool npapi_plugins_enabled_;
 
 #if defined(OS_POSIX) && !defined(OS_OPENBSD) && !defined(OS_ANDROID)
   ScopedVector<base::FilePathWatcher> file_watchers_;
@@ -241,14 +240,14 @@ class CONTENT_EXPORT PluginServiceImpl
 
   std::set<PluginProcessHost::Client*> pending_plugin_clients_;
 
-  // Used to sequentialize loading plug-ins from disk.
+  // Used to sequentialize loading plugins from disk.
   base::SequencedWorkerPool::SequenceToken plugin_list_token_;
 
 #if defined(OS_POSIX)
   scoped_refptr<PluginLoaderPosix> plugin_loader_;
 #endif
 
-  // Used to detect if a given plug-in is crashing over and over.
+  // Used to detect if a given plugin is crashing over and over.
   std::map<base::FilePath, std::vector<base::Time> > crash_times_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginServiceImpl);

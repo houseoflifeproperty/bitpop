@@ -18,7 +18,7 @@ NSEvent* MouseEventInRow(NSMatrix* matrix, NSEventType type, NSInteger row) {
 }
 
 class OmniboxPopupMatrixTest : public CocoaTest,
-                               public OmniboxPopupMatrixDelegate {
+                               public OmniboxPopupMatrixObserver {
  public:
   OmniboxPopupMatrixTest()
       : selected_row_(0),
@@ -26,25 +26,23 @@ class OmniboxPopupMatrixTest : public CocoaTest,
         middle_clicked_row_(0) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     CocoaTest::SetUp();
-    matrix_.reset([[OmniboxPopupMatrix alloc] initWithDelegate:this]);
+    matrix_.reset([[OmniboxPopupMatrix alloc] initWithObserver:this]);
     [[test_window() contentView] addSubview:matrix_];
   };
 
-  virtual void OnMatrixRowSelected(OmniboxPopupMatrix* matrix,
-                                   size_t row) OVERRIDE {
+  void OnMatrixRowSelected(OmniboxPopupMatrix* matrix, size_t row) override {
     selected_row_ = row;
     [matrix_ selectCellAtRow:row column:0];
   }
 
-  virtual void OnMatrixRowClicked(OmniboxPopupMatrix* matrix,
-                                size_t row) OVERRIDE {
+  void OnMatrixRowClicked(OmniboxPopupMatrix* matrix, size_t row) override {
     clicked_row_ = row;
   }
 
-  virtual void OnMatrixRowMiddleClicked(OmniboxPopupMatrix* matrix,
-                                        size_t row) OVERRIDE {
+  void OnMatrixRowMiddleClicked(OmniboxPopupMatrix* matrix,
+                                size_t row) override {
     middle_clicked_row_ = row;
   }
 

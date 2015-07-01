@@ -16,7 +16,7 @@
 #include "ui/compositor/compositor.h"
 #include "ui/events/event.h"
 #include "ui/gfx/display.h"
-#include "ui/gfx/insets.h"
+#include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/screen.h"
 #include "ui/platform_window/win/win_window.h"
@@ -110,11 +110,6 @@ void WindowTreeHostWin::MoveCursorToNative(const gfx::Point& location) {
 
 void WindowTreeHostWin::OnCursorVisibilityChangedNative(bool show) {
   NOTIMPLEMENTED();
-}
-
-void WindowTreeHostWin::PostNativeEvent(const base::NativeEvent& native_event) {
-  ::PostMessage(
-      widget_, native_event.message, native_event.wParam, native_event.lParam);
 }
 
 ui::EventProcessor* WindowTreeHostWin::GetEventProcessor() {

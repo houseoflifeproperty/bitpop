@@ -21,7 +21,7 @@ class WebContents;
 
 // Per-tab class to manage bookmarks.
 class BookmarkTabHelper
-    : public BaseBookmarkModelObserver,
+    : public bookmarks::BaseBookmarkModelObserver,
       public content::WebContentsObserver,
       public content::WebContentsUserData<BookmarkTabHelper> {
  public:
@@ -37,7 +37,7 @@ class BookmarkTabHelper
     virtual ~BookmarkDrag() {}
   };
 
-  virtual ~BookmarkTabHelper();
+  ~BookmarkTabHelper() override;
 
   void set_delegate(BookmarkTabHelperDelegate* delegate) {
     delegate_ = delegate;
@@ -65,34 +65,35 @@ class BookmarkTabHelper
   // the delegate is notified.
   void UpdateStarredStateForCurrentURL();
 
-  // Overridden from BaseBookmarkModelObserver:
-  virtual void BookmarkModelChanged() OVERRIDE;
-  virtual void BookmarkModelLoaded(BookmarkModel* model,
-                                   bool ids_reassigned) OVERRIDE;
-  virtual void BookmarkNodeAdded(BookmarkModel* model,
-                                 const BookmarkNode* parent,
-                                 int index) OVERRIDE;
-  virtual void BookmarkNodeRemoved(BookmarkModel* model,
-                                   const BookmarkNode* parent,
-                                   int old_index,
-                                   const BookmarkNode* node,
-                                   const std::set<GURL>& removed_urls) OVERRIDE;
-  virtual void BookmarkAllUserNodesRemoved(
-      BookmarkModel* model,
-      const std::set<GURL>& removed_urls) OVERRIDE;
-
-  virtual void BookmarkNodeChanged(BookmarkModel* model,
-                                   const BookmarkNode* node) OVERRIDE;
+  // Overridden from bookmarks::BaseBookmarkModelObserver:
+  void BookmarkModelChanged() override;
+  void BookmarkModelLoaded(bookmarks::BookmarkModel* model,
+                           bool ids_reassigned) override;
+  void BookmarkNodeAdded(bookmarks::BookmarkModel* model,
+                         const bookmarks::BookmarkNode* parent,
+                         int index) override;
+  void BookmarkNodeRemoved(bookmarks::BookmarkModel* model,
+                           const bookmarks::BookmarkNode* parent,
+                           int old_index,
+                           const bookmarks::BookmarkNode* node,
+                           const std::set<GURL>& removed_urls) override;
+  void BookmarkAllUserNodesRemoved(bookmarks::BookmarkModel* model,
+                                   const std::set<GURL>& removed_urls) override;
+  void BookmarkNodeChanged(bookmarks::BookmarkModel* model,
+                           const bookmarks::BookmarkNode* node) override;
 
   // Overridden from content::WebContentsObserver:
-  virtual void DidNavigateMainFrame(
+  void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
-      const content::FrameNavigateParams& params) OVERRIDE;
+      const content::FrameNavigateParams& params) override;
+  void DidStartNavigationToPendingEntry(
+      const GURL& url,
+      content::NavigationController::ReloadType reload_type) override;
 
   // Whether the current URL is starred.
   bool is_starred_;
 
-  BookmarkModel* bookmark_model_;
+  bookmarks::BookmarkModel* bookmark_model_;
 
   // Our delegate, to notify when the url starred changed.
   BookmarkTabHelperDelegate* delegate_;

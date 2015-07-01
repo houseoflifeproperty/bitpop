@@ -29,7 +29,7 @@ typedef void (*nacl_io_mount_callback_t)(const char* source,
  * NOTE: If you initialize nacl_io with this constructor, you cannot
  * use any filesystems that require PPAPI; e.g. persistent storage, etc.
  */
-int nacl_io_init();
+int nacl_io_init(void);
 
 /**
  * Initialize nacl_io with PPAPI support.
@@ -57,7 +57,7 @@ int nacl_io_init_ppapi(PP_Instance instance, PPB_GetInterface get_interface);
  * This removes interception for POSIX C-library function and releases
  * any associated resources.
  */
-int nacl_io_uninit();
+int nacl_io_uninit(void);
 
 void nacl_io_set_exit_callback(nacl_io_exit_callback_t exit_callback,
                                void* user_data);
@@ -95,7 +95,11 @@ void nacl_io_set_exit_callback(nacl_io_exit_callback_t exit_callback,
  *              read in JavaScript via the HTML5 FileSystem API. This filesystem
  *              provides the use of persistent storage. Please read the
  *              documentation in ppapi/c/ppb_file_system.h for more information.
- *     source: Unused.
+ *     source: Used to mount a subtree of the filesystem. Necessary when
+ *             mounting non-sandboxed filesystems provided from javascript (e.g.
+ *             via chrome.fileSystem in a chrome app). This should be a path
+ *             which will be transparently prepended to all paths when
+ *             performing the underlying file operations.
  *     data: A string of parameters:
  *       "type": Which type of filesystem to mount. Valid values are
  *           "PERSISTENT" and "TEMPORARY". The default is "PERSISTENT".

@@ -92,7 +92,7 @@ TEST(NetworkChangeNotifierChromeosTest, ConnectionTypeFromShill) {
       NetworkChangeNotifier::CONNECTION_2G }
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(type_mappings); ++i) {
+  for (size_t i = 0; i < arraysize(type_mappings); ++i) {
     NetworkChangeNotifier::ConnectionType type =
         NetworkChangeNotifierChromeos::ConnectionTypeFromShill(
             type_mappings[i].shill_type, type_mappings[i].technology);
@@ -104,7 +104,7 @@ class NetworkChangeNotifierChromeosUpdateTest : public testing::Test {
  protected:
   NetworkChangeNotifierChromeosUpdateTest() : default_network_("") {
   }
-  virtual ~NetworkChangeNotifierChromeosUpdateTest() {}
+  ~NetworkChangeNotifierChromeosUpdateTest() override {}
 
   void SetNotifierState(const NotifierState& notifier_state) {
     notifier_.connection_type_ = notifier_state.type;

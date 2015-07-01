@@ -51,7 +51,7 @@ bool StoreKeyPair(const uint8* public_key,
 
 // Helper used to pass the DER-encoded bytes of an X.509 certificate or
 // a PKCS#12 archive holding a private key to the CertInstaller activity.
-NET_EXPORT void StoreCertificate(net::CertificateMimeType cert_type,
+NET_EXPORT void StoreCertificate(CertificateMimeType cert_type,
                                  const void* data,
                                  size_t data_len);
 
@@ -59,12 +59,6 @@ NET_EXPORT void StoreCertificate(net::CertificateMimeType cert_type,
 // i.e. if only 127.0.0.1 and ::1 are routable.
 // Also returns false if it cannot determine this.
 bool HaveOnlyLoopbackAddresses();
-
-// Return a string containing a list of network interfaces, each item is a
-// network name and address pair.
-// e.g. "eth0,10.0.0.2;eth0,fe80::5054:ff:fe12:3456" is a result string
-// containing two items.
-std::string GetNetworkList();
 
 // Get the mime type (if any) that is associated with the file extension.
 // Returns true if a corresponding mime type exists.

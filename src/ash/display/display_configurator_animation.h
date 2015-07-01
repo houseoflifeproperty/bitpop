@@ -31,7 +31,7 @@ class ASH_EXPORT DisplayConfiguratorAnimation
     : public ui::DisplayConfigurator::Observer {
  public:
   DisplayConfiguratorAnimation();
-  virtual ~DisplayConfiguratorAnimation();
+  ~DisplayConfiguratorAnimation() override;
 
   // Starts the fade-out animation for the all root windows.  It will
   // call |callback| once all of the animations have finished.
@@ -43,10 +43,11 @@ class ASH_EXPORT DisplayConfiguratorAnimation
 
  protected:
   // ui::DisplayConfigurator::Observer overrides:
-  virtual void OnDisplayModeChanged(
-      const ui::DisplayConfigurator::DisplayStateList& outputs) OVERRIDE;
-  virtual void OnDisplayModeChangeFailed(
-      ui::MultipleDisplayState failed_new_state) OVERRIDE;
+  void OnDisplayModeChanged(
+      const ui::DisplayConfigurator::DisplayStateList& outputs) override;
+  void OnDisplayModeChangeFailed(
+      const ui::DisplayConfigurator::DisplayStateList& displays,
+      ui::MultipleDisplayState failed_new_state) override;
 
  private:
   // Clears all hiding layers.  Note that in case that this method is called

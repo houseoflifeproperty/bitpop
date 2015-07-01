@@ -3,9 +3,13 @@
 // found in the LICENSE file.
 
 #include "base/run_loop.h"
+#include "chrome/browser/signin/account_tracker_service_factory.h"
+#include "chrome/browser/signin/chrome_signin_client_factory.h"
+#include "chrome/browser/signin/fake_account_tracker_service.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/test_signin_client_builder.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/gcm_driver/fake_gcm_driver.h"
 #include "components/gcm_driver/gcm_driver.h"
@@ -24,13 +28,12 @@ namespace {
 class CustomFakeGCMDriver : public gcm::FakeGCMDriver {
  public:
   CustomFakeGCMDriver() {}
-  virtual ~CustomFakeGCMDriver() {}
+  ~CustomFakeGCMDriver() override {}
 
  protected:
   // FakeGCMDriver override:
-  virtual void RegisterImpl(
-      const std::string& app_id,
-      const std::vector<std::string>& sender_ids) OVERRIDE {
+  void RegisterImpl(const std::string& app_id,
+                    const std::vector<std::string>& sender_ids) override {
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&CustomFakeGCMDriver::RegisterFinished,
@@ -49,12 +52,16 @@ class GCMInvalidationBridgeTest : public ::testing::Test {
   GCMInvalidationBridgeTest()
       : connection_online_(false) {}
 
-  virtual ~GCMInvalidationBridgeTest() {}
+  ~GCMInvalidationBridgeTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     TestingProfile::Builder builder;
     builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
                               &BuildAutoIssuingFakeProfileOAuth2TokenService);
+    builder.AddTestingFactory(AccountTrackerServiceFactory::GetInstance(),
+                              FakeAccountTrackerService::Build);
+    builder.AddTestingFactory(ChromeSigninClientFactory::GetInstance(),
+                              signin::BuildTestSigninClient);
     profile_ = builder.Build();
 
     FakeProfileOAuth2TokenService* token_service =

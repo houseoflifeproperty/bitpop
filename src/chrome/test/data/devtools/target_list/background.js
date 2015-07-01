@@ -29,7 +29,7 @@ function checkTarget(targets, url, type, opt_title, opt_faviconUrl) {
   var wsAddress = REMOTE_DEBUGGER_HOST + '/devtools/page/' + target.id;
 
   chrome.test.assertEq(
-      '/devtools/devtools.html?ws=' + wsAddress,
+      '/devtools/inspector.html?ws=' + wsAddress,
       target.devtoolsFrontendUrl);
   // On some platforms (e.g. Chrome OS) target.faviconUrl might be empty for
   // a freshly created tab. Ignore the check then.
@@ -124,33 +124,30 @@ chrome.test.runTests([
   function discoverTargets() {
     var testPageUrl = chrome.extension.getURL('test_page.html');
 
-    function onUpdated(updatedTabId) {
-      requestUrl('/json', function(text) {
-        var targets = JSON.parse(text);
-        waitForTab(
-            function(tab) {
-              return tab.id == updatedTabId && tab.status == "complete"
-            },
-            function() {
-              checkTarget(targets, 'about:blank', 'page');
-              checkTarget(targets,
-                  chrome.extension.getURL('_generated_background_page.html'),
-                  'background_page',
-                  'Remote Debugger Test');
-              var target = checkTarget(targets,
-                  testPageUrl, 'page', 'Test page',
-                  chrome.extension.getURL('favicon.png'));
-
-              extensionTargetId = target.id;
-              extensionDevtoolsFrontendUrl = target.devtoolsFrontendUrl;
-              extensionWebSocketDebuggerUrl = target.webSocketDebuggerUrl;
-
-              chrome.test.succeed();
-            });
-        });
-    }
-    listenOnce(chrome.tabs.onUpdated, onUpdated);
     chrome.tabs.create({url: testPageUrl});
+    waitForTab(
+        function(tab) {
+          return tab.url == testPageUrl && tab.status == "complete";
+        },
+        function() {
+          requestUrl('/json', function(text) {
+            var targets = JSON.parse(text);
+            checkTarget(targets, 'about:blank', 'page');
+            checkTarget(targets,
+                chrome.extension.getURL('_generated_background_page.html'),
+                'background_page',
+                'Remote Debugger Test');
+            var target = checkTarget(targets,
+                testPageUrl, 'page', 'Test page',
+                chrome.extension.getURL('favicon.png'));
+
+            extensionTargetId = target.id;
+            extensionDevtoolsFrontendUrl = target.devtoolsFrontendUrl;
+            extensionWebSocketDebuggerUrl = target.webSocketDebuggerUrl;
+
+            chrome.test.succeed();
+          });
+        });
   },
 
   function versionInfo() {

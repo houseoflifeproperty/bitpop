@@ -30,10 +30,9 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/net/prediction_options.h"
 #include "chrome/browser/net/referrer.h"
-#include "chrome/browser/net/spdyproxy/proxy_advisor.h"
 #include "chrome/browser/net/timed_cache.h"
 #include "chrome/browser/net/url_info.h"
-#include "chrome/common/net/predictor_common.h"
+#include "components/network_hints/common/network_hints_common.h"
 #include "net/base/host_port_pair.h"
 
 class IOThread;
@@ -49,6 +48,7 @@ class WaitableEvent;
 namespace net {
 class HostResolver;
 class SSLConfigService;
+class ProxyService;
 class TransportSecurityState;
 class URLRequestContextGetter;
 }
@@ -59,8 +59,8 @@ class PrefRegistrySyncable;
 
 namespace chrome_browser_net {
 
-typedef chrome_common_net::UrlList UrlList;
-typedef chrome_common_net::NameList NameList;
+typedef network_hints::UrlList UrlList;
+typedef network_hints::NameList NameList;
 typedef std::map<GURL, UrlInfo> Results;
 
 // An observer for testing.
@@ -277,10 +277,6 @@ class Predictor {
     transport_security_state_ = transport_security_state;
   }
   // Used for testing.
-  void SetProxyAdvisor(ProxyAdvisor* proxy_advisor) {
-    proxy_advisor_.reset(proxy_advisor);
-  }
-  // Used for testing.
   size_t max_concurrent_dns_lookups() const {
     return max_concurrent_dns_lookups_;
   }
@@ -318,6 +314,10 @@ class Predictor {
   FRIEND_TEST_ALL_PREFIXES(PredictorTest, SingleLookupTestWithDisabledAdvisor);
   FRIEND_TEST_ALL_PREFIXES(PredictorTest, SingleLookupTestWithEnabledAdvisor);
   FRIEND_TEST_ALL_PREFIXES(PredictorTest, TestSimplePreconnectAdvisor);
+  FRIEND_TEST_ALL_PREFIXES(PredictorTest, NoProxyService);
+  FRIEND_TEST_ALL_PREFIXES(PredictorTest, ProxyDefinitelyEnabled);
+  FRIEND_TEST_ALL_PREFIXES(PredictorTest, ProxyDefinitelyNotEnabled);
+  FRIEND_TEST_ALL_PREFIXES(PredictorTest, ProxyMaybeEnabled);
   friend class WaitForResolutionHelper;  // For testing.
 
   class LookupRequest;
@@ -428,13 +428,6 @@ class Predictor {
   // Only for testing;
   size_t peak_pending_lookups() const { return peak_pending_lookups_; }
 
-  // If a proxy advisor is defined, let it know that |url| will be prefetched or
-  // preconnected to. Can be called on either UI or IO threads and will post to
-  // the IO thread if necessary, invoking AdviseProxyOnIOThread().
-  void AdviseProxy(const GURL& url,
-                   UrlInfo::ResolutionMotivation motivation,
-                   bool is_preconnect);
-
   // These two members call the appropriate global functions in
   // prediction_options.cc depending on which thread they are called on.
   virtual bool CanPrefetchAndPrerender() const;
@@ -495,11 +488,12 @@ class Predictor {
   // continue with them shortly (i.e., it yeilds and continues).
   void IncrementalTrimReferrers(bool trim_all_now);
 
-  // If a proxy advisor is defined, let it know that |url| will be prefetched or
-  // preconnected to.
-  void AdviseProxyOnIOThread(const GURL& url,
-                             UrlInfo::ResolutionMotivation motivation,
-                             bool is_preconnect);
+  // If we can determine immediately (i.e. synchronously) that requests to this
+  // URL would likely go through a proxy, then return true.  Otherwise, return
+  // false. This is used to avoid issuing DNS requests when a fixed proxy
+  // configuration is in place, which improves efficiency, and is also important
+  // if the unproxied DNS may contain incorrect entries.
+  bool WouldLikelyProxyURL(const GURL& url);
 
   // Applies the HSTS redirect for |url|, if any.
   GURL GetHSTSRedirectOnIOThread(const GURL& url);
@@ -558,6 +552,9 @@ class Predictor {
   // redirects).
   net::SSLConfigService* ssl_config_service_;
 
+  // The ProxyService, used to determine whether preresolve is useful.
+  net::ProxyService* proxy_service_;
+
   // Are we currently using preconnection, rather than just DNS resolution, for
   // subresources and omni-box search URLs.
   // This is false if and only if disabled by a command line switch.
@@ -589,8 +586,6 @@ class Predictor {
   // A time after which we need to do more trimming of referrers.
   base::TimeTicks next_trim_time_;
 
-  scoped_ptr<ProxyAdvisor> proxy_advisor_;
-
   // An observer for testing.
   PredictorObserver* observer_;
 
@@ -604,18 +599,18 @@ class SimplePredictor : public Predictor {
  public:
   explicit SimplePredictor(bool preconnect_enabled, bool predictor_enabled)
       : Predictor(preconnect_enabled, predictor_enabled) {}
-  virtual ~SimplePredictor() {}
-  virtual void InitNetworkPredictor(
-      PrefService* user_prefs,
-      PrefService* local_state,
-      IOThread* io_thread,
-      net::URLRequestContextGetter* getter,
-      ProfileIOData* profile_io_data) OVERRIDE;
-  virtual void ShutdownOnUIThread() OVERRIDE;
+  ~SimplePredictor() override {}
+  void InitNetworkPredictor(PrefService* user_prefs,
+                            PrefService* local_state,
+                            IOThread* io_thread,
+                            net::URLRequestContextGetter* getter,
+                            ProfileIOData* profile_io_data) override;
+  void ShutdownOnUIThread() override;
+
  private:
   // These member functions return True for unittests.
-  virtual bool CanPrefetchAndPrerender() const OVERRIDE;
-  virtual bool CanPreresolveAndPreconnect() const OVERRIDE;
+  bool CanPrefetchAndPrerender() const override;
+  bool CanPreresolveAndPreconnect() const override;
 };
 
 }  // namespace chrome_browser_net

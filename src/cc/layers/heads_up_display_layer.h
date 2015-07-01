@@ -9,27 +9,25 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
-#include "cc/layers/contents_scaling_layer.h"
+#include "cc/layers/layer.h"
 
 namespace cc {
 
-class CC_EXPORT HeadsUpDisplayLayer : public ContentsScalingLayer {
+class CC_EXPORT HeadsUpDisplayLayer : public Layer {
  public:
   static scoped_refptr<HeadsUpDisplayLayer> Create();
 
   void PrepareForCalculateDrawProperties(
       const gfx::Size& device_viewport, float device_scale_factor);
 
-
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
 
  protected:
   HeadsUpDisplayLayer();
-  virtual bool HasDrawableContent() const OVERRIDE;
+  bool HasDrawableContent() const override;
 
  private:
-  virtual ~HeadsUpDisplayLayer();
+  ~HeadsUpDisplayLayer() override;
 
   DISALLOW_COPY_AND_ASSIGN(HeadsUpDisplayLayer);
 };

@@ -13,16 +13,16 @@
 #include "chrome/utility/cloud_print/bitmap_image.h"
 #include "chrome/utility/cloud_print/pwg_encoder.h"
 #include "content/public/utility/utility_thread.h"
+#include "pdf/pdf.h"
 #include "printing/page_range.h"
 #include "printing/pdf_render_settings.h"
 
 #if defined(OS_WIN)
-#include "base/win/iat_patch_function.h"
 #include "printing/emf_win.h"
 #include "ui/gfx/gdi_util.h"
 #endif
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
 #include "chrome/common/crash_keys.h"
 #include "printing/backend/print_backend.h"
 #endif
@@ -37,224 +37,11 @@ void ReleaseProcessIfNeeded() {
   content::UtilityThread::Get()->ReleaseProcessIfNeeded();
 }
 
-class PdfFunctionsBase {
- public:
-  PdfFunctionsBase() : render_pdf_to_bitmap_func_(NULL),
-                       get_pdf_doc_info_func_(NULL) {}
-
-  bool Init() {
-    base::FilePath pdf_module_path;
-    if (!PathService::Get(chrome::FILE_PDF_PLUGIN, &pdf_module_path) ||
-        !base::PathExists(pdf_module_path)) {
-      return false;
-    }
-
-    pdf_lib_.Reset(base::LoadNativeLibrary(pdf_module_path, NULL));
-    if (!pdf_lib_.is_valid()) {
-      LOG(WARNING) << "Couldn't load PDF plugin";
-      return false;
-    }
-
-    render_pdf_to_bitmap_func_ =
-        reinterpret_cast<RenderPDFPageToBitmapProc>(
-            pdf_lib_.GetFunctionPointer("RenderPDFPageToBitmap"));
-    LOG_IF(WARNING, !render_pdf_to_bitmap_func_) <<
-        "Missing RenderPDFPageToBitmap";
-
-    get_pdf_doc_info_func_ =
-        reinterpret_cast<GetPDFDocInfoProc>(
-            pdf_lib_.GetFunctionPointer("GetPDFDocInfo"));
-    LOG_IF(WARNING, !get_pdf_doc_info_func_) << "Missing GetPDFDocInfo";
-
-    if (!render_pdf_to_bitmap_func_ || !get_pdf_doc_info_func_ ||
-        !PlatformInit(pdf_module_path, pdf_lib_)) {
-      Reset();
-    }
-
-    return IsValid();
-  }
-
-  bool IsValid() const {
-    return pdf_lib_.is_valid();
-  }
-
-  void Reset() {
-    pdf_lib_.Reset(NULL);
-  }
-
-  bool RenderPDFPageToBitmap(const void* pdf_buffer,
-                             int pdf_buffer_size,
-                             int page_number,
-                             void* bitmap_buffer,
-                             int bitmap_width,
-                             int bitmap_height,
-                             int dpi_x,
-                             int dpi_y,
-                             bool autorotate) {
-    if (!render_pdf_to_bitmap_func_)
-      return false;
-    return render_pdf_to_bitmap_func_(pdf_buffer, pdf_buffer_size, page_number,
-                                      bitmap_buffer, bitmap_width,
-                                      bitmap_height, dpi_x, dpi_y, autorotate);
-  }
-
-  bool GetPDFDocInfo(const void* pdf_buffer,
-                     int buffer_size,
-                     int* page_count,
-                     double* max_page_width) {
-    if (!get_pdf_doc_info_func_)
-      return false;
-    return get_pdf_doc_info_func_(pdf_buffer, buffer_size, page_count,
-                                  max_page_width);
-  }
-
- protected:
-  virtual bool PlatformInit(
-      const base::FilePath& pdf_module_path,
-      const base::ScopedNativeLibrary& pdf_lib) {
-    return true;
-  }
-
- private:
-  // Exported by PDF plugin.
-  typedef bool (*RenderPDFPageToBitmapProc)(const void* pdf_buffer,
-                                            int pdf_buffer_size,
-                                            int page_number,
-                                            void* bitmap_buffer,
-                                            int bitmap_width,
-                                            int bitmap_height,
-                                            int dpi_x,
-                                            int dpi_y,
-                                            bool autorotate);
-  typedef bool (*GetPDFDocInfoProc)(const void* pdf_buffer,
-                                    int buffer_size, int* page_count,
-                                    double* max_page_width);
-
-  RenderPDFPageToBitmapProc render_pdf_to_bitmap_func_;
-  GetPDFDocInfoProc get_pdf_doc_info_func_;
-
-  base::ScopedNativeLibrary pdf_lib_;
-  DISALLOW_COPY_AND_ASSIGN(PdfFunctionsBase);
-};
-
-#if defined(OS_WIN)
-// The 2 below IAT patch functions are almost identical to the code in
-// render_process_impl.cc. This is needed to work around specific Windows APIs
-// used by the Chrome PDF plugin that will fail in the sandbox.
-static base::win::IATPatchFunction g_iat_patch_createdca;
-HDC WINAPI UtilityProcess_CreateDCAPatch(LPCSTR driver_name,
-                                         LPCSTR device_name,
-                                         LPCSTR output,
-                                         const DEVMODEA* init_data) {
-  if (driver_name && (std::string("DISPLAY") == driver_name)) {
-    // CreateDC fails behind the sandbox, but not CreateCompatibleDC.
-    return CreateCompatibleDC(NULL);
-  }
-
-  NOTREACHED();
-  return CreateDCA(driver_name, device_name, output, init_data);
-}
-
-static base::win::IATPatchFunction g_iat_patch_get_font_data;
-DWORD WINAPI UtilityProcess_GetFontDataPatch(
-    HDC hdc, DWORD table, DWORD offset, LPVOID buffer, DWORD length) {
-  int rv = GetFontData(hdc, table, offset, buffer, length);
-  if (rv == GDI_ERROR && hdc) {
-    HFONT font = static_cast<HFONT>(GetCurrentObject(hdc, OBJ_FONT));
-
-    LOGFONT logfont;
-    if (GetObject(font, sizeof(LOGFONT), &logfont)) {
-      content::UtilityThread::Get()->PreCacheFont(logfont);
-      rv = GetFontData(hdc, table, offset, buffer, length);
-      content::UtilityThread::Get()->ReleaseCachedFonts();
-    }
-  }
-  return rv;
-}
-
-class PdfFunctionsWin : public PdfFunctionsBase {
- public:
-  PdfFunctionsWin() : render_pdf_to_dc_func_(NULL) {
-  }
-
-  bool PlatformInit(
-      const base::FilePath& pdf_module_path,
-      const base::ScopedNativeLibrary& pdf_lib) OVERRIDE {
-    // Patch the IAT for handling specific APIs known to fail in the sandbox.
-    if (!g_iat_patch_createdca.is_patched()) {
-      g_iat_patch_createdca.Patch(pdf_module_path.value().c_str(),
-                                  "gdi32.dll", "CreateDCA",
-                                  UtilityProcess_CreateDCAPatch);
-    }
-
-    if (!g_iat_patch_get_font_data.is_patched()) {
-      g_iat_patch_get_font_data.Patch(pdf_module_path.value().c_str(),
-                                      "gdi32.dll", "GetFontData",
-                                      UtilityProcess_GetFontDataPatch);
-    }
-    render_pdf_to_dc_func_ =
-      reinterpret_cast<RenderPDFPageToDCProc>(
-          pdf_lib.GetFunctionPointer("RenderPDFPageToDC"));
-    LOG_IF(WARNING, !render_pdf_to_dc_func_) << "Missing RenderPDFPageToDC";
-
-    return render_pdf_to_dc_func_ != NULL;
-  }
-
-  bool RenderPDFPageToDC(const void* pdf_buffer,
-                         int buffer_size,
-                         int page_number,
-                         HDC dc,
-                         int dpi_x,
-                         int dpi_y,
-                         int bounds_origin_x,
-                         int bounds_origin_y,
-                         int bounds_width,
-                         int bounds_height,
-                         bool fit_to_bounds,
-                         bool stretch_to_bounds,
-                         bool keep_aspect_ratio,
-                         bool center_in_bounds,
-                         bool autorotate) {
-    if (!render_pdf_to_dc_func_)
-      return false;
-    return render_pdf_to_dc_func_(pdf_buffer, buffer_size, page_number,
-                                  dc, dpi_x, dpi_y, bounds_origin_x,
-                                  bounds_origin_y, bounds_width, bounds_height,
-                                  fit_to_bounds, stretch_to_bounds,
-                                  keep_aspect_ratio, center_in_bounds,
-                                  autorotate);
-  }
-
- private:
-  // Exported by PDF plugin.
-  typedef bool (*RenderPDFPageToDCProc)(
-      const void* pdf_buffer, int buffer_size, int page_number, HDC dc,
-      int dpi_x, int dpi_y, int bounds_origin_x, int bounds_origin_y,
-      int bounds_width, int bounds_height, bool fit_to_bounds,
-      bool stretch_to_bounds, bool keep_aspect_ratio, bool center_in_bounds,
-      bool autorotate);
-  RenderPDFPageToDCProc render_pdf_to_dc_func_;
-
-  DISALLOW_COPY_AND_ASSIGN(PdfFunctionsWin);
-};
-
-typedef PdfFunctionsWin PdfFunctions;
-#else  // OS_WIN
-typedef PdfFunctionsBase PdfFunctions;
-#endif  // OS_WIN
-
-base::LazyInstance<PdfFunctions> g_pdf_lib = LAZY_INSTANCE_INITIALIZER;
-
 }  // namespace
 
 PrintingHandler::PrintingHandler() {}
 
 PrintingHandler::~PrintingHandler() {}
-
-// static
-void PrintingHandler::PreSandboxStartup() {
-  g_pdf_lib.Get().Init();
-}
 
 bool PrintingHandler::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
@@ -267,14 +54,14 @@ bool PrintingHandler::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_RenderPDFPagesToMetafiles_Stop,
                         OnRenderPDFPagesToMetafileStop)
 #endif  // OS_WIN
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_RenderPDFPagesToPWGRaster,
                         OnRenderPDFPagesToPWGRaster)
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_GetPrinterCapsAndDefaults,
                         OnGetPrinterCapsAndDefaults)
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_GetPrinterSemanticCapsAndDefaults,
                         OnGetPrinterSemanticCapsAndDefaults)
-#endif  // ENABLE_FULL_PRINTING
+#endif  // ENABLE_PRINT_PREVIEW
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -295,7 +82,7 @@ void PrintingHandler::OnRenderPDFPagesToMetafileGetPage(
     int page_number,
     IPC::PlatformFileForTransit output_file) {
   base::File emf_file = IPC::PlatformFileForTransitToFile(output_file);
-  double scale_factor = 1.0;
+  float scale_factor = 1.0f;
   bool success =
       RenderPdfPageToMetafile(page_number, emf_file.Pass(), &scale_factor);
   Send(new ChromeUtilityHostMsg_RenderPDFPagesToMetafiles_PageDone(
@@ -308,7 +95,7 @@ void PrintingHandler::OnRenderPDFPagesToMetafileStop() {
 
 #endif  // OS_WIN
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
 void PrintingHandler::OnRenderPDFPagesToPWGRaster(
     IPC::PlatformFileForTransit pdf_transit,
     const printing::PdfRenderSettings& settings,
@@ -324,23 +111,21 @@ void PrintingHandler::OnRenderPDFPagesToPWGRaster(
   }
   ReleaseProcessIfNeeded();
 }
-#endif  // ENABLE_FULL_PRINTING
+#endif  // ENABLE_PRINT_PREVIEW
 
 #if defined(OS_WIN)
 int PrintingHandler::LoadPDF(base::File pdf_file) {
-  if (!g_pdf_lib.Get().IsValid())
+  int64 length64 = pdf_file.GetLength();
+  if (length64 <= 0 || length64 > std::numeric_limits<int>::max())
     return 0;
-
-  int64 length = pdf_file.GetLength();
-  if (length < 0)
-    return 0;
+  int length = static_cast<int>(length64);
 
   pdf_data_.resize(length);
   if (length != pdf_file.Read(0, pdf_data_.data(), pdf_data_.size()))
     return 0;
 
   int total_page_count = 0;
-  if (!g_pdf_lib.Get().GetPDFDocInfo(
+  if (!chrome_pdf::GetPDFDocInfo(
           &pdf_data_.front(), pdf_data_.size(), &total_page_count, NULL)) {
     return 0;
   }
@@ -349,7 +134,7 @@ int PrintingHandler::LoadPDF(base::File pdf_file) {
 
 bool PrintingHandler::RenderPdfPageToMetafile(int page_number,
                                               base::File output_file,
-                                              double* scale_factor) {
+                                              float* scale_factor) {
   printing::Emf metafile;
   metafile.Init();
 
@@ -369,12 +154,11 @@ bool PrintingHandler::RenderPdfPageToMetafile(int page_number,
   // The underlying metafile is of type Emf and ignores the arguments passed
   // to StartPage.
   metafile.StartPage(gfx::Size(), gfx::Rect(), 1);
-  if (!g_pdf_lib.Get().RenderPDFPageToDC(
+  if (!chrome_pdf::RenderPDFPageToDC(
           &pdf_data_.front(),
           pdf_data_.size(),
           page_number,
           metafile.context(),
-          pdf_rendering_settings_.dpi(),
           pdf_rendering_settings_.dpi(),
           pdf_rendering_settings_.area().x(),
           pdf_rendering_settings_.area().y(),
@@ -394,28 +178,26 @@ bool PrintingHandler::RenderPdfPageToMetafile(int page_number,
 
 #endif  // OS_WIN
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
 bool PrintingHandler::RenderPDFPagesToPWGRaster(
     base::File pdf_file,
     const printing::PdfRenderSettings& settings,
     const printing::PwgRasterSettings& bitmap_settings,
     base::File bitmap_file) {
   bool autoupdate = true;
-  if (!g_pdf_lib.Get().IsValid())
-    return false;
-
   base::File::Info info;
-  if (!pdf_file.GetInfo(&info) || info.size <= 0)
+  if (!pdf_file.GetInfo(&info) || info.size <= 0 ||
+      info.size > std::numeric_limits<int>::max())
     return false;
+  int data_size = static_cast<int>(info.size);
 
-  std::string data(info.size, 0);
-  int data_size = pdf_file.Read(0, &data[0], data.size());
-  if (data_size != static_cast<int>(data.size()))
+  std::string data(data_size, 0);
+  if (pdf_file.Read(0, &data[0], data_size) != data_size)
     return false;
 
   int total_page_count = 0;
-  if (!g_pdf_lib.Get().GetPDFDocInfo(data.data(), data.size(),
-                                     &total_page_count, NULL)) {
+  if (!chrome_pdf::GetPDFDocInfo(data.data(), data_size,
+                                 &total_page_count, NULL)) {
     return false;
   }
 
@@ -436,15 +218,14 @@ bool PrintingHandler::RenderPDFPagesToPWGRaster(
       page_number = total_page_count - 1 - page_number;
     }
 
-    if (!g_pdf_lib.Get().RenderPDFPageToBitmap(data.data(),
-                                               data.size(),
-                                               page_number,
-                                               image.pixel_data(),
-                                               image.size().width(),
-                                               image.size().height(),
-                                               settings.dpi(),
-                                               settings.dpi(),
-                                               autoupdate)) {
+    if (!chrome_pdf::RenderPDFPageToBitmap(data.data(),
+                                           data_size,
+                                           page_number,
+                                           image.pixel_data(),
+                                           image.size().width(),
+                                           image.size().height(),
+                                           settings.dpi(),
+                                           autoupdate)) {
       return false;
     }
 
@@ -524,4 +305,4 @@ void PrintingHandler::OnGetPrinterSemanticCapsAndDefaults(
   }
   ReleaseProcessIfNeeded();
 }
-#endif  // ENABLE_FULL_PRINTING
+#endif  // ENABLE_PRINT_PREVIEW

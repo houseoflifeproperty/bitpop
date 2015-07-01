@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_CHILD_CROSS_MESSAGE_FILTER_H_
-#define CONTENT_CHILD_CROSS_MESSAGE_FILTER_H_
+#ifndef CONTENT_CHILD_CHILD_MESSAGE_FILTER_H_
+#define CONTENT_CHILD_CHILD_MESSAGE_FILTER_H_
 
 #include "base/memory/ref_counted.h"
 #include "ipc/ipc_sender.h"
@@ -27,7 +27,7 @@ class ChildMessageFilter
       public IPC::Sender {
  public:
   // IPC::Sender implementation. Can be called on any threads.
-  virtual bool Send(IPC::Message* message) OVERRIDE;
+  bool Send(IPC::Message* message) override;
 
   // If implementers want to run OnMessageReceived on a different task
   // runner it should override this and return the TaskRunner for the message.
@@ -47,11 +47,11 @@ class ChildMessageFilter
 
  protected:
   ChildMessageFilter();
-  virtual ~ChildMessageFilter();
+  ~ChildMessageFilter() override;
 
  private:
   class Internal;
-  friend class ChildThread;
+  friend class ChildThreadImpl;
   friend class RenderThreadImpl;
   friend class WorkerThread;
 
@@ -70,4 +70,4 @@ class ChildMessageFilter
 
 }  // namespace content
 
-#endif  // CONTENT_CHILD_CROSS_MESSAGE_FILTER_H_
+#endif  // CONTENT_CHILD_CHILD_MESSAGE_FILTER_H_

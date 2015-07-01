@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// The linux host build of nacl_io can't do wrapping of syscalls so all
+// The linux/mac host build of nacl_io can't do wrapping of syscalls so all
 // these tests must be disabled.
-#if !defined(__linux__)
+#if !defined(__linux__) && !defined(__APPLE__)
 
 #include <unistd.h>
 
@@ -510,14 +510,13 @@ TEST_F(KernelWrapTest, readlink) {
   ASSERT_EQ(kDummyErrno, errno);
 }
 
-#ifdef __GLIBC__
-// Under newlib there is no remove syscall.  Instead it is implemented
-// in terms of unlink()/rmdir().
 TEST_F(KernelWrapTest, remove) {
-  EXPECT_CALL(mock, remove(kDummyConstChar)).WillOnce(Return(-1));
+  // The remove syscall is not directly intercepted. Instead it is implemented
+  // in terms of unlink()/rmdir().
+  EXPECT_CALL(mock, unlink(kDummyConstChar))
+       .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
   EXPECT_EQ(-1, remove(kDummyConstChar));
 }
-#endif
 
 TEST_F(KernelWrapTest, rename) {
   EXPECT_CALL(mock, rename(kDummyConstChar, kDummyConstChar2))

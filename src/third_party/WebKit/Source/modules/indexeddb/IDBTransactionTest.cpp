@@ -31,12 +31,13 @@
 #include "config.h"
 #include "modules/indexeddb/IDBTransaction.h"
 
+#include "bindings/core/v8/V8BindingForTesting.h"
 #include "core/dom/DOMError.h"
 #include "core/dom/Document.h"
 #include "modules/indexeddb/IDBDatabase.h"
 #include "modules/indexeddb/IDBDatabaseCallbacks.h"
 #include "platform/SharedBuffer.h"
-#include "public/platform/WebIDBDatabase.h"
+#include "public/platform/modules/indexeddb/WebIDBDatabase.h"
 #include <gtest/gtest.h>
 #include <v8.h>
 
@@ -47,14 +48,19 @@ class IDBTransactionTest : public testing::Test {
 public:
     IDBTransactionTest()
         : m_scope(v8::Isolate::GetCurrent())
-        , m_executionContext(Document::create())
     {
+    }
+
+    virtual void SetUp() override
+    {
+        m_executionContext = Document::create();
         m_scope.scriptState()->setExecutionContext(m_executionContext.get());
     }
 
-    ~IDBTransactionTest()
+    virtual void TearDown() override
     {
-        m_scope.scriptState()->setExecutionContext(0);
+        m_executionContext->notifyContextDestroyed();
+        m_scope.scriptState()->setExecutionContext(nullptr);
     }
 
     v8::Isolate* isolate() const { return m_scope.isolate(); }
@@ -63,7 +69,7 @@ public:
 
     void deactivateNewTransactions()
     {
-        V8PerIsolateData::from(isolate())->ensureIDBPendingTransactionMonitor()->deactivateNewTransactions();
+        V8PerIsolateData::from(isolate())->runEndOfScopeTasks();
     }
 
 private:
@@ -71,25 +77,25 @@ private:
     RefPtrWillBePersistent<ExecutionContext> m_executionContext;
 };
 
-class FakeWebIDBDatabase FINAL : public WebIDBDatabase {
+class FakeWebIDBDatabase final : public WebIDBDatabase {
 public:
     static PassOwnPtr<FakeWebIDBDatabase> create() { return adoptPtr(new FakeWebIDBDatabase()); }
 
-    virtual void commit(long long transactionId) OVERRIDE { }
-    virtual void abort(long long transactionId) OVERRIDE { }
-    virtual void close() OVERRIDE { }
+    virtual void commit(long long transactionId) override { }
+    virtual void abort(long long transactionId) override { }
+    virtual void close() override { }
 
 private:
     FakeWebIDBDatabase() { }
 };
 
-class FakeIDBDatabaseCallbacks FINAL : public IDBDatabaseCallbacks {
+class FakeIDBDatabaseCallbacks final : public IDBDatabaseCallbacks {
 public:
     static FakeIDBDatabaseCallbacks* create() { return new FakeIDBDatabaseCallbacks(); }
-    virtual void onVersionChange(int64_t oldVersion, int64_t newVersion) OVERRIDE { }
-    virtual void onForcedClose() OVERRIDE { }
-    virtual void onAbort(int64_t transactionId, PassRefPtrWillBeRawPtr<DOMError> error) OVERRIDE { }
-    virtual void onComplete(int64_t transactionId) OVERRIDE { }
+    virtual void onVersionChange(int64_t oldVersion, int64_t newVersion) override { }
+    virtual void onForcedClose() override { }
+    virtual void onAbort(int64_t transactionId, DOMError* error) override { }
+    virtual void onComplete(int64_t transactionId) override { }
 private:
     FakeIDBDatabaseCallbacks() { }
 };
@@ -102,7 +108,7 @@ TEST_F(IDBTransactionTest, EnsureLifetime)
     const int64_t transactionId = 1234;
     const Vector<String> transactionScope;
     Persistent<IDBTransaction> transaction = IDBTransaction::create(scriptState(), transactionId, transactionScope, WebIDBTransactionModeReadOnly, db.get());
-    PersistentHeapHashSet<WeakMember<IDBTransaction> > set;
+    PersistentHeapHashSet<WeakMember<IDBTransaction>> set;
     set.add(transaction);
 
     Heap::collectAllGarbage();
@@ -132,7 +138,7 @@ TEST_F(IDBTransactionTest, TransactionFinish)
     const int64_t transactionId = 1234;
     const Vector<String> transactionScope;
     Persistent<IDBTransaction> transaction = IDBTransaction::create(scriptState(), transactionId, transactionScope, WebIDBTransactionModeReadOnly, db.get());
-    PersistentHeapHashSet<WeakMember<IDBTransaction> > set;
+    PersistentHeapHashSet<WeakMember<IDBTransaction>> set;
     set.add(transaction);
 
     Heap::collectAllGarbage();

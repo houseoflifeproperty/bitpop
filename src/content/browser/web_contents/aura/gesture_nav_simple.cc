@@ -16,6 +16,7 @@
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/layer_delegate.h"
+#include "ui/compositor/paint_recorder.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/animation/tween.h"
 #include "ui/gfx/canvas.h"
@@ -53,10 +54,10 @@ class DeleteAfterAnimation : public ui::ImplicitAnimationObserver {
  private:
   friend class base::DeleteHelper<DeleteAfterAnimation<T> >;
 
-  virtual ~DeleteAfterAnimation() {}
+  ~DeleteAfterAnimation() override {}
 
   // ui::ImplicitAnimationObserver:
-  virtual void OnImplicitAnimationsCompleted() OVERRIDE {
+  void OnImplicitAnimationsCompleted() override {
     // Deleting an observer when a ScopedLayerAnimationSettings is iterating
     // over them can cause a crash (which can happen during tests). So instead,
     // schedule this observer to be deleted soon.
@@ -78,33 +79,32 @@ class ArrowLayerDelegate : public ui::LayerDelegate {
     CHECK(!image_.IsEmpty());
   }
 
-  virtual ~ArrowLayerDelegate() {}
+  ~ArrowLayerDelegate() override {}
 
   bool left() const { return left_arrow_; }
 
  private:
   // ui::LayerDelegate:
-  virtual void OnPaintLayer(gfx::Canvas* canvas) OVERRIDE {
+  void OnPaintLayer(const ui::PaintContext& context) override {
     SkPaint paint;
     paint.setColor(SkColorSetARGB(0xa0, 0, 0, 0));
     paint.setStyle(SkPaint::kFill_Style);
     paint.setAntiAlias(true);
 
-    canvas->DrawCircle(
+    ui::PaintRecorder recorder(context);
+    recorder.canvas()->DrawCircle(
         gfx::Point(left_arrow_ ? 0 : kArrowWidth, kArrowHeight / 2),
-        kArrowWidth,
-        paint);
-    canvas->DrawImageInt(*image_.ToImageSkia(),
-                         left_arrow_ ? 0 : kArrowWidth - image_.Width(),
-                         (kArrowHeight - image_.Height()) / 2);
+        kArrowWidth, paint);
+    recorder.canvas()->DrawImageInt(
+        *image_.ToImageSkia(), left_arrow_ ? 0 : kArrowWidth - image_.Width(),
+        (kArrowHeight - image_.Height()) / 2);
   }
 
-  virtual void OnDelegatedFrameDamage(
-      const gfx::Rect& damage_rect_in_dip) OVERRIDE {}
+  void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override {}
 
-  virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE {}
+  void OnDeviceScaleFactorChanged(float device_scale_factor) override {}
 
-  virtual base::Closure PrepareForLayerBoundsChange() OVERRIDE {
+  base::Closure PrepareForLayerBoundsChange() override {
     return base::Closure();
   }
 

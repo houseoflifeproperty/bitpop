@@ -13,10 +13,6 @@
 
 using crypto::P224EncryptedKeyExchange;
 
-#if defined(_WIN32) && defined(GetMessage)
-#undef GetMessage
-#endif
-
 namespace remoting {
 namespace protocol {
 
@@ -31,14 +27,14 @@ const buzz::StaticQName kCertificateTag = { kChromotingXmlNamespace,
 
 // static
 bool V2Authenticator::IsEkeMessage(const buzz::XmlElement* message) {
-  return message->FirstNamed(kEkeTag) != NULL;
+  return message->FirstNamed(kEkeTag) != nullptr;
 }
 
 // static
 scoped_ptr<Authenticator> V2Authenticator::CreateForClient(
     const std::string& shared_secret,
     Authenticator::State initial_state) {
-  return scoped_ptr<Authenticator>(new V2Authenticator(
+  return make_scoped_ptr(new V2Authenticator(
       P224EncryptedKeyExchange::kPeerTypeClient, shared_secret, initial_state));
 }
 
@@ -52,7 +48,7 @@ scoped_ptr<Authenticator> V2Authenticator::CreateForHost(
       P224EncryptedKeyExchange::kPeerTypeServer, shared_secret, initial_state));
   result->local_cert_ = local_cert;
   result->local_key_pair_ = key_pair;
-  return scoped_ptr<Authenticator>(result.Pass());
+  return result.Pass();
 }
 
 V2Authenticator::V2Authenticator(
@@ -64,7 +60,7 @@ V2Authenticator::V2Authenticator(
       state_(initial_state),
       started_(false),
       rejection_reason_(INVALID_CREDENTIALS) {
-  pending_messages_.push(key_exchange_impl_.GetMessage());
+  pending_messages_.push(key_exchange_impl_.GetNextMessage());
 }
 
 V2Authenticator::~V2Authenticator() {
@@ -135,7 +131,7 @@ void V2Authenticator::ProcessMessageInternal(const buzz::XmlElement* message) {
     started_ = true;
     switch (result) {
       case P224EncryptedKeyExchange::kResultPending:
-        pending_messages_.push(key_exchange_impl_.GetMessage());
+        pending_messages_.push(key_exchange_impl_.GetNextMessage());
         break;
 
       case P224EncryptedKeyExchange::kResultFailed:
@@ -191,18 +187,16 @@ V2Authenticator::CreateChannelAuthenticator() const {
   CHECK(!auth_key_.empty());
 
   if (is_host_side()) {
-    return scoped_ptr<ChannelAuthenticator>(
-        SslHmacChannelAuthenticator::CreateForHost(
-            local_cert_, local_key_pair_, auth_key_).Pass());
+    return SslHmacChannelAuthenticator::CreateForHost(
+        local_cert_, local_key_pair_, auth_key_);
   } else {
-    return scoped_ptr<ChannelAuthenticator>(
-        SslHmacChannelAuthenticator::CreateForClient(
-            remote_cert_, auth_key_).Pass());
+    return SslHmacChannelAuthenticator::CreateForClient(
+        remote_cert_, auth_key_);
   }
 }
 
 bool V2Authenticator::is_host_side() const {
-  return local_key_pair_.get() != NULL;
+  return local_key_pair_.get() != nullptr;
 }
 
 }  // namespace protocol

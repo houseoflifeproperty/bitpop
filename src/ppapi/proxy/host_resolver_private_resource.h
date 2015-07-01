@@ -20,21 +20,20 @@ class PPAPI_PROXY_EXPORT HostResolverPrivateResource
  public:
   HostResolverPrivateResource(Connection connection,
                               PP_Instance instance);
-  virtual ~HostResolverPrivateResource();
+  ~HostResolverPrivateResource() override;
 
   // PluginResource overrides.
-  virtual thunk::PPB_HostResolver_Private_API*
-      AsPPB_HostResolver_Private_API() OVERRIDE;
+  thunk::PPB_HostResolver_Private_API* AsPPB_HostResolver_Private_API()
+      override;
 
   // PPB_HostResolver_Private_API implementation.
-  virtual int32_t Resolve(const char* host,
-                          uint16_t port,
-                          const PP_HostResolver_Private_Hint* hint,
-                          scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual PP_Var GetCanonicalName() OVERRIDE;
-  virtual uint32_t GetSize() OVERRIDE;
-  virtual bool GetNetAddress(uint32_t index,
-                             PP_NetAddress_Private* address) OVERRIDE;
+  int32_t Resolve(const char* host,
+                  uint16_t port,
+                  const PP_HostResolver_Private_Hint* hint,
+                  scoped_refptr<TrackedCallback> callback) override;
+  PP_Var GetCanonicalName() override;
+  uint32_t GetSize() override;
+  bool GetNetAddress(uint32_t index, PP_NetAddress_Private* address) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(HostResolverPrivateResource);

@@ -9,7 +9,7 @@
 
 #include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
-#include "base/process/process_handle.h"
+#include "base/process/process.h"
 #include "net/test/spawned_test_server/base_test_server.h"
 
 #if defined(OS_WIN)
@@ -38,7 +38,7 @@ class LocalTestServer : public BaseTestServer {
                   const SSLOptions& ssl_options,
                   const base::FilePath& document_root);
 
-  virtual ~LocalTestServer();
+  ~LocalTestServer() override;
 
   // Start the test server and block until it's ready. Returns true on success.
   bool Start() WARN_UNUSED_RESULT;
@@ -92,8 +92,8 @@ class LocalTestServer : public BaseTestServer {
   // Waits for the server to start. Returns true on success.
   bool WaitToStart() WARN_UNUSED_RESULT;
 
-  // Handle of the Python process running the test server.
-  base::ProcessHandle process_handle_;
+  // The Python process running the test server.
+  base::Process process_;
 
 #if defined(OS_WIN)
   // The pipe file handle we read from.

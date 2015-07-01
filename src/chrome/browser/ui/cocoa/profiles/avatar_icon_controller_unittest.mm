@@ -4,6 +4,7 @@
 
 #import "chrome/browser/ui/cocoa/profiles/avatar_icon_controller.h"
 
+#include "base/command_line.h"
 #include "base/mac/scoped_nsobject.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
@@ -20,13 +21,15 @@
 #include "chrome/browser/ui/cocoa/info_bubble_window.h"
 #import "chrome/browser/ui/cocoa/profiles/avatar_menu_bubble_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/bookmarks/test/bookmark_test_helpers.h"
+#include "components/signin/core/common/profile_management_switches.h"
 
 class AvatarIconControllerTest : public CocoaProfileTest {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
+    switches::DisableNewAvatarMenuForTesting(
+        base::CommandLine::ForCurrentProcess());
     CocoaProfileTest::SetUp();
     ASSERT_TRUE(browser());
 
@@ -35,7 +38,7 @@ class AvatarIconControllerTest : public CocoaProfileTest {
     [[controller_ view] setHidden:YES];
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     browser()->window()->Close();
     CocoaProfileTest::TearDown();
   }
@@ -109,7 +112,7 @@ TEST_F(AvatarIconControllerTest, SupervisedUserLabel) {
   AutocompleteClassifierFactory::GetInstance()->SetTestingFactoryAndUse(
       profile, &AutocompleteClassifierFactory::BuildInstanceFor);
   profile->CreateBookmarkModel(true);
-  test::WaitForBookmarkModelToLoad(
+  bookmarks::test::WaitForBookmarkModelToLoad(
       BookmarkModelFactory::GetForProfile(profile));
 
   Browser* browser =

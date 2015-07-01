@@ -19,21 +19,21 @@ class ListValue;
 // Sends sync-state changes to the New Tab Page for UI updating and forwards
 // link clicks on the page to the sync service.
 class NewTabPageSyncHandler : public content::WebUIMessageHandler,
-                              public ProfileSyncServiceObserver {
+                              public sync_driver::SyncServiceObserver {
  public:
   NewTabPageSyncHandler();
-  virtual ~NewTabPageSyncHandler();
+  ~NewTabPageSyncHandler() override;
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
   // Callback for "GetSyncMessage".
   void HandleGetSyncMessage(const base::ListValue* args);
   // Callback for "SyncLinkClicked".
   void HandleSyncLinkClicked(const base::ListValue* args);
 
-  // ProfileSyncServiceObserver
-  virtual void OnStateChanged() OVERRIDE;
+  // sync_driver::SyncServiceObserver
+  void OnStateChanged() override;
 
   void OnSigninAllowedPrefChange();
 

@@ -49,7 +49,7 @@ static const unsigned OptionKey  = AltKey;
 // Do not use this constant for anything but cursor movement commands. Keys
 // with cmd set have their |isSystemKey| bit set, so chances are the shortcut
 // will not be executed. Another, less important, reason is that shortcuts
-// defined in the renderer do not blink the menu item that they triggered. See
+// defined in the layoutObject do not blink the menu item that they triggered. See
 // http://crbug.com/25856 and the bugs linked from there for details.
 static const unsigned CommandKey = MetaKey;
 #endif
@@ -186,8 +186,8 @@ const char* EditingBehavior::interpretKeyEvent(const KeyboardEvent& event) const
     if (!keyEvent)
         return "";
 
-    static HashMap<int, const char*>* keyDownCommandsMap = 0;
-    static HashMap<int, const char*>* keyPressCommandsMap = 0;
+    static HashMap<int, const char*>* keyDownCommandsMap = nullptr;
+    static HashMap<int, const char*>* keyPressCommandsMap = nullptr;
 
     if (!keyDownCommandsMap) {
         keyDownCommandsMap = new HashMap<int, const char*>;

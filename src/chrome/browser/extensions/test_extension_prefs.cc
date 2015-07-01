@@ -44,10 +44,9 @@ class IncrementalTimeProvider : public ExtensionPrefs::TimeProvider {
   IncrementalTimeProvider() : current_time_(base::Time::Now()) {
   }
 
-  virtual ~IncrementalTimeProvider() {
-  }
+  ~IncrementalTimeProvider() override {}
 
-  virtual base::Time GetCurrentTime() const OVERRIDE {
+  base::Time GetCurrentTime() const override {
     current_time_ += base::TimeDelta::FromSeconds(10);
     return current_time_;
   }
@@ -175,6 +174,13 @@ std::string TestExtensionPrefs::AddExtensionAndReturnId(
     const std::string& name) {
   scoped_refptr<Extension> extension(AddExtension(name));
   return extension->id();
+}
+
+void TestExtensionPrefs::AddExtension(Extension* extension) {
+  prefs_->OnExtensionInstalled(extension,
+                               Extension::ENABLED,
+                               syncer::StringOrdinal::CreateInitialOrdinal(),
+                               std::string());
 }
 
 PrefService* TestExtensionPrefs::CreateIncognitoPrefService() const {

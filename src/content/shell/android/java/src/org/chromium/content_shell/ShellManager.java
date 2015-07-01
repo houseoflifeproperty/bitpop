@@ -14,6 +14,7 @@ import android.widget.FrameLayout;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.ThreadUtils;
+import org.chromium.base.VisibleForTesting;
 import org.chromium.content.browser.ActivityContentVideoViewClient;
 import org.chromium.content.browser.ContentVideoViewClient;
 import org.chromium.content.browser.ContentViewClient;
@@ -49,15 +50,14 @@ public class ShellManager extends FrameLayout {
             public ContentVideoViewClient getContentVideoViewClient() {
                 return new ActivityContentVideoViewClient((Activity) context) {
                     @Override
-                    public boolean onShowCustomView(View view) {
-                        boolean success = super.onShowCustomView(view);
+                    public void enterFullscreenVideo(View view) {
+                        super.enterFullscreenVideo(view);
                         setOverlayVideoMode(true);
-                        return success;
                     }
 
                     @Override
-                    public void onDestroyContentVideoView() {
-                        super.onDestroyContentVideoView();
+                    public void exitFullscreenVideo() {
+                        super.exitFullscreenVideo();
                         setOverlayVideoMode(false);
                     }
                 };
@@ -69,13 +69,22 @@ public class ShellManager extends FrameLayout {
      * @param window The window used to generate all shells.
      */
     public void setWindow(WindowAndroid window) {
+        setWindow(window, true);
+    }
+
+    /**
+     * @param window The window used to generate all shells.
+     * @param initialLoadingNeeded Whether initial loading is needed or not.
+     */
+    @VisibleForTesting
+    public void setWindow(WindowAndroid window, final boolean initialLoadingNeeded) {
         assert window != null;
         mWindow = window;
         mContentViewRenderView = new ContentViewRenderView(getContext()) {
             @Override
             protected void onReadyToRender() {
                 if (sStartup) {
-                    mActiveShell.loadUrl(mStartupUrl);
+                    if (initialLoadingNeeded) mActiveShell.loadUrl(mStartupUrl);
                     sStartup = false;
                 }
             }
@@ -88,6 +97,13 @@ public class ShellManager extends FrameLayout {
      */
     public WindowAndroid getWindow() {
         return mWindow;
+    }
+
+    /**
+     * Get the ContentViewRenderView.
+     */
+    public ContentViewRenderView getContentViewRenderView() {
+        return mContentViewRenderView;
     }
 
     /**

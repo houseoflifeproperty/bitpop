@@ -9,9 +9,9 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tree_host.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/screen.h"
 
 namespace aura {
@@ -107,10 +107,6 @@ gfx::Transform TestScreen::GetUIScaleTransform() const {
   gfx::Transform ui_scale;
   ui_scale.Scale(1.0f / ui_scale_, 1.0f / ui_scale_);
   return ui_scale;
-}
-
-bool TestScreen::IsDIPEnabled() {
-  return true;
 }
 
 void TestScreen::OnWindowBoundsChanged(

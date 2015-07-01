@@ -16,11 +16,8 @@ class DesktopNotificationDelegate {
   // The notification was shown.
   virtual void NotificationDisplayed() = 0;
 
-  // The notification couldn't be shown due to an error.
-  virtual void NotificationError() = 0;
-
   // The notification was closed.
-  virtual void NotificationClosed(bool by_user) = 0;
+  virtual void NotificationClosed() = 0;
 
   // The user clicked on the notification.
   virtual void NotificationClick() = 0;

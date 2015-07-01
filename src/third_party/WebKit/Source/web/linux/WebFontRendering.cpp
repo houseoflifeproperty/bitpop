@@ -31,6 +31,7 @@
 #include "config.h"
 #include "public/web/linux/WebFontRendering.h"
 
+#include "core/layout/LayoutThemeFontProvider.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/FontPlatformData.h"
 
@@ -85,6 +86,12 @@ void WebFontRendering::setLCDOrder(SkFontHost::LCDOrder order)
 void WebFontRendering::setLCDOrientation(SkFontHost::LCDOrientation orientation)
 {
     SkFontHost::SetSubpixelOrientation(orientation);
+}
+
+// static
+void WebFontRendering::setDefaultFontSize(int size)
+{
+    LayoutThemeFontProvider::setDefaultFontSize(size);
 }
 
 } // namespace blink

@@ -56,7 +56,7 @@ void runShaderTest(skiatest::Reporter* reporter, SkSurface* sourceSurface, SkSur
     destinationCanvas->clear(SK_ColorTRANSPARENT);
     destinationCanvas->drawPaint(paint);
 
-    SkIRect rect = SkIRect::MakeWH(info.width(), info.height());
+    SkIRect rect = info.bounds();
 
     SkBitmap bmOrig;
     sourceSurface->getCanvas()->readPixels(rect, &bmOrig);
@@ -115,8 +115,10 @@ DEF_TEST(ImageNewShader, reporter) {
 void gpuToGpu(skiatest::Reporter* reporter, GrContext* context) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(5, 5);
 
-    SkAutoTUnref<SkSurface> sourceSurface(SkSurface::NewRenderTarget(context, info));
-    SkAutoTUnref<SkSurface> destinationSurface(SkSurface::NewRenderTarget(context, info));
+    SkAutoTUnref<SkSurface> sourceSurface(
+        SkSurface::NewRenderTarget(context, SkSurface::kNo_Budgeted, info));
+    SkAutoTUnref<SkSurface> destinationSurface(
+        SkSurface::NewRenderTarget(context, SkSurface::kNo_Budgeted, info));
 
     runShaderTest(reporter, sourceSurface.get(), destinationSurface.get(), info);
 }
@@ -124,7 +126,8 @@ void gpuToGpu(skiatest::Reporter* reporter, GrContext* context) {
 void gpuToRaster(skiatest::Reporter* reporter, GrContext* context) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(5, 5);
 
-    SkAutoTUnref<SkSurface> sourceSurface(SkSurface::NewRenderTarget(context, info));
+    SkAutoTUnref<SkSurface> sourceSurface(SkSurface::NewRenderTarget(context,
+        SkSurface::kNo_Budgeted, info));
     SkAutoTUnref<SkSurface> destinationSurface(SkSurface::NewRaster(info));
 
     runShaderTest(reporter, sourceSurface.get(), destinationSurface.get(), info);
@@ -134,7 +137,8 @@ void rasterToGpu(skiatest::Reporter* reporter, GrContext* context) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(5, 5);
 
     SkAutoTUnref<SkSurface> sourceSurface(SkSurface::NewRaster(info));
-    SkAutoTUnref<SkSurface> destinationSurface(SkSurface::NewRenderTarget(context, info));
+    SkAutoTUnref<SkSurface> destinationSurface(SkSurface::NewRenderTarget(context,
+        SkSurface::kNo_Budgeted, info));
 
     runShaderTest(reporter, sourceSurface.get(), destinationSurface.get(), info);
 }

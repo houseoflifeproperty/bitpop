@@ -28,7 +28,9 @@ class CHROMEOS_EXPORT UserContext {
     // Offline authentication against a cached key.
     AUTH_FLOW_OFFLINE,
     // Offline authentication using and Easy unlock device (e.g. a phone).
-    AUTH_FLOW_EASY_UNLOCK
+    AUTH_FLOW_EASY_UNLOCK,
+    // Easy bootstrap flow.
+    AUTH_FLOW_EASY_BOOTSTRAP
   };
 
   UserContext();
@@ -41,40 +43,52 @@ class CHROMEOS_EXPORT UserContext {
   bool operator!=(const UserContext& context) const;
 
   const std::string& GetUserID() const;
+  const std::string& GetGaiaID() const;
   const Key* GetKey() const;
   Key* GetKey();
   const std::string& GetAuthCode() const;
+  const std::string& GetRefreshToken() const;
+  const std::string& GetAccessToken() const;
   const std::string& GetUserIDHash() const;
   bool IsUsingOAuth() const;
   AuthFlow GetAuthFlow() const;
   user_manager::UserType GetUserType() const;
   const std::string& GetPublicSessionLocale() const;
   const std::string& GetPublicSessionInputMethod() const;
+  const std::string& GetDeviceId() const;
 
   bool HasCredentials() const;
 
   void SetUserID(const std::string& user_id);
+  void SetGaiaID(const std::string& gaia_id);
   void SetKey(const Key& key);
   void SetAuthCode(const std::string& auth_code);
+  void SetRefreshToken(const std::string& refresh_token);
+  void SetAccessToken(const std::string& access_token);
   void SetUserIDHash(const std::string& user_id_hash);
   void SetIsUsingOAuth(bool is_using_oauth);
   void SetAuthFlow(AuthFlow auth_flow);
   void SetUserType(user_manager::UserType user_type);
   void SetPublicSessionLocale(const std::string& locale);
   void SetPublicSessionInputMethod(const std::string& input_method);
+  void SetDeviceId(const std::string& device_id);
 
   void ClearSecrets();
 
  private:
   std::string user_id_;
+  std::string gaia_id_;
   Key key_;
   std::string auth_code_;
+  std::string refresh_token_;
+  std::string access_token_;  // OAuthLogin scoped access token.
   std::string user_id_hash_;
   bool is_using_oauth_;
   AuthFlow auth_flow_;
   user_manager::UserType user_type_;
   std::string public_session_locale_;
   std::string public_session_input_method_;
+  std::string device_id_;
 };
 
 }  // namespace chromeos

@@ -10,6 +10,7 @@
 #include "base/prefs/pref_change_registrar.h"
 #include "base/scoped_observer.h"
 #include "base/threading/thread_checker.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "extensions/browser/error_map.h"
@@ -17,6 +18,7 @@
 #include "extensions/browser/extension_registry_observer.h"
 
 namespace content {
+class BrowserContext;
 class NotificationDetails;
 class NotificationSource;
 class RenderViewHost;
@@ -35,13 +37,20 @@ class ExtensionRegistry;
 // errors can be viewed at chrome://extensions in developer mode.
 // This class is owned by ExtensionSystem, making it, in effect, a
 // BrowserContext-keyed service.
-class ErrorConsole : public content::NotificationObserver,
+class ErrorConsole : public KeyedService,
+                     public content::NotificationObserver,
                      public ExtensionRegistryObserver {
  public:
   class Observer {
    public:
     // Sent when a new error is reported to the error console.
-    virtual void OnErrorAdded(const ExtensionError* error) = 0;
+    virtual void OnErrorAdded(const ExtensionError* error);
+
+    // Sent when errors are removed from the error console. |extension_ids| is
+    // the set of ids that were affected.
+    // Note: This is not sent when an extension is uninstalled, or when a
+    // profile is destroyed.
+    virtual void OnErrorsRemoved(const std::set<std::string>& extension_ids);
 
     // Sent upon destruction to allow any observers to invalidate any references
     // they have to the error console.
@@ -49,10 +58,10 @@ class ErrorConsole : public content::NotificationObserver,
   };
 
   explicit ErrorConsole(Profile* profile);
-  virtual ~ErrorConsole();
+  ~ErrorConsole() override;
 
-  // Convenience method to return the ErrorConsole for a given profile.
-  static ErrorConsole* Get(Profile* profile);
+  // Convenience method to return the ErrorConsole for a given |context|.
+  static ErrorConsole* Get(content::BrowserContext* context);
 
   // Set whether or not errors of the specified |type| are stored for the
   // extension with the given |extension_id|. This will be stored in the
@@ -75,6 +84,9 @@ class ErrorConsole : public content::NotificationObserver,
 
   // Report an extension error, and add it to the list.
   void ReportError(scoped_ptr<ExtensionError> error);
+
+  // Removes errors from the map according to the given |filter|.
+  void RemoveErrors(const ErrorMap::Filter& filter);
 
   // Get a collection of weak pointers to all errors relating to the extension
   // with the given |extension_id|.
@@ -126,27 +138,25 @@ class ErrorConsole : public content::NotificationObserver,
 
   // ExtensionRegistry implementation. If the Apps Developer Tools app is
   // installed or uninstalled, we may need to turn the ErrorConsole on/off.
-  virtual void OnExtensionUnloaded(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      UnloadedExtensionInfo::Reason reason) OVERRIDE;
-  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
-                                 const Extension* extension) OVERRIDE;
-  virtual void OnExtensionInstalled(content::BrowserContext* browser_context,
-                                    const Extension* extension,
-                                    bool is_update) OVERRIDE;
-  virtual void OnExtensionUninstalled(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      extensions::UninstallReason reason) OVERRIDE;
+  void OnExtensionUnloaded(content::BrowserContext* browser_context,
+                           const Extension* extension,
+                           UnloadedExtensionInfo::Reason reason) override;
+  void OnExtensionLoaded(content::BrowserContext* browser_context,
+                         const Extension* extension) override;
+  void OnExtensionInstalled(content::BrowserContext* browser_context,
+                            const Extension* extension,
+                            bool is_update) override;
+  void OnExtensionUninstalled(content::BrowserContext* browser_context,
+                              const Extension* extension,
+                              extensions::UninstallReason reason) override;
 
   // Add manifest errors from an extension's install warnings.
   void AddManifestErrorsForExtension(const Extension* extension);
 
   // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // Returns the applicable bit mask of reporting preferences for the extension.
   int GetMaskForExtension(const std::string& extension_id) const;

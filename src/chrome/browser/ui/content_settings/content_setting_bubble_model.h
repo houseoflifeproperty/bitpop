@@ -11,9 +11,9 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
 #include "components/content_settings/core/common/content_settings.h"
+#include "components/content_settings/core/common/content_settings_types.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/common/media_stream_request.h"
@@ -34,15 +34,19 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
  public:
   typedef ContentSettingBubbleModelDelegate Delegate;
 
-  struct PopupItem {
-    PopupItem(const gfx::Image& image, const std::string& title, int32 popup_id)
-        : image(image), title(title), popup_id(popup_id) {}
+  struct ListItem {
+    ListItem(const gfx::Image& image,
+             const std::string& title,
+             bool has_link,
+             int32 item_id)
+        : image(image), title(title), has_link(has_link), item_id(item_id) {}
 
     gfx::Image image;
     std::string title;
-    int32 popup_id;
+    bool has_link;
+    int32 item_id;
   };
-  typedef std::vector<PopupItem> PopupItems;
+  typedef std::vector<ListItem> ListItems;
 
   typedef std::vector<std::string> RadioItems;
   struct RadioGroup {
@@ -79,7 +83,7 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
     ~BubbleContent();
 
     std::string title;
-    PopupItems popup_items;
+    ListItems list_items;
     RadioGroup radio_group;
     bool radio_group_enabled;
     std::vector<DomainList> domain_lists;
@@ -99,19 +103,19 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
       Profile* profile,
       ContentSettingsType content_type);
 
-  virtual ~ContentSettingBubbleModel();
+  ~ContentSettingBubbleModel() override;
 
   ContentSettingsType content_type() const { return content_type_; }
 
   const BubbleContent& bubble_content() const { return bubble_content_; }
 
   // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   virtual void OnRadioClicked(int radio_index) {}
-  virtual void OnPopupClicked(int index) {}
+  virtual void OnListItemClicked(int index) {}
   virtual void OnCustomLinkClicked() {}
   virtual void OnManageLinkClicked() {}
   virtual void OnLearnMoreLinkClicked() {}
@@ -132,8 +136,8 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
   Profile* profile() const { return profile_; }
 
   void set_title(const std::string& title) { bubble_content_.title = title; }
-  void add_popup(const PopupItem& popup) {
-    bubble_content_.popup_items.push_back(popup);
+  void add_list_item(const ListItem& item) {
+    bubble_content_.list_items.push_back(item);
   }
   void set_radio_group(const RadioGroup& radio_group) {
     bubble_content_.radio_group = radio_group;
@@ -189,7 +193,7 @@ class ContentSettingTitleAndLinkModel : public ContentSettingBubbleModel {
                                   content::WebContents* web_contents,
                                   Profile* profile,
                                   ContentSettingsType content_type);
-  virtual ~ContentSettingTitleAndLinkModel() {}
+  ~ContentSettingTitleAndLinkModel() override {}
   Delegate* delegate() const { return delegate_; }
 
  private:
@@ -198,31 +202,23 @@ class ContentSettingTitleAndLinkModel : public ContentSettingBubbleModel {
   void SetLearnMoreLink();
 
   // content::ContentSettingBubbleModel:
-  virtual void OnManageLinkClicked() OVERRIDE;
-  virtual void OnLearnMoreLinkClicked() OVERRIDE;
+  void OnManageLinkClicked() override;
+  void OnLearnMoreLinkClicked() override;
   Delegate* delegate_;
 };
 
+// RPH stands for Register Protocol Handler.
 class ContentSettingRPHBubbleModel : public ContentSettingTitleAndLinkModel {
  public:
   ContentSettingRPHBubbleModel(Delegate* delegate,
                                content::WebContents* web_contents,
                                Profile* profile,
-                               ProtocolHandlerRegistry* registry,
-                               ContentSettingsType content_type);
+                               ProtocolHandlerRegistry* registry);
 
-  virtual void OnRadioClicked(int radio_index) OVERRIDE;
-  virtual void OnDoneClicked() OVERRIDE;
+  void OnRadioClicked(int radio_index) override;
+  void OnDoneClicked() override;
 
  private:
-  // These states must match the order of appearance of the radio buttons
-  // in the XIB file for the Mac port.
-  enum RPHState {
-    RPH_ALLOW = 0,
-    RPH_BLOCK,
-    RPH_IGNORE,
-  };
-
   void RegisterProtocolHandler();
   void UnregisterProtocolHandler();
   void IgnoreProtocolHandler();

@@ -40,65 +40,28 @@ inline SVGScriptElement::SVGScriptElement(Document& document, bool wasInsertedBy
 {
 }
 
-SVGScriptElement::~SVGScriptElement()
-{
-}
-
 PassRefPtrWillBeRawPtr<SVGScriptElement> SVGScriptElement::create(Document& document, bool insertedByParser)
 {
     return adoptRefWillBeNoop(new SVGScriptElement(document, insertedByParser, false));
 }
 
-bool SVGScriptElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        SVGURIReference::addSupportedAttributes(supportedAttributes);
-        supportedAttributes.add(SVGNames::typeAttr);
-        supportedAttributes.add(HTMLNames::onerrorAttr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
 void SVGScriptElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGElement::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-    if (name == SVGNames::typeAttr)
-        return;
-
-    if (name == HTMLNames::onerrorAttr) {
+    if (name == HTMLNames::onerrorAttr)
         setAttributeEventListener(EventTypeNames::error, createAttributeEventListener(this, name, value, eventParameterName()));
-    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
-    } else {
-        ASSERT_NOT_REACHED();
-    }
-
-    reportAttributeParsingError(parseError, name, value);
+    else
+        SVGElement::parseAttribute(name, value);
 }
 
 void SVGScriptElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGElement::svgAttributeChanged(attrName);
-        return;
-    }
-
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
-    if (attrName == SVGNames::typeAttr || attrName == HTMLNames::onerrorAttr)
-        return;
-
     if (SVGURIReference::isKnownAttribute(attrName)) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
         m_loader->handleSourceAttribute(hrefString());
         return;
     }
 
-    ASSERT_NOT_REACHED();
+    SVGElement::svgAttributeChanged(attrName);
 }
 
 Node::InsertionNotificationRequest SVGScriptElement::insertedInto(ContainerNode* rootParent)
@@ -125,8 +88,7 @@ void SVGScriptElement::childrenChanged(const ChildrenChange& change)
 
 void SVGScriptElement::didMoveToNewDocument(Document& oldDocument)
 {
-    if (RefPtrWillBeRawPtr<Document> contextDocument = document().contextDocument().get())
-        oldDocument.scriptRunner()->movePendingAsyncScript(contextDocument->scriptRunner(), m_loader.get());
+    ScriptRunner::movePendingAsyncScript(oldDocument, document(), m_loader.get());
     SVGElement::didMoveToNewDocument(oldDocument);
 }
 
@@ -211,4 +173,11 @@ bool SVGScriptElement::isAnimatableAttribute(const QualifiedName& name) const
 }
 #endif
 
+DEFINE_TRACE(SVGScriptElement)
+{
+    visitor->trace(m_loader);
+    SVGElement::trace(visitor);
+    SVGURIReference::trace(visitor);
 }
+
+} // namespace blink

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/rand_util.h"
 #include "base/time/time.h"
 #include "google_apis/gaia/gaia_auth_fetcher.h"
@@ -19,10 +20,12 @@ const int UbertokenFetcher::kMaxRetries = 3;
 UbertokenFetcher::UbertokenFetcher(
     OAuth2TokenService* token_service,
     UbertokenConsumer* consumer,
+    const std::string& source,
     net::URLRequestContextGetter* request_context)
     : OAuth2TokenService::Consumer("uber_token_fetcher"),
       token_service_(token_service),
       consumer_(consumer),
+      source_(source),
       request_context_(request_context),
       retry_number_(0),
       second_access_token_request_(false) {
@@ -41,6 +44,16 @@ void UbertokenFetcher::StartFetchingToken(const std::string& account_id) {
   RequestAccessToken();
 }
 
+void UbertokenFetcher::StartFetchingTokenWithAccessToken(
+    const std::string& account_id, const std::string& access_token) {
+  DCHECK(!account_id.empty());
+  DCHECK(!access_token.empty());
+
+  account_id_ = account_id;
+  access_token_ = access_token;
+  ExchangeTokens();
+}
+
 void UbertokenFetcher::OnUberAuthTokenSuccess(const std::string& token) {
   consumer_->OnUbertokenSuccess(token);
 }
@@ -56,6 +69,8 @@ void UbertokenFetcher::OnUberAuthTokenFailure(
       // Calculate an exponential backoff with randomness of less than 1 sec.
       double backoff = base::RandDouble() + (1 << retry_number_);
       ++retry_number_;
+      UMA_HISTOGRAM_ENUMERATION("Signin.UberTokenRetry",
+          error.state(), GoogleServiceAuthError::NUM_STATES);
       retry_timer_.Stop();
       retry_timer_.Start(FROM_HERE,
                          base::TimeDelta::FromSecondsD(backoff),
@@ -77,6 +92,8 @@ void UbertokenFetcher::OnUberAuthTokenFailure(
     }
   }
 
+  UMA_HISTOGRAM_ENUMERATION("Signin.UberTokenFailure",
+      error.state(), GoogleServiceAuthError::NUM_STATES);
   consumer_->OnUbertokenFailure(error);
 }
 
@@ -110,7 +127,7 @@ void UbertokenFetcher::RequestAccessToken() {
 
 void UbertokenFetcher::ExchangeTokens() {
   gaia_auth_fetcher_.reset(new GaiaAuthFetcher(this,
-                                               GaiaConstants::kChromeSource,
+                                               source_,
                                                request_context_));
   gaia_auth_fetcher_->StartTokenFetchForUberAuthExchange(access_token_);
 }

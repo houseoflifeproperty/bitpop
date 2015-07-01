@@ -23,6 +23,8 @@ using base::ASCIIToUTF16;
 using base::UTF8ToUTF16;
 using base::Time;
 using base::TimeDelta;
+using bookmarks::BookmarkModel;
+using bookmarks::BookmarkNode;
 using content::BrowserThread;
 
 // Base class for bookmark editor tests. Creates a BookmarkModel and populates
@@ -35,18 +37,17 @@ class BookmarkEditorViewTest : public testing::Test {
         model_(NULL) {
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     profile_.reset(new TestingProfile());
     profile_->CreateBookmarkModel(true);
 
     model_ = BookmarkModelFactory::GetForProfile(profile_.get());
-    test::WaitForBookmarkModelToLoad(model_);
+    bookmarks::test::WaitForBookmarkModelToLoad(model_);
 
     AddTestData();
   }
 
-  virtual void TearDown() {
-  }
+  void TearDown() override {}
 
  protected:
   std::string base_path() const { return "file:///c:/tmp/"; }

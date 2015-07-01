@@ -4,8 +4,10 @@
 
 #include "chrome/browser/ui/views/profiles/user_manager_view.h"
 
+#include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/profiles/profile_window.h"
@@ -17,6 +19,7 @@
 #include "chrome/browser/ui/user_manager.h"
 #include "chrome/browser/ui/views/auto_keep_alive.h"
 #include "chrome/grit/chromium_strings.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/screen.h"
@@ -30,6 +33,12 @@
 #include "chrome/browser/shell_integration.h"
 #include "ui/base/win/shell.h"
 #include "ui/views/win/hwnd_util.h"
+#endif
+
+#if defined(USE_ASH)
+#include "ash/shelf/shelf_util.h"
+#include "ash/wm/window_util.h"
+#include "grit/ash_resources.h"
 #endif
 
 namespace {
@@ -46,26 +55,32 @@ void UserManager::Show(
     const base::FilePath& profile_path_to_focus,
     profiles::UserManagerTutorialMode tutorial_mode,
     profiles::UserManagerProfileSelected profile_open_action) {
-  ProfileMetrics::LogProfileSwitchUser(ProfileMetrics::OPEN_USER_MANAGER);
+  DCHECK(profile_path_to_focus != ProfileManager::GetGuestProfilePath());
+
+  ProfileMetrics::LogProfileOpenMethod(ProfileMetrics::OPEN_USER_MANAGER);
   if (instance_) {
     // If we are showing the User Manager after locking a profile, change the
     // active profile to Guest.
     profiles::SetActiveProfileToGuestIfLocked();
+
+    // Note the time we started opening the User Manager.
+    instance_->set_user_manager_started_showing(base::Time::Now());
 
     // If there's a user manager window open already, just activate it.
     instance_->GetWidget()->Activate();
     return;
   }
 
-  // Create the guest profile, if necessary, and open the user manager
-  // from the guest profile.
-  profiles::CreateGuestProfileForUserManager(
+  // Create the system profile, if necessary, and open the user manager
+  // from the system profile.
+  UserManagerView* user_manager = new UserManagerView();
+  user_manager->set_user_manager_started_showing(base::Time::Now());
+  profiles::CreateSystemProfileForUserManager(
       profile_path_to_focus,
       tutorial_mode,
       profile_open_action,
-      base::Bind(&UserManagerView::OnGuestProfileCreated,
-                 base::Passed(make_scoped_ptr(new UserManagerView)),
-                 profile_path_to_focus));
+      base::Bind(&UserManagerView::OnSystemProfileCreated,
+                 base::Passed(make_scoped_ptr(user_manager))));
 }
 
 void UserManager::Hide() {
@@ -77,21 +92,26 @@ bool UserManager::IsShowing() {
   return instance_ ? instance_->GetWidget()->IsActive() : false;
 }
 
+void UserManager::OnUserManagerShown() {
+  if (instance_)
+    instance_->LogTimeToOpen();
+}
+
 // UserManagerView -------------------------------------------------------------
 
 UserManagerView::UserManagerView()
     : web_view_(NULL),
-      keep_alive_(new AutoKeepAlive(NULL)) {
+      keep_alive_(new AutoKeepAlive(NULL)),
+      user_manager_started_showing_(base::Time()) {
 }
 
 UserManagerView::~UserManagerView() {
 }
 
 // static
-void UserManagerView::OnGuestProfileCreated(
+void UserManagerView::OnSystemProfileCreated(
     scoped_ptr<UserManagerView> instance,
-    const base::FilePath& profile_path_to_focus,
-    Profile* guest_profile,
+    Profile* system_profile,
     const std::string& url) {
   // If we are showing the User Manager after locking a profile, change the
   // active profile to Guest.
@@ -99,45 +119,48 @@ void UserManagerView::OnGuestProfileCreated(
 
   DCHECK(!instance_);
   instance_ = instance.release();  // |instance_| takes over ownership.
-  instance_->Init(profile_path_to_focus, guest_profile, GURL(url));
+  instance_->Init(system_profile, GURL(url));
 }
 
-void UserManagerView::Init(
-    const base::FilePath& profile_path_to_focus,
-    Profile* guest_profile,
-    const GURL& url) {
-  web_view_ = new views::WebView(guest_profile);
+void UserManagerView::Init(Profile* system_profile, const GURL& url) {
+  web_view_ = new views::WebView(system_profile);
   web_view_->set_allow_accelerators(true);
   AddChildView(web_view_);
   SetLayoutManager(new views::FillLayout);
   AddAccelerator(ui::Accelerator(ui::VKEY_W, ui::EF_CONTROL_DOWN));
+  AddAccelerator(ui::Accelerator(ui::VKEY_F4, ui::EF_ALT_DOWN));
 
   // If the user manager is being displayed from an existing profile, use
   // its last active browser to determine where the user manager should be
   // placed.  This is used so that we can center the dialog on the correct
   // monitor in a multiple-monitor setup.
   //
-  // If |profile_path_to_focus| is empty (for example, starting up chrome
-  // when all existing profiles are locked) or we can't find an active
+  // If the last active profile is empty (for example, starting up chrome
+  // when all existing profiles are locked), not loaded (for example, if guest
+  // was set after locking the only open profile) or we can't find an active
   // browser, bounds will remain empty and the user manager will be centered on
   // the default monitor by default.
+  //
+  // Note the profile is accessed via GetProfileByPath(GetLastUsedProfileDir())
+  // instead of GetLastUsedProfile().  If the last active profile isn't loaded,
+  // the latter may try to synchronously load it, which can only be done on a
+  // thread where disk IO is allowed.
   gfx::Rect bounds;
-  if (!profile_path_to_focus.empty()) {
-    ProfileManager* manager = g_browser_process->profile_manager();
-    if (manager) {
-      Profile* profile = manager->GetProfileByPath(profile_path_to_focus);
-      DCHECK(profile);
-      Browser* browser = chrome::FindLastActiveWithProfile(profile,
-          chrome::GetActiveDesktop());
-      if (browser) {
-        gfx::NativeView native_view =
-            views::Widget::GetWidgetForNativeWindow(
-                browser->window()->GetNativeWindow())->GetNativeView();
-        bounds = gfx::Screen::GetScreenFor(native_view)->
-            GetDisplayNearestWindow(native_view).work_area();
-        bounds.ClampToCenteredSize(gfx::Size(UserManager::kWindowWidth,
-                                             UserManager::kWindowHeight));
-      }
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  const base::FilePath& last_used_profile_path =
+      profile_manager->GetLastUsedProfileDir(profile_manager->user_data_dir());
+  Profile* profile = profile_manager->GetProfileByPath(last_used_profile_path);
+  if (profile) {
+    Browser* browser = chrome::FindLastActiveWithProfile(profile,
+        chrome::GetActiveDesktop());
+    if (browser) {
+      gfx::NativeView native_view =
+          views::Widget::GetWidgetForNativeWindow(
+              browser->window()->GetNativeWindow())->GetNativeView();
+      bounds = gfx::Screen::GetScreenFor(native_view)->
+          GetDisplayNearestWindow(native_view).work_area();
+      bounds.ClampToCenteredSize(gfx::Size(UserManager::kWindowWidth,
+                                           UserManager::kWindowHeight));
     }
   }
 
@@ -153,18 +176,40 @@ void UserManagerView::Init(
   // Set the app id for the task manager to the app id of its parent
   ui::win::SetAppIdForWindow(
       ShellIntegration::GetChromiumModelIdForProfile(
-          guest_profile->GetPath()),
+          system_profile->GetPath()),
       views::HWNDForWidget(GetWidget()));
 #endif
-  GetWidget()->Show();
+
+#if defined(USE_ASH)
+  gfx::NativeWindow native_window = GetWidget()->GetNativeWindow();
+  ash::SetShelfItemDetailsForDialogWindow(
+      native_window, IDR_ASH_SHELF_LIST_BROWSER, native_window->title());
+#endif
 
   web_view_->LoadInitialURL(url);
+  content::RenderWidgetHostView* rwhv =
+      web_view_->GetWebContents()->GetRenderWidgetHostView();
+  if (rwhv)
+    rwhv->SetBackgroundColor(profiles::kUserManagerBackgroundColor);
+
+  GetWidget()->Show();
   web_view_->RequestFocus();
 }
 
+void UserManagerView::LogTimeToOpen() {
+  if (user_manager_started_showing_ == base::Time())
+    return;
+
+  ProfileMetrics::LogTimeToOpenUserManager(
+      base::Time::Now() - user_manager_started_showing_);
+  user_manager_started_showing_ = base::Time();
+}
+
 bool UserManagerView::AcceleratorPressed(const ui::Accelerator& accelerator) {
-  DCHECK_EQ(ui::VKEY_W, accelerator.key_code());
-  DCHECK_EQ(ui::EF_CONTROL_DOWN, accelerator.modifiers());
+  int key = accelerator.key_code();
+  int modifier = accelerator.modifiers();
+  DCHECK((key == ui::VKEY_W && modifier == ui::EF_CONTROL_DOWN) ||
+         (key == ui::VKEY_F4 && modifier == ui::EF_ALT_DOWN));
   GetWidget()->Close();
   return true;
 }

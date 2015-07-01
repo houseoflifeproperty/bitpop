@@ -10,14 +10,16 @@
 #include "net/base/upload_progress.h"
 #include "net/http/http_network_transaction.h"
 #include "net/http/http_request_info.h"
+#include "net/socket/connection_attempts.h"
 
-namespace {
-
-const char kDevToolsRequestInitiator[] = "X-DevTools-Request-Initiator";
-const char kDevToolsEmulateNetworkConditionsClientId[] =
-    "X-DevTools-Emulate-Network-Conditions-Client-Id";
-
-}  // namespace
+// Keep in sync with kDevToolsRequestInitiator and
+// kDevToolsEmulateNetworkConditionsClientId defined in
+// InspectorResourceAgent.cpp.
+const char DevToolsNetworkTransaction::kDevToolsRequestInitiator[] =
+    "X-DevTools-Request-Initiator";
+const char
+    DevToolsNetworkTransaction::kDevToolsEmulateNetworkConditionsClientId[] =
+        "X-DevTools-Emulate-Network-Conditions-Client-Id";
 
 DevToolsNetworkTransaction::DevToolsNetworkTransaction(
     DevToolsNetworkController* controller,
@@ -263,6 +265,12 @@ int DevToolsNetworkTransaction::ResumeNetworkStart() {
   if (failed_)
     return net::ERR_INTERNET_DISCONNECTED;
   return network_transaction_->ResumeNetworkStart();
+}
+
+void
+DevToolsNetworkTransaction::GetConnectionAttempts(net::ConnectionAttempts* out)
+const {
+  network_transaction_->GetConnectionAttempts(out);
 }
 
 void DevToolsNetworkTransaction::FireThrottledCallback() {

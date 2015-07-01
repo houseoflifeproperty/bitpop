@@ -31,7 +31,7 @@ struct CloudPrintProxyInfo;
 class CloudPrintProxyService : public KeyedService {
  public:
   explicit CloudPrintProxyService(Profile* profile);
-  virtual ~CloudPrintProxyService();
+  ~CloudPrintProxyService() override;
 
   typedef base::Callback<void(const std::vector<std::string>&)>
       PrintersCallback;
@@ -54,11 +54,6 @@ class CloudPrintProxyService : public KeyedService {
   // Query the service process for the status of the cloud print proxy and
   // update the browser prefs.
   void RefreshStatusFromService();
-
-  // Disable the service if the policy to do so is set, and once the
-  // disablement is verified, quit the browser. Returns true if the policy is
-  // not set or the connector was not enabled.
-  bool EnforceCloudPrintConnectorPolicyAndQuit();
 
   std::string proxy_id() const { return proxy_id_; }
 
@@ -98,10 +93,6 @@ class CloudPrintProxyService : public KeyedService {
 
   // For watching for connector policy changes.
   PrefChangeRegistrar pref_change_registrar_;
-
-  // If set, continue trying to disable the connector, and quit the process
-  // once successful.
-  bool enforcing_connector_policy_;
 
   base::WeakPtrFactory<CloudPrintProxyService> weak_factory_;
 

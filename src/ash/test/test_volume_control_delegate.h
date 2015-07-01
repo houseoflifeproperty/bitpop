@@ -15,8 +15,8 @@ namespace ash {
 // HandleVolumeUp methods are invoked.
 class TestVolumeControlDelegate : public ash::VolumeControlDelegate {
  public:
-  explicit TestVolumeControlDelegate(bool consume);
-  virtual ~TestVolumeControlDelegate();
+  TestVolumeControlDelegate();
+  ~TestVolumeControlDelegate() override;
 
   int handle_volume_mute_count() const {
     return handle_volume_mute_count_;
@@ -35,14 +35,11 @@ class TestVolumeControlDelegate : public ash::VolumeControlDelegate {
   }
 
   // ash::VolumeControlDelegate:
-  virtual bool HandleVolumeMute(const ui::Accelerator& accelerator) OVERRIDE;
-  virtual bool HandleVolumeDown(const ui::Accelerator& accelerator) OVERRIDE;
-  virtual bool HandleVolumeUp(const ui::Accelerator& accelerator) OVERRIDE;
+  void HandleVolumeMute(const ui::Accelerator& accelerator) override;
+  void HandleVolumeDown(const ui::Accelerator& accelerator) override;
+  void HandleVolumeUp(const ui::Accelerator& accelerator) override;
 
  private:
-  // Keeps track of the return value that should be used for the methods
-  // inherited from VolumeControlDelegate
-  bool consume_;
   int handle_volume_mute_count_;
   int handle_volume_down_count_;
   int handle_volume_up_count_;

@@ -14,11 +14,14 @@ namespace cc {
 
 class FakeLayerTreeHostImpl : public LayerTreeHostImpl {
  public:
-  FakeLayerTreeHostImpl(Proxy* proxy, SharedBitmapManager* manager);
+  FakeLayerTreeHostImpl(Proxy* proxy,
+                        SharedBitmapManager* manager,
+                        TaskGraphRunner* task_graph_runner);
   FakeLayerTreeHostImpl(const LayerTreeSettings& settings,
                         Proxy* proxy,
-                        SharedBitmapManager* manager);
-  virtual ~FakeLayerTreeHostImpl();
+                        SharedBitmapManager* manager,
+                        TaskGraphRunner* task_graph_runner);
+  ~FakeLayerTreeHostImpl() override;
 
   void ForcePrepareToDraw() {
     LayerTreeHostImpl::FrameData frame_data;
@@ -26,16 +29,18 @@ class FakeLayerTreeHostImpl : public LayerTreeHostImpl {
     DidDrawAllLayers(frame_data);
   }
 
-  virtual void CreatePendingTree() OVERRIDE;
+  void CreatePendingTree() override;
 
-  virtual BeginFrameArgs CurrentBeginFrameArgs() const OVERRIDE;
+  BeginFrameArgs CurrentBeginFrameArgs() const override;
   void SetCurrentBeginFrameArgs(const BeginFrameArgs& args);
   void UpdateNumChildrenAndDrawPropertiesForActiveTree();
   static void UpdateNumChildrenAndDrawProperties(LayerTreeImpl* layerTree);
   static int RecursiveUpdateNumChildren(LayerImpl* layer);
 
   using LayerTreeHostImpl::ActivateSyncTree;
-  using LayerTreeHostImpl::manage_tiles_needed;
+  using LayerTreeHostImpl::prepare_tiles_needed;
+  using LayerTreeHostImpl::is_likely_to_require_a_draw;
+  using LayerTreeHostImpl::RemoveRenderPasses;
 
  private:
   BeginFrameArgs current_begin_frame_args_;

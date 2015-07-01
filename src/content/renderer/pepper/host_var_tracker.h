@@ -31,7 +31,7 @@ namespace content {
 class HostVarTracker : public ppapi::VarTracker {
  public:
   HostVarTracker();
-  virtual ~HostVarTracker();
+  ~HostVarTracker() override;
 
   // Tracks all live V8ObjectVar. This is so we can map between instance +
   // V8Object and get the V8ObjectVar corresponding to it. This Add/Remove
@@ -40,35 +40,33 @@ class HostVarTracker : public ppapi::VarTracker {
   void RemoveV8ObjectVar(ppapi::V8ObjectVar* object_var);
   // Creates or retrieves a V8ObjectVar.
   PP_Var V8ObjectVarForV8Object(PP_Instance instance,
-                                v8::Handle<v8::Object> object);
+                                v8::Local<v8::Object> object);
   // Returns the number of V8ObjectVars associated with the given instance.
   // Returns 0 if the instance isn't known.
   CONTENT_EXPORT int GetLiveV8ObjectVarsForTest(PP_Instance instance);
 
   // VarTracker public implementation.
-  virtual PP_Var MakeResourcePPVarFromMessage(
-      PP_Instance instance,
-      const IPC::Message& creation_message,
-      int pending_renderer_id,
-      int pending_browser_id) OVERRIDE;
-  virtual ppapi::ResourceVar* MakeResourceVar(PP_Resource pp_resource) OVERRIDE;
-  virtual void DidDeleteInstance(PP_Instance pp_instance) OVERRIDE;
+  PP_Var MakeResourcePPVarFromMessage(PP_Instance instance,
+                                      const IPC::Message& creation_message,
+                                      int pending_renderer_id,
+                                      int pending_browser_id) override;
+  ppapi::ResourceVar* MakeResourceVar(PP_Resource pp_resource) override;
+  void DidDeleteInstance(PP_Instance pp_instance) override;
 
-  virtual int TrackSharedMemoryHandle(PP_Instance instance,
-                                      base::SharedMemoryHandle file,
-                                      uint32 size_in_bytes) OVERRIDE;
-  virtual bool StopTrackingSharedMemoryHandle(int id,
-                                              PP_Instance instance,
-                                              base::SharedMemoryHandle* handle,
-                                              uint32* size_in_bytes) OVERRIDE;
+  int TrackSharedMemoryHandle(PP_Instance instance,
+                              base::SharedMemoryHandle file,
+                              uint32 size_in_bytes) override;
+  bool StopTrackingSharedMemoryHandle(int id,
+                                      PP_Instance instance,
+                                      base::SharedMemoryHandle* handle,
+                                      uint32* size_in_bytes) override;
 
  private:
   // VarTracker private implementation.
-  virtual ppapi::ArrayBufferVar* CreateArrayBuffer(uint32 size_in_bytes)
-      OVERRIDE;
-  virtual ppapi::ArrayBufferVar* CreateShmArrayBuffer(
+  ppapi::ArrayBufferVar* CreateArrayBuffer(uint32 size_in_bytes) override;
+  ppapi::ArrayBufferVar* CreateShmArrayBuffer(
       uint32 size_in_bytes,
-      base::SharedMemoryHandle handle) OVERRIDE;
+      base::SharedMemoryHandle handle) override;
 
   // Clear the reference count of the given object and remove it from
   // live_vars_.
@@ -78,7 +76,7 @@ class HostVarTracker : public ppapi::VarTracker {
   // and the instance it is associated with.
   struct V8ObjectVarKey {
     explicit V8ObjectVarKey(ppapi::V8ObjectVar* object_var);
-    V8ObjectVarKey(PP_Instance i, v8::Handle<v8::Object> object);
+    V8ObjectVarKey(PP_Instance i, v8::Local<v8::Object> object);
     ~V8ObjectVarKey();
 
     bool operator<(const V8ObjectVarKey& other) const;
@@ -91,7 +89,7 @@ class HostVarTracker : public ppapi::VarTracker {
   // Returns an iterator into |object_map| which points to V8Object which
   // is associated with the given instance and object.
   ObjectMap::iterator GetForV8Object(PP_Instance instance,
-                                     v8::Handle<v8::Object> object);
+                                     v8::Local<v8::Object> object);
 
 
   // A multimap of V8ObjectVarKey -> ObjectMap.

@@ -11,8 +11,8 @@
 #include "base/basictypes.h"
 #include "media/base/media_export.h"
 #include "media/base/video_frame.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace media {
 
@@ -37,7 +37,8 @@ enum VideoCodec {
 };
 
 // Video stream profile.  This *must* match PP_VideoDecoder_Profile.
-// (enforced in webkit/plugins/ppapi/ppb_video_decoder_impl.cc)
+// (enforced in webkit/plugins/ppapi/ppb_video_decoder_impl.cc) and
+// gpu::VideoCodecProfile.
 enum VideoCodecProfile {
   // Keep the values in this enum unique, as they imply format (h.264 vs. VP8,
   // for example), and keep the values for a particular format grouped
@@ -107,6 +108,8 @@ class MEDIA_EXPORT VideoDecoderConfig {
   // Returns a human-readable string describing |*this|.  For debugging & test
   // output only.
   std::string AsHumanReadableString() const;
+
+  std::string GetHumanReadableCodecName() const;
 
   VideoCodec codec() const;
   VideoCodecProfile profile() const;

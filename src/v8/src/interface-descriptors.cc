@@ -42,7 +42,7 @@ void CallInterfaceDescriptorData::Initialize(
 }
 
 
-const char* CallInterfaceDescriptor::DebugName(Isolate* isolate) {
+const char* CallInterfaceDescriptor::DebugName(Isolate* isolate) const {
   CallInterfaceDescriptorData* start = isolate->call_descriptor_data(0);
   size_t index = data_ - start;
   DCHECK(index < CallDescriptors::NUMBER_OF_DESCRIPTORS);
@@ -70,6 +70,13 @@ void LoadDescriptor::Initialize(CallInterfaceDescriptorData* data) {
 void StoreDescriptor::Initialize(CallInterfaceDescriptorData* data) {
   Register registers[] = {ContextRegister(), ReceiverRegister(), NameRegister(),
                           ValueRegister()};
+  data->Initialize(arraysize(registers), registers, NULL);
+}
+
+
+void StoreTransitionDescriptor::Initialize(CallInterfaceDescriptorData* data) {
+  Register registers[] = {ContextRegister(), ReceiverRegister(), NameRegister(),
+                          ValueRegister(), MapRegister()};
   data->Initialize(arraysize(registers), registers, NULL);
 }
 
@@ -139,5 +146,12 @@ void ContextOnlyDescriptor::Initialize(CallInterfaceDescriptorData* data) {
   data->Initialize(arraysize(registers), registers, NULL);
 }
 
+
+void GrowArrayElementsDescriptor::Initialize(
+    CallInterfaceDescriptorData* data) {
+  Register registers[] = {ContextRegister(), ObjectRegister(), KeyRegister(),
+                          CapacityRegister()};
+  data->Initialize(arraysize(registers), registers, NULL);
+}
 }
 }  // namespace v8::internal

@@ -8,16 +8,14 @@ from telemetry.page import page_set as page_set_module
 class KeySearchMobilePage(page_module.Page):
 
   def __init__(self, url, page_set):
-    super(KeySearchMobilePage, self).__init__(url=url, page_set=page_set)
-    self.credentials_path = 'data/credentials.json'
+    super(KeySearchMobilePage, self).__init__(
+        url=url, page_set=page_set, credentials_path = 'data/credentials.json')
     self.user_agent_type = 'mobile'
     self.archive_data_file = 'data/key_search_mobile.json'
 
-  def RunSmoothness(self, action_runner):
-    interaction = action_runner.BeginGestureInteraction(
-        'ScrollAction', is_smooth=True)
-    action_runner.ScrollPage()
-    interaction.End()
+  def RunPageInteractions(self, action_runner):
+    with action_runner.CreateGestureInteraction('ScrollAction'):
+      action_runner.ScrollPage()
 
 
 class KeySearchMobilePageSet(page_set_module.PageSet):
@@ -26,7 +24,6 @@ class KeySearchMobilePageSet(page_set_module.PageSet):
 
   def __init__(self):
     super(KeySearchMobilePageSet, self).__init__(
-      credentials_path='data/credentials.json',
       user_agent_type='mobile',
       archive_data_file='data/key_search_mobile.json',
       bucket=page_set_module.PUBLIC_BUCKET)
@@ -66,4 +63,4 @@ class KeySearchMobilePageSet(page_set_module.PageSet):
     ]
 
     for url in urls_list:
-      self.AddPage(KeySearchMobilePage(url, self))
+      self.AddUserStory(KeySearchMobilePage(url, self))

@@ -12,7 +12,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using std::make_pair;
 using std::pair;
 using std::vector;
 
@@ -214,17 +213,17 @@ class QuicReceivedPacketManagerTest : public ::testing::Test {
 
 TEST_F(QuicReceivedPacketManagerTest, ReceivedPacketEntropyHash) {
   vector<pair<QuicPacketSequenceNumber, QuicPacketEntropyHash> > entropies;
-  entropies.push_back(make_pair(1, 12));
-  entropies.push_back(make_pair(7, 1));
-  entropies.push_back(make_pair(2, 33));
-  entropies.push_back(make_pair(5, 3));
-  entropies.push_back(make_pair(8, 34));
+  entropies.push_back(std::make_pair(1, 12));
+  entropies.push_back(std::make_pair(7, 1));
+  entropies.push_back(std::make_pair(2, 33));
+  entropies.push_back(std::make_pair(5, 3));
+  entropies.push_back(std::make_pair(8, 34));
 
   for (size_t i = 0; i < entropies.size(); ++i) {
     RecordPacketReceipt(entropies[i].first, entropies[i].second);
   }
 
-  sort(entropies.begin(), entropies.end());
+  std::sort(entropies.begin(), entropies.end());
 
   QuicPacketEntropyHash hash = 0;
   size_t index = 0;
@@ -238,7 +237,7 @@ TEST_F(QuicReceivedPacketManagerTest, ReceivedPacketEntropyHash) {
   }
   // Reorder by 5 when 2 is received after 7.
   EXPECT_EQ(5u, stats_.max_sequence_reordering);
-  EXPECT_EQ(0u, stats_.max_time_reordering_us);
+  EXPECT_EQ(0, stats_.max_time_reordering_us);
   EXPECT_EQ(2u, stats_.packets_reordered);
 }
 
@@ -256,12 +255,12 @@ TEST_F(QuicReceivedPacketManagerTest, EntropyHashAboveLargestObserved) {
 
 TEST_F(QuicReceivedPacketManagerTest, SetCumulativeEntropyUpTo) {
   vector<pair<QuicPacketSequenceNumber, QuicPacketEntropyHash> > entropies;
-  entropies.push_back(make_pair(1, 12));
-  entropies.push_back(make_pair(2, 1));
-  entropies.push_back(make_pair(3, 33));
-  entropies.push_back(make_pair(4, 3));
-  entropies.push_back(make_pair(6, 34));
-  entropies.push_back(make_pair(7, 29));
+  entropies.push_back(std::make_pair(1, 12));
+  entropies.push_back(std::make_pair(2, 1));
+  entropies.push_back(std::make_pair(3, 33));
+  entropies.push_back(std::make_pair(4, 3));
+  entropies.push_back(std::make_pair(6, 34));
+  entropies.push_back(std::make_pair(7, 29));
 
   QuicPacketEntropyHash entropy_hash = 0;
   for (size_t i = 0; i < entropies.size(); ++i) {
@@ -285,7 +284,7 @@ TEST_F(QuicReceivedPacketManagerTest, SetCumulativeEntropyUpTo) {
 
   // No reordering.
   EXPECT_EQ(0u, stats_.max_sequence_reordering);
-  EXPECT_EQ(0u, stats_.max_time_reordering_us);
+  EXPECT_EQ(0, stats_.max_time_reordering_us);
   EXPECT_EQ(0u, stats_.packets_reordered);
 }
 
@@ -314,6 +313,7 @@ TEST_F(QuicReceivedPacketManagerTest, UpdateReceivedPacketInfo) {
   // When UpdateReceivedPacketInfo with a time earlier than the time of the
   // largest observed packet, make sure that the delta is 0, not negative.
   EXPECT_EQ(QuicTime::Delta::Zero(), ack.delta_time_largest_observed);
+  EXPECT_FALSE(ack.received_packet_times.empty());
 
   QuicTime four_ms = QuicTime::Zero().Add(QuicTime::Delta::FromMilliseconds(4));
   received_manager_.UpdateReceivedPacketInfo(&ack, four_ms);
@@ -330,7 +330,7 @@ TEST_F(QuicReceivedPacketManagerTest, UpdateReceivedConnectionStats) {
       2, 0, QuicTime::Zero().Add(QuicTime::Delta::FromMilliseconds(1)));
 
   EXPECT_EQ(4u, stats_.max_sequence_reordering);
-  EXPECT_EQ(1000u, stats_.max_time_reordering_us);
+  EXPECT_EQ(1000, stats_.max_time_reordering_us);
   EXPECT_EQ(1u, stats_.packets_reordered);
 }
 

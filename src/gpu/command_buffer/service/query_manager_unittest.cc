@@ -34,12 +34,11 @@ class QueryManagerTest : public GpuServiceTest {
 
   QueryManagerTest() {
   }
-  virtual ~QueryManagerTest() {
-  }
+  ~QueryManagerTest() override {}
 
  protected:
-  virtual void SetUp() {
-    GpuServiceTest::SetUp();
+  void SetUp() override {
+    GpuServiceTest::SetUpWithGLVersion("2.1", "GL_ARB_occlusion_query");
     engine_.reset(new MockCommandBufferEngine());
     decoder_.reset(new MockGLES2Decoder());
     decoder_->set_engine(engine_.get());
@@ -51,7 +50,7 @@ class QueryManagerTest : public GpuServiceTest {
     manager_.reset(new QueryManager(decoder_.get(), feature_info.get()));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     decoder_.reset();
     manager_->Destroy(false);
     manager_.reset();
@@ -62,7 +61,7 @@ class QueryManagerTest : public GpuServiceTest {
   QueryManager::Query* CreateQuery(
       GLenum target, GLuint client_id, int32 shm_id, uint32 shm_offset,
       GLuint service_id) {
-    EXPECT_CALL(*gl_, GenQueriesARB(1, _))
+    EXPECT_CALL(*gl_, GenQueries(1, _))
        .WillOnce(SetArgumentPointee<1>(service_id))
        .RetiresOnSaturation();
     return manager_->CreateQuery(target, client_id, shm_id, shm_offset);
@@ -71,10 +70,10 @@ class QueryManagerTest : public GpuServiceTest {
   void QueueQuery(QueryManager::Query* query,
                   GLuint service_id,
                   base::subtle::Atomic32 submit_count) {
-    EXPECT_CALL(*gl_, BeginQueryARB(query->target(), service_id))
+    EXPECT_CALL(*gl_, BeginQuery(query->target(), service_id))
         .Times(1)
         .RetiresOnSaturation();
-    EXPECT_CALL(*gl_, EndQueryARB(query->target()))
+    EXPECT_CALL(*gl_, EndQuery(query->target()))
         .Times(1)
         .RetiresOnSaturation();
     EXPECT_TRUE(manager_->BeginQuery(query));
@@ -96,11 +95,9 @@ class QueryManagerTest : public GpuServiceTest {
       ClearSharedMemory();
     }
 
-    virtual ~MockCommandBufferEngine() {
-    }
+    ~MockCommandBufferEngine() override {}
 
-    virtual scoped_refptr<gpu::Buffer> GetSharedMemoryBuffer(int32 shm_id)
-        OVERRIDE {
+    scoped_refptr<gpu::Buffer> GetSharedMemoryBuffer(int32 shm_id) override {
       return shm_id == kSharedMemoryId ? valid_buffer_ : invalid_buffer_;
     }
 
@@ -108,23 +105,21 @@ class QueryManagerTest : public GpuServiceTest {
       memset(data_, kInitialMemoryValue, kSharedBufferSize);
     }
 
-    virtual void set_token(int32 token) OVERRIDE {
-      DCHECK(false);
-    }
+    void set_token(int32 token) override { DCHECK(false); }
 
-    virtual bool SetGetBuffer(int32 /* transfer_buffer_id */) OVERRIDE {
+    bool SetGetBuffer(int32 /* transfer_buffer_id */) override {
       DCHECK(false);
       return false;
     }
 
     // Overridden from CommandBufferEngine.
-    virtual bool SetGetOffset(int32 offset) OVERRIDE {
+    bool SetGetOffset(int32 offset) override {
       DCHECK(false);
       return false;
     }
 
     // Overridden from CommandBufferEngine.
-    virtual int32 GetGetOffset() OVERRIDE {
+    int32 GetGetOffset() override {
       DCHECK(false);
       return 0;
     }
@@ -182,7 +177,7 @@ TEST_F(QueryManagerTest, Destroy) {
       CreateQuery(GL_ANY_SAMPLES_PASSED_EXT, kClient1Id,
                   kSharedMemoryId, kSharedMemoryOffset, kService1Id));
   ASSERT_TRUE(query.get() != NULL);
-  EXPECT_CALL(*gl_, DeleteQueriesARB(1, ::testing::Pointee(kService1Id)))
+  EXPECT_CALL(*gl_, DeleteQueries(1, ::testing::Pointee(kService1Id)))
       .Times(1)
       .RetiresOnSaturation();
   manager_->Destroy(true);
@@ -219,7 +214,7 @@ TEST_F(QueryManagerTest, ProcessPendingQuery) {
   const GLuint kResult = 1;
 
   // Check nothing happens if there are no pending queries.
-  EXPECT_TRUE(manager_->ProcessPendingQueries());
+  EXPECT_TRUE(manager_->ProcessPendingQueries(false));
 
   // Create Query.
   scoped_refptr<QueryManager::Query> query(
@@ -241,10 +236,10 @@ TEST_F(QueryManagerTest, ProcessPendingQuery) {
   // Process with return not available.
   // Expect 1 GL command.
   EXPECT_CALL(*gl_,
-      GetQueryObjectuivARB(kService1Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
+      GetQueryObjectuiv(kService1Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
       .WillOnce(SetArgumentPointee<2>(0))
       .RetiresOnSaturation();
-  EXPECT_TRUE(manager_->ProcessPendingQueries());
+  EXPECT_TRUE(manager_->ProcessPendingQueries(false));
   EXPECT_TRUE(query->pending());
   EXPECT_EQ(0, sync->process_count);
   EXPECT_EQ(0u, sync->result);
@@ -252,14 +247,14 @@ TEST_F(QueryManagerTest, ProcessPendingQuery) {
   // Process with return available.
   // Expect 2 GL commands.
   EXPECT_CALL(*gl_,
-      GetQueryObjectuivARB(kService1Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
+      GetQueryObjectuiv(kService1Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
       .WillOnce(SetArgumentPointee<2>(1))
       .RetiresOnSaturation();
   EXPECT_CALL(*gl_,
-      GetQueryObjectuivARB(kService1Id, GL_QUERY_RESULT_EXT, _))
+      GetQueryObjectuiv(kService1Id, GL_QUERY_RESULT_EXT, _))
       .WillOnce(SetArgumentPointee<2>(kResult))
       .RetiresOnSaturation();
-  EXPECT_TRUE(manager_->ProcessPendingQueries());
+  EXPECT_TRUE(manager_->ProcessPendingQueries(false));
   EXPECT_FALSE(query->pending());
   EXPECT_EQ(kSubmitCount, sync->process_count);
   EXPECT_EQ(kResult, sync->result);
@@ -267,7 +262,7 @@ TEST_F(QueryManagerTest, ProcessPendingQuery) {
 
   // Process with no queries.
   // Expect no GL commands/
-  EXPECT_TRUE(manager_->ProcessPendingQueries());
+  EXPECT_TRUE(manager_->ProcessPendingQueries(false));
 }
 
 TEST_F(QueryManagerTest, ProcessPendingQueries) {
@@ -328,26 +323,26 @@ TEST_F(QueryManagerTest, ProcessPendingQueries) {
   {
     InSequence s;
     EXPECT_CALL(*gl_,
-        GetQueryObjectuivARB(kService1Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
+        GetQueryObjectuiv(kService1Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
         .WillOnce(SetArgumentPointee<2>(1))
         .RetiresOnSaturation();
     EXPECT_CALL(*gl_,
-        GetQueryObjectuivARB(kService1Id, GL_QUERY_RESULT_EXT, _))
+        GetQueryObjectuiv(kService1Id, GL_QUERY_RESULT_EXT, _))
         .WillOnce(SetArgumentPointee<2>(kResult1))
         .RetiresOnSaturation();
     EXPECT_CALL(*gl_,
-        GetQueryObjectuivARB(kService2Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
+        GetQueryObjectuiv(kService2Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
         .WillOnce(SetArgumentPointee<2>(1))
         .RetiresOnSaturation();
     EXPECT_CALL(*gl_,
-        GetQueryObjectuivARB(kService2Id, GL_QUERY_RESULT_EXT, _))
+        GetQueryObjectuiv(kService2Id, GL_QUERY_RESULT_EXT, _))
         .WillOnce(SetArgumentPointee<2>(kResult2))
         .RetiresOnSaturation();
     EXPECT_CALL(*gl_,
-        GetQueryObjectuivARB(kService3Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
+        GetQueryObjectuiv(kService3Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
         .WillOnce(SetArgumentPointee<2>(0))
         .RetiresOnSaturation();
-    EXPECT_TRUE(manager_->ProcessPendingQueries());
+    EXPECT_TRUE(manager_->ProcessPendingQueries(false));
   }
   EXPECT_FALSE(query1->pending());
   EXPECT_FALSE(query2->pending());
@@ -363,10 +358,10 @@ TEST_F(QueryManagerTest, ProcessPendingQueries) {
   // Process with renaming query. No result.
   // Expect 1 GL commands.
   EXPECT_CALL(*gl_,
-      GetQueryObjectuivARB(kService3Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
+      GetQueryObjectuiv(kService3Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
       .WillOnce(SetArgumentPointee<2>(0))
       .RetiresOnSaturation();
-  EXPECT_TRUE(manager_->ProcessPendingQueries());
+  EXPECT_TRUE(manager_->ProcessPendingQueries(false));
   EXPECT_TRUE(query3->pending());
   EXPECT_EQ(0, sync3->process_count);
   EXPECT_EQ(0u, sync3->result);
@@ -375,14 +370,14 @@ TEST_F(QueryManagerTest, ProcessPendingQueries) {
   // Process with renaming query. With result.
   // Expect 2 GL commands.
   EXPECT_CALL(*gl_,
-      GetQueryObjectuivARB(kService3Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
+      GetQueryObjectuiv(kService3Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
       .WillOnce(SetArgumentPointee<2>(1))
       .RetiresOnSaturation();
   EXPECT_CALL(*gl_,
-      GetQueryObjectuivARB(kService3Id, GL_QUERY_RESULT_EXT, _))
+      GetQueryObjectuiv(kService3Id, GL_QUERY_RESULT_EXT, _))
       .WillOnce(SetArgumentPointee<2>(kResult3))
       .RetiresOnSaturation();
-  EXPECT_TRUE(manager_->ProcessPendingQueries());
+  EXPECT_TRUE(manager_->ProcessPendingQueries(false));
   EXPECT_FALSE(query3->pending());
   EXPECT_EQ(kSubmitCount3, sync3->process_count);
   EXPECT_EQ(kResult3, sync3->result);
@@ -408,14 +403,14 @@ TEST_F(QueryManagerTest, ProcessPendingBadSharedMemoryId) {
   // Process with return available.
   // Expect 2 GL commands.
   EXPECT_CALL(*gl_,
-      GetQueryObjectuivARB(kService1Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
+      GetQueryObjectuiv(kService1Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
       .WillOnce(SetArgumentPointee<2>(1))
       .RetiresOnSaturation();
   EXPECT_CALL(*gl_,
-      GetQueryObjectuivARB(kService1Id, GL_QUERY_RESULT_EXT, _))
+      GetQueryObjectuiv(kService1Id, GL_QUERY_RESULT_EXT, _))
       .WillOnce(SetArgumentPointee<2>(kResult))
       .RetiresOnSaturation();
-  EXPECT_FALSE(manager_->ProcessPendingQueries());
+  EXPECT_FALSE(manager_->ProcessPendingQueries(false));
 }
 
 TEST_F(QueryManagerTest, ProcessPendingBadSharedMemoryOffset) {
@@ -437,14 +432,14 @@ TEST_F(QueryManagerTest, ProcessPendingBadSharedMemoryOffset) {
   // Process with return available.
   // Expect 2 GL commands.
   EXPECT_CALL(*gl_,
-      GetQueryObjectuivARB(kService1Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
+      GetQueryObjectuiv(kService1Id, GL_QUERY_RESULT_AVAILABLE_EXT, _))
       .WillOnce(SetArgumentPointee<2>(1))
       .RetiresOnSaturation();
   EXPECT_CALL(*gl_,
-      GetQueryObjectuivARB(kService1Id, GL_QUERY_RESULT_EXT, _))
+      GetQueryObjectuiv(kService1Id, GL_QUERY_RESULT_EXT, _))
       .WillOnce(SetArgumentPointee<2>(kResult))
       .RetiresOnSaturation();
-  EXPECT_FALSE(manager_->ProcessPendingQueries());
+  EXPECT_FALSE(manager_->ProcessPendingQueries(false));
 }
 
 TEST_F(QueryManagerTest, ExitWithPendingQuery) {
@@ -479,17 +474,17 @@ TEST_F(QueryManagerTest, ARBOcclusionQuery2) {
   scoped_ptr<QueryManager> manager(
       new QueryManager(decoder_.get(), feature_info.get()));
 
-  EXPECT_CALL(*gl_, GenQueriesARB(1, _))
+  EXPECT_CALL(*gl_, GenQueries(1, _))
      .WillOnce(SetArgumentPointee<1>(kService1Id))
      .RetiresOnSaturation();
   QueryManager::Query* query = manager->CreateQuery(
       kTarget, kClient1Id, kSharedMemoryId, kSharedMemoryOffset);
   ASSERT_TRUE(query != NULL);
 
-  EXPECT_CALL(*gl_, BeginQueryARB(GL_ANY_SAMPLES_PASSED_EXT, kService1Id))
+  EXPECT_CALL(*gl_, BeginQuery(GL_ANY_SAMPLES_PASSED_EXT, kService1Id))
       .Times(1)
       .RetiresOnSaturation();
-  EXPECT_CALL(*gl_, EndQueryARB(GL_ANY_SAMPLES_PASSED_EXT))
+  EXPECT_CALL(*gl_, EndQuery(GL_ANY_SAMPLES_PASSED_EXT))
       .Times(1)
       .RetiresOnSaturation();
   EXPECT_TRUE(manager->BeginQuery(query));
@@ -513,17 +508,17 @@ TEST_F(QueryManagerTest, ARBOcclusionQuery) {
   scoped_ptr<QueryManager> manager(
       new QueryManager(decoder_.get(), feature_info.get()));
 
-  EXPECT_CALL(*gl_, GenQueriesARB(1, _))
+  EXPECT_CALL(*gl_, GenQueries(1, _))
      .WillOnce(SetArgumentPointee<1>(kService1Id))
      .RetiresOnSaturation();
   QueryManager::Query* query = manager->CreateQuery(
       kTarget, kClient1Id, kSharedMemoryId, kSharedMemoryOffset);
   ASSERT_TRUE(query != NULL);
 
-  EXPECT_CALL(*gl_, BeginQueryARB(GL_SAMPLES_PASSED_ARB, kService1Id))
+  EXPECT_CALL(*gl_, BeginQuery(GL_SAMPLES_PASSED_ARB, kService1Id))
       .Times(1)
       .RetiresOnSaturation();
-  EXPECT_CALL(*gl_, EndQueryARB(GL_SAMPLES_PASSED_ARB))
+  EXPECT_CALL(*gl_, EndQuery(GL_SAMPLES_PASSED_ARB))
       .Times(1)
       .RetiresOnSaturation();
   EXPECT_TRUE(manager->BeginQuery(query));

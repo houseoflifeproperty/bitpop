@@ -8,14 +8,13 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/host_desktop.h"
-#include "chrome/browser/ui/views/constrained_window_views.h"
 #include "chrome/browser/ui/views/profiles/profile_chooser_view.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/constrained_window/constrained_window_views.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/web_contents.h"
 #include "google_apis/gaia/gaia_auth_util.h"
@@ -33,21 +32,6 @@
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_client_view.h"
-
-namespace chrome {
-// Declared in browser_dialogs.h
-void ShowProfileSigninConfirmationDialog(
-    Browser* browser,
-    content::WebContents* web_contents,
-    Profile* profile,
-    const std::string& username,
-    ui::ProfileSigninConfirmationDelegate* delegate) {
-  ProfileSigninConfirmationDialogViews::ShowDialog(browser,
-                                                   profile,
-                                                   username,
-                                                   delegate);
-}
-}  // namespace chrome
 
 ProfileSigninConfirmationDialogViews::ProfileSigninConfirmationDialogViews(
     Browser* browser,
@@ -91,7 +75,7 @@ void ProfileSigninConfirmationDialogViews::ShowDialog(
 
 void ProfileSigninConfirmationDialogViews::Show(bool prompt_for_new_profile) {
   prompt_for_new_profile_ = prompt_for_new_profile;
-  CreateBrowserModalDialogViews(
+  constrained_window::CreateBrowserModalDialogViews(
       this, browser_->window()->GetNativeWindow())->Show();
 }
 
@@ -153,11 +137,12 @@ void ProfileSigninConfirmationDialogViews::OnClosed() {
 }
 
 ui::ModalType ProfileSigninConfirmationDialogViews::GetModalType() const {
-  return ui::MODAL_TYPE_CHILD;
+  return ui::MODAL_TYPE_WINDOW;
 }
 
 void ProfileSigninConfirmationDialogViews::ViewHierarchyChanged(
     const ViewHierarchyChangedDetails& details) {
+  views::DialogDelegateView::ViewHierarchyChanged(details);
   if (!details.is_add || details.child != this)
     return;
 

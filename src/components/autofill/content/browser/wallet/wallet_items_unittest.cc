@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "base/json/json_reader.h"
-#include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
@@ -175,17 +174,20 @@ const char kMaskedInstrumentMissingObjectId[] =
 const char kLegalDocument[] =
     "{"
     "  \"legal_document_id\":\"doc_id\","
-    "  \"display_name\":\"display_name\""
+    "  \"display_name\":\"display_name\","
+    "  \"url\":\"https://example.com\""
     "}";
 
 const char kLegalDocumentMissingDocumentId[] =
     "{"
-    "  \"display_name\":\"display_name\""
+    "  \"display_name\":\"display_name\","
+    "  \"url\":\"https://example.com\""
     "}";
 
 const char kLegalDocumentMissingDisplayName[] =
     "{"
-    "  \"legal_document_id\":\"doc_id\""
+    "  \"legal_document_id\":\"doc_id\","
+    "  \"url\":\"https://example.com\""
     "}";
 
 const char kWalletItemsWithRequiredActions[] =
@@ -270,7 +272,8 @@ const char kWalletItemsMissingGoogleTransactionId[] =
     "  ["
     "    {"
     "      \"legal_document_id\":\"doc_id\","
-    "      \"display_name\":\"display_name\""
+    "      \"display_name\":\"display_name\","
+    "      \"url\":\"https://example.com\""
     "    }"
     "  ]"
     "}";
@@ -373,7 +376,8 @@ const char kRequiredLegalDocument[] =
     "  ["
     "    {"
     "      \"legal_document_id\":\"doc_id\","
-    "      \"display_name\":\"display_name\""
+    "      \"display_name\":\"display_name\","
+    "      \"url\":\"https://example.com\""
     "    }"
     "  ]";
 
@@ -472,20 +476,15 @@ TEST_F(WalletItemsTest, CreateLegalDocumentMissingDisplayName) {
 
 TEST_F(WalletItemsTest, CreateLegalDocument) {
   SetUpDictionary(kLegalDocument);
-  WalletItems::LegalDocument expected("doc_id", ASCIIToUTF16("display_name"));
+  WalletItems::LegalDocument expected("doc_id", GURL("https://example.com"),
+                                      ASCIIToUTF16("display_name"));
   EXPECT_EQ(expected,
             *WalletItems::LegalDocument::CreateLegalDocument(*dict));
 }
 
-TEST_F(WalletItemsTest, LegalDocumentUrl) {
-  WalletItems::LegalDocument legal_doc("doc_id", ASCIIToUTF16("display_name"));
-  EXPECT_EQ("https://wallet.google.com/legaldocument?docId=doc_id",
-            legal_doc.url().spec());
-}
-
 TEST_F(WalletItemsTest, LegalDocumentEmptyId) {
-  WalletItems::LegalDocument legal_doc(GURL("http://example.com"),
-                                       ASCIIToUTF16("display_name"));
+  WalletItems::LegalDocument legal_doc(
+      std::string(), GURL("https://example.com"), ASCIIToUTF16("display_name"));
   EXPECT_TRUE(legal_doc.id().empty());
 }
 
@@ -610,7 +609,7 @@ TEST_F(WalletItemsTest, CreateWalletItems) {
                   std::string(kRequiredLegalDocument) +
                   std::string(kCloseJson));
   scoped_ptr<WalletItems::LegalDocument> legal_document(
-      new WalletItems::LegalDocument("doc_id",
+      new WalletItems::LegalDocument("doc_id", GURL("https://example.com"),
                                      ASCIIToUTF16("display_name")));
   expected.AddLegalDocument(legal_document.Pass());
   expected.AddLegalDocument(

@@ -7,7 +7,7 @@
 
 #include "base/timer/timer.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/idle.h"
+#include "ui/base/idle/idle.h"
 #include "ui/gfx/image/image.h"
 
 class PrefRegistrySimple;
@@ -65,6 +65,8 @@ class UpgradeDetector {
   bool critical_update_acknowledged() const {
     return critical_update_acknowledged_;
   }
+
+  bool is_factory_reset_required() const { return is_factory_reset_required_; }
 
   // Retrieves the right icon ID based on the degree of severity (see
   // UpgradeNotificationAnnoyanceLevel, each level has an an accompanying icon
@@ -125,13 +127,19 @@ class UpgradeDetector {
     upgrade_notification_stage_ = stage;
   }
 
+  void set_is_factory_reset_required(bool is_factory_reset_required) {
+    is_factory_reset_required_ = is_factory_reset_required;
+  }
+
  private:
+  FRIEND_TEST_ALL_PREFIXES(WrenchMenuModelTest, Basics);
+
   // Initiates an Idle check. See IdleCallback below.
   void CheckIdle();
 
   // The callback for the IdleCheck. Tells us whether Chrome has received any
   // input events since the specified time.
-  void IdleCallback(IdleState state);
+  void IdleCallback(ui::IdleState state);
 
   // Triggers a global notification of the specified |type|.
   void TriggerNotification(chrome::NotificationType type);
@@ -148,6 +156,9 @@ class UpgradeDetector {
 
   // Whether the user has acknowledged the critical update.
   bool critical_update_acknowledged_;
+
+  // Whether a factory reset is needed to complete an update.
+  bool is_factory_reset_required_;
 
   // A timer to check to see if we've been idle for long enough to show the
   // critical warning. Should only be set if |upgrade_available_| is

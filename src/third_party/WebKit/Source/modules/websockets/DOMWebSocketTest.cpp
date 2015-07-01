@@ -3,21 +3,23 @@
 // found in the LICENSE file.
 
 #include "config.h"
-
 #include "modules/websockets/DOMWebSocket.h"
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8BindingForTesting.h"
+#include "core/dom/DOMTypedArray.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/SecurityContext.h"
 #include "core/fileapi/Blob.h"
 #include "core/frame/ConsoleTypes.h"
 #include "core/testing/DummyPageHolder.h"
-#include "wtf/ArrayBuffer.h"
+#include "platform/heap/Handle.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/Uint8Array.h"
 #include "wtf/Vector.h"
 #include "wtf/testing/WTFTestHelpers.h"
+#include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -33,13 +35,13 @@ namespace blink {
 
 namespace {
 
-typedef testing::StrictMock<testing::MockFunction<void(int)> > Checkpoint;  // NOLINT
+typedef testing::StrictMock<testing::MockFunction<void(int)>> Checkpoint;  // NOLINT
 
 class MockWebSocketChannel : public WebSocketChannel {
 public:
     static MockWebSocketChannel* create()
     {
-        return adoptRefCountedGarbageCollected(new testing::StrictMock<MockWebSocketChannel>());
+        return new testing::StrictMock<MockWebSocketChannel>();
     }
 
     virtual ~MockWebSocketChannel()
@@ -47,41 +49,40 @@ public:
     }
 
     MOCK_METHOD2(connect, bool(const KURL&, const String&));
-    MOCK_METHOD1(send, void(const String&));
-    MOCK_METHOD3(send, void(const ArrayBuffer&, unsigned, unsigned));
+    MOCK_METHOD1(send, void(const CString&));
+    MOCK_METHOD3(send, void(const DOMArrayBuffer&, unsigned, unsigned));
     MOCK_METHOD1(send, void(PassRefPtr<BlobDataHandle>));
-    MOCK_METHOD1(send, void(PassOwnPtr<Vector<char> >));
-    MOCK_CONST_METHOD0(bufferedAmount, unsigned long());
+    MOCK_METHOD1(sendTextAsCharVector, void(PassOwnPtr<Vector<char>>));
+    MOCK_METHOD1(sendBinaryAsCharVector, void(PassOwnPtr<Vector<char>>));
+    MOCK_CONST_METHOD0(bufferedAmount, unsigned());
     MOCK_METHOD2(close, void(int, const String&));
     MOCK_METHOD4(fail, void(const String&, MessageLevel, const String&, unsigned));
     MOCK_METHOD0(disconnect, void());
-    MOCK_METHOD0(suspend, void());
-    MOCK_METHOD0(resume, void());
 
     MockWebSocketChannel()
     {
     }
 };
 
-class DOMWebSocketWithMockChannel FINAL : public DOMWebSocket {
+class DOMWebSocketWithMockChannel final : public DOMWebSocket {
 public:
     static DOMWebSocketWithMockChannel* create(ExecutionContext* context)
     {
-        DOMWebSocketWithMockChannel* websocket = adoptRefCountedGarbageCollectedWillBeNoop(new DOMWebSocketWithMockChannel(context));
+        DOMWebSocketWithMockChannel* websocket = new DOMWebSocketWithMockChannel(context);
         websocket->suspendIfNeeded();
         return websocket;
     }
 
     MockWebSocketChannel* channel() { return m_channel.get(); }
 
-    virtual WebSocketChannel* createChannel(ExecutionContext*, WebSocketChannelClient*) OVERRIDE
+    virtual WebSocketChannel* createChannel(ExecutionContext*, WebSocketChannelClient*) override
     {
         ASSERT(!m_hasCreatedChannel);
         m_hasCreatedChannel = true;
         return m_channel.get();
     }
 
-    virtual void trace(Visitor* visitor) OVERRIDE
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_channel);
         DOMWebSocket::trace(visitor);
@@ -112,14 +113,12 @@ public:
         if (!m_websocket)
             return;
         // These statements are needed to clear WebSocket::m_channel to
-        // avoid ASSERTION failure on ~WebSocket.
+        // avoid ASSERTION failure on ~DOMWebSocket.
         ASSERT(m_websocket->channel());
         ::testing::Mock::VerifyAndClear(m_websocket->channel());
         EXPECT_CALL(channel(), disconnect()).Times(AnyNumber());
 
         m_websocket->didClose(WebSocketChannelClient::ClosingHandshakeIncomplete, 1006, "");
-        m_websocket.clear();
-        Heap::collectAllGarbage();
     }
 
     MockWebSocketChannel& channel() { return *m_websocket->channel(); }
@@ -185,17 +184,42 @@ TEST_F(DOMWebSocketTest, invalidSubprotocols)
     Vector<String> subprotocols;
     subprotocols.append("@subprotocol-|'\"x\x01\x02\x03x");
 
-    {
-        InSequence s;
-        EXPECT_CALL(channel(), disconnect());
-    }
-
     m_websocket->connect("ws://example.com/", subprotocols, m_exceptionState);
 
     EXPECT_TRUE(m_exceptionState.hadException());
     EXPECT_EQ(SyntaxError, m_exceptionState.code());
     EXPECT_EQ("The subprotocol '@subprotocol-|'\"x\\u0001\\u0002\\u0003x' is invalid.", m_exceptionState.message());
     EXPECT_EQ(DOMWebSocket::CLOSED, m_websocket->readyState());
+}
+
+TEST_F(DOMWebSocketTest, insecureRequestsUpgrade)
+{
+    {
+        InSequence s;
+        EXPECT_CALL(channel(), connect(KURL(KURL(), "wss://example.com/endpoint"), String())).WillOnce(Return(true));
+    }
+
+    m_pageHolder->document().setInsecureRequestsPolicy(SecurityContext::InsecureRequestsUpgrade);
+    m_websocket->connect("ws://example.com/endpoint", Vector<String>(), m_exceptionState);
+
+    EXPECT_FALSE(m_exceptionState.hadException());
+    EXPECT_EQ(DOMWebSocket::CONNECTING, m_websocket->readyState());
+    EXPECT_EQ(KURL(KURL(), "wss://example.com/endpoint"), m_websocket->url());
+}
+
+TEST_F(DOMWebSocketTest, insecureRequestsDoNotUpgrade)
+{
+    {
+        InSequence s;
+        EXPECT_CALL(channel(), connect(KURL(KURL(), "ws://example.com/endpoint"), String())).WillOnce(Return(true));
+    }
+
+    m_pageHolder->document().setInsecureRequestsPolicy(SecurityContext::InsecureRequestsDoNotUpgrade);
+    m_websocket->connect("ws://example.com/endpoint", Vector<String>(), m_exceptionState);
+
+    EXPECT_FALSE(m_exceptionState.hadException());
+    EXPECT_EQ(DOMWebSocket::CONNECTING, m_websocket->readyState());
+    EXPECT_EQ(KURL(KURL(), "ws://example.com/endpoint"), m_websocket->url());
 }
 
 TEST_F(DOMWebSocketTest, channelConnectSuccess)
@@ -538,7 +562,7 @@ TEST_F(DOMWebSocketTest, sendStringSuccess)
     {
         InSequence s;
         EXPECT_CALL(channel(), connect(KURL(KURL(), "ws://example.com/"), String())).WillOnce(Return(true));
-        EXPECT_CALL(channel(), send(String("hello")));
+        EXPECT_CALL(channel(), send(CString("hello")));
     }
     m_websocket->connect("ws://example.com/", Vector<String>(), m_exceptionState);
 
@@ -551,9 +575,32 @@ TEST_F(DOMWebSocketTest, sendStringSuccess)
     EXPECT_EQ(DOMWebSocket::OPEN, m_websocket->readyState());
 }
 
+TEST_F(DOMWebSocketTest, sendNonLatin1String)
+{
+    {
+        InSequence s;
+        EXPECT_CALL(channel(), connect(KURL(KURL(), "ws://example.com/"), String())).WillOnce(Return(true));
+        EXPECT_CALL(channel(), send(CString("\xe7\x8b\x90\xe0\xa4\x94")));
+    }
+    m_websocket->connect("ws://example.com/", Vector<String>(), m_exceptionState);
+
+    EXPECT_FALSE(m_exceptionState.hadException());
+
+    m_websocket->didConnect("", "");
+    UChar nonLatin1String[] = {
+        0x72d0,
+        0x0914,
+        0x0000
+    };
+    m_websocket->send(nonLatin1String, m_exceptionState);
+
+    EXPECT_FALSE(m_exceptionState.hadException());
+    EXPECT_EQ(DOMWebSocket::OPEN, m_websocket->readyState());
+}
+
 TEST_F(DOMWebSocketTest, sendArrayBufferWhenConnecting)
 {
-    RefPtr<ArrayBufferView> view = Uint8Array::create(8);
+    RefPtr<DOMArrayBufferView> view = DOMUint8Array::create(8);
     {
         InSequence s;
         EXPECT_CALL(channel(), connect(KURL(KURL(), "ws://example.com/"), String())).WillOnce(Return(true));
@@ -572,7 +619,7 @@ TEST_F(DOMWebSocketTest, sendArrayBufferWhenConnecting)
 
 TEST_F(DOMWebSocketTest, sendArrayBufferWhenClosing)
 {
-    RefPtr<ArrayBufferView> view = Uint8Array::create(8);
+    RefPtr<DOMArrayBufferView> view = DOMUint8Array::create(8);
     {
         InSequence s;
         EXPECT_CALL(channel(), connect(KURL(KURL(), "ws://example.com/"), String())).WillOnce(Return(true));
@@ -594,7 +641,7 @@ TEST_F(DOMWebSocketTest, sendArrayBufferWhenClosing)
 TEST_F(DOMWebSocketTest, sendArrayBufferWhenClosed)
 {
     Checkpoint checkpoint;
-    RefPtr<ArrayBufferView> view = Uint8Array::create(8);
+    RefPtr<DOMArrayBufferView> view = DOMUint8Array::create(8);
     {
         InSequence s;
         EXPECT_CALL(channel(), connect(KURL(KURL(), "ws://example.com/"), String())).WillOnce(Return(true));
@@ -616,7 +663,7 @@ TEST_F(DOMWebSocketTest, sendArrayBufferWhenClosed)
 
 TEST_F(DOMWebSocketTest, sendArrayBufferSuccess)
 {
-    RefPtr<ArrayBufferView> view = Uint8Array::create(8);
+    RefPtr<DOMArrayBufferView> view = DOMUint8Array::create(8);
     {
         InSequence s;
         EXPECT_CALL(channel(), connect(KURL(KURL(), "ws://example.com/"), String())).WillOnce(Return(true));
@@ -644,15 +691,7 @@ TEST_F(DOMWebSocketTest, binaryType)
 {
     EXPECT_EQ("blob", m_websocket->binaryType());
 
-    m_websocket->setBinaryType("hoge");
-
-    EXPECT_EQ("blob", m_websocket->binaryType());
-
     m_websocket->setBinaryType("arraybuffer");
-
-    EXPECT_EQ("arraybuffer", m_websocket->binaryType());
-
-    m_websocket->setBinaryType("fuga");
 
     EXPECT_EQ("arraybuffer", m_websocket->binaryType());
 

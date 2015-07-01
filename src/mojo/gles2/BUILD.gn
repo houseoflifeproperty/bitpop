@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//mojo/public/tools/bindings/mojom.gni")
+import("//third_party/mojo/src/mojo/public/tools/bindings/mojom.gni")
 
 config("mojo_use_gles2") {
   defines = [ "MOJO_USE_GLES2_IMPL" ]
@@ -12,26 +12,17 @@ config("gles2_use_mojo") {
   defines = [ "GLES2_USE_MOJO" ]
 }
 
-# GYP version: mojo/mojo_base.gyp:mojo_gles2_impl
-component("gles2") {
-  output_name = "mojo_gles2_impl"
-
-  deps = [
-    "//base",
-    "//base/third_party/dynamic_annotations",
-    "//gpu/command_buffer/client",
-    "//gpu/command_buffer/common",
-    "//gpu/command_buffer/client:gles2_implementation",
-    "//gpu/command_buffer/client:gles2_interface",
-    "//mojo/public/c/system:for_component",
-    "//mojo/services/gles2:bindings",
-    "//mojo/services/gles2:interfaces",
-    "//mojo/environment:chromium",
+source_set("gles2") {
+  sources = [
+    "command_buffer_client_impl.cc",
+    "command_buffer_client_impl.h",
+    "gles2_context.cc",
+    "gles2_context.h",
+    "gles2_impl.cc",
   ]
 
   defines = [
     "GL_GLEXT_PROTOTYPES",
-    "MOJO_GLES2_IMPL_IMPLEMENTATION",
     "MOJO_GLES2_IMPLEMENTATION",
   ]
 
@@ -42,12 +33,22 @@ component("gles2") {
   public_configs = [ ":gles2_use_mojo" ]
   all_dependent_configs = [ ":mojo_use_gles2" ]
 
-  sources = [
-    "command_buffer_client_impl.cc",
-    "command_buffer_client_impl.h",
-    "gles2_impl_export.h",
-    "gles2_impl.cc",
-    "gles2_context.cc",
-    "gles2_context.h",
+  deps = [
+    "//base",
+    "//base/third_party/dynamic_annotations",
+    "//components/gles2:lib",
+    "//components/gpu/public/interfaces",
+    "//gpu/command_buffer/client",
+    "//gpu/command_buffer/client:gles2_cmd_helper",
+    "//gpu/command_buffer/client:gles2_implementation",
+    "//gpu/command_buffer/client:gles2_interface",
+    "//gpu/command_buffer/common",
+    "//mojo/environment:chromium",
+    "//third_party/mojo/src/mojo/public/c/gles2:headers",
+    "//third_party/mojo/src/mojo/public/c/system",
+    "//third_party/mojo/src/mojo/public/cpp/bindings",
+    "//third_party/mojo/src/mojo/public/cpp/system",
   ]
+
+  include_dirs = [ ".." ]
 }

@@ -72,7 +72,7 @@ class SafeBrowsingProtocolManagerTest : public testing::Test {
  protected:
   std::string key_param_;
 
-  virtual void SetUp() {
+  void SetUp() override {
     std::string key = google_apis::GetAPIKey();
     if (!key.empty()) {
       key_param_ = base::StringPrintf(
@@ -315,7 +315,7 @@ namespace {
 class MockProtocolDelegate : public SafeBrowsingProtocolManagerDelegate {
  public:
   MockProtocolDelegate() {}
-  virtual ~MockProtocolDelegate() {}
+  ~MockProtocolDelegate() override {}
 
   MOCK_METHOD0(UpdateStarted, void());
   MOCK_METHOD1(UpdateFinished, void(bool));
@@ -328,17 +328,17 @@ class MockProtocolDelegate : public SafeBrowsingProtocolManagerDelegate {
   MOCK_METHOD3(AddChunksRaw, void(const std::string& lists,
                                   const ScopedVector<SBChunkData>& chunks,
                                   AddChunksCallback));
-  virtual void AddChunks(const std::string& list,
-                         scoped_ptr<ScopedVector<SBChunkData> > chunks,
-                         AddChunksCallback callback) OVERRIDE {
+  void AddChunks(const std::string& list,
+                 scoped_ptr<ScopedVector<SBChunkData>> chunks,
+                 AddChunksCallback callback) override {
     AddChunksRaw(list, *chunks, callback);
   }
 
   // TODO(shess): Actually test this case somewhere.
   MOCK_METHOD1(DeleteChunksRaw,
                void(const std::vector<SBChunkDelete>& chunk_deletes));
-  virtual void DeleteChunks(
-      scoped_ptr<std::vector<SBChunkDelete> > chunk_deletes) OVERRIDE{
+  void DeleteChunks(
+      scoped_ptr<std::vector<SBChunkDelete>> chunk_deletes) override {
     DeleteChunksRaw(*chunk_deletes);
   }
 };

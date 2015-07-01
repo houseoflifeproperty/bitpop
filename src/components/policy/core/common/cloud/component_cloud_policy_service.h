@@ -65,6 +65,12 @@ class POLICY_EXPORT ComponentCloudPolicyService
   // and registration credentials; the client will be used to fetch cloud
   // policy. It must outlive this object.
   //
+  // The |core| MUST not be connected yet when this service is created;
+  // |client| must be the client that will be connected to the |core|. This
+  // is important to make sure that this service appends any necessary policy
+  // fetch types to the |client| before the |core| gets connected and before
+  // the initial policy fetch request is sent out.
+  //
   // |cache| is used to load and store local copies of the downloaded policies.
   //
   // Download scheduling, validation and caching of policies are done via the
@@ -76,13 +82,14 @@ class POLICY_EXPORT ComponentCloudPolicyService
       Delegate* delegate,
       SchemaRegistry* schema_registry,
       CloudPolicyCore* core,
+      CloudPolicyClient* client,
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
       scoped_ptr<ResourceCache> cache,
 #endif
       scoped_refptr<net::URLRequestContextGetter> request_context,
       scoped_refptr<base::SequencedTaskRunner> backend_task_runner,
       scoped_refptr<base::SequencedTaskRunner> io_task_runner);
-  virtual ~ComponentCloudPolicyService();
+  ~ComponentCloudPolicyService() override;
 
   // Returns true if |domain| is supported by the service.
   static bool SupportsDomain(PolicyDomain domain);
@@ -98,22 +105,22 @@ class POLICY_EXPORT ComponentCloudPolicyService
   void ClearCache();
 
   // SchemaRegistry::Observer implementation:
-  virtual void OnSchemaRegistryReady() OVERRIDE;
-  virtual void OnSchemaRegistryUpdated(bool has_new_schemas) OVERRIDE;
+  void OnSchemaRegistryReady() override;
+  void OnSchemaRegistryUpdated(bool has_new_schemas) override;
 
   // CloudPolicyCore::Observer implementation:
-  virtual void OnCoreConnected(CloudPolicyCore* core) OVERRIDE;
-  virtual void OnCoreDisconnecting(CloudPolicyCore* core) OVERRIDE;
-  virtual void OnRefreshSchedulerStarted(CloudPolicyCore* core) OVERRIDE;
+  void OnCoreConnected(CloudPolicyCore* core) override;
+  void OnCoreDisconnecting(CloudPolicyCore* core) override;
+  void OnRefreshSchedulerStarted(CloudPolicyCore* core) override;
 
   // CloudPolicyStore::Observer implementation:
-  virtual void OnStoreLoaded(CloudPolicyStore* store) OVERRIDE;
-  virtual void OnStoreError(CloudPolicyStore* store) OVERRIDE;
+  void OnStoreLoaded(CloudPolicyStore* store) override;
+  void OnStoreError(CloudPolicyStore* store) override;
 
   // CloudPolicyClient::Observer implementation:
-  virtual void OnPolicyFetched(CloudPolicyClient* client) OVERRIDE;
-  virtual void OnRegistrationStateChanged(CloudPolicyClient* client) OVERRIDE;
-  virtual void OnClientError(CloudPolicyClient* client) OVERRIDE;
+  void OnPolicyFetched(CloudPolicyClient* client) override;
+  void OnRegistrationStateChanged(CloudPolicyClient* client) override;
+  void OnClientError(CloudPolicyClient* client) override;
 
  private:
 #if !defined(OS_ANDROID) && !defined(OS_IOS)

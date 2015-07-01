@@ -23,12 +23,12 @@ extern const char kDefaultHostTalkGadgetPrefix[];
 class DnsBlackholeChecker : public net::URLFetcherDelegate {
  public:
   DnsBlackholeChecker(
-      scoped_refptr<net::URLRequestContextGetter> url_request_context_getter,
+      const scoped_refptr<net::URLRequestContextGetter>& request_context_getter,
       std::string talkgadget_prefix);
-  virtual ~DnsBlackholeChecker();
+  ~DnsBlackholeChecker() override;
 
   // net::URLFetcherDelegate interface.
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
 
   // Initiates a check the verify that the host talkgadget has not been "DNS
   // blackholed" to prevent connections. If this is called again before the

@@ -12,6 +12,7 @@
 #include "ui/keyboard/keyboard_controller_proxy.h"
 
 namespace content {
+class BrowserContext;
 class WebContents;
 }
 namespace extensions {
@@ -20,6 +21,10 @@ class WindowController;
 }
 namespace gfx {
 class Rect;
+}
+namespace keyboard {
+class KeyboardController;
+class KeyboardControllerObserver;
 }
 namespace ui {
 class InputMethod;
@@ -32,20 +37,21 @@ class AshKeyboardControllerProxy
       public content::WebContentsObserver,
       public extensions::ExtensionFunctionDispatcher::Delegate {
  public:
-  AshKeyboardControllerProxy();
-  virtual ~AshKeyboardControllerProxy();
+  explicit AshKeyboardControllerProxy(content::BrowserContext* context);
+  ~AshKeyboardControllerProxy() override;
 
  private:
   void OnRequest(const ExtensionHostMsg_Request_Params& params);
 
   // keyboard::KeyboardControllerProxy overrides
-  virtual content::BrowserContext* GetBrowserContext() OVERRIDE;
-  virtual ui::InputMethod* GetInputMethod() OVERRIDE;
-  virtual void RequestAudioInput(content::WebContents* web_contents,
+  ui::InputMethod* GetInputMethod() override;
+  void RequestAudioInput(
+      content::WebContents* web_contents,
       const content::MediaStreamRequest& request,
-      const content::MediaResponseCallback& callback) OVERRIDE;
-  virtual void SetupWebContents(content::WebContents* contents) OVERRIDE;
-  virtual void ShowKeyboardContainer(aura::Window* container) OVERRIDE;
+      const content::MediaResponseCallback& callback) override;
+  void SetupWebContents(content::WebContents* contents) override;
+  void SetController(keyboard::KeyboardController* controller) override;
+  void ShowKeyboardContainer(aura::Window* container) override;
 
   // The overridden implementation dispatches
   // chrome.virtualKeyboardPrivate.onTextInputBoxFocused event to extension to
@@ -54,18 +60,21 @@ class AshKeyboardControllerProxy
   // information, but not when the virtual keyboard is used in conjunction with
   // another IME. virtualKeyboardPrivate.onTextInputBoxFocused is the remedy in
   // that case.
-  virtual void SetUpdateInputType(ui::TextInputType type) OVERRIDE;
+  void SetUpdateInputType(ui::TextInputType type) override;
 
   // extensions::ExtensionFunctionDispatcher::Delegate overrides
-  virtual extensions::WindowController* GetExtensionWindowController() const
-      OVERRIDE;
-  virtual content::WebContents* GetAssociatedWebContents() const OVERRIDE;
+  extensions::WindowController* GetExtensionWindowController() const override;
+  content::WebContents* GetAssociatedWebContents() const override;
 
   // content::WebContentsObserver overrides
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void RenderViewCreated(content::RenderViewHost* render_view_host) override;
+
+  keyboard::KeyboardController* keyboard_controller_;
 
   scoped_ptr<extensions::ExtensionFunctionDispatcher>
       extension_function_dispatcher_;
+  scoped_ptr<keyboard::KeyboardControllerObserver> observer_;
 
   DISALLOW_COPY_AND_ASSIGN(AshKeyboardControllerProxy);
 };

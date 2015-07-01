@@ -49,7 +49,11 @@ class HardwareAcceleratedFeature(benchmark.Benchmark):
   """Tests GPU acceleration is reported as active for various features"""
   test = _HardwareAcceleratedFeatureValidator
 
-  def CreateExpectations(self, page_set):
+  @classmethod
+  def Name(cls):
+    return 'hardware_accelerated_feature'
+
+  def CreateExpectations(self):
     return expectations.HardwareAcceleratedFeatureExpectations()
 
   def CreatePageSet(self, options):
@@ -58,5 +62,5 @@ class HardwareAcceleratedFeature(benchmark.Benchmark):
     ps = page_set.PageSet(user_agent_type='desktop', file_path='')
 
     for feature in features:
-      ps.AddPage(ChromeGpuPage(page_set=ps, feature=feature))
+      ps.AddUserStory(ChromeGpuPage(page_set=ps, feature=feature))
     return ps

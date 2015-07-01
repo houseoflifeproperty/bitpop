@@ -18,12 +18,11 @@ class HostPairingController {
     STAGE_INITIALIZATION_ERROR,
     STAGE_WAITING_FOR_CONTROLLER,
     STAGE_WAITING_FOR_CODE_CONFIRMATION,
-    STAGE_UPDATING,
     STAGE_WAITING_FOR_CONTROLLER_AFTER_UPDATE,
     STAGE_WAITING_FOR_CREDENTIALS,
     STAGE_ENROLLING,
     STAGE_ENROLLMENT_ERROR,
-    STAGE_PAIRING_DONE,
+    STAGE_ENROLLMENT_SUCCESS,
     STAGE_FINISHED
   };
 
@@ -32,6 +31,13 @@ class HostPairingController {
     UPDATE_STATUS_UPDATING,
     UPDATE_STATUS_REBOOTING,
     UPDATE_STATUS_UPDATED,
+  };
+
+  enum EnrollmentStatus {
+    ENROLLMENT_STATUS_UNKNOWN,
+    ENROLLMENT_STATUS_ENROLLING,
+    ENROLLMENT_STATUS_FAILURE,
+    ENROLLMENT_STATUS_SUCCESS,
   };
 
   class Observer {
@@ -43,14 +49,17 @@ class HostPairingController {
     virtual void PairingStageChanged(Stage new_stage) = 0;
 
     // Called when the controller has sent a configuration to apply.
-    virtual void ConfigureHost(bool accepted_eula,
-                               const std::string& lang,
-                               const std::string& timezone,
-                               bool send_reports,
-                               const std::string& keyboard_layout) = 0;
+    virtual void ConfigureHostRequested(bool accepted_eula,
+                                        const std::string& lang,
+                                        const std::string& timezone,
+                                        bool send_reports,
+                                        const std::string& keyboard_layout) {}
+
+    // Called when the controller has sent a network to add.
+    virtual void AddNetworkRequested(const std::string& onc_spec) {}
 
     // Called when the controller has provided an |auth_token| for enrollment.
-    virtual void EnrollHost(const std::string& auth_token) = 0;
+    virtual void EnrollHostRequested(const std::string& auth_token) {}
 
    private:
     DISALLOW_COPY_AND_ASSIGN(Observer);
@@ -77,11 +86,15 @@ class HostPairingController {
   virtual std::string GetEnrollmentDomain() = 0;
 
   // Notify that the update status has changed.
-  // Can be called on stage |STAGE_UPDATING|.
   virtual void OnUpdateStatusChanged(UpdateStatus update_status) = 0;
 
-  // Called when enrollment has completed.
-  virtual void SetEnrollmentComplete(bool success) = 0;
+  // Notify that enrollment status has changed.
+  // Can be called on stage |STAGE_WAITING_FOR_CREDENTIALS|.
+  virtual void OnEnrollmentStatusChanged(
+      EnrollmentStatus enrollment_status) = 0;
+
+  // Set the permanent id assigned during enrollment.
+  virtual void SetPermanentId(const std::string& permanent_id) = 0;
 
   virtual void AddObserver(Observer* observer) = 0;
   virtual void RemoveObserver(Observer* observer) = 0;

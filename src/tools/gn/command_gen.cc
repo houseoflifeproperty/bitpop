@@ -11,17 +11,16 @@
 #include "tools/gn/commands.h"
 #include "tools/gn/ninja_target_writer.h"
 #include "tools/gn/ninja_writer.h"
+#include "tools/gn/runtime_deps.h"
 #include "tools/gn/scheduler.h"
 #include "tools/gn/setup.h"
 #include "tools/gn/standard_out.h"
+#include "tools/gn/switches.h"
 #include "tools/gn/target.h"
 
 namespace commands {
 
 namespace {
-
-// Suppress output on success.
-const char kSwitchQuiet[] = "q";
 
 const char kSwitchCheck[] = "check";
 
@@ -53,7 +52,7 @@ const char kGen_HelpShort[] =
 const char kGen_Help[] =
     "gn gen: Generate ninja files.\n"
     "\n"
-    "  gn gen <output_directory>\n"
+    "  gn gen <out_dir>\n"
     "\n"
     "  Generates ninja files from the current tree and puts them in the given\n"
     "  output directory.\n"
@@ -80,7 +79,7 @@ int RunGen(const std::vector<std::string>& args) {
   if (!setup->DoSetup(args[0], true))
     return 1;
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(kSwitchCheck))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(kSwitchCheck))
     setup->set_check_public_headers(true);
 
   // Cause the load to also generate the ninja files for each target. We wrap
@@ -94,14 +93,23 @@ int RunGen(const std::vector<std::string>& args) {
   if (!setup->Run())
     return 1;
 
+  Err err;
   // Write the root ninja files.
   if (!NinjaWriter::RunAndWriteFiles(&setup->build_settings(),
-                                     setup->builder()))
+                                     setup->builder(),
+                                     &err)) {
+    err.PrintToStdout();
     return 1;
+  }
+
+  if (!WriteRuntimeDepsFilesIfNecessary(*setup->builder(), &err)) {
+    err.PrintToStdout();
+    return 1;
+  }
 
   base::TimeDelta elapsed_time = timer.Elapsed();
 
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(kSwitchQuiet)) {
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kQuiet)) {
     OutputString("Done. ", DECORATION_GREEN);
 
     std::string stats = "Wrote " +
@@ -110,7 +118,7 @@ int RunGen(const std::vector<std::string>& args) {
         base::IntToString(
             setup->scheduler().input_file_manager()->GetInputFileCount()) +
         " files in " +
-        base::IntToString(elapsed_time.InMilliseconds()) + "ms\n";
+        base::Int64ToString(elapsed_time.InMilliseconds()) + "ms\n";
     OutputString(stats);
   }
 

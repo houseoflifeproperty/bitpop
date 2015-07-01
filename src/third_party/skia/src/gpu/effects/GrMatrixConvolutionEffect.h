@@ -9,13 +9,12 @@
 #define GrMatrixConvolutionEffect_DEFINED
 
 #include "GrSingleTextureEffect.h"
+#include "GrInvariantOutput.h"
 #include "GrTextureDomain.h"
 
 // A little bit less than the minimum # uniforms required by DX9SM2 (32).
 // Allows for a 5x5 kernel (or 25x1, for that matter).
 #define MAX_KERNEL_SIZE 25
-
-class GrGLMatrixConvolutionEffect;
 
 class GrMatrixConvolutionEffect : public GrSingleTextureEffect {
 public:
@@ -52,13 +51,6 @@ public:
 
     virtual ~GrMatrixConvolutionEffect();
 
-    virtual void getConstantColorComponents(GrColor* color,
-                                            uint32_t* validFlags) const SK_OVERRIDE {
-        // TODO: Try to do better?
-        *validFlags = 0;
-    }
-
-    static const char* Name() { return "MatrixConvolution"; }
     const SkIRect& bounds() const { return fBounds; }
     const SkISize& kernelSize() const { return fKernelSize; }
     const float* kernelOffset() const { return fKernelOffset; }
@@ -68,9 +60,11 @@ public:
     bool convolveAlpha() const { return fConvolveAlpha; }
     const GrTextureDomain& domain() const { return fDomain; }
 
-    typedef GrGLMatrixConvolutionEffect GLProcessor;
+    const char* name() const override { return "MatrixConvolution"; }
 
-    virtual const GrBackendFragmentProcessorFactory& getFactory() const SK_OVERRIDE;
+    void getGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
+
+    GrGLFragmentProcessor* createGLInstance() const override;
 
 private:
     GrMatrixConvolutionEffect(GrTexture*,
@@ -83,7 +77,12 @@ private:
                               GrTextureDomain::Mode tileMode,
                               bool convolveAlpha);
 
-    virtual bool onIsEqual(const GrProcessor&) const SK_OVERRIDE;
+    bool onIsEqual(const GrFragmentProcessor&) const override;
+
+    void onComputeInvariantOutput(GrInvariantOutput* inout) const override {
+        // TODO: Try to do better?
+        inout->mulByUnknownFourComponents();
+    }
 
     SkIRect         fBounds;
     SkISize         fKernelSize;

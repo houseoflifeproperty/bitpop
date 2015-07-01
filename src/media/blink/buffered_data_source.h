@@ -10,6 +10,7 @@
 
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
 #include "media/base/data_source.h"
 #include "media/base/media_export.h"
@@ -35,14 +36,14 @@ class MEDIA_EXPORT BufferedDataSourceHost {
   virtual void AddBufferedByteRange(int64 start, int64 end) = 0;
 
  protected:
-  virtual ~BufferedDataSourceHost() {};
+  virtual ~BufferedDataSourceHost() {}
 };
 
 // A data source capable of loading URLs and buffering the data using an
 // in-memory sliding window.
 //
-// BufferedDataSource must be created and initialized on the render thread
-// before being passed to other threads. It may be deleted on any thread.
+// BufferedDataSource must be created and destroyed on the thread associated
+// with the |task_runner| passed in the constructor.
 class MEDIA_EXPORT BufferedDataSource : public DataSource {
  public:
   // Used to specify video preload states. They are "hints" to the browser about
@@ -70,7 +71,7 @@ class MEDIA_EXPORT BufferedDataSource : public DataSource {
       MediaLog* media_log,
       BufferedDataSourceHost* host,
       const DownloadingCB& downloading_cb);
-  virtual ~BufferedDataSource();
+  ~BufferedDataSource() override;
 
   // Executes |init_cb| with the result of initialization when it has completed.
   //
@@ -99,22 +100,30 @@ class MEDIA_EXPORT BufferedDataSource : public DataSource {
 
   // Notifies changes in playback state for controlling media buffering
   // behavior.
-  void MediaPlaybackRateChanged(float playback_rate);
+  void MediaPlaybackRateChanged(double playback_rate);
   void MediaIsPlaying();
   void MediaIsPaused();
+  bool media_has_played() const { return media_has_played_; }
 
   // Returns true if the resource is local.
   bool assume_fully_buffered() { return !url_.SchemeIsHTTPOrHTTPS(); }
 
+  // Cancels any open network connections once reaching the deferred state for
+  // preload=metadata, non-streaming resources that have not started playback.
+  // If already deferred, connections will be immediately closed.
+  void OnBufferingHaveEnough();
+
   // DataSource implementation.
   // Called from demuxer thread.
-  virtual void Stop() OVERRIDE;
+  void Stop() override;
 
-  virtual void Read(int64 position, int size, uint8* data,
-                    const DataSource::ReadCB& read_cb) OVERRIDE;
-  virtual bool GetSize(int64* size_out) OVERRIDE;
-  virtual bool IsStreaming() OVERRIDE;
-  virtual void SetBitrate(int bitrate) OVERRIDE;
+  void Read(int64 position,
+            int size,
+            uint8* data,
+            const DataSource::ReadCB& read_cb) override;
+  bool GetSize(int64* size_out) override;
+  bool IsStreaming() override;
+  void SetBitrate(int bitrate) override;
 
  protected:
   // A factory method to create a BufferedResourceLoader based on the read
@@ -220,7 +229,7 @@ class MEDIA_EXPORT BufferedDataSource : public DataSource {
   int bitrate_;
 
   // Current playback rate.
-  float playback_rate_;
+  double playback_rate_;
 
   scoped_refptr<MediaLog> media_log_;
 
@@ -229,7 +238,10 @@ class MEDIA_EXPORT BufferedDataSource : public DataSource {
 
   DownloadingCB downloading_cb_;
 
-  // NOTE: Weak pointers must be invalidated before all other member variables.
+  // Disallow rebinding WeakReference ownership to a different thread by keeping
+  // a persistent reference. This avoids problems with the thread-safety of
+  // reaching into this class from multiple threads to attain a WeakPtr.
+  base::WeakPtr<BufferedDataSource> weak_ptr_;
   base::WeakPtrFactory<BufferedDataSource> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BufferedDataSource);

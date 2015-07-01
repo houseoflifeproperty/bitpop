@@ -2,22 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * A stack of overlays that display itself and handle mouse events.
  * TODO(kaznacheev) Consider disbanding this class and moving
  * the functionality to individual objects that display anything or handle
  * mouse events.
  * @constructor
+ * @struct
  */
 function ImageBuffer() {
   this.overlays_ = [];
 }
 
 /**
- * TODO(JSDOC).
- * @param {ImageBuffer.Overlay} overlay  // TODO(JSDOC).
+ * @typedef {function(number, number, boolean)}
+ */
+ImageBuffer.DragHandler;
+
+/**
+ * Add an overlay to a buffer.
+ * @param {!ImageBuffer.Overlay} overlay An overlay added to a buffer.
  */
 ImageBuffer.prototype.addOverlay = function(overlay) {
   var zIndex = overlay.getZIndex();
@@ -30,8 +34,8 @@ ImageBuffer.prototype.addOverlay = function(overlay) {
 };
 
 /**
- * TODO(JSDOC).
- * @param {ImageBuffer.Overlay} overlay  // TODO(JSDOC).
+ * Remove an overlay from a buffer.
+ * @param {!ImageBuffer.Overlay} overlay An overlay removed from a buffer.
  */
 ImageBuffer.prototype.removeOverlay = function(overlay) {
   for (var i = 0; i != this.overlays_.length; i++) {
@@ -85,7 +89,7 @@ ImageBuffer.prototype.onClick = function(x, y) {
  * @param {number} x Event X coordinate.
  * @param {number} y Event Y coordinate.
  * @param {boolean} touch True if it's a touch event, false if mouse.
- * @return {function(number,number)} A function to be called on mouse drag.
+ * @return {?ImageBuffer.DragHandler} A function to be called on mouse drag.
  */
 ImageBuffer.prototype.getDragHandler = function(x, y, touch) {
   for (var i = this.overlays_.length - 1; i >= 0; i--) {
@@ -101,7 +105,7 @@ ImageBuffer.prototype.getDragHandler = function(x, y, touch) {
  * layers in the descending Z-order.
  * @param {number} x X coordinate of the event.
  * @param {number} y Y coordinate of the event.
- * @return {ImageBuffer.DoubleTapAction} Action to perform as result.
+ * @return {!ImageBuffer.DoubleTapAction} Action to perform as result.
  */
 ImageBuffer.prototype.getDoubleTapAction = function(x, y) {
   for (var i = this.overlays_.length - 1; i >= 0; i--) {
@@ -114,7 +118,7 @@ ImageBuffer.prototype.getDoubleTapAction = function(x, y) {
 
 /**
  * Possible double tap actions.
- * @enum
+ * @enum {number}
  */
 ImageBuffer.DoubleTapAction = {
   NOTHING: 0,
@@ -125,23 +129,24 @@ ImageBuffer.DoubleTapAction = {
 /**
  * ImageBuffer.Overlay is a pluggable extension that modifies the outlook
  * and the behavior of the ImageBuffer instance.
- * @class
+ * @constructor
+ * @struct
  */
 ImageBuffer.Overlay = function() {};
 
 /**
- * TODO(JSDOC).
- * @return {number}  // TODO(JSDOC).
+ * Get Z index of this overlay.
+ * @return {number} Z index of this overlay.
  */
 ImageBuffer.Overlay.prototype.getZIndex = function() { return 0; };
 
 /**
- * TODO(JSDOC).
+ * Draw an overlay.
  */
 ImageBuffer.Overlay.prototype.draw = function() {};
 
 /**
- * TODO(JSDOC).
+ * Get cursor style.
  * @param {number} x X coordinate for cursor.
  * @param {number} y Y coordinate for cursor.
  * @param {boolean} mouseDown If mouse button is down.
@@ -153,31 +158,31 @@ ImageBuffer.Overlay.prototype.getCursorStyle = function(x, y, mouseDown) {
 };
 
 /**
- * TODO(JSDOC).
- * @param {number} x  // TODO(JSDOC).
- * @param {number} y  // TODO(JSDOC).
- * @return {boolean}  // TODO(JSDOC).
+ * Handle click.
+ * @param {number} x X coordinate.
+ * @param {number} y Y coordinate.
+ * @return {boolean} True if handled.
  */
 ImageBuffer.Overlay.prototype.onClick = function(x, y) {
   return false;
 };
 
 /**
- * TODO(JSDOC).
+ * Returns a drag handler.
  * @param {number} x Event X coordinate.
  * @param {number} y Event Y coordinate.
  * @param {boolean} touch True if it's a touch event, false if mouse.
- * @return {function(number,number)} A function to be called on mouse drag.
+ * @return {?ImageBuffer.DragHandler} A function to be called on mouse drag.
  */
 ImageBuffer.Overlay.prototype.getDragHandler = function(x, y, touch) {
   return null;
 };
 
 /**
- * TODO(JSDOC).
- * @param {number} x  // TODO(JSDOC).
- * @param {number} y  // TODO(JSDOC).
- * @return {ImageBuffer.DoubleTapAction}  // TODO(JSDOC).
+ * Returns an action for a double tap.
+ * @param {number} x X coordinate.
+ * @param {number} y Y coordinate.
+ * @return {ImageBuffer.DoubleTapAction} Double tap action.
  */
 ImageBuffer.Overlay.prototype.getDoubleTapAction = function(x, y) {
   return ImageBuffer.DoubleTapAction.NOTHING;

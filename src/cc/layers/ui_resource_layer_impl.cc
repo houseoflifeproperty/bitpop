@@ -9,8 +9,8 @@
 #include "cc/base/math_util.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/trees/layer_tree_impl.h"
-#include "cc/trees/occlusion_tracker.h"
-#include "ui/gfx/rect_f.h"
+#include "cc/trees/occlusion.h"
+#include "ui/gfx/geometry/rect_f.h"
 
 namespace cc {
 
@@ -29,7 +29,7 @@ UIResourceLayerImpl::~UIResourceLayerImpl() {}
 
 scoped_ptr<LayerImpl> UIResourceLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return UIResourceLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return UIResourceLayerImpl::Create(tree_impl, id());
 }
 
 void UIResourceLayerImpl::PushPropertiesTo(LayerImpl* layer) {
@@ -93,7 +93,6 @@ bool UIResourceLayerImpl::WillDraw(DrawMode draw_mode,
 
 void UIResourceLayerImpl::AppendQuads(
     RenderPass* render_pass,
-    const OcclusionTracker<LayerImpl>& occlusion_tracker,
     AppendQuadsData* append_quads_data) {
   SharedQuadState* shared_quad_state =
       render_pass->CreateAndAppendSharedQuadState();
@@ -112,6 +111,7 @@ void UIResourceLayerImpl::AppendQuads(
     return;
 
   static const bool flipped = false;
+  static const bool nearest_neighbor = false;
   static const bool premultiplied_alpha = true;
 
   DCHECK(!bounds().IsEmpty());
@@ -122,9 +122,8 @@ void UIResourceLayerImpl::AppendQuads(
   gfx::Rect quad_rect(bounds());
   gfx::Rect opaque_rect(opaque ? quad_rect : gfx::Rect());
   gfx::Rect visible_quad_rect =
-      occlusion_tracker.GetCurrentOcclusionForLayer(
-                            draw_properties().target_space_transform)
-          .GetUnoccludedContentRect(quad_rect);
+      draw_properties().occlusion_in_content_space.GetUnoccludedContentRect(
+          quad_rect);
   if (visible_quad_rect.IsEmpty())
     return;
 
@@ -140,7 +139,9 @@ void UIResourceLayerImpl::AppendQuads(
                uv_bottom_right_,
                SK_ColorTRANSPARENT,
                vertex_opacity_,
-               flipped);
+               flipped,
+               nearest_neighbor);
+  ValidateQuadResources(quad);
 }
 
 const char* UIResourceLayerImpl::LayerTypeAsString() const {

@@ -6,7 +6,6 @@
 #define CHROME_BROWSER_GUEST_VIEW_WEB_VIEW_CHROME_WEB_VIEW_GUEST_DELEGATE_H_
 
 #include "chrome/browser/extensions/api/web_view/chrome_web_view_internal_api.h"
-#include "chrome/browser/ui/zoom/zoom_observer.h"
 #include "extensions/browser/guest_view/web_view/web_view_guest.h"
 #include "extensions/browser/guest_view/web_view/web_view_guest_delegate.h"
 
@@ -14,41 +13,27 @@
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #endif
 
-class RenderViewContextMenu;
+class RenderViewContextMenuBase;
 
 namespace ui {
 class SimpleMenuModel;
 }  // namespace ui
 
-class ChromeWebViewGuestDelegate : public extensions::WebViewGuestDelegate,
-                                   public ZoomObserver {
+namespace extensions {
+
+class ChromeWebViewGuestDelegate : public WebViewGuestDelegate {
  public :
-  explicit ChromeWebViewGuestDelegate(
-      extensions::WebViewGuest* web_view_guest);
-  virtual ~ChromeWebViewGuestDelegate();
+  explicit ChromeWebViewGuestDelegate(WebViewGuest* web_view_guest);
+  ~ChromeWebViewGuestDelegate() override;
 
   // WebViewGuestDelegate implementation.
-  virtual double GetZoom() OVERRIDE;
-  virtual bool HandleContextMenu(
-      const content::ContextMenuParams& params) OVERRIDE;
-  virtual void OnAttachWebViewHelpers(content::WebContents* contents) OVERRIDE;
-  virtual void OnEmbedderDestroyed() OVERRIDE;
-  virtual void OnDidAttachToEmbedder() OVERRIDE;
-  virtual void OnDidCommitProvisionalLoadForFrame(bool is_main_frame) OVERRIDE;
-  virtual void OnDidInitialize() OVERRIDE;
-  virtual void OnDocumentLoadedInFrame(
-      content::RenderFrameHost* render_frame_host) OVERRIDE;
-  virtual void OnGuestDestroyed() OVERRIDE;
-  virtual void OnSetZoom(double zoom_factor) OVERRIDE;
-  virtual void OnShowContextMenu(
-      int request_id,
-      const MenuItemVector* items) OVERRIDE;
+  bool HandleContextMenu(const content::ContextMenuParams& params) override;
+  void OnAttachWebViewHelpers(content::WebContents* contents) override;
+  void OnDidInitialize() override;
+  void OnGuestDestroyed() override;
+  void OnShowContextMenu(int request_id, const MenuItemVector* items) override;
 
-  // ZoomObserver implementation.
-  virtual void OnZoomChanged(
-      const ZoomController::ZoomChangedEventData& data) OVERRIDE;
-
-  extensions::WebViewGuest* web_view_guest() const { return web_view_guest_; }
+  WebViewGuest* web_view_guest() const { return web_view_guest_; }
 
  private:
   content::WebContents* guest_web_contents() const {
@@ -74,12 +59,9 @@ class ChromeWebViewGuestDelegate : public extensions::WebViewGuestDelegate,
   // Set to |true| if ChromeVox was already injected in main frame.
   bool chromevox_injected_;
 
-  // Stores the current zoom factor.
-  double current_zoom_factor_;
-
-  // Holds the RenderViewContextMenu that has been built but yet to be
-  // shown. This is .Reset() after ShowContextMenu().
-  scoped_ptr<RenderViewContextMenu> pending_menu_;
+  // Holds the RenderViewContextMenuBase that has been built but yet to be
+  // shown. This is .reset() after ShowContextMenu().
+  scoped_ptr<RenderViewContextMenuBase> pending_menu_;
 
 #if defined(OS_CHROMEOS)
   // Subscription to receive notifications on changes to a11y settings.
@@ -87,10 +69,16 @@ class ChromeWebViewGuestDelegate : public extensions::WebViewGuestDelegate,
       accessibility_subscription_;
 #endif
 
-  extensions::WebViewGuest* const web_view_guest_;
+  WebViewGuest* const web_view_guest_;
+
+  // This is used to ensure pending tasks will not fire after this object is
+  // destroyed.
+  base::WeakPtrFactory<ChromeWebViewGuestDelegate> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeWebViewGuestDelegate);
 };
+
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_GUEST_VIEW_WEB_VIEW_CHROME_WEB_VIEW_GUEST_DELEGATE_H_
 

@@ -8,8 +8,8 @@
 #include <set>
 
 #include "base/scoped_observer.h"
-#include "chrome/browser/extensions/user_script_loader.h"
 #include "extensions/browser/extension_registry_observer.h"
+#include "extensions/browser/extension_user_script_loader.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/user_script.h"
 
@@ -29,19 +29,18 @@ class ExtensionRegistry;
 class SharedUserScriptMaster : public ExtensionRegistryObserver {
  public:
   explicit SharedUserScriptMaster(Profile* profile);
-  virtual ~SharedUserScriptMaster();
+  ~SharedUserScriptMaster() override;
 
   // Provides access to loader state method: scripts_ready().
   bool scripts_ready() const { return loader_.scripts_ready(); }
 
  private:
   // ExtensionRegistryObserver implementation.
-  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
-                                 const Extension* extension) OVERRIDE;
-  virtual void OnExtensionUnloaded(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+  void OnExtensionLoaded(content::BrowserContext* browser_context,
+                         const Extension* extension) override;
+  void OnExtensionUnloaded(content::BrowserContext* browser_context,
+                           const Extension* extension,
+                           UnloadedExtensionInfo::Reason reason) override;
 
   // Gets an extension's scripts' metadata; i.e., gets a list of UserScript
   // objects that contains script info, but not the contents of the scripts.
@@ -49,7 +48,7 @@ class SharedUserScriptMaster : public ExtensionRegistryObserver {
 
   // Script loader that handles loading contents of scripts into shared memory
   // and notifying renderers of scripts in shared memory.
-  UserScriptLoader loader_;
+  ExtensionUserScriptLoader loader_;
 
   // The profile for which the scripts managed here are installed.
   Profile* profile_;

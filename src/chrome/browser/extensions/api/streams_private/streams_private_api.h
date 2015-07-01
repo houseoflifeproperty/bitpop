@@ -16,6 +16,7 @@
 namespace content {
 class BrowserContext;
 class StreamHandle;
+struct StreamInfo;
 }
 
 namespace extensions {
@@ -28,18 +29,22 @@ class StreamsPrivateAPI : public BrowserContextKeyedAPI,
   static StreamsPrivateAPI* Get(content::BrowserContext* context);
 
   explicit StreamsPrivateAPI(content::BrowserContext* context);
-  virtual ~StreamsPrivateAPI();
+  ~StreamsPrivateAPI() override;
 
   // Send the onExecuteMimeTypeHandler event to |extension_id|.
   // |web_contents| is used to determine the tabId where the document is being
   // opened. The data for the document will be readable from |stream|, and
   // should be |expected_content_size| bytes long. If the viewer is being opened
-  // in a BrowserPlugin, specify a non-empty |view_id| of the plugin.
+  // in a BrowserPlugin, specify a non-empty |view_id| of the plugin. |embedded|
+  // should be set to whether the document is embedded within another document.
   void ExecuteMimeTypeHandler(const std::string& extension_id,
                               content::WebContents* web_contents,
-                              scoped_ptr<content::StreamHandle> stream,
+                              scoped_ptr<content::StreamInfo> stream,
                               const std::string& view_id,
-                              int64 expected_content_size);
+                              int64 expected_content_size,
+                              bool embedded,
+                              int render_process_id,
+                              int render_frame_id);
 
   void AbortStream(const std::string& extension_id,
                    const GURL& stream_url,
@@ -55,10 +60,9 @@ class StreamsPrivateAPI : public BrowserContextKeyedAPI,
                             linked_ptr<content::StreamHandle> > > StreamMap;
 
   // ExtensionRegistryObserver implementation.
-  virtual void OnExtensionUnloaded(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+  void OnExtensionUnloaded(content::BrowserContext* browser_context,
+                           const Extension* extension,
+                           UnloadedExtensionInfo::Reason reason) override;
 
   // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
@@ -84,10 +88,10 @@ class StreamsPrivateAbortFunction : public UIThreadExtensionFunction {
   DECLARE_EXTENSION_FUNCTION("streamsPrivate.abort", STREAMSPRIVATE_ABORT)
 
  protected:
-  virtual ~StreamsPrivateAbortFunction() {}
+  ~StreamsPrivateAbortFunction() override {}
 
   // ExtensionFunction:
-  virtual ExtensionFunction::ResponseAction Run() OVERRIDE;
+  ExtensionFunction::ResponseAction Run() override;
 
  private:
   void OnClose();

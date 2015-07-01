@@ -7,6 +7,7 @@
 
 #include "bindings/core/v8/PrivateScriptRunner.h"
 #include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8BindingForTesting.h"
 #include "bindings/core/v8/V8PrivateScriptTest.h"
 #include "core/testing/DummyPageHolder.h"
 
@@ -23,7 +24,7 @@ public:
     PrivateScriptTestTest()
         : m_scope(v8::Isolate::GetCurrent())
         , m_dummyPageHolder(DummyPageHolder::create())
-        , m_privateScriptTest(PrivateScriptTest::create(frame()))
+        , m_privateScriptTest(PrivateScriptTest::create(document()))
     {
     }
 

@@ -34,7 +34,7 @@ class POLICY_EXPORT ConfigurationPolicyProvider
   // and it's not guaranteed that the message loops will still be running when
   // this is invoked. Override Shutdown() instead for cleanup code that needs
   // to post to the FILE thread, for example.
-  virtual ~ConfigurationPolicyProvider();
+  ~ConfigurationPolicyProvider() override;
 
   // Invoked as soon as the main message loops are spinning. Policy providers
   // are created early during startup to provide the initial policies; the
@@ -71,8 +71,8 @@ class POLICY_EXPORT ConfigurationPolicyProvider
   virtual void RemoveObserver(Observer* observer);
 
   // SchemaRegistry::Observer:
-  virtual void OnSchemaRegistryUpdated(bool has_new_schemas) OVERRIDE;
-  virtual void OnSchemaRegistryReady() OVERRIDE;
+  void OnSchemaRegistryUpdated(bool has_new_schemas) override;
+  void OnSchemaRegistryReady() override;
 
  protected:
   // Subclasses must invoke this to update the policies currently served by
@@ -88,8 +88,9 @@ class POLICY_EXPORT ConfigurationPolicyProvider
   // The policies currently configured at this provider.
   PolicyBundle policy_bundle_;
 
-  // Whether Shutdown() has been invoked.
-  bool did_shutdown_;
+  // Used to validate proper Init() and Shutdown() nesting. This flag is set by
+  // Init() and cleared by Shutdown() and needs to be false in the destructor.
+  bool initialized_;
 
   SchemaRegistry* schema_registry_;
 

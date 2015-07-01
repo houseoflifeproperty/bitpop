@@ -76,13 +76,10 @@
 // states, based on the State enum specified in the state_ member.  Those states
 // are:
 //
-//  INITIALIZED,                   // Constructor was called.
-//  INIT_TASK_SCHEDULED,           // Waiting for deferred init tasks to finish.
-//  INIT_TASK_DONE,                // Waiting for timer to send initial log.
-//  SENDING_INITIAL_STABILITY_LOG, // Initial stability log being sent.
-//  SENDING_INITIAL_METRICS_LOG,   // Initial metrics log being sent.
-//  SENDING_OLD_LOGS,              // Sending unsent logs from previous session.
-//  SENDING_CURRENT_LOGS,          // Sending ongoing logs as they acrue.
+//  INITIALIZED,          // Constructor was called.
+//  INIT_TASK_SCHEDULED,  // Waiting for deferred init tasks to finish.
+//  INIT_TASK_DONE,       // Waiting for timer to send initial log.
+//  SENDING_LOGS,         // Sending logs and creating new ones when we run out.
 //
 // In more detail, we have:
 //
@@ -102,53 +99,17 @@
 // created.  This callback typically arrives back less than one second after
 // the deferred init task is dispatched.
 //
-//    SENDING_INITIAL_STABILITY_LOG,  // Initial stability log being sent.
-// During initialization, if a crash occurred during the previous session, an
-// initial stability log will be generated and registered with the log manager.
-// This state will be entered if a stability log was prepared during metrics
-// service initialization (in InitializeMetricsRecordingState()) and is waiting
-// to be transmitted when it's time to send up the first log (per the reporting
-// scheduler).  If there is no initial stability log (e.g. there was no previous
-// crash), then this state will be skipped and the state will advance to
-// SENDING_INITIAL_METRICS_LOG.
+//    SENDING_LOGS,  // Sending logs an creating new ones when we run out.
+// Logs from previous sessions have been loaded, and initial logs have been
+// created (an optional stability log and the first metrics log).  We will
+// send all of these logs, and when run out, we will start cutting new logs
+// to send.  We will also cut a new log if we expect a shutdown.
 //
-//    SENDING_INITIAL_METRICS_LOG,  // Initial metrics log being sent.
-// This state is entered after the initial metrics log has been composed, and
-// prepared for transmission.  This happens after SENDING_INITIAL_STABILITY_LOG
-// if there was an initial stability log (see above).  It is also the case that
-// any previously unsent logs have been loaded into instance variables for
-// possible transmission.
+// The progression through the above states is simple, and sequential.
+// States proceed from INITIAL to SENDING_LOGS, and remain in the latter until
+// shutdown.
 //
-//    SENDING_OLD_LOGS,       // Sending unsent logs from previous session.
-// This state indicates that the initial log for this session has been
-// successfully sent and it is now time to send any logs that were
-// saved from previous sessions.  All such logs will be transmitted before
-// exiting this state, and proceeding with ongoing logs from the current session
-// (see next state).
-//
-//    SENDING_CURRENT_LOGS,   // Sending standard current logs as they accrue.
-// Current logs are being accumulated.  Typically every 20 minutes a log is
-// closed and finalized for transmission, at the same time as a new log is
-// started.
-//
-// The progression through the above states is simple, and sequential, in the
-// most common use cases.  States proceed from INITIAL to SENDING_CURRENT_LOGS,
-// and remain in the latter until shutdown.
-//
-// The one unusual case is when the user asks that we stop logging.  When that
-// happens, any staged (transmission in progress) log is persisted, and any log
-// that is currently accumulating is also finalized and persisted.  We then
-// regress back to the SEND_OLD_LOGS state in case the user enables log
-// recording again during this session.  This way anything we have persisted
-// will be sent automatically if/when we progress back to SENDING_CURRENT_LOG
-// state.
-//
-// Another similar case is on mobile, when the application is backgrounded and
-// then foregrounded again. Backgrounding created new "old" stored logs, so the
-// state drops back from SENDING_CURRENT_LOGS to SENDING_OLD_LOGS so those logs
-// will be sent.
-//
-// Also note that whenever we successfully send an old log, we mirror the list
+// Also note that whenever we successfully send a log, we mirror the list
 // of logs into the PrefService. This ensures that IF we crash, we won't start
 // up and retransmit our old logs again.
 //
@@ -227,12 +188,6 @@ const size_t kUploadLogAvoidRetransmitSize = 100 * 1024;
 // Interval, in minutes, between state saves.
 const int kSaveStateIntervalMinutes = 5;
 
-// The metrics server's URL.
-const char kServerUrl[] = "https://clients4.google.com/uma/v2";
-
-// The MIME type for the uploaded metrics data.
-const char kMimeType[] = "application/vnd.chrome.uma";
-
 enum ResponseStatus {
   UNKNOWN_FAILURE,
   SUCCESS,
@@ -254,14 +209,16 @@ ResponseStatus ResponseCodeToStatus(int response_code) {
   }
 }
 
+#if defined(OS_ANDROID) || defined(OS_IOS)
 void MarkAppCleanShutdownAndCommit(CleanExitBeacon* clean_exit_beacon,
                                    PrefService* local_state) {
   clean_exit_beacon->WriteBeaconValue(true);
-  local_state->SetInteger(metrics::prefs::kStabilityExecutionPhase,
+  local_state->SetInteger(prefs::kStabilityExecutionPhase,
                           MetricsService::SHUTDOWN_COMPLETE);
   // Start writing right away (write happens on a different thread).
   local_state->CommitPendingWrite();
 }
+#endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 }  // namespace
 
@@ -284,32 +241,30 @@ MetricsService::ExecutionPhase MetricsService::execution_phase_ =
 // static
 void MetricsService::RegisterPrefs(PrefRegistrySimple* registry) {
   DCHECK(IsSingleThreaded());
-  metrics::MetricsStateManager::RegisterPrefs(registry);
+  MetricsStateManager::RegisterPrefs(registry);
   MetricsLog::RegisterPrefs(registry);
 
-  registry->RegisterInt64Pref(metrics::prefs::kInstallDate, 0);
+  registry->RegisterInt64Pref(prefs::kInstallDate, 0);
 
-  registry->RegisterInt64Pref(metrics::prefs::kStabilityLaunchTimeSec, 0);
-  registry->RegisterInt64Pref(metrics::prefs::kStabilityLastTimestampSec, 0);
-  registry->RegisterStringPref(metrics::prefs::kStabilityStatsVersion,
-                               std::string());
-  registry->RegisterInt64Pref(metrics::prefs::kStabilityStatsBuildTime, 0);
-  registry->RegisterBooleanPref(metrics::prefs::kStabilityExitedCleanly, true);
-  registry->RegisterIntegerPref(metrics::prefs::kStabilityExecutionPhase,
+  registry->RegisterInt64Pref(prefs::kStabilityLaunchTimeSec, 0);
+  registry->RegisterInt64Pref(prefs::kStabilityLastTimestampSec, 0);
+  registry->RegisterStringPref(prefs::kStabilityStatsVersion, std::string());
+  registry->RegisterInt64Pref(prefs::kStabilityStatsBuildTime, 0);
+  registry->RegisterBooleanPref(prefs::kStabilityExitedCleanly, true);
+  registry->RegisterIntegerPref(prefs::kStabilityExecutionPhase,
                                 UNINITIALIZED_PHASE);
-  registry->RegisterBooleanPref(metrics::prefs::kStabilitySessionEndCompleted,
-                                true);
-  registry->RegisterIntegerPref(metrics::prefs::kMetricsSessionID, -1);
+  registry->RegisterBooleanPref(prefs::kStabilitySessionEndCompleted, true);
+  registry->RegisterIntegerPref(prefs::kMetricsSessionID, -1);
 
-  registry->RegisterListPref(metrics::prefs::kMetricsInitialLogs);
-  registry->RegisterListPref(metrics::prefs::kMetricsOngoingLogs);
+  registry->RegisterListPref(prefs::kMetricsInitialLogs);
+  registry->RegisterListPref(prefs::kMetricsOngoingLogs);
 
-  registry->RegisterInt64Pref(metrics::prefs::kUninstallLaunchCount, 0);
-  registry->RegisterInt64Pref(metrics::prefs::kUninstallMetricsUptimeSec, 0);
+  registry->RegisterInt64Pref(prefs::kUninstallLaunchCount, 0);
+  registry->RegisterInt64Pref(prefs::kUninstallMetricsUptimeSec, 0);
 }
 
-MetricsService::MetricsService(metrics::MetricsStateManager* state_manager,
-                               metrics::MetricsServiceClient* client,
+MetricsService::MetricsService(MetricsStateManager* state_manager,
+                               MetricsServiceClient* client,
                                PrefService* local_state)
     : log_manager_(local_state, kUploadLogAvoidRetransmitSize),
       histogram_snapshot_manager_(this),
@@ -321,7 +276,6 @@ MetricsService::MetricsService(metrics::MetricsStateManager* state_manager,
       reporting_active_(false),
       test_mode_active_(false),
       state_(INITIALIZED),
-      has_initial_stability_log_(false),
       log_upload_in_progress_(false),
       idle_since_last_transmission_(false),
       session_id_(-1),
@@ -333,11 +287,9 @@ MetricsService::MetricsService(metrics::MetricsStateManager* state_manager,
   DCHECK(local_state_);
 
   // Set the install date if this is our first run.
-  int64 install_date = local_state_->GetInt64(metrics::prefs::kInstallDate);
-  if (install_date == 0) {
-    local_state_->SetInt64(metrics::prefs::kInstallDate,
-                           base::Time::Now().ToTimeT());
-  }
+  int64 install_date = local_state_->GetInt64(prefs::kInstallDate);
+  if (install_date == 0)
+    local_state_->SetInt64(prefs::kInstallDate, base::Time::Now().ToTimeT());
 }
 
 MetricsService::~MetricsService() {
@@ -347,9 +299,16 @@ MetricsService::~MetricsService() {
 void MetricsService::InitializeMetricsRecordingState() {
   InitializeMetricsState();
 
-  base::Closure callback = base::Bind(&MetricsService::StartScheduledUpload,
-                                      self_ptr_factory_.GetWeakPtr());
-  scheduler_.reset(new MetricsReportingScheduler(callback));
+  base::Closure upload_callback =
+      base::Bind(&MetricsService::StartScheduledUpload,
+                 self_ptr_factory_.GetWeakPtr());
+  scheduler_.reset(
+      new MetricsReportingScheduler(
+          upload_callback,
+          // MetricsServiceClient outlives MetricsService, and
+          // MetricsReportingScheduler is tied to the lifetime of |this|.
+          base::Bind(&MetricsServiceClient::GetStandardUploadInterval,
+                     base::Unretained(client_))));
 }
 
 void MetricsService::Start() {
@@ -393,7 +352,11 @@ std::string MetricsService::GetClientId() {
 }
 
 int64 MetricsService::GetInstallDate() {
-  return local_state_->GetInt64(metrics::prefs::kInstallDate);
+  return local_state_->GetInt64(prefs::kInstallDate);
+}
+
+int64 MetricsService::GetMetricsReportingEnabledDate() {
+  return local_state_->GetInt64(prefs::kMetricsReportingEnabledTimestamp);
 }
 
 scoped_ptr<const base::FieldTrial::EntropyProvider>
@@ -430,6 +393,8 @@ void MetricsService::DisableRecording() {
   if (!recording_active_)
     return;
   recording_active_ = false;
+
+  client_->OnRecordingDisabled();
 
   base::RemoveActionCallback(action_callback_);
 
@@ -488,12 +453,12 @@ void MetricsService::OnApplicationNotIdle() {
 
 void MetricsService::RecordStartOfSessionEnd() {
   LogCleanShutdown();
-  RecordBooleanPrefValue(metrics::prefs::kStabilitySessionEndCompleted, false);
+  RecordBooleanPrefValue(prefs::kStabilitySessionEndCompleted, false);
 }
 
 void MetricsService::RecordCompletedSessionEnd() {
   LogCleanShutdown();
-  RecordBooleanPrefValue(metrics::prefs::kStabilitySessionEndCompleted, true);
+  RecordBooleanPrefValue(prefs::kStabilitySessionEndCompleted, true);
 }
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
@@ -506,7 +471,7 @@ void MetricsService::OnAppEnterBackground() {
   // killed, so this has to be treated similar to a shutdown, closing and
   // persisting all logs. Unlinke a shutdown, the state is primed to be ready
   // to continue logging and uploading if the process does return.
-  if (recording_active() && state_ >= SENDING_INITIAL_STABILITY_LOG) {
+  if (recording_active() && state_ >= SENDING_LOGS) {
     PushPendingLogsToPersistentStorage();
     // Persisting logs closes the current log, so start recording a new log
     // immediately to capture any background work that might be done before the
@@ -531,22 +496,38 @@ void MetricsService::LogNeedForCleanShutdown() {
 void MetricsService::SetExecutionPhase(ExecutionPhase execution_phase,
                                        PrefService* local_state) {
   execution_phase_ = execution_phase;
-  local_state->SetInteger(metrics::prefs::kStabilityExecutionPhase,
-                          execution_phase_);
+  local_state->SetInteger(prefs::kStabilityExecutionPhase, execution_phase_);
 }
 
 void MetricsService::RecordBreakpadRegistration(bool success) {
   if (!success)
-    IncrementPrefValue(metrics::prefs::kStabilityBreakpadRegistrationFail);
+    IncrementPrefValue(prefs::kStabilityBreakpadRegistrationFail);
   else
-    IncrementPrefValue(metrics::prefs::kStabilityBreakpadRegistrationSuccess);
+    IncrementPrefValue(prefs::kStabilityBreakpadRegistrationSuccess);
 }
 
 void MetricsService::RecordBreakpadHasDebugger(bool has_debugger) {
   if (!has_debugger)
-    IncrementPrefValue(metrics::prefs::kStabilityDebuggerNotPresent);
+    IncrementPrefValue(prefs::kStabilityDebuggerNotPresent);
   else
-    IncrementPrefValue(metrics::prefs::kStabilityDebuggerPresent);
+    IncrementPrefValue(prefs::kStabilityDebuggerPresent);
+}
+
+void MetricsService::ClearSavedStabilityMetrics() {
+  for (size_t i = 0; i < metrics_providers_.size(); ++i)
+    metrics_providers_[i]->ClearSavedStabilityMetrics();
+
+  // Reset the prefs that are managed by MetricsService/MetricsLog directly.
+  local_state_->SetInteger(prefs::kStabilityCrashCount, 0);
+  local_state_->SetInteger(prefs::kStabilityExecutionPhase,
+                           UNINITIALIZED_PHASE);
+  local_state_->SetInteger(prefs::kStabilityIncompleteSessionEndCount, 0);
+  local_state_->SetInteger(prefs::kStabilityLaunchCount, 0);
+  local_state_->SetBoolean(prefs::kStabilitySessionEndCompleted, true);
+}
+
+void MetricsService::PushExternalLog(const std::string& log) {
+  log_manager_.StoreLog(log, MetricsLog::ONGOING_LOG);
 }
 
 //------------------------------------------------------------------------------
@@ -563,27 +544,29 @@ void MetricsService::InitializeMetricsState() {
   bool version_changed = false;
   if (local_state_->GetInt64(prefs::kStabilityStatsBuildTime) != buildtime ||
       local_state_->GetString(prefs::kStabilityStatsVersion) != version) {
-    local_state_->SetString(metrics::prefs::kStabilityStatsVersion, version);
-    local_state_->SetInt64(metrics::prefs::kStabilityStatsBuildTime, buildtime);
+    local_state_->SetString(prefs::kStabilityStatsVersion, version);
+    local_state_->SetInt64(prefs::kStabilityStatsBuildTime, buildtime);
     version_changed = true;
   }
 
   log_manager_.LoadPersistedUnsentLogs();
 
-  session_id_ = local_state_->GetInteger(metrics::prefs::kMetricsSessionID);
+  session_id_ = local_state_->GetInteger(prefs::kMetricsSessionID);
 
   if (!clean_exit_beacon_.exited_cleanly()) {
-    IncrementPrefValue(metrics::prefs::kStabilityCrashCount);
+    IncrementPrefValue(prefs::kStabilityCrashCount);
     // Reset flag, and wait until we call LogNeedForCleanShutdown() before
     // monitoring.
     clean_exit_beacon_.WriteBeaconValue(true);
   }
 
-  if (!clean_exit_beacon_.exited_cleanly() || ProvidersHaveStabilityMetrics()) {
+  bool has_initial_stability_log = false;
+  if (!clean_exit_beacon_.exited_cleanly() ||
+      ProvidersHaveInitialStabilityMetrics()) {
     // TODO(rtenneti): On windows, consider saving/getting execution_phase from
     // the registry.
     int execution_phase =
-        local_state_->GetInteger(metrics::prefs::kStabilityExecutionPhase);
+        local_state_->GetInteger(prefs::kStabilityExecutionPhase);
     UMA_HISTOGRAM_SPARSE_SLOWLY("Chrome.Browser.CrashedExecutionPhase",
                                 execution_phase);
 
@@ -591,7 +574,7 @@ void MetricsService::InitializeMetricsState() {
     // explicitly requests it, prepare an initial stability log -
     // provided UMA is enabled.
     if (state_manager_->IsMetricsReportingEnabled())
-      PrepareInitialStabilityLog();
+      has_initial_stability_log = PrepareInitialStabilityLog();
   }
 
   // If no initial stability log was generated and there was a version upgrade,
@@ -600,35 +583,23 @@ void MetricsService::InitializeMetricsState() {
   // number of different edge cases, such as if the last version crashed before
   // it could save off a system profile or if UMA reporting is disabled (which
   // normally results in stats being accumulated).
-  if (!has_initial_stability_log_ && version_changed) {
-    for (size_t i = 0; i < metrics_providers_.size(); ++i)
-      metrics_providers_[i]->ClearSavedStabilityMetrics();
-
-    // Reset the prefs that are managed by MetricsService/MetricsLog directly.
-    local_state_->SetInteger(prefs::kStabilityCrashCount, 0);
-    local_state_->SetInteger(prefs::kStabilityExecutionPhase,
-                             UNINITIALIZED_PHASE);
-    local_state_->SetInteger(prefs::kStabilityIncompleteSessionEndCount, 0);
-    local_state_->SetInteger(prefs::kStabilityLaunchCount, 0);
-    local_state_->SetBoolean(prefs::kStabilitySessionEndCompleted, true);
-  }
+  if (!has_initial_stability_log && version_changed)
+    ClearSavedStabilityMetrics();
 
   // Update session ID.
   ++session_id_;
-  local_state_->SetInteger(metrics::prefs::kMetricsSessionID, session_id_);
+  local_state_->SetInteger(prefs::kMetricsSessionID, session_id_);
 
   // Stability bookkeeping
-  IncrementPrefValue(metrics::prefs::kStabilityLaunchCount);
+  IncrementPrefValue(prefs::kStabilityLaunchCount);
 
   DCHECK_EQ(UNINITIALIZED_PHASE, execution_phase_);
   SetExecutionPhase(START_METRICS_RECORDING, local_state_);
 
-  if (!local_state_->GetBoolean(
-          metrics::prefs::kStabilitySessionEndCompleted)) {
-    IncrementPrefValue(metrics::prefs::kStabilityIncompleteSessionEndCount);
+  if (!local_state_->GetBoolean(prefs::kStabilitySessionEndCompleted)) {
+    IncrementPrefValue(prefs::kStabilityIncompleteSessionEndCount);
     // This is marked false when we get a WM_ENDSESSION.
-    local_state_->SetBoolean(metrics::prefs::kStabilitySessionEndCompleted,
-                             true);
+    local_state_->SetBoolean(prefs::kStabilitySessionEndCompleted, true);
   }
 
   // Call GetUptimes() for the first time, thus allowing all later calls
@@ -638,13 +609,13 @@ void MetricsService::InitializeMetricsState() {
   GetUptimes(local_state_, &startup_uptime, &ignored_uptime_parameter);
   DCHECK_EQ(0, startup_uptime.InMicroseconds());
   // For backwards compatibility, leave this intact in case Omaha is checking
-  // them.  metrics::prefs::kStabilityLastTimestampSec may also be useless now.
+  // them.  prefs::kStabilityLastTimestampSec may also be useless now.
   // TODO(jar): Delete these if they have no uses.
-  local_state_->SetInt64(metrics::prefs::kStabilityLaunchTimeSec,
+  local_state_->SetInt64(prefs::kStabilityLaunchTimeSec,
                          base::Time::Now().ToTimeT());
 
   // Bookkeeping for the uninstall metrics.
-  IncrementLongPrefsValue(metrics::prefs::kUninstallLaunchCount);
+  IncrementLongPrefsValue(prefs::kUninstallLaunchCount);
 
   // Kick off the process of saving the state (so the uptime numbers keep
   // getting updated) every n minutes.
@@ -688,10 +659,9 @@ void MetricsService::GetUptimes(PrefService* pref,
 
   const int64 incremental_time_secs = incremental_uptime->InSeconds();
   if (incremental_time_secs > 0) {
-    int64 metrics_uptime =
-        pref->GetInt64(metrics::prefs::kUninstallMetricsUptimeSec);
+    int64 metrics_uptime = pref->GetInt64(prefs::kUninstallMetricsUptimeSec);
     metrics_uptime += incremental_time_secs;
-    pref->SetInt64(metrics::prefs::kUninstallMetricsUptimeSec, metrics_uptime);
+    pref->SetInt64(prefs::kUninstallMetricsUptimeSec, metrics_uptime);
   }
 }
 
@@ -766,10 +736,7 @@ void MetricsService::CloseCurrentLog() {
   // MetricsLog class.
   MetricsLog* current_log = log_manager_.current_log();
   DCHECK(current_log);
-  std::vector<variations::ActiveGroupId> synthetic_trials;
-  GetCurrentSyntheticFieldTrials(&synthetic_trials);
-  current_log->RecordEnvironment(
-      metrics_providers_.get(), synthetic_trials, GetInstallDate());
+  RecordCurrentEnvironment(current_log);
   base::TimeDelta incremental_uptime;
   base::TimeDelta uptime;
   GetUptimes(local_state_, &incremental_uptime, &uptime);
@@ -783,16 +750,11 @@ void MetricsService::CloseCurrentLog() {
 }
 
 void MetricsService::PushPendingLogsToPersistentStorage() {
-  if (state_ < SENDING_INITIAL_STABILITY_LOG)
+  if (state_ < SENDING_LOGS)
     return;  // We didn't and still don't have time to get plugin list etc.
 
   CloseCurrentLog();
   log_manager_.PersistUnsentLogs();
-
-  // If there was a staged and/or current log, then there is now at least one
-  // log waiting to be uploaded.
-  if (log_manager_.has_unsent_logs())
-    state_ = SENDING_OLD_LOGS;
 }
 
 //------------------------------------------------------------------------------
@@ -807,12 +769,13 @@ void MetricsService::StartSchedulerIfNecessary() {
   // creation of the initial log, which must be done in order for any logs to be
   // persisted on shutdown or backgrounding.
   if (recording_active() &&
-      (reporting_active() || state_ < SENDING_INITIAL_STABILITY_LOG)) {
+      (reporting_active() || state_ < SENDING_LOGS)) {
     scheduler_->Start();
   }
 }
 
 void MetricsService::StartScheduledUpload() {
+  DCHECK(state_ >= INIT_TASK_DONE);
   // If we're getting no notifications, then the log won't have much in it, and
   // it's possible the computer is about to go to sleep, so don't upload and
   // stop the scheduler.
@@ -823,30 +786,18 @@ void MetricsService::StartScheduledUpload() {
   // recording are turned off instead of letting it fire and then aborting.
   if (idle_since_last_transmission_ ||
       !recording_active() ||
-      (!reporting_active() && state_ >= SENDING_INITIAL_STABILITY_LOG)) {
+      (!reporting_active() && state_ >= SENDING_LOGS)) {
     scheduler_->Stop();
     scheduler_->UploadCancelled();
     return;
   }
 
-  // If the callback was to upload an old log, but there no longer is one,
-  // just report success back to the scheduler to begin the ongoing log
-  // callbacks.
-  // TODO(stuartmorgan): Consider removing the distinction between
-  // SENDING_OLD_LOGS and SENDING_CURRENT_LOGS to simplify the state machine
-  // now that the log upload flow is the same for both modes.
-  if (state_ == SENDING_OLD_LOGS && !log_manager_.has_unsent_logs()) {
-    state_ = SENDING_CURRENT_LOGS;
-    scheduler_->UploadFinished(true /* healthy */, false /* no unsent logs */);
-    return;
-  }
   // If there are unsent logs, send the next one. If not, start the asynchronous
   // process of finalizing the current log for upload.
-  if (state_ == SENDING_OLD_LOGS) {
-    DCHECK(log_manager_.has_unsent_logs());
-    log_manager_.StageNextLogForUpload();
-    SendStagedLog();
+  if (state_ == SENDING_LOGS && log_manager_.has_unsent_logs()) {
+    SendNextLog();
   } else {
+    // There are no logs left to send, so start creating a new one.
     client_->CollectFinalMetrics(
         base::Bind(&MetricsService::OnFinalLogInfoCollectionDone,
                    self_ptr_factory_.GetWeakPtr()));
@@ -868,74 +819,46 @@ void MetricsService::OnFinalLogInfoCollectionDone() {
     return;
   }
 
-  StageNewLog();
+  if (state_ == INIT_TASK_DONE) {
+    PrepareInitialMetricsLog();
+  } else {
+    DCHECK_EQ(SENDING_LOGS, state_);
+    CloseCurrentLog();
+    OpenNewLog();
+  }
+  SendNextLog();
+}
 
-  // If logs shouldn't be uploaded, stop here. It's important that this check
-  // be after StageNewLog(), otherwise the previous logs will never be loaded,
-  // and thus the open log won't be persisted.
-  // TODO(stuartmorgan): This is unnecessarily complicated; restructure loading
-  // of previous logs to not require running part of the upload logic.
-  // http://crbug.com/157337
+void MetricsService::SendNextLog() {
+  DCHECK_EQ(SENDING_LOGS, state_);
   if (!reporting_active()) {
     scheduler_->Stop();
     scheduler_->UploadCancelled();
     return;
   }
-
+  if (!log_manager_.has_unsent_logs()) {
+    // Should only get here if serializing the log failed somehow.
+    // Just tell the scheduler it was uploaded and wait for the next log
+    // interval.
+    scheduler_->UploadFinished(true, log_manager_.has_unsent_logs());
+    return;
+  }
+  if (!log_manager_.has_staged_log())
+    log_manager_.StageNextLogForUpload();
   SendStagedLog();
 }
 
-void MetricsService::StageNewLog() {
-  if (log_manager_.has_staged_log())
-    return;
-
-  switch (state_) {
-    case INITIALIZED:
-    case INIT_TASK_SCHEDULED:  // We should be further along by now.
-      NOTREACHED();
-      return;
-
-    case INIT_TASK_DONE:
-      if (has_initial_stability_log_) {
-        // There's an initial stability log, ready to send.
-        log_manager_.StageNextLogForUpload();
-        has_initial_stability_log_ = false;
-        state_ = SENDING_INITIAL_STABILITY_LOG;
-      } else {
-        PrepareInitialMetricsLog();
-        state_ = SENDING_INITIAL_METRICS_LOG;
-      }
-      break;
-
-    case SENDING_OLD_LOGS:
-      NOTREACHED();  // Shouldn't be staging a new log during old log sending.
-      return;
-
-    case SENDING_CURRENT_LOGS:
-      CloseCurrentLog();
-      OpenNewLog();
-      log_manager_.StageNextLogForUpload();
-      break;
-
-    default:
-      NOTREACHED();
-      return;
-  }
-
-  DCHECK(log_manager_.has_staged_log());
-}
-
-bool MetricsService::ProvidersHaveStabilityMetrics() {
-  // Check whether any metrics provider has stability metrics.
+bool MetricsService::ProvidersHaveInitialStabilityMetrics() {
+  // Check whether any metrics provider has initial stability metrics.
   for (size_t i = 0; i < metrics_providers_.size(); ++i) {
-    if (metrics_providers_[i]->HasStabilityMetrics())
+    if (metrics_providers_[i]->HasInitialStabilityMetrics())
       return true;
   }
 
   return false;
 }
 
-void MetricsService::PrepareInitialStabilityLog() {
+bool MetricsService::PrepareInitialStabilityLog() {
   DCHECK_EQ(INITIALIZED, state_);
 
   scoped_ptr<MetricsLog> initial_stability_log(
@@ -945,7 +868,7 @@ void MetricsService::PrepareInitialStabilityLog() {
   // log describes stats from the _previous_ session.
 
   if (!initial_stability_log->LoadSavedEnvironmentFromPrefs())
-    return;
+    return false;
 
   log_manager_.PauseCurrentLog();
   log_manager_.BeginLoggingWithLog(initial_stability_log.Pass());
@@ -966,17 +889,13 @@ void MetricsService::PrepareInitialStabilityLog() {
   // that they're not lost in case of a crash before upload time.
   log_manager_.PersistUnsentLogs();
 
-  has_initial_stability_log_ = true;
+  return true;
 }
 
 void MetricsService::PrepareInitialMetricsLog() {
-  DCHECK(state_ == INIT_TASK_DONE || state_ == SENDING_INITIAL_STABILITY_LOG);
+  DCHECK_EQ(INIT_TASK_DONE, state_);
 
-  std::vector<variations::ActiveGroupId> synthetic_trials;
-  GetCurrentSyntheticFieldTrials(&synthetic_trials);
-  initial_metrics_log_->RecordEnvironment(metrics_providers_.get(),
-                                          synthetic_trials,
-                                          GetInstallDate());
+  RecordCurrentEnvironment(initial_metrics_log_.get());
   base::TimeDelta incremental_uptime;
   base::TimeDelta uptime;
   GetUptimes(local_state_, &incremental_uptime, &uptime);
@@ -1001,8 +920,7 @@ void MetricsService::PrepareInitialMetricsLog() {
   // that they're not lost in case of a crash before upload time.
   log_manager_.PersistUnsentLogs();
 
-  DCHECK(!log_manager_.has_staged_log());
-  log_manager_.StageNextLogForUpload();
+  state_ = SENDING_LOGS;
 }
 
 void MetricsService::SendStagedLog() {
@@ -1015,7 +933,6 @@ void MetricsService::SendStagedLog() {
 
   if (!log_uploader_) {
     log_uploader_ = client_->CreateUploader(
-        kServerUrl, kMimeType,
         base::Bind(&MetricsService::OnLogUploadComplete,
                    self_ptr_factory_.GetWeakPtr()));
   }
@@ -1038,6 +955,7 @@ void MetricsService::SendStagedLog() {
 
 
 void MetricsService::OnLogUploadComplete(int response_code) {
+  DCHECK_EQ(SENDING_LOGS, state_);
   DCHECK(log_upload_in_progress_);
   log_upload_in_progress_ = false;
 
@@ -1068,46 +986,10 @@ void MetricsService::OnLogUploadComplete(int response_code) {
     log_manager_.PersistUnsentLogs();
   }
 
-  if (!log_manager_.has_staged_log()) {
-    switch (state_) {
-      case SENDING_INITIAL_STABILITY_LOG:
-        PrepareInitialMetricsLog();
-        SendStagedLog();
-        state_ = SENDING_INITIAL_METRICS_LOG;
-        break;
-
-      case SENDING_INITIAL_METRICS_LOG:
-        state_ = log_manager_.has_unsent_logs() ? SENDING_OLD_LOGS
-                                                : SENDING_CURRENT_LOGS;
-        break;
-
-      case SENDING_OLD_LOGS:
-        if (!log_manager_.has_unsent_logs())
-          state_ = SENDING_CURRENT_LOGS;
-        break;
-
-      case SENDING_CURRENT_LOGS:
-        break;
-
-      default:
-        NOTREACHED();
-        break;
-    }
-
-    if (log_manager_.has_unsent_logs())
-      DCHECK_LT(state_, SENDING_CURRENT_LOGS);
-  }
-
   // Error 400 indicates a problem with the log, not with the server, so
   // don't consider that a sign that the server is in trouble.
   bool server_is_healthy = upload_succeeded || response_code == 400;
-  // Don't notify the scheduler that the upload is finished if we've only sent
-  // the initial stability log, but not yet the initial metrics log (treat the
-  // two as a single unit of work as far as the scheduler is concerned).
-  if (state_ != SENDING_INITIAL_METRICS_LOG) {
-    scheduler_->UploadFinished(server_is_healthy,
-                               log_manager_.has_unsent_logs());
-  }
+  scheduler_->UploadFinished(server_is_healthy, log_manager_.has_unsent_logs());
 
   if (server_is_healthy)
     client_->OnLogUploadComplete();
@@ -1129,6 +1011,18 @@ bool MetricsService::UmaMetricsProperlyShutdown() {
   return clean_shutdown_status_ == CLEANLY_SHUTDOWN;
 }
 
+void MetricsService::AddSyntheticTrialObserver(
+    SyntheticTrialObserver* observer) {
+  synthetic_trial_observer_list_.AddObserver(observer);
+  if (!synthetic_trial_groups_.empty())
+    observer->OnSyntheticTrialsChanged(synthetic_trial_groups_);
+}
+
+void MetricsService::RemoveSyntheticTrialObserver(
+    SyntheticTrialObserver* observer) {
+  synthetic_trial_observer_list_.RemoveObserver(observer);
+}
+
 void MetricsService::RegisterSyntheticFieldTrial(
     const SyntheticTrialGroup& trial) {
   for (size_t i = 0; i < synthetic_trial_groups_.size(); ++i) {
@@ -1136,6 +1030,7 @@ void MetricsService::RegisterSyntheticFieldTrial(
       if (synthetic_trial_groups_[i].id.group != trial.id.group) {
         synthetic_trial_groups_[i].id.group = trial.id.group;
         synthetic_trial_groups_[i].start_time = base::TimeTicks::Now();
+        NotifySyntheticTrialObservers();
       }
       return;
     }
@@ -1144,10 +1039,11 @@ void MetricsService::RegisterSyntheticFieldTrial(
   SyntheticTrialGroup trial_group = trial;
   trial_group.start_time = base::TimeTicks::Now();
   synthetic_trial_groups_.push_back(trial_group);
+  NotifySyntheticTrialObservers();
 }
 
 void MetricsService::RegisterMetricsProvider(
-    scoped_ptr<metrics::MetricsProvider> provider) {
+    scoped_ptr<MetricsProvider> provider) {
   DCHECK_EQ(INITIALIZED, state_);
   metrics_providers_.push_back(provider.release());
 }
@@ -1155,6 +1051,11 @@ void MetricsService::RegisterMetricsProvider(
 void MetricsService::CheckForClonedInstall(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
   state_manager_->CheckForClonedInstall(task_runner);
+}
+
+void MetricsService::NotifySyntheticTrialObservers() {
+  FOR_EACH_OBSERVER(SyntheticTrialObserver, synthetic_trial_observer_list_,
+                    OnSyntheticTrialsChanged(synthetic_trial_groups_));
 }
 
 void MetricsService::GetCurrentSyntheticFieldTrials(
@@ -1176,6 +1077,15 @@ scoped_ptr<MetricsLog> MetricsService::CreateLog(MetricsLog::LogType log_type) {
                                         local_state_));
 }
 
+void MetricsService::RecordCurrentEnvironment(MetricsLog* log) {
+  std::vector<variations::ActiveGroupId> synthetic_trials;
+  GetCurrentSyntheticFieldTrials(&synthetic_trials);
+  log->RecordEnvironment(metrics_providers_.get(), synthetic_trials,
+                         GetInstallDate(), GetMetricsReportingEnabledDate());
+  UMA_HISTOGRAM_COUNTS_100("UMA.SyntheticTrials.Count",
+                           synthetic_trials.size());
+}
+
 void MetricsService::RecordCurrentHistograms() {
   DCHECK(log_manager_.current_log());
   histogram_snapshot_manager_.PrepareDeltas(
@@ -1189,16 +1099,13 @@ void MetricsService::RecordCurrentStabilityHistograms() {
 }
 
 void MetricsService::LogCleanShutdown() {
-  // Redundant hack to write pref ASAP.
-  MarkAppCleanShutdownAndCommit(&clean_exit_beacon_, local_state_);
-
   // Redundant setting to assure that we always reset this value at shutdown
   // (and that we don't use some alternate path, and not call LogCleanShutdown).
   clean_shutdown_status_ = CLEANLY_SHUTDOWN;
 
   clean_exit_beacon_.WriteBeaconValue(true);
   RecordCurrentState(local_state_);
-  local_state_->SetInteger(metrics::prefs::kStabilityExecutionPhase,
+  local_state_->SetInteger(prefs::kStabilityExecutionPhase,
                            MetricsService::SHUTDOWN_COMPLETE);
 }
 
@@ -1216,7 +1123,7 @@ void MetricsService::RecordBooleanPrefValue(const char* path, bool value) {
 }
 
 void MetricsService::RecordCurrentState(PrefService* pref) {
-  pref->SetInt64(metrics::prefs::kStabilityLastTimestampSec,
+  pref->SetInt64(prefs::kStabilityLastTimestampSec,
                  base::Time::Now().ToTimeT());
 }
 

@@ -33,16 +33,18 @@
 
 #include "core/svg/SVGAngleTearOff.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
 class SVGMarkerElement;
 
-class SVGAnimatedAngle FINAL : public SVGAnimatedProperty<SVGAngle> {
+class SVGAnimatedAngle final : public SVGAnimatedProperty<SVGAngle> {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<SVGAnimatedAngle> create(SVGMarkerElement* contextElement)
+    static PassRefPtrWillBeRawPtr<SVGAnimatedAngle> create(SVGMarkerElement* contextElement)
     {
-        return adoptRef(new SVGAnimatedAngle(contextElement));
+        return adoptRefWillBeNoop(new SVGAnimatedAngle(contextElement));
     }
 
     virtual ~SVGAnimatedAngle();
@@ -51,16 +53,18 @@ public:
 
     // SVGAnimatedPropertyBase:
 
-    virtual void synchronizeAttribute() OVERRIDE;
+    virtual void synchronizeAttribute() override;
 
-    virtual void setAnimatedValue(PassRefPtr<SVGPropertyBase>) OVERRIDE;
-    virtual void animationEnded() OVERRIDE;
+    virtual void setAnimatedValue(PassRefPtrWillBeRawPtr<SVGPropertyBase>) override;
+    virtual void animationEnded() override;
+
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
-    SVGAnimatedAngle(SVGMarkerElement* contextElement);
+    explicit SVGAnimatedAngle(SVGMarkerElement* contextElement);
 
 private:
-    RefPtr<SVGAnimatedEnumeration<SVGMarkerOrientType> > m_orientType;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGMarkerOrientType>> m_orientType;
 };
 
 } // namespace blink

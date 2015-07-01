@@ -21,6 +21,7 @@
 #include "net/quic/quic_client_session_base.h"
 #include "net/quic/quic_connection_logger.h"
 #include "net/quic/quic_crypto_client_stream.h"
+#include "net/quic/quic_packet_reader.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_reliable_client_stream.h"
 
@@ -40,7 +41,8 @@ namespace test {
 class QuicClientSessionPeer;
 }  // namespace test
 
-class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
+class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase,
+                                             public QuicPacketReader::Visitor {
  public:
   // An interface for observing events on a session.
   class NET_EXPORT_PRIVATE Observer {
@@ -96,9 +98,11 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
                     TransportSecurityState* transport_security_state,
                     scoped_ptr<QuicServerInfo> server_info,
                     const QuicConfig& config,
+                    const char* const connection_description,
+                    base::TimeTicks dns_resolution_end_time,
                     base::TaskRunner* task_runner,
                     NetLog* net_log);
-  virtual ~QuicClientSession();
+  ~QuicClientSession() override;
 
   // Initialize session's connection to |server_id|.
   void InitializeSession(
@@ -123,31 +127,36 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
   void CancelRequest(StreamRequest* request);
 
   // QuicSession methods:
-  virtual void OnStreamFrames(
-      const std::vector<QuicStreamFrame>& frames) OVERRIDE;
-  virtual QuicReliableClientStream* CreateOutgoingDataStream() OVERRIDE;
-  virtual QuicCryptoClientStream* GetCryptoStream() OVERRIDE;
-  virtual void CloseStream(QuicStreamId stream_id) OVERRIDE;
-  virtual void SendRstStream(QuicStreamId id,
-                             QuicRstStreamErrorCode error,
-                             QuicStreamOffset bytes_written) OVERRIDE;
-  virtual void OnCryptoHandshakeEvent(CryptoHandshakeEvent event) OVERRIDE;
-  virtual void OnCryptoHandshakeMessageSent(
-      const CryptoHandshakeMessage& message) OVERRIDE;
-  virtual void OnCryptoHandshakeMessageReceived(
-      const CryptoHandshakeMessage& message) OVERRIDE;
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) const OVERRIDE;
+  void OnStreamFrames(const std::vector<QuicStreamFrame>& frames) override;
+  QuicReliableClientStream* CreateOutgoingDataStream() override;
+  QuicCryptoClientStream* GetCryptoStream() override;
+  void CloseStream(QuicStreamId stream_id) override;
+  void SendRstStream(QuicStreamId id,
+                     QuicRstStreamErrorCode error,
+                     QuicStreamOffset bytes_written) override;
+  void OnCryptoHandshakeEvent(CryptoHandshakeEvent event) override;
+  void OnCryptoHandshakeMessageSent(
+      const CryptoHandshakeMessage& message) override;
+  void OnCryptoHandshakeMessageReceived(
+      const CryptoHandshakeMessage& message) override;
 
   // QuicClientSessionBase methods:
-  virtual void OnProofValid(
-      const QuicCryptoClientConfig::CachedState& cached) OVERRIDE;
-  virtual void OnProofVerifyDetailsAvailable(
-      const ProofVerifyDetails& verify_details) OVERRIDE;
+  void OnProofValid(const QuicCryptoClientConfig::CachedState& cached) override;
+  void OnProofVerifyDetailsAvailable(
+      const ProofVerifyDetails& verify_details) override;
 
   // QuicConnectionVisitorInterface methods:
-  virtual void OnConnectionClosed(QuicErrorCode error, bool from_peer) OVERRIDE;
-  virtual void OnSuccessfulVersionNegotiation(
-      const QuicVersion& version) OVERRIDE;
+  void OnConnectionClosed(QuicErrorCode error, bool from_peer) override;
+  void OnSuccessfulVersionNegotiation(const QuicVersion& version) override;
+
+  // QuicPacketReader::Visitor methods:
+  void OnReadError(int result) override;
+  bool OnPacket(const QuicEncryptedPacket& packet,
+                IPEndPoint local_address,
+                IPEndPoint peer_address) override;
+
+  // Gets the SSL connection information.
+  bool GetSSLInfo(SSLInfo* ssl_info) const;
 
   // Performs a crypto handshake with the server.
   int CryptoConnect(bool require_confirmation,
@@ -162,7 +171,12 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
 
   // Close the session because of |error| and notifies the factory
   // that this session has been closed, which will delete the session.
-  void CloseSessionOnError(int error);
+  void CloseSessionOnError(int error, QuicErrorCode quic_error);
+
+  // Close the session because of |error| and notifies the factory later that
+  // this session has been closed, which will delete the session.
+  void CloseSessionOnErrorAndNotifyFactoryLater(int error,
+                                                QuicErrorCode quic_error);
 
   base::Value* GetInfoAsValue(const std::set<HostPortPair>& aliases);
 
@@ -178,11 +192,13 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
   // Returns true if |hostname| may be pooled onto this session.  If this
   // is a secure QUIC session, then |hostname| must match the certificate
   // presented during the handshake.
-  bool CanPool(const std::string& hostname) const;
+  bool CanPool(const std::string& hostname, PrivacyMode privacy_mode) const;
+
+  const QuicServerId& server_id() const { return server_id_; }
 
  protected:
   // QuicSession methods:
-  virtual QuicDataStream* CreateIncomingDataStream(QuicStreamId id) OVERRIDE;
+  QuicDataStream* CreateIncomingDataStream(QuicStreamId id) override;
 
  private:
   friend class test::QuicClientSessionPeer;
@@ -195,6 +211,9 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
   void OnReadComplete(int result);
 
   void OnClosedStream();
+
+  // Close the session because of |error| and records it in UMA histogram.
+  void RecordAndCloseSessionOnError(int error, QuicErrorCode quic_error);
 
   // A Session may be closed via any of three methods:
   // OnConnectionClosed - called by the connection when the connection has been
@@ -222,27 +241,25 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
 
   void OnConnectTimeout();
 
-  HostPortPair server_host_port_;
+  QuicServerId server_id_;
   bool require_confirmation_;
   scoped_ptr<QuicCryptoClientStream> crypto_stream_;
   QuicStreamFactory* stream_factory_;
   scoped_ptr<DatagramClientSocket> socket_;
-  scoped_refptr<IOBufferWithSize> read_buffer_;
   TransportSecurityState* transport_security_state_;
   scoped_ptr<QuicServerInfo> server_info_;
   scoped_ptr<CertVerifyResult> cert_verify_result_;
   std::string pinning_failure_log_;
   ObserverSet observers_;
   StreamRequestQueue stream_requests_;
-  bool read_pending_;
   CompletionCallback callback_;
   size_t num_total_streams_;
   base::TaskRunner* task_runner_;
   BoundNetLog net_log_;
+  QuicPacketReader packet_reader_;
+  base::TimeTicks dns_resolution_end_time_;
   base::TimeTicks handshake_start_;  // Time the handshake was started.
-  QuicConnectionLogger* logger_;  // Owned by |connection_|.
-  // Number of packets read in the current read loop.
-  size_t num_packets_read_;
+  scoped_ptr<QuicConnectionLogger> logger_;
   // True when the session is going away, and streams may no longer be created
   // on this session. Existing stream will continue to be processed.
   bool going_away_;

@@ -25,10 +25,9 @@ class FakeTextCheckingCompletion : public blink::WebTextCheckingCompletion {
   FakeTextCheckingCompletion();
   ~FakeTextCheckingCompletion();
 
-  virtual void didFinishCheckingText(
-      const blink::WebVector<blink::WebTextCheckingResult>& results) OVERRIDE;
-  virtual void didCancelCheckingText() OVERRIDE;
-
+  void didFinishCheckingText(
+      const blink::WebVector<blink::WebTextCheckingResult>& results) override;
+  void didCancelCheckingText() override;
 
   size_t completion_count_;
   size_t cancellation_count_;
@@ -39,8 +38,8 @@ class TestingSpellCheckProvider : public SpellCheckProvider {
  public:
   TestingSpellCheckProvider();
 
-  virtual ~TestingSpellCheckProvider();
-  virtual bool Send(IPC::Message* message) OVERRIDE;
+  ~TestingSpellCheckProvider() override;
+  bool Send(IPC::Message* message) override;
   void OnCallSpellingService(int route_id,
                              int identifier,
                              const base::string16& text,
@@ -56,7 +55,7 @@ class TestingSpellCheckProvider : public SpellCheckProvider {
 class SpellCheckProviderTest : public testing::Test {
  public:
   SpellCheckProviderTest();
-  virtual ~SpellCheckProviderTest();
+  ~SpellCheckProviderTest() override;
 
  protected:
   TestingSpellCheckProvider provider_;

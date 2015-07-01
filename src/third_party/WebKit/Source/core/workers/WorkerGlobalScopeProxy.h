@@ -31,6 +31,7 @@
 #ifndef WorkerGlobalScopeProxy_h
 #define WorkerGlobalScopeProxy_h
 
+#include "core/CoreExport.h"
 #include "core/dom/MessagePort.h"
 #include "core/workers/WorkerThread.h"
 #include "wtf/Forward.h"
@@ -38,24 +39,23 @@
 
 namespace blink {
 
-    class KURL;
-    class Worker;
+class KURL;
 
-    // A proxy to talk to the worker global scope.
-    class WorkerGlobalScopeProxy {
-    public:
-        virtual ~WorkerGlobalScopeProxy() { }
+// A proxy to talk to the worker global scope.
+class CORE_EXPORT WorkerGlobalScopeProxy {
+public:
+    virtual ~WorkerGlobalScopeProxy() { }
 
-        virtual void startWorkerGlobalScope(const KURL& scriptURL, const String& userAgent, const String& sourceCode, WorkerThreadStartMode) = 0;
+    virtual void startWorkerGlobalScope(const KURL& scriptURL, const String& userAgent, const String& sourceCode, WorkerThreadStartMode) = 0;
 
-        virtual void terminateWorkerGlobalScope() = 0;
+    virtual void terminateWorkerGlobalScope() = 0;
 
-        virtual void postMessageToWorkerGlobalScope(PassRefPtr<SerializedScriptValue>, PassOwnPtr<MessagePortChannelArray>) = 0;
+    virtual void postMessageToWorkerGlobalScope(PassRefPtr<SerializedScriptValue>, PassOwnPtr<MessagePortChannelArray>) = 0;
 
-        virtual bool hasPendingActivity() const = 0;
+    virtual bool hasPendingActivity() const = 0;
 
-        virtual void workerObjectDestroyed() = 0;
-    };
+    virtual void workerObjectDestroyed() = 0;
+};
 
 } // namespace blink
 

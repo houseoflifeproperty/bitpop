@@ -5,7 +5,7 @@
 #ifndef ASH_SYSTEM_TRAY_THROBBER_VIEW_H_
 #define ASH_SYSTEM_TRAY_THROBBER_VIEW_H_
 
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/views/controls/throbber.h"
 #include "ui/views/view.h"
 
@@ -14,14 +14,14 @@ namespace ash {
 // A SmoothedThrobber with tooltip.
 class SystemTrayThrobber : public views::SmoothedThrobber {
  public:
-  SystemTrayThrobber(int frame_delay_ms);
-  virtual ~SystemTrayThrobber();
+  SystemTrayThrobber();
+  ~SystemTrayThrobber() override;
 
   void SetTooltipText(const base::string16& tooltip_text);
 
   // Overriden from views::View.
-  virtual bool GetTooltipText(
-        const gfx::Point& p, base::string16* tooltip) const OVERRIDE;
+  bool GetTooltipText(const gfx::Point& p,
+                      base::string16* tooltip) const override;
 
  private:
   // The current tooltip text.
@@ -34,17 +34,17 @@ class SystemTrayThrobber : public views::SmoothedThrobber {
 class ThrobberView : public views::View {
  public:
   ThrobberView();
-  virtual ~ThrobberView();
+  ~ThrobberView() override;
 
   void Start();
   void Stop();
   void SetTooltipText(const base::string16& tooltip_text);
 
   // Overriden from views::View.
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void Layout() OVERRIDE;
-  virtual bool GetTooltipText(
-      const gfx::Point& p, base::string16* tooltip) const OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  void Layout() override;
+  bool GetTooltipText(const gfx::Point& p,
+                      base::string16* tooltip) const override;
 
  private:
   // Schedules animation for starting/stopping throbber.

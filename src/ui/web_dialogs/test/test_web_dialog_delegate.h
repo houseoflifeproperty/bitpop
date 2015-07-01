@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
 #include "url/gurl.h"
 
@@ -18,28 +18,34 @@ namespace test {
 class TestWebDialogDelegate : public WebDialogDelegate {
  public:
   explicit TestWebDialogDelegate(const GURL& url);
-  virtual ~TestWebDialogDelegate();
+  ~TestWebDialogDelegate() override;
 
   void set_size(int width, int height) {
     size_.SetSize(width, height);
   }
 
+  // Sets the test delegate to delete when closed, as recommended by
+  // WebDialogDelegate::OnDialogClosed(). |observed_destroy| must be a pointer
+  // to a bool, which will be set to true when the destructor is called.
+  void SetDeleteOnClosedAndObserve(bool* destroy_observer);
+
   // WebDialogDelegate implementation:
-  virtual ModalType GetDialogModalType() const OVERRIDE;
-  virtual base::string16 GetDialogTitle() const OVERRIDE;
-  virtual GURL GetDialogContentURL() const OVERRIDE;
-  virtual void GetWebUIMessageHandlers(
-      std::vector<content::WebUIMessageHandler*>* handlers) const OVERRIDE;
-  virtual void GetDialogSize(gfx::Size* size) const OVERRIDE;
-  virtual std::string GetDialogArgs() const OVERRIDE;
-  virtual void OnDialogClosed(const std::string& json_retval) OVERRIDE;
-  virtual void OnCloseContents(content::WebContents* source,
-                               bool* out_close_dialog) OVERRIDE;
-  virtual bool ShouldShowDialogTitle() const OVERRIDE;
+  ModalType GetDialogModalType() const override;
+  base::string16 GetDialogTitle() const override;
+  GURL GetDialogContentURL() const override;
+  void GetWebUIMessageHandlers(
+      std::vector<content::WebUIMessageHandler*>* handlers) const override;
+  void GetDialogSize(gfx::Size* size) const override;
+  std::string GetDialogArgs() const override;
+  void OnDialogClosed(const std::string& json_retval) override;
+  void OnCloseContents(content::WebContents* source,
+                       bool* out_close_dialog) override;
+  bool ShouldShowDialogTitle() const override;
 
  protected:
   const GURL url_;
   gfx::Size size_;
+  bool* did_delete_;
 
   DISALLOW_COPY_AND_ASSIGN(TestWebDialogDelegate);
 };

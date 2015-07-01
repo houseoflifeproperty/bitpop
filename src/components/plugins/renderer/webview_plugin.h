@@ -48,11 +48,15 @@ class WebViewPlugin : public blink::WebPlugin,
 
     // Called when the WebViewPlugin is destroyed.
     virtual void PluginDestroyed() = 0;
+
+    // Called to enable JavaScript pass-through to a throttled plugin, which is
+    // loaded but idle. Doesn't work for blocked plugins, which is not loaded.
+    virtual v8::Local<v8::Object> GetV8ScriptableObject(v8::Isolate*) const = 0;
   };
 
   // Convenience method to set up a new WebViewPlugin using |preferences|
-  // and displaying |html_data|. |url| should be a (fake) chrome:// URL; it is
-  // only used for navigation and never actually resolved.
+  // and displaying |html_data|. |url| should be a (fake) data:text/html URL;
+  // it is only used for navigation and never actually resolved.
   static WebViewPlugin* Create(Delegate* delegate,
                                const content::WebPreferences& preferences,
                                const std::string& html_data,
@@ -60,9 +64,9 @@ class WebViewPlugin : public blink::WebPlugin,
 
   blink::WebView* web_view() { return web_view_; }
 
-  // When loading a plug-in document (i.e. a full page plug-in not embedded in
+  // When loading a plugin document (i.e. a full page plugin not embedded in
   // another page), we save all data that has been received, and replay it with
-  // this method on the actual plug-in.
+  // this method on the actual plugin.
   void ReplayReceivedData(blink::WebPlugin* plugin);
 
   void RestoreTitleText();
@@ -72,21 +76,21 @@ class WebViewPlugin : public blink::WebPlugin,
   virtual bool initialize(blink::WebPluginContainer*);
   virtual void destroy();
 
-  virtual NPObject* scriptableObject();
-  virtual struct _NPP* pluginNPP();
+  virtual v8::Local<v8::Object> v8ScriptableObject(v8::Isolate* isolate);
 
-  virtual bool getFormValue(blink::WebString& value);
-
-  virtual void paint(blink::WebCanvas* canvas, const blink::WebRect& rect);
+  virtual void layoutIfNeeded() override;
+  virtual void paint(blink::WebCanvas* canvas,
+                     const blink::WebRect& rect) override;
 
   // Coordinates are relative to the containing window.
   virtual void updateGeometry(
-      const blink::WebRect& frame_rect,
+      const blink::WebRect& window_rect,
       const blink::WebRect& clip_rect,
-      const blink::WebVector<blink::WebRect>& cut_out_rects,
+      const blink::WebRect& unobscured_rect,
+      const blink::WebVector<blink::WebRect>& cut_outs_rects,
       bool is_visible);
 
-  virtual void updateFocus(bool);
+  virtual void updateFocus(bool foucsed, blink::WebFocusType focus_type);
   virtual void updateVisibility(bool) {}
 
   virtual bool acceptsInputEvents();

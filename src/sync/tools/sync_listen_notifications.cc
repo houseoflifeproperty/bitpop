@@ -52,15 +52,15 @@ const char kAllowInsecureConnectionSwitch[] = "allow-insecure-connection";
 class NotificationPrinter : public InvalidationHandler {
  public:
   NotificationPrinter() {}
-  virtual ~NotificationPrinter() {}
+  ~NotificationPrinter() override {}
 
-  virtual void OnInvalidatorStateChange(InvalidatorState state) OVERRIDE {
+  void OnInvalidatorStateChange(InvalidatorState state) override {
     LOG(INFO) << "Invalidator state changed to "
               << InvalidatorStateToString(state);
   }
 
-  virtual void OnIncomingInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map) OVERRIDE {
+  void OnIncomingInvalidation(
+      const ObjectIdInvalidationMap& invalidation_map) override {
     ObjectIdSet ids = invalidation_map.GetObjectIds();
     for (ObjectIdSet::const_iterator it = ids.begin(); it != ids.end(); ++it) {
       LOG(INFO) << "Remote invalidation: "
@@ -68,9 +68,7 @@ class NotificationPrinter : public InvalidationHandler {
     }
   }
 
-  virtual std::string GetOwnerName() const OVERRIDE {
-    return "NotificationPrinter";
-  }
+  std::string GetOwnerName() const override { return "NotificationPrinter"; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NotificationPrinter);
@@ -87,7 +85,7 @@ class MyTestURLRequestContext : public net::TestURLRequestContext {
     Init();
   }
 
-  virtual ~MyTestURLRequestContext() {}
+  ~MyTestURLRequestContext() override {}
 };
 
 class MyTestURLRequestContextGetter : public net::TestURLRequestContextGetter {
@@ -96,7 +94,7 @@ class MyTestURLRequestContextGetter : public net::TestURLRequestContextGetter {
       const scoped_refptr<base::SingleThreadTaskRunner>& io_task_runner)
       : TestURLRequestContextGetter(io_task_runner) {}
 
-  virtual net::TestURLRequestContext* GetURLRequestContext() OVERRIDE {
+  net::TestURLRequestContext* GetURLRequestContext() override {
     // Construct |context_| lazily so it gets constructed on the right
     // thread (the IO thread).
     if (!context_)
@@ -105,15 +103,14 @@ class MyTestURLRequestContextGetter : public net::TestURLRequestContextGetter {
   }
 
  private:
-  virtual ~MyTestURLRequestContextGetter() {}
+  ~MyTestURLRequestContextGetter() override {}
 
   scoped_ptr<MyTestURLRequestContext> context_;
 };
 
 notifier::NotifierOptions ParseNotifierOptions(
-    const CommandLine& command_line,
-    const scoped_refptr<net::URLRequestContextGetter>&
-        request_context_getter) {
+    const base::CommandLine& command_line,
+    const scoped_refptr<net::URLRequestContextGetter>& request_context_getter) {
   notifier::NotifierOptions notifier_options;
   notifier_options.request_context_getter = request_context_getter;
 
@@ -144,7 +141,7 @@ int SyncListenNotificationsMain(int argc, char* argv[]) {
   base::mac::ScopedNSAutoreleasePool pool;
 #endif
   base::AtExitManager exit_manager;
-  CommandLine::Init(argc, argv);
+  base::CommandLine::Init(argc, argv);
   logging::LoggingSettings settings;
   settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
   logging::InitLogging(settings);
@@ -156,7 +153,8 @@ int SyncListenNotificationsMain(int argc, char* argv[]) {
   io_thread.StartWithOptions(options);
 
   // Parse command line.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   std::string email = command_line.GetSwitchValueASCII(kEmailSwitch);
   std::string token = command_line.GetSwitchValueASCII(kTokenSwitch);
   // TODO(akalin): Write a wrapper script that gets a token for an

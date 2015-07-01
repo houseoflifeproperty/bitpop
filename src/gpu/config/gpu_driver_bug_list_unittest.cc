@@ -19,14 +19,14 @@ class GpuDriverBugListTest : public testing::Test {
  public:
   GpuDriverBugListTest() { }
 
-  virtual ~GpuDriverBugListTest() { }
+  ~GpuDriverBugListTest() override {}
 
   const GPUInfo& gpu_info() const {
     return gpu_info_;
   }
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     gpu_info_.gpu.vendor_id = 0x10de;
     gpu_info_.gpu.device_id = 0x0640;
     gpu_info_.driver_vendor = "NVIDIA";
@@ -36,13 +36,9 @@ class GpuDriverBugListTest : public testing::Test {
     gpu_info_.machine_model_version = "7.1";
     gpu_info_.gl_vendor = "NVIDIA Corporation";
     gpu_info_.gl_renderer = "NVIDIA GeForce GT 120 OpenGL Engine";
-    gpu_info_.performance_stats.graphics = 5.0;
-    gpu_info_.performance_stats.gaming = 5.0;
-    gpu_info_.performance_stats.overall = 5.0;
   }
 
-  virtual void TearDown() {
-  }
+  void TearDown() override {}
 
  private:
   GPUInfo gpu_info_;
@@ -129,8 +125,8 @@ TEST_F(GpuDriverBugListTest, GpuSwitching) {
 
 TEST_F(GpuDriverBugListTest, AppendSingleWorkaround) {
   base::CommandLine command_line(0, NULL);
-  command_line.AppendSwitch(
-      GpuDriverBugWorkaroundTypeToString(DISABLE_MULTISAMPLING));
+  command_line.AppendSwitch(GpuDriverBugWorkaroundTypeToString(
+      DISABLE_CHROMIUM_FRAMEBUFFER_MULTISAMPLE));
   std::set<int> workarounds;
   workarounds.insert(EXIT_ON_CONTEXT_LOST);
   workarounds.insert(INIT_VERTEX_ATTRIBUTES);
@@ -138,7 +134,7 @@ TEST_F(GpuDriverBugListTest, AppendSingleWorkaround) {
   GpuDriverBugList::AppendWorkaroundsFromCommandLine(
       &workarounds, command_line);
   EXPECT_EQ(3u, workarounds.size());
-  EXPECT_EQ(1u, workarounds.count(DISABLE_MULTISAMPLING));
+  EXPECT_EQ(1u, workarounds.count(DISABLE_CHROMIUM_FRAMEBUFFER_MULTISAMPLE));
 }
 
 TEST_F(GpuDriverBugListTest, AppendForceGPUWorkaround) {

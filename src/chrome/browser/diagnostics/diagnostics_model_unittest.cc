@@ -14,23 +14,19 @@ namespace diagnostics {
 // Basic harness to acquire and release the Diagnostic model object.
 class DiagnosticsModelTest : public testing::Test {
  protected:
-  DiagnosticsModelTest()
-      : cmdline_(CommandLine::NO_PROGRAM) {
-  }
+  DiagnosticsModelTest() : cmdline_(base::CommandLine::NO_PROGRAM) {}
 
-  virtual ~DiagnosticsModelTest() { }
+  ~DiagnosticsModelTest() override {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     model_.reset(MakeDiagnosticsModel(cmdline_));
     ASSERT_TRUE(model_.get() != NULL);
   }
 
-  virtual void TearDown() {
-    model_.reset();
-  }
+  void TearDown() override { model_.reset(); }
 
   scoped_ptr<DiagnosticsModel> model_;
-  CommandLine cmdline_;
+  base::CommandLine cmdline_;
 
   DISALLOW_COPY_AND_ASSIGN(DiagnosticsModelTest);
 };
@@ -45,7 +41,7 @@ class UTObserver: public DiagnosticsModel::Observer {
         num_recovered_(0) {
   }
 
-  virtual void OnTestFinished(int index, DiagnosticsModel* model) OVERRIDE {
+  void OnTestFinished(int index, DiagnosticsModel* model) override {
     EXPECT_TRUE(model != NULL);
     ++num_tested_;
     EXPECT_NE(DiagnosticsModel::TEST_FAIL_STOP,
@@ -53,12 +49,12 @@ class UTObserver: public DiagnosticsModel::Observer {
         << "Failed stop test: " << index;
   }
 
-  virtual void OnAllTestsDone(DiagnosticsModel* model) OVERRIDE {
+  void OnAllTestsDone(DiagnosticsModel* model) override {
     EXPECT_TRUE(model != NULL);
     tests_done_ = true;
   }
 
-  virtual void OnRecoveryFinished(int index, DiagnosticsModel* model) OVERRIDE {
+  void OnRecoveryFinished(int index, DiagnosticsModel* model) override {
     EXPECT_TRUE(model != NULL);
     ++num_recovered_;
     EXPECT_NE(DiagnosticsModel::RECOVERY_FAIL_STOP,
@@ -66,7 +62,7 @@ class UTObserver: public DiagnosticsModel::Observer {
         << "Failed stop recovery: " << index;
   }
 
-  virtual void OnAllRecoveryDone(DiagnosticsModel* model) OVERRIDE {
+  void OnAllRecoveryDone(DiagnosticsModel* model) override {
     EXPECT_TRUE(model != NULL);
     recovery_done_ = true;
   }

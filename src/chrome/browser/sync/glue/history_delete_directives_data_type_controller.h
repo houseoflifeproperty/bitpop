@@ -5,8 +5,8 @@
 #ifndef CHROME_BROWSER_SYNC_GLUE_HISTORY_DELETE_DIRECTIVES_DATA_TYPE_CONTROLLER_H_
 #define CHROME_BROWSER_SYNC_GLUE_HISTORY_DELETE_DIRECTIVES_DATA_TYPE_CONTROLLER_H_
 
-#include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "components/sync_driver/local_device_info_provider.h"
+#include "components/sync_driver/sync_service_observer.h"
 #include "components/sync_driver/ui_data_type_controller.h"
 
 class Profile;
@@ -18,23 +18,23 @@ namespace browser_sync {
 // is enabled.
 class HistoryDeleteDirectivesDataTypeController
     : public sync_driver::UIDataTypeController,
-      public ProfileSyncServiceObserver {
+      public sync_driver::SyncServiceObserver {
  public:
   HistoryDeleteDirectivesDataTypeController(
       sync_driver::SyncApiComponentFactory* factory,
       ProfileSyncService* sync_service);
 
   // UIDataTypeController override.
-  virtual bool ReadyForStart() const OVERRIDE;
-  virtual bool StartModels() OVERRIDE;
-  virtual void StopModels() OVERRIDE;
+  bool ReadyForStart() const override;
+  bool StartModels() override;
+  void StopModels() override;
 
-  // ProfileSyncServiceBaseObserver implementation.
-  virtual void OnStateChanged() OVERRIDE;
+  // sync_driver::SyncServiceObserver implementation.
+  void OnStateChanged() override;
 
  private:
   // Refcounted.
-  virtual ~HistoryDeleteDirectivesDataTypeController();
+  ~HistoryDeleteDirectivesDataTypeController() override;
 
   // Triggers a SingleDataTypeUnrecoverable error and returns true if the
   // type is no longer ready, else does nothing and returns false.

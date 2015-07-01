@@ -12,7 +12,10 @@ var expectedVolume1 = {
   devicePath: 'system_path_prefix1',
   isParentDevice: false,
   isReadOnly: false,
-  profile: {profileId: "", displayName: "", isCurrentProfile: true}
+  hasMedia: false,
+  configurable: false,
+  source: 'device',
+  profile: {profileId: '', displayName: '', isCurrentProfile: true},
 };
 
 var expectedVolume2 = {
@@ -24,7 +27,10 @@ var expectedVolume2 = {
   devicePath: 'system_path_prefix2',
   isParentDevice: true,
   isReadOnly: true,
-  profile: {profileId: "", displayName: "", isCurrentProfile: true}
+  hasMedia: true,
+  configurable: false,
+  source: 'device',
+  profile: {profileId: '', displayName: '', isCurrentProfile: true}
 };
 
 var expectedVolume3 = {
@@ -36,7 +42,10 @@ var expectedVolume3 = {
   devicePath: 'system_path_prefix3',
   isParentDevice: true,
   isReadOnly: false,
-  profile: {profileId: "", displayName: "", isCurrentProfile: true}
+  hasMedia: false,
+  configurable: false,
+  source: 'device',
+  profile: {profileId: '', displayName: '', isCurrentProfile: true}
 };
 
 var expectedDownloadsVolume = {
@@ -44,7 +53,10 @@ var expectedDownloadsVolume = {
   volumeLabel: '',
   volumeType: 'downloads',
   isReadOnly: false,
-  profile: {profileId: "", displayName: "", isCurrentProfile: true}
+  hasMedia: false,
+  configurable: false,
+  source: 'system',
+  profile: {profileId: '', displayName: '', isCurrentProfile: true}
 };
 
 var expectedDriveVolume = {
@@ -53,7 +65,10 @@ var expectedDriveVolume = {
   sourcePath: /^\/special\/drive[^\/]*$/,
   volumeType: 'drive',
   isReadOnly: false,
-  profile: {profileId: "", displayName: "", isCurrentProfile: true}
+  hasMedia: false,
+  configurable: false,
+  source: 'network',
+  profile: {profileId: '', displayName: '', isCurrentProfile: true}
 };
 
 var expectedArchiveVolume = {
@@ -62,7 +77,24 @@ var expectedArchiveVolume = {
   sourcePath: /removable\/mount_path3\/archive.zip$/,
   volumeType: 'archive',
   isReadOnly: true,
-  profile: {profileId: "", displayName: "", isCurrentProfile: true}
+  hasMedia: false,
+  configurable: false,
+  source: 'file',
+  profile: {profileId: '', displayName: '', isCurrentProfile: true}
+};
+
+var expectedProvidedVolume = {
+  volumeId: 'provided:',
+  volumeLabel: '',
+  volumeType: 'provided',
+  isReadOnly: true,
+  hasMedia: false,
+  configurable: true,
+  extensionId: 'testing-extension-id',
+  source: 'network',
+  mountContext: 'auto',
+  fileSystemId: '',
+  profile: {profileId: '', displayName: '', isCurrentProfile: true}
 };
 
 // List of expected mount points.
@@ -72,9 +104,10 @@ var expectedVolumeList = [
   expectedArchiveVolume,
   expectedDownloadsVolume,
   expectedDriveVolume,
+  expectedProvidedVolume,
   expectedVolume1,
   expectedVolume2,
-  expectedVolume3,
+  expectedVolume3
 ];
 
 function validateObject(received, expected, name) {

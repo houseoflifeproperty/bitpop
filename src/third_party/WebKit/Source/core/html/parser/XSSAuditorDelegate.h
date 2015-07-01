@@ -64,12 +64,12 @@ private:
     { }
 };
 
-class XSSAuditorDelegate FINAL {
+class XSSAuditorDelegate final {
     DISALLOW_ALLOCATION();
     WTF_MAKE_NONCOPYABLE(XSSAuditorDelegate);
 public:
     explicit XSSAuditorDelegate(Document*);
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     void didBlockScript(const XSSInfo&);
     void setReportURL(const KURL& url) { m_reportURL = url; }
@@ -82,7 +82,7 @@ private:
     KURL m_reportURL;
 };
 
-typedef Vector<OwnPtr<XSSInfo> > XSSInfoStream;
+typedef Vector<OwnPtr<XSSInfo>> XSSInfoStream;
 
 }
 

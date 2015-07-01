@@ -15,41 +15,25 @@ namespace content {
 // Implementation of GPU memory buffer based on IO surfaces.
 class GpuMemoryBufferImplIOSurface : public GpuMemoryBufferImpl {
  public:
-  static void Create(const gfx::Size& size,
-                     unsigned internalformat,
-                     unsigned usage,
-                     int client_id,
-                     const CreationCallback& callback);
-
-  static void AllocateForChildProcess(const gfx::Size& size,
-                                      unsigned internalformat,
-                                      unsigned usage,
-                                      int child_client_id,
-                                      const AllocationCallback& callback);
-
   static scoped_ptr<GpuMemoryBufferImpl> CreateFromHandle(
       const gfx::GpuMemoryBufferHandle& handle,
       const gfx::Size& size,
-      unsigned internalformat,
+      Format format,
       const DestructionCallback& callback);
 
-  static bool IsFormatSupported(unsigned internalformat);
-  static bool IsUsageSupported(unsigned usage);
-  static bool IsConfigurationSupported(unsigned internalformat, unsigned usage);
-  static uint32 PixelFormat(unsigned internalformat);
-
   // Overridden from gfx::GpuMemoryBuffer:
-  virtual void* Map() OVERRIDE;
-  virtual void Unmap() OVERRIDE;
-  virtual uint32 GetStride() const OVERRIDE;
-  virtual gfx::GpuMemoryBufferHandle GetHandle() const OVERRIDE;
+  bool Map(void** data) override;
+  void Unmap() override;
+  void GetStride(int* stride) const override;
+  gfx::GpuMemoryBufferHandle GetHandle() const override;
 
  private:
-  GpuMemoryBufferImplIOSurface(const gfx::Size& size,
-                               unsigned internalformat,
+  GpuMemoryBufferImplIOSurface(gfx::GpuMemoryBufferId id,
+                               const gfx::Size& size,
+                               Format format,
                                const DestructionCallback& callback,
                                IOSurfaceRef io_surface);
-  virtual ~GpuMemoryBufferImplIOSurface();
+  ~GpuMemoryBufferImplIOSurface() override;
 
   base::ScopedCFTypeRef<IOSurfaceRef> io_surface_;
 

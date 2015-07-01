@@ -9,7 +9,7 @@
 #include "base/files/file.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "storage/browser/blob/file_stream_reader.h"
+#include "storage/browser/fileapi/file_stream_reader.h"
 #include "storage/browser/fileapi/file_system_url.h"
 #include "storage/browser/storage_browser_export.h"
 
@@ -30,13 +30,13 @@ class MTPFileStreamReader
                       const base::Time& expected_modification_time,
                       bool do_media_header_validation);
 
-  virtual ~MTPFileStreamReader();
+  ~MTPFileStreamReader() override;
 
   // FileStreamReader overrides.
-  virtual int Read(net::IOBuffer* buf, int buf_len,
-                   const net::CompletionCallback& callback) OVERRIDE;
-  virtual int64 GetLength(
-      const net::Int64CompletionCallback& callback) OVERRIDE;
+  int Read(net::IOBuffer* buf,
+           int buf_len,
+           const net::CompletionCallback& callback) override;
+  int64 GetLength(const net::Int64CompletionCallback& callback) override;
 
  private:
   void FinishValidateMediaHeader(

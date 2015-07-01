@@ -8,13 +8,13 @@
 #include "base/basictypes.h"
 #include "base/base_paths.h"
 #include "base/memory/aligned_memory.h"
-#include "base/path_service.h"
 #include "base/sync_socket.h"
 #include "base/win/scoped_com_initializer.h"
 #include "base/win/windows_version.h"
 #include "media/base/limits.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_manager.h"
+#include "media/audio/audio_unittest_util.h"
 #include "media/audio/mock_audio_source_callback.h"
 #include "media/audio/simple_sources.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -30,14 +30,12 @@ using ::testing::NiceMock;
 using ::testing::NotNull;
 using ::testing::Return;
 
-using base::win::ScopedCOMInitializer;
-
 namespace media {
 
 static const wchar_t kAudioFile1_16b_m_16K[]
     = L"media\\test\\data\\sweep02_16b_mono_16KHz.raw";
 
-static int ClearData(AudioBus* audio_bus, AudioBuffersState buffers_state) {
+static int ClearData(AudioBus* audio_bus, uint32 total_bytes_delay) {
   audio_bus->Zero();
   return audio_bus->frames();
 }
@@ -51,17 +49,14 @@ class TestSourceBasic : public AudioOutputStream::AudioSourceCallback {
         had_error_(0) {
   }
   // AudioSourceCallback::OnMoreData implementation:
-  virtual int OnMoreData(AudioBus* audio_bus,
-                         AudioBuffersState buffers_state) {
+  int OnMoreData(AudioBus* audio_bus, uint32 total_bytes_delay) override {
     ++callback_count_;
     // Touch the channel memory value to make sure memory is good.
     audio_bus->Zero();
     return audio_bus->frames();
   }
   // AudioSourceCallback::OnError implementation:
-  virtual void OnError(AudioOutputStream* stream) {
-    ++had_error_;
-  }
+  void OnError(AudioOutputStream* stream) override { ++had_error_; }
   // Returns how many times OnMoreData() has been called.
   int callback_count() const {
     return callback_count_;
@@ -88,10 +83,9 @@ class TestSourceLaggy : public TestSourceBasic {
   TestSourceLaggy(int laggy_after_buffer, int lag_in_ms)
       : laggy_after_buffer_(laggy_after_buffer), lag_in_ms_(lag_in_ms) {
   }
-  virtual int OnMoreData(AudioBus* audio_bus,
-                         AudioBuffersState buffers_state) {
+  int OnMoreData(AudioBus* audio_bus, uint32 total_bytes_delay) override {
     // Call the base, which increments the callback_count_.
-    TestSourceBasic::OnMoreData(audio_bus, buffers_state);
+    TestSourceBasic::OnMoreData(audio_bus, total_bytes_delay);
     if (callback_count() > kMaxNumBuffers) {
       ::Sleep(lag_in_ms_);
     }
@@ -161,10 +155,7 @@ class ReadOnlyMappedFile {
 // Test that can it be created and closed.
 TEST(WinAudioTest, PCMWaveStreamGetAndClose) {
   scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
-  if (!audio_man->HasAudioOutputDevices()) {
-    LOG(WARNING) << "No output device detected.";
-    return;
-  }
+  ABORT_AUDIO_TEST_IF_NOT(audio_man->HasAudioOutputDevices());
 
   AudioOutputStream* oas = audio_man->MakeAudioOutputStream(
       AudioParameters(AudioParameters::AUDIO_PCM_LINEAR, CHANNEL_LAYOUT_STEREO,
@@ -177,10 +168,7 @@ TEST(WinAudioTest, PCMWaveStreamGetAndClose) {
 // Test that can it be cannot be created with invalid parameters.
 TEST(WinAudioTest, SanityOnMakeParams) {
   scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
-  if (!audio_man->HasAudioOutputDevices()) {
-    LOG(WARNING) << "No output device detected.";
-    return;
-  }
+  ABORT_AUDIO_TEST_IF_NOT(audio_man->HasAudioOutputDevices());
 
   AudioParameters::Format fmt = AudioParameters::AUDIO_PCM_LINEAR;
   EXPECT_TRUE(NULL == audio_man->MakeAudioOutputStream(
@@ -213,10 +201,7 @@ TEST(WinAudioTest, SanityOnMakeParams) {
 // Test that it can be opened and closed.
 TEST(WinAudioTest, PCMWaveStreamOpenAndClose) {
   scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
-  if (!audio_man->HasAudioOutputDevices()) {
-    LOG(WARNING) << "No output device detected.";
-    return;
-  }
+  ABORT_AUDIO_TEST_IF_NOT(audio_man->HasAudioOutputDevices());
 
   AudioOutputStream* oas = audio_man->MakeAudioOutputStream(
       AudioParameters(AudioParameters::AUDIO_PCM_LINEAR, CHANNEL_LAYOUT_STEREO,
@@ -230,10 +215,7 @@ TEST(WinAudioTest, PCMWaveStreamOpenAndClose) {
 // Test that it has a maximum packet size.
 TEST(WinAudioTest, PCMWaveStreamOpenLimit) {
   scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
-  if (!audio_man->HasAudioOutputDevices()) {
-    LOG(WARNING) << "No output device detected.";
-    return;
-  }
+  ABORT_AUDIO_TEST_IF_NOT(audio_man->HasAudioOutputDevices());
 
   AudioOutputStream* oas = audio_man->MakeAudioOutputStream(
       AudioParameters(AudioParameters::AUDIO_PCM_LINEAR, CHANNEL_LAYOUT_STEREO,
@@ -249,10 +231,7 @@ TEST(WinAudioTest, PCMWaveStreamOpenLimit) {
 // the test completes in reasonable time.
 TEST(WinAudioTest, PCMWaveSlowSource) {
   scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
-  if (!audio_man->HasAudioOutputDevices()) {
-    LOG(WARNING) << "No output device detected.";
-    return;
-  }
+  ABORT_AUDIO_TEST_IF_NOT(audio_man->HasAudioOutputDevices());
 
   AudioOutputStream* oas = audio_man->MakeAudioOutputStream(
       AudioParameters(AudioParameters::AUDIO_PCM_LINEAR, CHANNEL_LAYOUT_MONO,
@@ -277,10 +256,7 @@ TEST(WinAudioTest, PCMWaveSlowSource) {
 // bug 19276 for more details.
 TEST(WinAudioTest, PCMWaveStreamPlaySlowLoop) {
   scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
-  if (!audio_man->HasAudioOutputDevices()) {
-    LOG(WARNING) << "No output device detected.";
-    return;
-  }
+  ABORT_AUDIO_TEST_IF_NOT(audio_man->HasAudioOutputDevices());
 
   uint32 samples_100_ms = AudioParameters::kAudioCDSampleRate / 10;
   AudioOutputStream* oas = audio_man->MakeAudioOutputStream(
@@ -336,10 +312,7 @@ TEST(WinAudioTest, PCMWaveStreamPlay200HzTone44Kss) {
 // sound with a lower volume than PCMWaveStreamPlay200HzTone44Kss.
 TEST(WinAudioTest, PCMWaveStreamPlay200HzTone22Kss) {
   scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
-  if (!audio_man->HasAudioOutputDevices()) {
-    LOG(WARNING) << "No output device detected.";
-    return;
-  }
+  ABORT_AUDIO_TEST_IF_NOT(audio_man->HasAudioOutputDevices());
 
   uint32 samples_100_ms = AudioParameters::kAudioCDSampleRate / 20;
   AudioOutputStream* oas = audio_man->MakeAudioOutputStream(
@@ -371,10 +344,7 @@ TEST(WinAudioTest, PCMWaveStreamPlay200HzTone22Kss) {
 // object roughly at the same time.
 TEST(WinAudioTest, PushSourceFile16KHz)  {
   scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
-  if (!audio_man->HasAudioOutputDevices()) {
-    LOG(WARNING) << "No output device detected.";
-    return;
-  }
+  ABORT_AUDIO_TEST_IF_NOT(audio_man->HasAudioOutputDevices());
 
   static const int kSampleRate = 16000;
   SineWaveAudioSource source(1, 200.0, kSampleRate);
@@ -414,10 +384,7 @@ TEST(WinAudioTest, PushSourceFile16KHz)  {
 // of silence.
 TEST(WinAudioTest, PCMWaveStreamPlayTwice200HzTone44Kss) {
   scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
-  if (!audio_man->HasAudioOutputDevices()) {
-    LOG(WARNING) << "No output device detected.";
-    return;
-  }
+  ABORT_AUDIO_TEST_IF_NOT(audio_man->HasAudioOutputDevices());
 
   uint32 samples_100_ms = AudioParameters::kAudioCDSampleRate / 10;
   AudioOutputStream* oas = audio_man->MakeAudioOutputStream(
@@ -451,13 +418,7 @@ TEST(WinAudioTest, PCMWaveStreamPlayTwice200HzTone44Kss) {
 // smaller buffer size for WASAPI than for Wave.
 TEST(WinAudioTest, PCMWaveStreamPlay200HzToneLowLatency) {
   scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
-  if (!audio_man->HasAudioOutputDevices()) {
-    LOG(WARNING) << "No output device detected.";
-    return;
-  }
-
-  // The WASAPI API requires a correct COM environment.
-  ScopedCOMInitializer com_init(ScopedCOMInitializer::kMTA);
+  ABORT_AUDIO_TEST_IF_NOT(audio_man->HasAudioOutputDevices());
 
   // Use 10 ms buffer size for WASAPI and 50 ms buffer size for Wave.
   // Take the existing native sample rate into account.
@@ -495,10 +456,7 @@ TEST(WinAudioTest, PCMWaveStreamPlay200HzToneLowLatency) {
 // Check that the pending bytes value is correct what the stream starts.
 TEST(WinAudioTest, PCMWaveStreamPendingBytes) {
   scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
-  if (!audio_man->HasAudioOutputDevices()) {
-    LOG(WARNING) << "No output device detected.";
-    return;
-  }
+  ABORT_AUDIO_TEST_IF_NOT(audio_man->HasAudioOutputDevices());
 
   uint32 samples_100_ms = AudioParameters::kAudioCDSampleRate / 10;
   AudioOutputStream* oas = audio_man->MakeAudioOutputStream(
@@ -520,32 +478,22 @@ TEST(WinAudioTest, PCMWaveStreamPendingBytes) {
   // pending bytes will go down and eventually read zero.
   InSequence s;
 
-  EXPECT_CALL(source, OnMoreData(NotNull(),
-                                 Field(&AudioBuffersState::pending_bytes, 0)))
+  EXPECT_CALL(source, OnMoreData(NotNull(), 0))
       .WillOnce(Invoke(ClearData));
 
   // Note: If AudioManagerWin::NumberOfWaveOutBuffers() ever changes, or if this
   // test is run on Vista, these expectations will fail.
-  EXPECT_CALL(source, OnMoreData(NotNull(),
-                                 Field(&AudioBuffersState::pending_bytes,
-                                       bytes_100_ms)))
+  EXPECT_CALL(source, OnMoreData(NotNull(), bytes_100_ms))
       .WillOnce(Invoke(ClearData));
-  EXPECT_CALL(source, OnMoreData(NotNull(),
-                                 Field(&AudioBuffersState::pending_bytes,
-                                       2 * bytes_100_ms)))
+  EXPECT_CALL(source, OnMoreData(NotNull(), 2 * bytes_100_ms))
       .WillOnce(Invoke(ClearData));
-  EXPECT_CALL(source, OnMoreData(NotNull(),
-                                 Field(&AudioBuffersState::pending_bytes,
-                                       2 * bytes_100_ms)))
+  EXPECT_CALL(source, OnMoreData(NotNull(), 2 * bytes_100_ms))
       .Times(AnyNumber())
       .WillRepeatedly(Return(0));
-  EXPECT_CALL(source, OnMoreData(NotNull(),
-                                 Field(&AudioBuffersState::pending_bytes,
-                                       bytes_100_ms)))
+  EXPECT_CALL(source, OnMoreData(NotNull(), bytes_100_ms))
       .Times(AnyNumber())
       .WillRepeatedly(Return(0));
-  EXPECT_CALL(source, OnMoreData(NotNull(),
-                                 Field(&AudioBuffersState::pending_bytes, 0)))
+  EXPECT_CALL(source, OnMoreData(NotNull(), 0))
       .Times(AnyNumber())
       .WillRepeatedly(Return(0));
 
@@ -567,26 +515,19 @@ class SyncSocketSource : public AudioOutputStream::AudioSourceCallback {
         base::AlignedAlloc(data_size_, AudioBus::kChannelAlignment)));
     audio_bus_ = AudioBus::WrapMemory(params, data_.get());
   }
-  ~SyncSocketSource() {}
+  ~SyncSocketSource() override {}
 
   // AudioSourceCallback::OnMoreData implementation:
-  virtual int OnMoreData(AudioBus* audio_bus,
-                         AudioBuffersState buffers_state) {
-    socket_->Send(&buffers_state, sizeof(buffers_state));
+  int OnMoreData(AudioBus* audio_bus, uint32 total_bytes_delay) override {
+    socket_->Send(&total_bytes_delay, sizeof(total_bytes_delay));
     uint32 size = socket_->Receive(data_.get(), data_size_);
     DCHECK_EQ(static_cast<size_t>(size) % sizeof(*audio_bus_->channel(0)), 0U);
     audio_bus_->CopyTo(audio_bus);
     return audio_bus_->frames();
   }
-  virtual int OnMoreIOData(AudioBus* source,
-                           AudioBus* dest,
-                           AudioBuffersState buffers_state) {
-    NOTREACHED();
-    return 0;
-  }
+
   // AudioSourceCallback::OnError implementation:
-  virtual void OnError(AudioOutputStream* stream) {
-  }
+  void OnError(AudioOutputStream* stream) override {}
 
  private:
   base::SyncSocket* socket_;
@@ -622,13 +563,13 @@ DWORD __stdcall SyncSocketThread(void* context) {
   SineWaveAudioSource sine(1, ctx.sine_freq, ctx.sample_rate);
   const int kTwoSecFrames = ctx.sample_rate * 2;
 
-  AudioBuffersState buffers_state;
+  uint32 total_bytes_delay = 0;
   int times = 0;
   for (int ix = 0; ix < kTwoSecFrames; ix += ctx.frames) {
-    if (ctx.socket->Receive(&buffers_state, sizeof(buffers_state)) == 0)
+    if (ctx.socket->Receive(&total_bytes_delay, sizeof(total_bytes_delay)) == 0)
       break;
-    if ((times > 0) && (buffers_state.pending_bytes < 1000)) __debugbreak();
-    sine.OnMoreData(audio_bus.get(), buffers_state);
+    if ((times > 0) && (total_bytes_delay < 1000)) __debugbreak();
+    sine.OnMoreData(audio_bus.get(), total_bytes_delay);
     ctx.socket->Send(data.get(), ctx.packet_size_bytes);
     ++times;
   }
@@ -646,10 +587,7 @@ DWORD __stdcall SyncSocketThread(void* context) {
 // In this test you should hear a continuous 200Hz tone for 2 seconds.
 TEST(WinAudioTest, SyncSocketBasic) {
   scoped_ptr<AudioManager> audio_man(AudioManager::CreateForTesting());
-  if (!audio_man->HasAudioOutputDevices()) {
-    LOG(WARNING) << "No output device detected.";
-    return;
-  }
+  ABORT_AUDIO_TEST_IF_NOT(audio_man->HasAudioOutputDevices());
 
   static const int sample_rate = AudioParameters::kAudioCDSampleRate;
   static const uint32 kSamples20ms = sample_rate / 50;

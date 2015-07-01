@@ -15,7 +15,6 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
-#include "base/process/kill.h"
 #include "base/process/launch.h"
 #include "base/task_runner_util.h"
 #include "chrome/common/chrome_switches.h"
@@ -61,8 +60,7 @@ class ServiceSandboxedProcessLauncherDelegate
  public:
   ServiceSandboxedProcessLauncherDelegate() {}
 
-  virtual void PreSpawnTarget(sandbox::TargetPolicy* policy,
-                              bool* success) OVERRIDE {
+  void PreSpawnTarget(sandbox::TargetPolicy* policy, bool* success) override {
     // Service process may run as windows service and it fails to create a
     // window station.
     policy->SetAlternateDesktop(false);
@@ -153,8 +151,7 @@ class ServiceUtilityProcessHost::PdfToEmfState {
 ServiceUtilityProcessHost::ServiceUtilityProcessHost(
     Client* client,
     base::MessageLoopProxy* client_message_loop_proxy)
-    : handle_(base::kNullProcessHandle),
-      client_(client),
+    : client_(client),
       client_message_loop_proxy_(client_message_loop_proxy),
       waiting_for_reply_(false),
       weak_ptr_factory_(this) {
@@ -163,7 +160,7 @@ ServiceUtilityProcessHost::ServiceUtilityProcessHost(
 
 ServiceUtilityProcessHost::~ServiceUtilityProcessHost() {
   // We need to kill the child process when the host dies.
-  base::KillProcess(handle_, content::RESULT_CODE_NORMAL_EXIT, false);
+  process_.Terminate(content::RESULT_CODE_NORMAL_EXIT, false);
 }
 
 bool ServiceUtilityProcessHost::StartRenderPDFPagesToMetafile(
@@ -232,14 +229,13 @@ bool ServiceUtilityProcessHost::StartProcess(bool no_sandbox) {
 bool ServiceUtilityProcessHost::Launch(base::CommandLine* cmd_line,
                                        bool no_sandbox) {
   if (no_sandbox) {
-    base::ProcessHandle process = base::kNullProcessHandle;
     cmd_line->AppendSwitch(switches::kNoSandbox);
-    base::LaunchProcess(*cmd_line, base::LaunchOptions(), &handle_);
+    process_ = base::LaunchProcess(*cmd_line, base::LaunchOptions());
   } else {
     ServiceSandboxedProcessLauncherDelegate delegate;
-    handle_ = content::StartSandboxedProcess(&delegate, cmd_line);
+    process_ = content::StartSandboxedProcess(&delegate, cmd_line);
   }
-  return (handle_ != base::kNullProcessHandle);
+  return process_.IsValid();
 }
 
 bool ServiceUtilityProcessHost::Send(IPC::Message* msg) {
@@ -295,8 +291,8 @@ bool ServiceUtilityProcessHost::OnMessageReceived(const IPC::Message& message) {
   return handled;
 }
 
-base::ProcessHandle ServiceUtilityProcessHost::GetHandle() const {
-  return handle_;
+const base::Process& ServiceUtilityProcessHost::GetProcess() const {
+  return process_;
 }
 
 void ServiceUtilityProcessHost::OnMetafileSpooled(bool success) {
@@ -317,17 +313,14 @@ void ServiceUtilityProcessHost::OnRenderPDFPagesToMetafilesPageCount(
 
 void ServiceUtilityProcessHost::OnRenderPDFPagesToMetafilesPageDone(
     bool success,
-    double scale_factor) {
+    float scale_factor) {
   DCHECK(waiting_for_reply_);
   if (!pdf_to_emf_state_ || !success)
     return OnPDFToEmfFinished(false);
   base::File emf_file = pdf_to_emf_state_->TakeNextFile();
   base::PostTaskAndReplyWithResult(
-      client_message_loop_proxy_,
-      FROM_HERE,
-      base::Bind(&Client::MetafileAvailable,
-                 client_.get(),
-                 scale_factor,
+      client_message_loop_proxy_.get(), FROM_HERE,
+      base::Bind(&Client::MetafileAvailable, client_.get(), scale_factor,
                  base::Passed(&emf_file)),
       base::Bind(&ServiceUtilityProcessHost::OnMetafileSpooled,
                  weak_ptr_factory_.GetWeakPtr()));
@@ -408,7 +401,7 @@ void ServiceUtilityProcessHost::OnGetPrinterSemanticCapsAndDefaultsFailed(
                  printing::PrinterSemanticCapsAndDefaults()));
 }
 
-bool ServiceUtilityProcessHost::Client::MetafileAvailable(double scale_factor,
+bool ServiceUtilityProcessHost::Client::MetafileAvailable(float scale_factor,
                                                           base::File file) {
   file.Seek(base::File::FROM_BEGIN, 0);
   int64 size = file.GetLength();

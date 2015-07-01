@@ -83,12 +83,12 @@ namespace app_list {
 class AppListModelObserverBridge : public AppListViewDelegateObserver {
  public:
   AppListModelObserverBridge(AppListViewController* parent);
-  virtual ~AppListModelObserverBridge();
+  ~AppListModelObserverBridge() override;
 
  private:
   // Overridden from app_list::AppListViewDelegateObserver:
-  virtual void OnProfilesChanged() OVERRIDE;
-  virtual void OnShutdown() OVERRIDE;
+  void OnProfilesChanged() override;
+  void OnShutdown() override;
 
   AppListViewController* parent_;  // Weak. Owns us.
 
@@ -359,10 +359,6 @@ void AppListModelObserverBridge::OnShutdown() {
     delegate_->OpenSearchResult(
         result, false /* auto_launch */, 0 /* event flags */);
   }
-}
-
-- (void)redoSearch {
-  [self modelTextDidChange];
 }
 
 - (void)onProfilesChanged {

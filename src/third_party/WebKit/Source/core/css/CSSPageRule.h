@@ -32,7 +32,8 @@ class CSSStyleSheet;
 class StyleRulePage;
 class StyleRuleCSSStyleDeclaration;
 
-class CSSPageRule FINAL : public CSSRule {
+class CSSPageRule final : public CSSRule {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<CSSPageRule> create(StyleRulePage* rule, CSSStyleSheet* sheet)
     {
@@ -41,19 +42,20 @@ public:
 
     virtual ~CSSPageRule();
 
-    virtual CSSRule::Type type() const OVERRIDE { return PAGE_RULE; }
-    virtual String cssText() const OVERRIDE;
-    virtual void reattach(StyleRuleBase*) OVERRIDE;
+    virtual String cssText() const override;
+    virtual void reattach(StyleRuleBase*) override;
 
     CSSStyleDeclaration* style() const;
 
     String selectorText() const;
     void setSelectorText(const String&);
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     CSSPageRule(StyleRulePage*, CSSStyleSheet*);
+
+    virtual CSSRule::Type type() const override { return PAGE_RULE; }
 
     RefPtrWillBeMember<StyleRulePage> m_pageRule;
     mutable RefPtrWillBeMember<StyleRuleCSSStyleDeclaration> m_propertiesCSSOMWrapper;

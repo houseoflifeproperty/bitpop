@@ -10,6 +10,8 @@ import android.view.InputDevice.MotionRange;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 
+import org.chromium.base.VisibleForTesting;
+
 import java.util.Arrays;
 import java.util.List;
 
@@ -17,6 +19,16 @@ import java.util.List;
  * Manages information related to each connected gamepad device.
  */
 class GamepadDevice {
+    // Axis ids are used as indices which are empirically always smaller than 256 so this allows
+    // us to create cheap associative arrays.
+    @VisibleForTesting
+    static final int MAX_RAW_AXIS_VALUES = 256;
+
+    // Keycodes are used as indices which are empirically always smaller than 256 so this allows
+    // us to create cheap associative arrays.
+    @VisibleForTesting
+    static final int MAX_RAW_BUTTON_VALUES = 256;
+
     // An id for the gamepad.
     private int mDeviceId;
     // The index of the gamepad in the Navigator.
@@ -30,16 +42,16 @@ class GamepadDevice {
     // All axis values must be linearly normalized to the range [-1.0 .. 1.0].
     // As appropriate, -1.0 should correspond to "up" or "left", and 1.0
     // should correspond to "down" or "right".
-    private final float[] mAxisValues = new float[CanonicalAxisIndex.NUM_CANONICAL_AXES];
+    private final float[] mAxisValues = new float[CanonicalAxisIndex.COUNT];
 
-    private final float[] mButtonsValues = new float[CanonicalButtonIndex.NUM_CANONICAL_BUTTONS];;
+    private final float[] mButtonsValues = new float[CanonicalButtonIndex.COUNT];
 
     // When the user agent recognizes the attached inputDevice, it is recommended
     // that it be remapped to a canonical ordering when possible. Devices that are
     // not recognized should still be exposed in their raw form. Therefore we must
     // pass the raw Button and raw Axis values.
-    private final float[] mRawButtons = new float[256];
-    private final float[] mRawAxes = new float[256];
+    private final float[] mRawButtons = new float[MAX_RAW_BUTTON_VALUES];
+    private final float[] mRawAxes = new float[MAX_RAW_AXIS_VALUES];
 
     // An identification string for the gamepad.
     private String mDeviceName;
@@ -59,7 +71,7 @@ class GamepadDevice {
         for (MotionRange range : ranges) {
             if ((range.getSource() & InputDevice.SOURCE_CLASS_JOYSTICK) != 0) {
                 int axis = range.getAxis();
-                assert axis < 256;
+                assert axis < MAX_RAW_AXIS_VALUES;
                 mAxes[i++] = axis;
             }
         }
@@ -76,37 +88,51 @@ class GamepadDevice {
     /**
      * @return Device Id of the gamepad device.
      */
-    public int getId() { return mDeviceId; }
+    public int getId() {
+        return mDeviceId;
+    }
 
     /**
      * @return Mapping status of the gamepad device.
      */
-    public boolean isStandardGamepad() { return mIsStandardGamepad; }
+    public boolean isStandardGamepad() {
+        return mIsStandardGamepad;
+    }
 
     /**
      * @return Device name of the gamepad device.
      */
-    public String getName() { return mDeviceName; }
+    public String getName() {
+        return mDeviceName;
+    }
 
     /**
      * @return Device index of the gamepad device.
      */
-    public int getIndex() { return mDeviceIndex; }
+    public int getIndex() {
+        return mDeviceIndex;
+    }
 
     /**
      * @return The timestamp when the gamepad device was last interacted.
      */
-    public long getTimestamp() { return mTimestamp; }
+    public long getTimestamp() {
+        return mTimestamp;
+    }
 
     /**
      * @return The axes state of the gamepad device.
      */
-    public float[] getAxes() { return mAxisValues; }
+    public float[] getAxes() {
+        return mAxisValues;
+    }
 
     /**
      * @return The buttons state of the gamepad device.
      */
-    public float[] getButtons() { return mButtonsValues; }
+    public float[] getButtons() {
+        return mButtonsValues;
+    }
 
     /**
      * Reset the axes and buttons data of the gamepad device everytime gamepad data access is
@@ -127,7 +153,7 @@ class GamepadDevice {
         // Ignore event if it is not for standard gamepad key.
         if (!GamepadList.isGamepadEvent(event)) return false;
         int keyCode = event.getKeyCode();
-        assert keyCode < 256;
+        assert keyCode < MAX_RAW_BUTTON_VALUES;
         // Button value 0.0 must mean fully unpressed, and 1.0 must mean fully pressed.
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
             mRawButtons[keyCode] = 1.0f;

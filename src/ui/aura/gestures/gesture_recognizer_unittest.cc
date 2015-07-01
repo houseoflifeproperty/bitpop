@@ -19,13 +19,13 @@
 #include "ui/events/event.h"
 #include "ui/events/event_switches.h"
 #include "ui/events/event_utils.h"
-#include "ui/events/gestures/gesture_configuration.h"
+#include "ui/events/gesture_detection/gesture_configuration.h"
 #include "ui/events/gestures/gesture_recognizer_impl.h"
 #include "ui/events/gestures/gesture_types.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/events/test/events_test_utils.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
 
 #include <queue>
 
@@ -99,7 +99,7 @@ class GestureEventConsumeDelegate : public TestWindowDelegate {
         flags_(0),
         wait_until_event_(ui::ET_UNKNOWN) {}
 
-  virtual ~GestureEventConsumeDelegate() {}
+  ~GestureEventConsumeDelegate() override {}
 
   void Reset() {
     events_.clear();
@@ -138,7 +138,6 @@ class GestureEventConsumeDelegate : public TestWindowDelegate {
     tap_count_ = 0;
     scale_ = 0;
     flags_ = 0;
-    latency_info_.Clear();
   }
 
   const std::vector<ui::EventType>& events() const { return events_; };
@@ -188,7 +187,6 @@ class GestureEventConsumeDelegate : public TestWindowDelegate {
   const gfx::Rect& bounding_box() const { return bounding_box_; }
   int tap_count() const { return tap_count_; }
   int flags() const { return flags_; }
-  const ui::LatencyInfo& latency_info() const { return latency_info_; }
 
   void WaitUntilReceivedGesture(ui::EventType type) {
     wait_until_event_ = type;
@@ -196,11 +194,10 @@ class GestureEventConsumeDelegate : public TestWindowDelegate {
     run_loop_->Run();
   }
 
-  virtual void OnGestureEvent(ui::GestureEvent* gesture) OVERRIDE {
+  void OnGestureEvent(ui::GestureEvent* gesture) override {
     events_.push_back(gesture->type());
     bounding_box_ = gesture->details().bounding_box();
     flags_ = gesture->flags();
-    latency_info_ = *gesture->latency();
     switch (gesture->type()) {
       case ui::ET_GESTURE_TAP:
         tap_location_ = gesture->location();
@@ -325,7 +322,6 @@ class GestureEventConsumeDelegate : public TestWindowDelegate {
   gfx::Rect bounding_box_;
   int tap_count_;
   int flags_;
-  ui::LatencyInfo latency_info_;
 
   ui::EventType wait_until_event_;
 
@@ -337,19 +333,20 @@ class QueueTouchEventDelegate : public GestureEventConsumeDelegate {
   explicit QueueTouchEventDelegate(WindowEventDispatcher* dispatcher)
       : window_(NULL),
         dispatcher_(dispatcher),
-        queue_events_(true) {
-  }
-  virtual ~QueueTouchEventDelegate() {
-    while(!queue_.empty()) {
-      delete queue_.front();
-      queue_.pop();
-    }
-  }
+        synchronous_ack_for_next_event_(AckState::PENDING) {}
 
-  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE {
-    if (queue_events_) {
-      queue_.push(new ui::TouchEvent(*event, window_, window_));
-      event->StopPropagation();
+  ~QueueTouchEventDelegate() override {}
+
+  void OnTouchEvent(ui::TouchEvent* event) override {
+    event->DisableSynchronousHandling();
+    if (synchronous_ack_for_next_event_ != AckState::PENDING) {
+      ui::GestureRecognizer::Get()->AckSyncTouchEvent(
+          event->unique_event_id(),
+          synchronous_ack_for_next_event_ == AckState::CONSUMED
+              ? ui::ER_CONSUMED
+              : ui::ER_UNHANDLED,
+          window_);
+      synchronous_ack_for_next_event_ = AckState::PENDING;
     }
   }
 
@@ -362,20 +359,27 @@ class QueueTouchEventDelegate : public GestureEventConsumeDelegate {
   }
 
   void set_window(Window* w) { window_ = w; }
-  void set_queue_events(bool queue) { queue_events_ = queue; }
-
- private:
-  void ReceivedAckImpl(bool prevent_defaulted) {
-    scoped_ptr<ui::TouchEvent> event(queue_.front());
-    dispatcher_->ProcessedTouchEvent(event.get(), window_,
-        prevent_defaulted ? ui::ER_HANDLED : ui::ER_UNHANDLED);
-    queue_.pop();
+  void set_synchronous_ack_for_next_event(bool consumed) {
+    DCHECK(synchronous_ack_for_next_event_ == AckState::PENDING);
+    synchronous_ack_for_next_event_ =
+        consumed ? AckState::CONSUMED : AckState::UNCONSUMED;
   }
 
-  std::queue<ui::TouchEvent*> queue_;
+ private:
+  enum class AckState {
+    PENDING,
+    CONSUMED,
+    UNCONSUMED,
+  };
+
+  void ReceivedAckImpl(bool prevent_defaulted) {
+    dispatcher_->ProcessedTouchEvent(
+        window_, prevent_defaulted ? ui::ER_HANDLED : ui::ER_UNHANDLED);
+  }
+
   Window* window_;
   WindowEventDispatcher* dispatcher_;
-  bool queue_events_;
+  AckState synchronous_ack_for_next_event_;
 
   DISALLOW_COPY_AND_ASSIGN(QueueTouchEventDelegate);
 };
@@ -409,7 +413,7 @@ class GestureEventSynthDelegate : public TestWindowDelegate {
   bool mouse_release() const { return mouse_release_; }
   bool double_click() const { return double_click_; }
 
-  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE {
+  void OnMouseEvent(ui::MouseEvent* event) override {
     switch (event->type()) {
       case ui::ET_MOUSE_PRESSED:
         double_click_ = event->flags() & ui::EF_IS_DOUBLE_CLICK;
@@ -498,8 +502,8 @@ class TimedEvents {
                         int time_step,
                         int num_steps,
                         GestureEventConsumeDelegate* delegate) {
-    int x = x_start;
-    int y = y_start;
+    float x = x_start;
+    float y = y_start;
 
     for (int i = 0; i < num_steps; i++) {
       x += dx;
@@ -536,9 +540,9 @@ class TestEventHandler : public ui::EventHandler {
         touch_pressed_count_(0),
         touch_moved_count_(0) {}
 
-  virtual ~TestEventHandler() {}
+  ~TestEventHandler() override {}
 
-  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE {
+  void OnTouchEvent(ui::TouchEvent* event) override {
     switch (event->type()) {
       case ui::ET_TOUCH_RELEASED:
         touch_released_count_++;
@@ -588,17 +592,14 @@ class TestEventHandler : public ui::EventHandler {
 class RemoveOnTouchCancelHandler : public TestEventHandler {
  public:
   RemoveOnTouchCancelHandler() {}
-  virtual ~RemoveOnTouchCancelHandler() {}
+  ~RemoveOnTouchCancelHandler() override {}
 
  private:
   // ui::EventHandler:
-  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE {
+  void OnTouchEvent(ui::TouchEvent* event) override {
     TestEventHandler::OnTouchEvent(event);
     if (event->type() == ui::ET_TOUCH_CANCELLED) {
       Window* target = static_cast<Window*>(event->target());
-      // This is tiptoeing around crbug.com/310172. If this event handler isn't
-      // removed, we enter an infinite loop.
-      target->RemovePreTargetHandler(this);
       target->parent()->RemoveChild(target);
     }
   }
@@ -633,13 +634,29 @@ class GestureRecognizerTest : public AuraTestBase,
  public:
   GestureRecognizerTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     AuraTestBase::SetUp();
-    ui::GestureConfiguration::set_show_press_delay_in_ms(2);
-    ui::GestureConfiguration::set_long_press_time_in_seconds(0.003);
+    ui::GestureConfiguration::GetInstance()->set_show_press_delay_in_ms(2);
+    ui::GestureConfiguration::GetInstance()->set_long_press_time_in_ms(3);
   }
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(GestureRecognizerTest);
+};
+
+class GestureRecognizerWithSwitchTest : public GestureRecognizerTest {
+ public:
+  GestureRecognizerWithSwitchTest() {}
+
+  void SetUp() override {
+    GestureRecognizerTest::SetUp();
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
+        switches::kCompensateForUnstablePinchZoom);
+    ui::GestureConfiguration::GetInstance()->set_min_pinch_update_span_delta(5);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(GestureRecognizerWithSwitchTest);
 };
 
 // Check that appropriate touch events generate tap gesture events.
@@ -938,8 +955,8 @@ TEST_F(GestureRecognizerTest, GestureEventScroll) {
   // We'll start by moving the touch point by (10.5, 10.5). We want 5 dips of
   // that distance to be consumed by the slop, so we set the slop radius to
   // sqrt(5 * 5 + 5 * 5).
-  ui::GestureConfiguration::set_max_touch_move_in_pixels_for_click(
-      sqrt(static_cast<double>(5 * 5 + 5 * 5)));
+  ui::GestureConfiguration::GetInstance()
+      ->set_max_touch_move_in_pixels_for_click(sqrt(5.f * 5 + 5 * 5));
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   TimedEvents tes;
@@ -1009,8 +1026,8 @@ TEST_F(GestureRecognizerTest, GestureEventScrollPrediction) {
   // We'll start by moving the touch point by (5, 5). We want all of that
   // distance to be consumed by the slop, so we set the slop radius to
   // sqrt(5 * 5 + 5 * 5).
-  ui::GestureConfiguration::set_max_touch_move_in_pixels_for_click(
-      sqrt(static_cast<double>(5 * 5 + 5 * 5)));
+  ui::GestureConfiguration::GetInstance()
+      ->set_max_touch_move_in_pixels_for_click(sqrt(5.f * 5 + 5 * 5));
 
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
@@ -1080,8 +1097,8 @@ TEST_F(GestureRecognizerTest, GestureEventScrollPrediction) {
 // Check that the bounding box during a scroll event is correct.
 TEST_F(GestureRecognizerTest, GestureEventScrollBoundingBox) {
   TimedEvents tes;
-  for (int radius = 1; radius <= 10; ++radius) {
-    ui::GestureConfiguration::set_default_radius(radius);
+  for (float radius = 1; radius <= 10; ++radius) {
+    ui::GestureConfiguration::GetInstance()->set_default_radius(radius);
     scoped_ptr<GestureEventConsumeDelegate> delegate(
         new GestureEventConsumeDelegate());
     const int kWindowWidth = 123;
@@ -1091,46 +1108,46 @@ TEST_F(GestureRecognizerTest, GestureEventScrollBoundingBox) {
     scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
         delegate.get(), -1234, bounds, root_window()));
 
-    const int kPositionX = 101;
-    const int kPositionY = 201;
+    const float kPositionX = 101;
+    const float kPositionY = 201;
     delegate->Reset();
     ui::TouchEvent press(ui::ET_TOUCH_PRESSED,
-                         gfx::Point(kPositionX, kPositionY),
+                         gfx::PointF(kPositionX, kPositionY),
                          kTouchId,
                          tes.Now());
     DispatchEventUsingWindowDispatcher(&press);
-    EXPECT_EQ(gfx::Rect(kPositionX - radius,
-                        kPositionY - radius,
-                        radius * 2,
-                        radius * 2).ToString(),
-              delegate->bounding_box().ToString());
+    EXPECT_EQ(gfx::RectF(kPositionX - radius,
+                         kPositionY - radius,
+                         radius * 2,
+                         radius * 2),
+              delegate->bounding_box());
 
     const int kScrollAmount = 50;
     tes.SendScrollEvents(event_processor(), kPositionX, kPositionY,
-        1, 1, kTouchId, 1, kScrollAmount, delegate.get());
+                         1, 1, kTouchId, 1, kScrollAmount, delegate.get());
     EXPECT_EQ(gfx::Point(1, 1).ToString(),
               delegate->scroll_begin_position().ToString());
-    EXPECT_EQ(gfx::Rect(kPositionX + kScrollAmount - radius,
-                        kPositionY + kScrollAmount - radius,
-                        radius * 2,
-                        radius * 2).ToString(),
-              delegate->bounding_box().ToString());
+    EXPECT_EQ(gfx::RectF(kPositionX + kScrollAmount - radius,
+                         kPositionY + kScrollAmount - radius,
+                         radius * 2,
+                         radius * 2),
+              delegate->bounding_box());
 
     // Release the touch. This should end the scroll.
     delegate->Reset();
     ui::TouchEvent release(ui::ET_TOUCH_RELEASED,
-                               gfx::Point(kPositionX + kScrollAmount,
-                                          kPositionY + kScrollAmount),
+                               gfx::PointF(kPositionX + kScrollAmount,
+                                           kPositionY + kScrollAmount),
                                kTouchId, press.time_stamp() +
                                base::TimeDelta::FromMilliseconds(50));
     DispatchEventUsingWindowDispatcher(&release);
-    EXPECT_EQ(gfx::Rect(kPositionX + kScrollAmount - radius,
-                        kPositionY + kScrollAmount - radius,
-                        radius * 2,
-                        radius * 2).ToString(),
-              delegate->bounding_box().ToString());
+    EXPECT_EQ(gfx::RectF(kPositionX + kScrollAmount - radius,
+                         kPositionY + kScrollAmount - radius,
+                         radius * 2,
+                         radius * 2),
+              delegate->bounding_box());
   }
-  ui::GestureConfiguration::set_default_radius(0);
+  ui::GestureConfiguration::GetInstance()->set_default_radius(0);
 }
 
 // Check Scroll End Events report correct velocities
@@ -1239,7 +1256,8 @@ TEST_F(GestureRecognizerTest, GestureEventVerticalRailFling) {
 // Check Scroll End Events report non-zero velocities if the user is not on a
 // rail
 TEST_F(GestureRecognizerTest, GestureEventNonRailFling) {
-  ui::GestureConfiguration::set_max_touch_move_in_pixels_for_click(0);
+  ui::GestureConfiguration::GetInstance()
+      ->set_max_touch_move_in_pixels_for_click(0);
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   TimedEvents tes;
@@ -1366,8 +1384,8 @@ TEST_F(GestureRecognizerTest, GestureEventLongPressCancelledByScroll) {
 
 // Check that appropriate touch events generate long tap events
 TEST_F(GestureRecognizerTest, GestureEventLongTap) {
-  ui::GestureConfiguration::set_max_touch_down_duration_in_seconds_for_click(
-      0.0025);
+  ui::GestureConfiguration::GetInstance()
+      ->set_max_touch_down_duration_for_click_in_ms(3);
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   const int kWindowWidth = 123;
@@ -1573,8 +1591,8 @@ TEST_F(GestureRecognizerTest, GestureTapFollowedByScroll) {
   // We'll start by moving the touch point by (5, 5). We want all of that
   // distance to be consumed by the slop, so we set the slop radius to
   // sqrt(5 * 5 + 5 * 5).
-  ui::GestureConfiguration::set_max_touch_move_in_pixels_for_click(
-      sqrt(static_cast<double>(5 * 5 + 5 * 5)));
+  ui::GestureConfiguration::GetInstance()
+      ->set_max_touch_move_in_pixels_for_click(sqrt(5.f * 5 + 5 * 5));
 
   // First, tap. Then, do a scroll using the same touch-id.
   scoped_ptr<GestureEventConsumeDelegate> delegate(
@@ -1831,9 +1849,14 @@ TEST_F(GestureRecognizerTest, AsynchronousGestureRecognition) {
   // should generate both SCROLL_BEGIN and PINCH_BEGIN gestures.
   queued_delegate->Reset();
   delegate->Reset();
-  int x_move = ui::GestureConfiguration::max_touch_move_in_pixels_for_click();
   ui::TouchEvent move(
-      ui::ET_TOUCH_MOVED, gfx::Point(203 + x_move, 303), kTouchId2, tes.Now());
+      ui::ET_TOUCH_MOVED,
+      gfx::PointF(203 +
+                      ui::GestureConfiguration::GetInstance()
+                          ->max_touch_move_in_pixels_for_click(),
+                  303),
+      kTouchId2,
+      tes.Now());
   DispatchEventUsingWindowDispatcher(&move);
   EXPECT_FALSE(delegate->tap());
   EXPECT_FALSE(delegate->tap_down());
@@ -2132,8 +2155,8 @@ TEST_F(GestureRecognizerTest, GestureEventTouchLockSelectsCorrectWindow) {
   scoped_ptr<GestureEventConsumeDelegate*[]> delegates(
       new GestureEventConsumeDelegate*[kNumWindows]);
 
-  ui::GestureConfiguration::
-      set_max_separation_for_gesture_touches_in_pixels(499);
+  ui::GestureConfiguration::GetInstance()
+      ->set_max_separation_for_gesture_touches_in_pixels(499);
 
   scoped_ptr<gfx::Rect[]> window_bounds(new gfx::Rect[kNumWindows]);
   window_bounds[0] = gfx::Rect(0, 0, 1, 1);
@@ -2507,10 +2530,12 @@ TEST_F(GestureRecognizerTest, PressDoesNotCrash) {
   ui::TouchEvent press2(ui::ET_TOUCH_PRESSED, gfx::Point(55, 45), 7, tes.Now());
   DispatchEventUsingWindowDispatcher(&press2);
 
-  // This new press should not generate a tap-down.
-  EXPECT_FALSE(delegate->begin());
-  EXPECT_FALSE(delegate->tap_down());
-  EXPECT_FALSE(delegate->tap_cancel());
+  // FIXME(tdresser): this should not generate a tap down; however,
+  // there is at least one case where we need to allow a touch press
+  // from a currently used touch id. See crbug.com/373125 for details.
+  EXPECT_TRUE(delegate->begin());
+  EXPECT_TRUE(delegate->tap_down());
+  EXPECT_TRUE(delegate->tap_cancel());
   EXPECT_FALSE(delegate->scroll_begin());
 }
 
@@ -2974,12 +2999,12 @@ TEST_F(GestureRecognizerTest, LongPressTimerStopsOnPreventDefaultedTouchMoves) {
 class ConsumesTouchMovesDelegate : public GestureEventConsumeDelegate {
  public:
   ConsumesTouchMovesDelegate() : consume_touch_move_(true) {}
-  virtual ~ConsumesTouchMovesDelegate() {}
+  ~ConsumesTouchMovesDelegate() override {}
 
   void set_consume_touch_move(bool consume) { consume_touch_move_ = consume; }
 
  private:
-  virtual void OnTouchEvent(ui::TouchEvent* touch) OVERRIDE {
+  void OnTouchEvent(ui::TouchEvent* touch) override {
     if (consume_touch_move_ && touch->type() == ui::ET_TOUCH_MOVED)
       touch->SetHandled();
     else
@@ -3106,7 +3131,7 @@ TEST_F(GestureRecognizerTest, GestureEventScrollTwoFingerTouchMoveConsumed) {
 
   EXPECT_3_EVENTS(delegate->events(),
                   ui::ET_GESTURE_END,
-                  ui::ET_GESTURE_SCROLL_END,
+                  ui::ET_SCROLL_FLING_START,
                   ui::ET_GESTURE_END);
 }
 
@@ -3460,7 +3485,8 @@ TEST_F(GestureRecognizerTest, BoundingBoxRadiusChange) {
 // Checks that slow scrolls deliver the correct deltas.
 // In particular, fix for http;//crbug.com/150573.
 TEST_F(GestureRecognizerTest, NoDriftInScroll) {
-  ui::GestureConfiguration::set_max_touch_move_in_pixels_for_click(3);
+  ui::GestureConfiguration::GetInstance()
+      ->set_max_touch_move_in_pixels_for_click(3);
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   const int kWindowWidth = 234;
@@ -3547,8 +3573,7 @@ TEST_F(GestureRecognizerTest, GestureEventConsumedTouchMoveCanFireTapCancel) {
   EXPECT_FALSE(delegate->scroll_end());
 }
 
-TEST_F(GestureRecognizerTest,
-       TransferEventDispatchesTouchCancel) {
+TEST_F(GestureRecognizerTest, CancelAllActiveTouches) {
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   TimedEvents tes;
@@ -3562,7 +3587,7 @@ TEST_F(GestureRecognizerTest,
   scoped_ptr<TestEventHandler> handler(new TestEventHandler());
   window->AddPreTargetHandler(handler.get());
 
-  // Start a gesture sequence on |window|. Then transfer the events to NULL.
+  // Start a gesture sequence on |window|. Then cancel all touches.
   // Make sure |window| receives a touch-cancel event.
   delegate->Reset();
   ui::TouchEvent press(
@@ -3591,9 +3616,10 @@ TEST_F(GestureRecognizerTest,
   ui::GestureRecognizer* gesture_recognizer = ui::GestureRecognizer::Get();
   EXPECT_EQ(window.get(),
             gesture_recognizer->GetTouchLockedTarget(press));
-  gesture_recognizer->TransferEventsTo(window.get(), NULL);
-  EXPECT_EQ(NULL,
-            gesture_recognizer->GetTouchLockedTarget(press));
+
+  ui::GestureRecognizer::Get()->CancelActiveTouchesExcept(nullptr);
+
+  EXPECT_EQ(NULL, gesture_recognizer->GetTouchLockedTarget(press));
   EXPECT_4_EVENTS(delegate->events(),
                   ui::ET_GESTURE_PINCH_END,
                   ui::ET_GESTURE_SCROLL_END,
@@ -3811,7 +3837,8 @@ TEST_F(GestureRecognizerTest, GestureEventConsumedTouchMoveLongPressTest) {
 
 // Tests that the deltas are correct when leaving the slop region very slowly.
 TEST_F(GestureRecognizerTest, TestExceedingSlopSlowly) {
-  ui::GestureConfiguration::set_max_touch_move_in_pixels_for_click(3);
+  ui::GestureConfiguration::GetInstance()
+      ->set_max_touch_move_in_pixels_for_click(3);
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   const int kWindowWidth = 234;
@@ -4040,63 +4067,6 @@ TEST_F(GestureRecognizerTest, GestureEventFlagsPassedFromTouchEvent) {
   EXPECT_NE(default_flags, delegate->flags());
 }
 
-// Test that latency info is passed through to the gesture event.
-TEST_F(GestureRecognizerTest, LatencyPassedFromTouchEvent) {
-  scoped_ptr<GestureEventConsumeDelegate> delegate(
-      new GestureEventConsumeDelegate());
-  TimedEvents tes;
-  const int kWindowWidth = 123;
-  const int kWindowHeight = 45;
-  const int kTouchId = 6;
-
-  const base::TimeTicks time_original = base::TimeTicks::FromInternalValue(100);
-  const base::TimeTicks time_ui = base::TimeTicks::FromInternalValue(200);
-  const base::TimeTicks time_acked = base::TimeTicks::FromInternalValue(300);
-
-  gfx::Rect bounds(100, 200, kWindowWidth, kWindowHeight);
-  scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
-      delegate.get(), -1234, bounds, root_window()));
-
-  delegate->Reset();
-
-  ui::TouchEvent press1(ui::ET_TOUCH_PRESSED, gfx::Point(101, 201),
-                        kTouchId, tes.Now());
-
-  // Ensure the only components around are the ones we add.
-  press1.latency()->Clear();
-
-  press1.latency()->AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0, 0, time_original, 1);
-
-  press1.latency()->AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0, time_ui, 1);
-
-  press1.latency()->AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_LATENCY_ACKED_TOUCH_COMPONENT, 0, 0, time_acked, 1);
-
-  DispatchEventUsingWindowDispatcher(&press1);
-  EXPECT_TRUE(delegate->tap_down());
-
-  ui::LatencyInfo::LatencyComponent component;
-
-  EXPECT_EQ(3U, delegate->latency_info().latency_components.size());
-  ASSERT_TRUE(delegate->latency_info().FindLatency(
-      ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0, &component));
-  EXPECT_EQ(time_original, component.event_time);
-
-  ASSERT_TRUE(delegate->latency_info().FindLatency(
-      ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, &component));
-  EXPECT_EQ(time_ui, component.event_time);
-
-  ASSERT_TRUE(delegate->latency_info().FindLatency(
-      ui::INPUT_EVENT_LATENCY_ACKED_TOUCH_COMPONENT, 0, &component));
-  EXPECT_EQ(time_acked, component.event_time);
-
-  delegate->WaitUntilReceivedGesture(ui::ET_GESTURE_SHOW_PRESS);
-  EXPECT_TRUE(delegate->show_press());
-  EXPECT_EQ(0U, delegate->latency_info().latency_components.size());
-}
-
 // A delegate that deletes a window on long press.
 class GestureEventDeleteWindowOnLongPress : public GestureEventConsumeDelegate {
  public:
@@ -4105,7 +4075,7 @@ class GestureEventDeleteWindowOnLongPress : public GestureEventConsumeDelegate {
 
   void set_window(aura::Window** window) { window_ = window; }
 
-  virtual void OnGestureEvent(ui::GestureEvent* gesture) OVERRIDE {
+  void OnGestureEvent(ui::GestureEvent* gesture) override {
     GestureEventConsumeDelegate::OnGestureEvent(gesture);
     if (gesture->type() != ui::ET_GESTURE_LONG_PRESS)
       return;
@@ -4143,10 +4113,7 @@ TEST_F(GestureRecognizerTest, GestureEventLongPressDeletingWindow) {
   EXPECT_EQ(NULL, window);
 }
 
-TEST_F(GestureRecognizerTest, GestureEventSmallPinchDisabled) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kCompensateForUnstablePinchZoom);
-
+TEST_F(GestureRecognizerWithSwitchTest, GestureEventSmallPinchDisabled) {
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   TimedEvents tes;
@@ -4176,8 +4143,8 @@ TEST_F(GestureRecognizerTest, GestureEventSmallPinchDisabled) {
                   ui::ET_GESTURE_SCROLL_UPDATE,
                   ui::ET_GESTURE_PINCH_BEGIN);
 
-  // No pinch update occurs, as kCompensateForUnstablePinchZoom is on, and this
-  // is a very small pinch.
+  // No pinch update occurs, as kCompensateForUnstablePinchZoom is on and
+  // |min_pinch_update_span_delta| was nonzero, and this is a very small pinch.
   delegate->Reset();
   ui::TouchEvent move2(ui::ET_TOUCH_MOVED, gfx::Point(65, 202),
                        kTouchId1, tes.Now());
@@ -4226,7 +4193,7 @@ TEST_F(GestureRecognizerTest, GestureEventSmallPinchEnabled) {
 
 // Tests that delaying the ack of a touch release doesn't trigger a long press
 // gesture.
-TEST_F(GestureRecognizerTest, DISABLED_EagerGestureDetection) {
+TEST_F(GestureRecognizerTest, EagerGestureDetection) {
   scoped_ptr<QueueTouchEventDelegate> delegate(
       new QueueTouchEventDelegate(host()->dispatcher()));
   TimedEvents tes;
@@ -4259,9 +4226,9 @@ TEST_F(GestureRecognizerTest, DISABLED_EagerGestureDetection) {
   EXPECT_FALSE(delegate->long_press());
 }
 
-// This tests crbug.com/405519, in which events which the gesture detector
-// ignores cause future events to also be thrown away.
-TEST_F(GestureRecognizerTest, IgnoredEventsDontPreventFutureEvents) {
+// This tests crbug.com/405519, in which touch events which the gesture detector
+// ignores interfere with gesture recognition.
+TEST_F(GestureRecognizerTest, IgnoredEventsDontBreakGestureRecognition) {
   scoped_ptr<QueueTouchEventDelegate> delegate(
       new QueueTouchEventDelegate(host()->dispatcher()));
   TimedEvents tes;
@@ -4294,9 +4261,12 @@ TEST_F(GestureRecognizerTest, IgnoredEventsDontPreventFutureEvents) {
                   ui::ET_GESTURE_SCROLL_UPDATE);
 
   delegate->Reset();
+
+  // Send a valid event, but don't ack it.
   ui::TouchEvent move2(
       ui::ET_TOUCH_MOVED, gfx::Point(65, 202), kTouchId1, tes.Now());
   DispatchEventUsingWindowDispatcher(&move2);
+  EXPECT_0_EVENTS(delegate->events());
 
   // Send a touchmove event at the same location as the previous touchmove
   // event. This shouldn't do anything.
@@ -4304,8 +4274,87 @@ TEST_F(GestureRecognizerTest, IgnoredEventsDontPreventFutureEvents) {
       ui::ET_TOUCH_MOVED, gfx::Point(65, 202), kTouchId1, tes.Now());
   DispatchEventUsingWindowDispatcher(&move3);
 
+  // Ack the previous valid event. The intermediary invalid event shouldn't
+  // interfere.
   delegate->ReceivedAck();
   EXPECT_1_EVENT(delegate->events(), ui::ET_GESTURE_SCROLL_UPDATE);
+}
+
+// Tests that an event stream can have a mix of sync and async acks.
+TEST_F(GestureRecognizerTest,
+       MixedSyncAndAsyncAcksDontCauseOutOfOrderDispatch) {
+  scoped_ptr<QueueTouchEventDelegate> delegate(
+      new QueueTouchEventDelegate(host()->dispatcher()));
+  TimedEvents tes;
+  const int kWindowWidth = 300;
+  const int kWindowHeight = 400;
+  const int kTouchId1 = 3;
+  gfx::Rect bounds(0, 0, kWindowWidth, kWindowHeight);
+  scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
+      delegate.get(), -1234, bounds, root_window()));
+  delegate->set_window(window.get());
+
+  // Start a scroll gesture.
+  ui::TouchEvent press1(
+      ui::ET_TOUCH_PRESSED, gfx::Point(0, 0), kTouchId1, tes.Now());
+  DispatchEventUsingWindowDispatcher(&press1);
+  delegate->ReceivedAck();
+
+  ui::TouchEvent move1(
+      ui::ET_TOUCH_MOVED, gfx::Point(100, 100), kTouchId1, tes.Now());
+  DispatchEventUsingWindowDispatcher(&move1);
+  delegate->ReceivedAck();
+
+  delegate->Reset();
+  // Dispatch a synchronously consumed touch move, which should be ignored.
+  delegate->set_synchronous_ack_for_next_event(true);
+  ui::TouchEvent move2(ui::ET_TOUCH_MOVED, gfx::Point(200, 200), kTouchId1,
+                       tes.Now());
+  DispatchEventUsingWindowDispatcher(&move2);
+  EXPECT_0_EVENTS(delegate->events());
+
+  // Dispatch a touch move, but don't ack it.
+  ui::TouchEvent move3(ui::ET_TOUCH_MOVED, gfx::Point(300, 300), kTouchId1,
+                       tes.Now());
+  DispatchEventUsingWindowDispatcher(&move3);
+
+  // Dispatch two synchronously consumed touch moves, which should be ignored.
+  delegate->set_synchronous_ack_for_next_event(true);
+  ui::TouchEvent move4(
+      ui::ET_TOUCH_MOVED, gfx::Point(400, 400), kTouchId1, tes.Now());
+  DispatchEventUsingWindowDispatcher(&move4);
+
+  delegate->set_synchronous_ack_for_next_event(true);
+  ui::TouchEvent move5(
+      ui::ET_TOUCH_MOVED, gfx::Point(500, 500), kTouchId1, tes.Now());
+  DispatchEventUsingWindowDispatcher(&move5);
+
+  EXPECT_0_EVENTS(delegate->events());
+  EXPECT_EQ(100, delegate->bounding_box().x());
+  // Ack the pending touch move, and ensure the most recent gesture event
+  // used its co-ordinates.
+  delegate->ReceivedAck();
+  EXPECT_EQ(300, delegate->bounding_box().x());
+  EXPECT_1_EVENT(delegate->events(), ui::ET_GESTURE_SCROLL_UPDATE);
+
+  // Dispatch a touch move, but don't ack it.
+  delegate->Reset();
+  ui::TouchEvent move6(ui::ET_TOUCH_MOVED, gfx::Point(600, 600), kTouchId1,
+                       tes.Now());
+  DispatchEventUsingWindowDispatcher(&move6);
+
+  // Dispatch a synchronously unconsumed touch move.
+  delegate->set_synchronous_ack_for_next_event(false);
+  ui::TouchEvent move7(
+      ui::ET_TOUCH_MOVED, gfx::Point(700, 700), kTouchId1, tes.Now());
+  DispatchEventUsingWindowDispatcher(&move7);
+
+  // The synchronous ack is stuck behind the pending touch move.
+  EXPECT_0_EVENTS(delegate->events());
+
+  delegate->ReceivedAck();
+  EXPECT_2_EVENTS(delegate->events(), ui::ET_GESTURE_SCROLL_UPDATE,
+                  ui::ET_GESTURE_SCROLL_UPDATE);
 }
 
 }  // namespace test

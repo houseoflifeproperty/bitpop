@@ -63,9 +63,9 @@ class NavEntryCommittedObserver : public content::NotificationObserver {
                        &web_contents->GetController()));
   }
 
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     DCHECK(type == content::NOTIFICATION_NAV_ENTRY_COMMITTED);
     details_ =
         *(content::Details<content::LoadCommittedDetails>(details).ptr());
@@ -135,14 +135,14 @@ class TranslateManagerRenderViewHostTest
         ChromeViewMsg_TranslatePage::ID);
     if (!message)
       return false;
-    Tuple4<int, std::string, std::string, std::string> translate_param;
+    Tuple<int, std::string, std::string, std::string> translate_param;
     ChromeViewMsg_TranslatePage::Read(message, &translate_param);
-    // Ignore translate_param.a which is the page seq no.
-    // Ignore translate_param.b which is the script injected in the page.
+    // Ignore get<0>(translate_param) which is the page seq no.
+    // Ignore get<1>(translate_param) which is the script injected in the page.
     if (original_lang)
-      *original_lang = translate_param.c;
+      *original_lang = get<2>(translate_param);
     if (target_lang)
-      *target_lang = translate_param.d;
+      *target_lang = get<3>(translate_param);
     return true;
   }
 
@@ -369,11 +369,11 @@ class MockTranslateBubbleFactory : public TranslateBubbleFactory {
  public:
   MockTranslateBubbleFactory() {}
 
-  virtual void ShowImplementation(
+  void ShowImplementation(
       BrowserWindow* window,
       content::WebContents* web_contents,
       translate::TranslateStep step,
-      translate::TranslateErrors::Type error_type) OVERRIDE {
+      translate::TranslateErrors::Type error_type) override {
     if (model_) {
       model_->SetViewState(
           TranslateBubbleModelImpl::TranslateStepToViewState(step));
@@ -840,8 +840,11 @@ TEST_F(TranslateManagerRenderViewHostTest, ReloadFromLocationBar) {
   NavEntryCommittedObserver nav_observer(web_contents());
   web_contents()->GetController().LoadURL(
       url, content::Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
-  rvh_tester()->SendNavigateWithTransition(
-      0, url, ui::PAGE_TRANSITION_TYPED);
+  int pending_id =
+      web_contents()->GetController().GetPendingEntry()->GetUniqueID();
+  content::RenderFrameHostTester::For(web_contents()->GetMainFrame())
+      ->SendNavigateWithTransition(0, pending_id, false, url,
+                                   ui::PAGE_TRANSITION_TYPED);
 
   // Test that we are really getting a same page navigation, the test would be
   // useless if it was not the case.
@@ -894,12 +897,12 @@ TEST_F(TranslateManagerRenderViewHostTest, CloseInfoBarInSubframeNavigation) {
 
   // Simulate a sub-frame auto-navigating.
   subframe_tester->SendNavigateWithTransition(
-      1, GURL("http://pub.com"), ui::PAGE_TRANSITION_AUTO_SUBFRAME);
+      0, 0, false, GURL("http://pub.com"), ui::PAGE_TRANSITION_AUTO_SUBFRAME);
   EXPECT_TRUE(GetTranslateInfoBar() == NULL);
 
   // Simulate the user navigating in a sub-frame.
   subframe_tester->SendNavigateWithTransition(
-      2, GURL("http://pub.com"), ui::PAGE_TRANSITION_MANUAL_SUBFRAME);
+      1, 0, true, GURL("http://pub.com"), ui::PAGE_TRANSITION_MANUAL_SUBFRAME);
   EXPECT_TRUE(GetTranslateInfoBar() == NULL);
 
   // Navigate out of page, a new infobar should show.
@@ -1448,8 +1451,6 @@ TEST_F(TranslateManagerRenderViewHostTest, BeforeTranslateExtraButtons) {
   translate::TranslateInfoBarDelegate* infobar;
   TestingProfile* test_profile =
       static_cast<TestingProfile*>(web_contents()->GetBrowserContext());
-  static_cast<extensions::TestExtensionSystem*>(
-      extensions::ExtensionSystem::Get(test_profile))->CreateProcessManager();
   test_profile->ForceIncognito(true);
   for (int i = 0; i < 8; ++i) {
     SCOPED_TRACE(::testing::Message() << "Iteration " << i << " incognito mode="

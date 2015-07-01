@@ -9,7 +9,7 @@
 #include "base/base64.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "base/tracked_objects.h"
 #include "sync/internal_api/public/base/model_type_test_util.h"
 #include "sync/internal_api/public/read_node.h"
@@ -122,7 +122,7 @@ class SyncEncryptionHandlerImplTest : public ::testing::Test {
   }
 
   void PumpLoop() {
-    message_loop_.RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
   }
 
   // Getters for tests.
@@ -423,7 +423,8 @@ TEST_F(SyncEncryptionHandlerImplTest, EncryptEverythingExplicit) {
   EXPECT_FALSE(encryption_handler()->EncryptEverythingEnabled());
   ModelTypeSet encrypted_types =
       encryption_handler()->GetEncryptedTypesUnsafe();
-  EXPECT_TRUE(encrypted_types.Equals(ModelTypeSet(PASSWORDS)));
+  EXPECT_TRUE(encrypted_types.Equals(
+      ModelTypeSet(PASSWORDS, WIFI_CREDENTIALS)));
 
   {
     WriteTransaction trans(FROM_HERE, user_share());
@@ -459,7 +460,8 @@ TEST_F(SyncEncryptionHandlerImplTest, EncryptEverythingImplicit) {
   EXPECT_FALSE(encryption_handler()->EncryptEverythingEnabled());
   ModelTypeSet encrypted_types =
       encryption_handler()->GetEncryptedTypesUnsafe();
-  EXPECT_TRUE(encrypted_types.Equals(ModelTypeSet(PASSWORDS)));
+  EXPECT_TRUE(encrypted_types.Equals(
+      ModelTypeSet(PASSWORDS, WIFI_CREDENTIALS)));
 
   {
     WriteTransaction trans(FROM_HERE, user_share());
@@ -503,7 +505,8 @@ TEST_F(SyncEncryptionHandlerImplTest, UnknownSensitiveTypes) {
   EXPECT_FALSE(encryption_handler()->EncryptEverythingEnabled());
   ModelTypeSet encrypted_types =
       encryption_handler()->GetEncryptedTypesUnsafe();
-  EXPECT_TRUE(encrypted_types.Equals(ModelTypeSet(PASSWORDS)));
+  EXPECT_TRUE(encrypted_types.Equals(
+      ModelTypeSet(PASSWORDS, WIFI_CREDENTIALS)));
 
   {
     WriteTransaction trans(FROM_HERE, user_share());
@@ -514,7 +517,8 @@ TEST_F(SyncEncryptionHandlerImplTest, UnknownSensitiveTypes) {
 
   EXPECT_FALSE(encryption_handler()->EncryptEverythingEnabled());
   encrypted_types = encryption_handler()->GetEncryptedTypesUnsafe();
-  EXPECT_TRUE(encrypted_types.Equals(ModelTypeSet(BOOKMARKS, PASSWORDS)));
+  EXPECT_TRUE(encrypted_types.Equals(
+      ModelTypeSet(BOOKMARKS, PASSWORDS, WIFI_CREDENTIALS)));
 }
 
 // Receive an old nigori with old encryption keys and encrypted types. We should
@@ -661,7 +665,7 @@ TEST_F(SyncEncryptionHandlerImplTest, SetKeystoreMigratesAndUpdatesBootstrap) {
   ASSERT_TRUE(
       GetCryptographer()->encryptor()->DecryptString(decoded_bootstrap,
                                                      &decrypted_bootstrap));
-  JSONStringValueSerializer json(decrypted_bootstrap);
+  JSONStringValueDeserializer json(decrypted_bootstrap);
   scoped_ptr<base::Value> deserialized_keystore_keys(
       json.Deserialize(NULL, NULL));
   ASSERT_TRUE(deserialized_keystore_keys.get());

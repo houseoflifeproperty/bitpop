@@ -29,6 +29,14 @@ CustomContextMenuProvider::~CustomContextMenuProvider()
 {
 }
 
+DEFINE_TRACE(CustomContextMenuProvider)
+{
+    visitor->trace(m_menu);
+    visitor->trace(m_subjectElement);
+    visitor->trace(m_menuItems);
+    ContextMenuProvider::trace(visitor);
+}
+
 void CustomContextMenuProvider::populateContextMenu(ContextMenu* menu)
 {
     populateContextMenuItems(*m_menu, *menu);
@@ -61,7 +69,7 @@ void CustomContextMenuProvider::appendSeparator(ContextMenu& contextMenu)
     if (lastItem.type() == SeparatorType)
         return;
 
-    contextMenu.appendItem(ContextMenuItem(SeparatorType, ContextMenuItemCustomTagNoAction, String()));
+    contextMenu.appendItem(ContextMenuItem(SeparatorType, ContextMenuItemCustomTagNoAction, String(), String()));
 }
 
 void CustomContextMenuProvider::appendMenuItem(HTMLMenuItemElement* menuItem, ContextMenu& contextMenu)
@@ -72,7 +80,20 @@ void CustomContextMenuProvider::appendMenuItem(HTMLMenuItemElement* menuItem, Co
         return;
 
     m_menuItems.append(menuItem);
-    contextMenu.appendItem(ContextMenuItem(ActionType, static_cast<ContextMenuAction>(ContextMenuItemBaseCustomTag + m_menuItems.size() - 1), labelString));
+
+    bool enabled = !menuItem->fastHasAttribute(disabledAttr);
+    String icon = menuItem->fastGetAttribute(iconAttr);
+    if (!icon.isEmpty()) {
+        // To obtain the absolute URL of the icon when the attribute's value is not the empty string,
+        // the attribute's value must be resolved relative to the element.
+        KURL iconURL = KURL(menuItem->baseURI(), icon);
+        icon = iconURL.string();
+    }
+    ContextMenuAction action = static_cast<ContextMenuAction>(ContextMenuItemBaseCustomTag + m_menuItems.size() - 1);
+    if (equalIgnoringCase(menuItem->fastGetAttribute(typeAttr), "checkbox") || equalIgnoringCase(menuItem->fastGetAttribute(typeAttr), "radio"))
+        contextMenu.appendItem(ContextMenuItem(CheckableActionType, action, labelString, icon, enabled, menuItem->fastHasAttribute(checkedAttr)));
+    else
+        contextMenu.appendItem(ContextMenuItem(ActionType, action, labelString, icon, enabled, false));
 }
 
 void CustomContextMenuProvider::populateContextMenuItems(const HTMLMenuElement& menu, ContextMenu& contextMenu)
@@ -91,7 +112,7 @@ void CustomContextMenuProvider::populateContextMenuItems(const HTMLMenuElement& 
                 appendSeparator(contextMenu);
             } else if (!labelString.isEmpty()) {
                 populateContextMenuItems(*toHTMLMenuElement(nextElement), subMenu);
-                contextMenu.appendItem(ContextMenuItem(SubmenuType, ContextMenuItemCustomTagNoAction, labelString, &subMenu));
+                contextMenu.appendItem(ContextMenuItem(SubmenuType, ContextMenuItemCustomTagNoAction, labelString, String(), &subMenu));
             }
             nextElement = Traversal<HTMLElement>::nextSibling(*nextElement);
         } else if (isHTMLMenuItemElement(*nextElement)) {
@@ -113,7 +134,7 @@ HTMLElement* CustomContextMenuProvider::menuItemAt(unsigned menuId)
 {
     int itemIndex = menuId - ContextMenuItemBaseCustomTag;
     if (itemIndex < 0 || static_cast<unsigned long>(itemIndex) >= m_menuItems.size())
-        return 0;
+        return nullptr;
     return m_menuItems[itemIndex].get();
 }
 

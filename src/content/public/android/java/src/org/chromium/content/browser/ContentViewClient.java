@@ -7,13 +7,12 @@ package org.chromium.content.browser;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
-import android.util.Log;
 import android.view.ActionMode;
 import android.view.KeyEvent;
+import android.view.View;
 
+import org.chromium.base.Log;
 import org.chromium.content.browser.SelectActionModeCallback.ActionHandler;
-
-import java.net.URISyntaxException;
 
 /**
  *  Main callback class used by ContentView.
@@ -57,10 +56,9 @@ public class ContentViewClient {
         if (!shouldPropagateKey(keyCode)) return true;
 
         // We also have to intercept some shortcuts before we send them to the ContentView.
-        if (event.isCtrlPressed() && (
-                keyCode == KeyEvent.KEYCODE_TAB ||
-                keyCode == KeyEvent.KEYCODE_W ||
-                keyCode == KeyEvent.KEYCODE_F4)) {
+        if (event.isCtrlPressed() && (keyCode == KeyEvent.KEYCODE_TAB
+                || keyCode == KeyEvent.KEYCODE_W
+                || keyCode == KeyEvent.KEYCODE_F4)) {
             return true;
         }
 
@@ -84,11 +82,27 @@ public class ContentViewClient {
     }
 
     /**
-     * Returns an ActionMode.Callback for in-page selection.
+     * Starts an ActionMode for in-page selection.
+     * @param view The associated View.
+     * @param actionHandler The associated ActionHandler.
+     * @param floating Whether to try creating a floating ActionMode. If this
+     *                 feature is unsupported, the return value will be null.
+     * @return the SelectActionMode if creation is successful, otherwise null.
      */
-    public ActionMode.Callback getSelectActionModeCallback(
-            Context context, ActionHandler actionHandler, boolean incognito) {
-        return new SelectActionModeCallback(context, actionHandler, incognito);
+    public SelectActionMode startActionMode(
+            View view, ActionHandler actionHandler, boolean floating) {
+        if (floating) return null;
+        ActionMode.Callback callback =
+                new SelectActionModeCallback(view.getContext(), actionHandler);
+        ActionMode actionMode = view.startActionMode(callback);
+        return actionMode != null ? new SelectActionMode(actionMode) : null;
+    }
+
+    /**
+     * @return whether the client supports the creation of floating ActionMode instances.
+     */
+    public boolean supportsFloatingActionMode() {
+        return false;
     }
 
     /**
@@ -122,34 +136,6 @@ public class ContentViewClient {
     }
 
     /**
-     * Notification that the selection has changed.
-     * TODO(donnd): Remove this and instead expose a ContextualSearchClient, crbug.com/403001.
-     * @param selection The newly established selection.
-     */
-    public void onSelectionChanged(String selection) {
-    }
-
-    /**
-     * Notification that a selection or insertion-related event has occurred.
-     * TODO(pedrosimonetti): remove this method once downstream code has been updated to use
-     * the other signature.
-     * @param eventType The selection event type, see {@link SelectionEventType}.
-     */
-    public void onSelectionEvent(int eventType) {
-    }
-
-    /**
-     * Notification that a selection or insertion-related event has occurred.
-     * TODO(donnd): Remove this and instead expose a ContextualSearchClient, crbug.com/403001.
-     * @param eventType The selection event type, see {@link SelectionEventType}.
-     * @param posXPix The x coordinate of the selection start handle.
-     * @param posYPix The y coordinate of the selection start handle.
-     */
-    public void onSelectionEvent(int eventType, float posXPix, float posYPix) {
-        onSelectionEvent(eventType);
-    }
-
-    /**
      * Called when a new content intent is requested to be started.
      */
     public void onStartContentIntent(Context context, String intentUrl) {
@@ -157,8 +143,8 @@ public class ContentViewClient {
         // Perform generic parsing of the URI to turn it into an Intent.
         try {
             intent = Intent.parseUri(intentUrl, Intent.URI_INTENT_SCHEME);
-        } catch (URISyntaxException ex) {
-            Log.w(TAG, "Bad URI " + intentUrl + ": " + ex.getMessage());
+        } catch (Exception ex) {
+            Log.w(TAG, "Bad URI " + intentUrl, ex);
             return;
         }
 
@@ -183,6 +169,14 @@ public class ContentViewClient {
     }
 
     /**
+     * @return Whether an externally managed (i.e., not compositor-driven) fling
+     *         of this ContentView is active.
+     */
+    public boolean isExternalFlingActive() {
+        return false;
+    }
+
+    /**
      * Check whether a key should be propagated to the embedder or not.
      * We need to send almost every key to Blink. However:
      * 1. We don't want to block the device on the renderer for
@@ -193,18 +187,18 @@ public class ContentViewClient {
      * for instance, AKEYCODE_MEDIA_* will be dispatched to webkit*.
      */
     public static boolean shouldPropagateKey(int keyCode) {
-        if (keyCode == KeyEvent.KEYCODE_MENU ||
-            keyCode == KeyEvent.KEYCODE_HOME ||
-            keyCode == KeyEvent.KEYCODE_BACK ||
-            keyCode == KeyEvent.KEYCODE_CALL ||
-            keyCode == KeyEvent.KEYCODE_ENDCALL ||
-            keyCode == KeyEvent.KEYCODE_POWER ||
-            keyCode == KeyEvent.KEYCODE_HEADSETHOOK ||
-            keyCode == KeyEvent.KEYCODE_CAMERA ||
-            keyCode == KeyEvent.KEYCODE_FOCUS ||
-            keyCode == KeyEvent.KEYCODE_VOLUME_DOWN ||
-            keyCode == KeyEvent.KEYCODE_VOLUME_MUTE ||
-            keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+        if (keyCode == KeyEvent.KEYCODE_MENU
+                || keyCode == KeyEvent.KEYCODE_HOME
+                || keyCode == KeyEvent.KEYCODE_BACK
+                || keyCode == KeyEvent.KEYCODE_CALL
+                || keyCode == KeyEvent.KEYCODE_ENDCALL
+                || keyCode == KeyEvent.KEYCODE_POWER
+                || keyCode == KeyEvent.KEYCODE_HEADSETHOOK
+                || keyCode == KeyEvent.KEYCODE_CAMERA
+                || keyCode == KeyEvent.KEYCODE_FOCUS
+                || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
+                || keyCode == KeyEvent.KEYCODE_VOLUME_MUTE
+                || keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
             return false;
         }
         return true;

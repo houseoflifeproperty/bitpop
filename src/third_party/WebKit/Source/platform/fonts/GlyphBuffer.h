@@ -31,7 +31,7 @@
 #define GlyphBuffer_h
 
 #include "platform/fonts/Glyph.h"
-#include "platform/geometry/FloatSize.h"
+#include "platform/geometry/FloatPoint.h"
 #include "platform/heap/Heap.h"
 #include "wtf/Vector.h"
 
@@ -42,75 +42,121 @@ class SimpleFontData;
 class GlyphBuffer {
     STACK_ALLOCATED();
 public:
-    GlyphBuffer() : m_hasVerticalAdvances(false) { }
-
     bool isEmpty() const { return m_fontData.isEmpty(); }
-    unsigned size() const { return m_fontData.size(); }
-    bool hasVerticalAdvances() const { return m_hasVerticalAdvances; }
-
-    void clear()
+    unsigned size() const
     {
-        m_fontData.clear();
-        m_glyphs.clear();
-        m_advances.clear();
-        m_hasVerticalAdvances = false;
+        ASSERT(m_fontData.size() == m_glyphs.size());
+        ASSERT(m_fontData.size() == m_offsets.size() || 2 * m_fontData.size() == m_offsets.size());
+        return m_fontData.size();
     }
 
-    const Glyph* glyphs(unsigned from) const { return m_glyphs.data() + from; }
-    const FloatSize* advances(unsigned from) const { return m_advances.data() + from; }
+    bool hasVerticalOffsets() const
+    {
+        // We exclusively store either horizontal/x-only ofssets -- in which case m_offsets.size == size,
+        // or vertical/xy offsets -- in which case m_offsets.size == size * 2.
+        return size() != m_offsets.size();
+    }
 
-    const SimpleFontData* fontDataAt(unsigned index) const { return m_fontData[index]; }
+    const Glyph* glyphs(unsigned from) const
+    {
+        ASSERT(from < size());
+        return m_glyphs.data() + from;
+    }
+
+    // Depending on the GlyphBuffer-wide positioning mode, this either points to an array of
+    // x-only offsets for horizontal positioning ([x1, x2, ... xn]), or interleaved x,y offsets
+    // for full positioning ([x1, y1, x2, y2, ... xn, yn]).
+    const float* offsets(unsigned from) const
+    {
+        ASSERT(from < size());
+        return m_offsets.data() + (hasVerticalOffsets() ? from * 2 : from);
+    }
+
+    const SimpleFontData* fontDataAt(unsigned index) const
+    {
+        ASSERT(index < size());
+        return m_fontData[index];
+    }
 
     Glyph glyphAt(unsigned index) const
     {
+        ASSERT(index < size());
         return m_glyphs[index];
     }
 
-    FloatSize advanceAt(unsigned index) const
+    float xOffsetAt(unsigned index) const
     {
-        return m_advances[index];
+        ASSERT(index < size());
+        return hasVerticalOffsets() ? m_offsets[index * 2] : m_offsets[index];
+
     }
 
-    void add(Glyph glyph, const SimpleFontData* font, float width)
+    float yOffsetAt(unsigned index) const
     {
+        ASSERT(index < size());
+        ASSERT(hasVerticalOffsets());
+        return m_offsets[index * 2 + 1];
+    }
+
+    void add(Glyph glyph, const SimpleFontData* font, float x)
+    {
+        // cannot mix x-only/xy offsets
+        ASSERT(!hasVerticalOffsets());
+
         m_fontData.append(font);
         m_glyphs.append(glyph);
-        m_advances.append(FloatSize(width, 0));
+        m_offsets.append(x);
     }
 
-    void add(Glyph glyph, const SimpleFontData* font, const FloatSize& advance)
+    void add(Glyph glyph, const SimpleFontData* font, const FloatPoint& offset)
     {
+        // cannot mix x-only/xy offsets
+        ASSERT(isEmpty() || hasVerticalOffsets());
+
         m_fontData.append(font);
         m_glyphs.append(glyph);
-        m_advances.append(advance);
-        if (advance.height())
-            m_hasVerticalAdvances = true;
+        m_offsets.append(offset.x());
+        m_offsets.append(offset.y());
     }
 
-    void reverse()
+    void reverseForSimpleRTL(float afterOffset, float totalWidth)
     {
+        ASSERT(!hasVerticalOffsets());
+
+        if (isEmpty())
+            return;
+
         m_fontData.reverse();
         m_glyphs.reverse();
-        m_advances.reverse();
+
+        // | .. [X0 X1 ..   Xn]     ..   |
+        // ^                   ^         ^
+        // 0             afterOffset totalWidth
+        //
+        // The input buffer is shaped using RTL advances, but since the right edge is unknown at
+        // that time, offsets are computed as if the advances were LTR. This method performs the
+        // required adjustments by reconstructing advances and positioning offsets in an RTL
+        // progression.
+
+        // FIXME: we should get rid of this (idea: store negative offsets while shaping,
+        //        and adjust the initial advance accordingly -> should yield correctly positioned
+        //        RTL glyphs without any post-shape munging).
+        ASSERT_WITH_SECURITY_IMPLICATION(!m_offsets.isEmpty());
+        for (unsigned i = 0; i + 1 < m_offsets.size(); ++i)
+            m_offsets[i] = totalWidth - m_offsets[i + 1];
+        m_offsets.last() = totalWidth - afterOffset;
+
+        m_offsets.reverse();
     }
 
-    void setAdvanceWidth(unsigned index, float newWidth)
-    {
-        m_advances[index].setWidth(newWidth);
-    }
-
-    void expandLastAdvance(float width)
-    {
-        ASSERT(!isEmpty());
-        FloatSize& lastAdvance = m_advances.last();
-        lastAdvance.setWidth(lastAdvance.width() + width);
-    }
-
-private:
+protected:
     Vector<const SimpleFontData*, 2048> m_fontData;
     Vector<Glyph, 2048> m_glyphs;
-    Vector<FloatSize, 2048> m_advances;
-    bool m_hasVerticalAdvances;
+
+    // Glyph positioning: either x-only offsets, or interleaved x,y offsets
+    // (depending on the buffer-wide positioning mode). This matches the
+    // glyph positioning format used by Skia.
+    Vector<float, 2048> m_offsets;
 };
 
 } // namespace blink

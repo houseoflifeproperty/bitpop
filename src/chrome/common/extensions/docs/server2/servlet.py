@@ -28,14 +28,15 @@ class Request(object):
   '''
   def __init__(self, path, host, headers, arguments={}):
     self.path = path.lstrip('/')
-    self.host = host.rstrip('/')
+    assert not '/' in host, 'Host "%s" should not contain a slash' % host
+    self.host = host
     self.headers = RequestHeaders(headers)
     self.arguments = arguments
 
   @staticmethod
   def ForTest(path, host=None, headers=None, arguments=None):
     return Request(path,
-                   host or 'http://developer.chrome.com',
+                   host or 'developer.chrome.com',
                    headers or {},
                    arguments or {})
 
@@ -94,6 +95,12 @@ class Response(object):
     '''
     status = 301 if permanent else 302
     return Response(headers={'Location': url}, status=status)
+
+  @staticmethod
+  def BadRequest(content, headers=None):
+    '''Returns a bad request (400) response.
+    '''
+    return Response(content=content, headers=headers, status=400)
 
   @staticmethod
   def NotFound(content, headers=None):

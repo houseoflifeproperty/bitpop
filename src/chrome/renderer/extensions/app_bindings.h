@@ -29,7 +29,7 @@ class AppBindings : public ObjectBackedNativeHandler,
 
  private:
   // IPC::Listener
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   void GetIsInstalled(const v8::FunctionCallbackInfo<v8::Value>& args);
   void GetDetails(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -37,7 +37,7 @@ class AppBindings : public ObjectBackedNativeHandler,
   void GetInstallState(const v8::FunctionCallbackInfo<v8::Value>& args);
   void GetRunningState(const v8::FunctionCallbackInfo<v8::Value>& args);
 
-  v8::Handle<v8::Value> GetDetailsForFrameImpl(blink::WebFrame* frame);
+  v8::Local<v8::Value> GetDetailsForFrameImpl(blink::WebFrame* frame);
 
   void OnAppInstallStateResponse(const std::string& state, int callback_id);
 

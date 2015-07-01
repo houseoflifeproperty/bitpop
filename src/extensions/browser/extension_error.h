@@ -24,9 +24,9 @@ namespace extensions {
 class ExtensionError {
  public:
   enum Type {
-    MANIFEST_ERROR,
+    MANIFEST_ERROR = 0,
     RUNTIME_ERROR,
-    NUM_ERROR_TYPES  // Put new values above this.
+    NUM_ERROR_TYPES,  // Put new values above this.
   };
 
   virtual ~ExtensionError();
@@ -42,6 +42,8 @@ class ExtensionError {
 
   Type type() const { return type_; }
   const std::string& extension_id() const { return extension_id_; }
+  int id() const { return id_; }
+  void set_id(int id) { id_ = id; }
   bool from_incognito() const { return from_incognito_; }
   logging::LogSeverity level() const { return level_; }
   const base::string16& source() const { return source_; }
@@ -71,6 +73,8 @@ class ExtensionError {
   Type type_;
   // The ID of the extension which caused the error.
   std::string extension_id_;
+  // The id of this particular error. This can be zero if the id is never set.
+  int id_;
   // Whether or not the error was caused while incognito.
   bool from_incognito_;
   // The severity level of the error.
@@ -94,11 +98,11 @@ class ManifestError : public ExtensionError {
                 const base::string16& message,
                 const base::string16& manifest_key,
                 const base::string16& manifest_specific);
-  virtual ~ManifestError();
+  ~ManifestError() override;
 
-  virtual scoped_ptr<base::DictionaryValue> ToValue() const OVERRIDE;
+  scoped_ptr<base::DictionaryValue> ToValue() const override;
 
-  virtual std::string PrintForTest() const OVERRIDE;
+  std::string PrintForTest() const override;
 
   const base::string16& manifest_key() const { return manifest_key_; }
   const base::string16& manifest_specific() const { return manifest_specific_; }
@@ -108,7 +112,7 @@ class ManifestError : public ExtensionError {
   static const char kManifestSpecificKey[];
 
  private:
-  virtual bool IsEqualImpl(const ExtensionError* rhs) const OVERRIDE;
+  bool IsEqualImpl(const ExtensionError* rhs) const override;
 
   // If present, this indicates the feature in the manifest which caused the
   // error.
@@ -131,11 +135,11 @@ class RuntimeError : public ExtensionError {
                logging::LogSeverity level,
                int render_view_id,
                int render_process_id);
-  virtual ~RuntimeError();
+  ~RuntimeError() override;
 
-  virtual scoped_ptr<base::DictionaryValue> ToValue() const OVERRIDE;
+  scoped_ptr<base::DictionaryValue> ToValue() const override;
 
-  virtual std::string PrintForTest() const OVERRIDE;
+  std::string PrintForTest() const override;
 
   const GURL& context_url() const { return context_url_; }
   const StackTrace& stack_trace() const { return stack_trace_; }
@@ -153,7 +157,7 @@ class RuntimeError : public ExtensionError {
   static const char kRenderViewIdKey[];
 
  private:
-  virtual bool IsEqualImpl(const ExtensionError* rhs) const OVERRIDE;
+  bool IsEqualImpl(const ExtensionError* rhs) const override;
 
   // Since we piggy-back onto other error reporting systems (like V8 and
   // WebKit), the reported information may need to be cleaned up in order to be

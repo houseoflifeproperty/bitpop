@@ -27,7 +27,7 @@ namespace {
 
 class FailsOnException : public ModuleSystem::ExceptionHandler {
  public:
-  virtual void HandleUncaughtException(const v8::TryCatch& try_catch) OVERRIDE {
+  void HandleUncaughtException(const v8::TryCatch& try_catch) override {
     FAIL() << "Uncaught exception: " << CreateExceptionString(try_catch);
   }
 };
@@ -80,13 +80,13 @@ class ModuleSystemTestEnvironment::AssertNatives
   void AssertTrue(const v8::FunctionCallbackInfo<v8::Value>& args) {
     CHECK_EQ(1, args.Length());
     assertion_made_ = true;
-    failed_ = failed_ || !args[0]->ToBoolean()->Value();
+    failed_ = failed_ || !args[0]->ToBoolean(args.GetIsolate())->Value();
   }
 
   void AssertFalse(const v8::FunctionCallbackInfo<v8::Value>& args) {
     CHECK_EQ(1, args.Length());
     assertion_made_ = true;
-    failed_ = failed_ || args[0]->ToBoolean()->Value();
+    failed_ = failed_ || args[0]->ToBoolean(args.GetIsolate())->Value();
   }
 
  private:
@@ -99,16 +99,16 @@ class ModuleSystemTestEnvironment::StringSourceMap
     : public ModuleSystem::SourceMap {
  public:
   StringSourceMap() {}
-  virtual ~StringSourceMap() {}
+  ~StringSourceMap() override {}
 
-  virtual v8::Handle<v8::Value> GetSource(v8::Isolate* isolate,
-                                          const std::string& name) OVERRIDE {
+  v8::Local<v8::Value> GetSource(v8::Isolate* isolate,
+                                 const std::string& name) override {
     if (source_map_.count(name) == 0)
       return v8::Undefined(isolate);
     return v8::String::NewFromUtf8(isolate, source_map_[name].c_str());
   }
 
-  virtual bool Contains(const std::string& name) OVERRIDE {
+  bool Contains(const std::string& name) override {
     return source_map_.count(name);
   }
 
@@ -156,8 +156,8 @@ ModuleSystemTestEnvironment::ModuleSystemTestEnvironment(v8::Isolate* isolate)
 }
 
 ModuleSystemTestEnvironment::~ModuleSystemTestEnvironment() {
-  if (context_)
-    context_->v8_context()->Exit();
+  if (context_->is_valid())
+    ShutdownModuleSystem();
 }
 
 void ModuleSystemTestEnvironment::RegisterModule(const std::string& name,
@@ -196,11 +196,12 @@ void ModuleSystemTestEnvironment::ShutdownGin() {
 }
 
 void ModuleSystemTestEnvironment::ShutdownModuleSystem() {
+  CHECK(context_->is_valid());
   context_->v8_context()->Exit();
-  context_.reset();
+  context_->Invalidate();
 }
 
-v8::Handle<v8::Object> ModuleSystemTestEnvironment::CreateGlobal(
+v8::Local<v8::Object> ModuleSystemTestEnvironment::CreateGlobal(
     const std::string& name) {
   v8::EscapableHandleScope handle_scope(isolate_);
   v8::Local<v8::Object> object = v8::Object::New(isolate_);

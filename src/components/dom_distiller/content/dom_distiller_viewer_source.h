@@ -9,6 +9,8 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
+#include "components/dom_distiller/core/external_feedback_reporter.h"
 #include "content/public/browser/url_data_source.h"
 
 namespace dom_distiller {
@@ -21,25 +23,27 @@ class ViewRequestDelegate;
 // Serves HTML and resources for viewing distilled articles.
 class DomDistillerViewerSource : public content::URLDataSource {
  public:
-  DomDistillerViewerSource(DomDistillerServiceInterface* dom_distiller_service,
-                           const std::string& scheme);
-  virtual ~DomDistillerViewerSource();
+  DomDistillerViewerSource(
+      DomDistillerServiceInterface* dom_distiller_service,
+      const std::string& scheme,
+      scoped_ptr<ExternalFeedbackReporter> external_reporter);
+  ~DomDistillerViewerSource() override;
 
   class RequestViewerHandle;
 
   // Overridden from content::URLDataSource:
-  virtual std::string GetSource() const OVERRIDE;
-  virtual void StartDataRequest(
+  std::string GetSource() const override;
+  void StartDataRequest(
       const std::string& path,
       int render_process_id,
       int render_frame_id,
-      const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
-  virtual std::string GetMimeType(const std::string& path) const OVERRIDE;
-  virtual bool ShouldServiceRequest(
-      const net::URLRequest* request) const OVERRIDE;
-  virtual void WillServiceRequest(const net::URLRequest* request,
-                                  std::string* path) const OVERRIDE;
-  virtual std::string GetContentSecurityPolicyObjectSrc() const OVERRIDE;
+      const content::URLDataSource::GotDataCallback& callback) override;
+  std::string GetMimeType(const std::string& path) const override;
+  bool ShouldServiceRequest(const net::URLRequest* request) const override;
+  void WillServiceRequest(const net::URLRequest* request,
+                          std::string* path) const override;
+  std::string GetContentSecurityPolicyObjectSrc() const override;
+  std::string GetContentSecurityPolicyFrameSrc() const override;
 
  private:
   friend class DomDistillerViewerSourceTest;
@@ -50,6 +54,9 @@ class DomDistillerViewerSource : public content::URLDataSource {
   // The service which contains all the functionality needed to interact with
   // the list of articles.
   DomDistillerServiceInterface* dom_distiller_service_;
+
+  // A means for starting/opening an external service for feedback reporting.
+  scoped_ptr<ExternalFeedbackReporter> external_feedback_reporter_;
 
   DISALLOW_COPY_AND_ASSIGN(DomDistillerViewerSource);
 };

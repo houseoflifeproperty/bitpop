@@ -4,21 +4,41 @@
 
 /**
  * @constructor
- * @extends {WebInspector.App}
+ * @implements {WebInspector.App}
  */
 WebInspector.SimpleApp = function()
 {
-    WebInspector.App.call(this);
 };
 
 WebInspector.SimpleApp.prototype = {
-    presentUI: function()
+    /**
+     * @param {!Document} document
+     * @override
+     */
+    presentUI: function(document)
     {
         var rootView = new WebInspector.RootView();
         WebInspector.inspectorView.show(rootView.element);
         WebInspector.inspectorView.showInitialPanel();
-        rootView.attachToBody();
-    },
+        rootView.attachToDocument(document);
+    }
+};
 
-    __proto__: WebInspector.App.prototype
+/**
+ * @constructor
+ * @implements {WebInspector.AppProvider}
+ */
+WebInspector.SimpleAppProvider = function()
+{
+};
+
+WebInspector.SimpleAppProvider.prototype = {
+    /**
+     * @override
+     * @return {!WebInspector.App}
+     */
+    createApp: function()
+    {
+        return new WebInspector.SimpleApp();
+    }
 };

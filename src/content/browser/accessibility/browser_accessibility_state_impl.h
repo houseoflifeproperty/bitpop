@@ -40,14 +40,14 @@ class CONTENT_EXPORT BrowserAccessibilityStateImpl
 
   static BrowserAccessibilityStateImpl* GetInstance();
 
-  virtual void EnableAccessibility() OVERRIDE;
-  virtual void DisableAccessibility() OVERRIDE;
-  virtual void ResetAccessibilityMode() OVERRIDE;
-  virtual void OnScreenReaderDetected() OVERRIDE;
-  virtual bool IsAccessibleBrowser() OVERRIDE;
-  virtual void AddHistogramCallback(base::Closure callback) OVERRIDE;
+  void EnableAccessibility() override;
+  void DisableAccessibility() override;
+  void ResetAccessibilityMode() override;
+  void OnScreenReaderDetected() override;
+  bool IsAccessibleBrowser() override;
+  void AddHistogramCallback(base::Closure callback) override;
 
-  virtual void UpdateHistogramsForTesting() OVERRIDE;
+  void UpdateHistogramsForTesting() override;
 
   AccessibilityMode accessibility_mode() const { return accessibility_mode_; };
 
@@ -59,6 +59,18 @@ class CONTENT_EXPORT BrowserAccessibilityStateImpl
   // bit will only be turned off when all modes that depend on it have been
   // removed.
   void RemoveAccessibilityMode(AccessibilityMode mode);
+
+  // Accessibility objects can have the "hot tracked" state set when
+  // the mouse is hovering over them, but this makes tests flaky because
+  // the test behaves differently when the mouse happens to be over an
+  // element.  This is a global switch to not use the "hot tracked" state
+  // in a test.
+  void set_disable_hot_tracking_for_testing(bool disable_hot_tracking) {
+    disable_hot_tracking_ = disable_hot_tracking;
+  }
+  bool disable_hot_tracking_for_testing() const {
+    return disable_hot_tracking_;
+  }
 
  private:
   friend class base::RefCountedThreadSafe<BrowserAccessibilityStateImpl>;
@@ -72,7 +84,7 @@ class CONTENT_EXPORT BrowserAccessibilityStateImpl
   void UpdateHistograms();
 
   // Leaky singleton, destructor generally won't be called.
-  virtual ~BrowserAccessibilityStateImpl();
+  ~BrowserAccessibilityStateImpl() override;
 
   void UpdatePlatformSpecificHistograms();
 
@@ -83,6 +95,8 @@ class CONTENT_EXPORT BrowserAccessibilityStateImpl
   AccessibilityMode accessibility_mode_;
 
   std::vector<base::Closure> histogram_callbacks_;
+
+  bool disable_hot_tracking_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserAccessibilityStateImpl);
 };

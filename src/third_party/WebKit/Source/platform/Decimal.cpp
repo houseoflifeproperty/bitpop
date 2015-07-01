@@ -488,13 +488,18 @@ Decimal Decimal::operator/(const Decimal& rhs) const
     uint64_t remainder = lhs.m_data.coefficient();
     const uint64_t divisor = rhs.m_data.coefficient();
     uint64_t result = 0;
-    while (result < MaxCoefficient / 100) {
-        while (remainder < divisor) {
+    for (;;) {
+        while (remainder < divisor && result < MaxCoefficient / 10) {
             remainder *= 10;
             result *= 10;
             --resultExponent;
         }
-        result += remainder / divisor;
+        if (remainder < divisor)
+            break;
+        uint64_t quotient = remainder / divisor;
+        if (result > MaxCoefficient - quotient)
+            break;
+        result += quotient;
         remainder %= divisor;
         if (!remainder)
             break;
@@ -617,8 +622,7 @@ static bool isMultiplePowersOfTen(uint64_t coefficient, int n)
 }
 
 // Round toward positive infinity.
-// Note: Mac ports defines ceil(x) as wtf_ceil(x), so we can't use name "ceil" here.
-Decimal Decimal::ceiling() const
+Decimal Decimal::ceil() const
 {
     if (isSpecial())
         return *this;
@@ -629,7 +633,7 @@ Decimal Decimal::ceiling() const
     uint64_t result = m_data.coefficient();
     const int numberOfDigits = countDigits(result);
     const int numberOfDropDigits = -exponent();
-    if (numberOfDigits < numberOfDropDigits)
+    if (numberOfDigits <= numberOfDropDigits)
         return isPositive() ? Decimal(1) : zero(Positive);
 
     result = scaleDown(result, numberOfDropDigits);
@@ -895,7 +899,7 @@ Decimal Decimal::nan()
 Decimal Decimal::remainder(const Decimal& rhs) const
 {
     const Decimal quotient = *this / rhs;
-    return quotient.isSpecial() ? quotient : *this - (quotient.isNegative() ? quotient.ceiling() : quotient.floor()) * rhs;
+    return quotient.isSpecial() ? quotient : *this - (quotient.isNegative() ? quotient.ceil() : quotient.floor()) * rhs;
 }
 
 Decimal Decimal::round() const

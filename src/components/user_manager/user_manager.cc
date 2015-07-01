@@ -28,6 +28,9 @@ void UserManager::UserSessionStateObserver::ActiveUserHashChanged(
     const std::string& hash) {
 }
 
+void UserManager::UserSessionStateObserver::UserChangedChildStatus(User* user) {
+}
+
 UserManager::UserSessionStateObserver::~UserSessionStateObserver() {
 }
 

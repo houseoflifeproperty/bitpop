@@ -98,15 +98,14 @@ bool MockInputFileManager::HasTwoPending(const SourceFile& f1,
 }
 
 void MockInputFileManager::IssueAllPending() {
-  BlockNode block(false);  // Default response.
+  BlockNode block;  // Default response.
 
-  for (size_t i = 0; i < pending_.size(); i++) {
-    CannedResponseMap::const_iterator found =
-        canned_responses_.find(pending_[i].first);
+  for (const auto& cur : pending_) {
+    CannedResponseMap::const_iterator found = canned_responses_.find(cur.first);
     if (found == canned_responses_.end())
-      pending_[i].second.Run(&block);
+      cur.second.Run(&block);
     else
-      pending_[i].second.Run(found->second->root.get());
+      cur.second.Run(found->second->root.get());
   }
   pending_.clear();
 }
@@ -117,8 +116,6 @@ class LoaderTest : public testing::Test {
  public:
   LoaderTest() {
     build_settings_.SetBuildDir(SourceDir("//out/Debug/"));
-  }
-  virtual ~LoaderTest() {
   }
 
  protected:

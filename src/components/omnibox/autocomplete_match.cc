@@ -8,10 +8,12 @@
 #include "base/logging.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "components/omnibox/autocomplete_provider.h"
+#include "components/omnibox/suggestion_answer.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_service.h"
 #include "grit/components_scaled_resources.h"
@@ -79,6 +81,7 @@ AutocompleteMatch::AutocompleteMatch(const AutocompleteMatch& match)
       description_class(match.description_class),
       answer_contents(match.answer_contents),
       answer_type(match.answer_type),
+      answer(SuggestionAnswer::copy(match.answer.get())),
       transition(match.transition),
       is_history_what_you_typed_match(match.is_history_what_you_typed_match),
       type(match.type),
@@ -116,6 +119,7 @@ AutocompleteMatch& AutocompleteMatch::operator=(
   description_class = match.description_class;
   answer_contents = match.answer_contents;
   answer_type = match.answer_type;
+  answer = SuggestionAnswer::copy(match.answer.get());
   transition = match.transition;
   is_history_what_you_typed_match = match.is_history_what_you_typed_match;
   type = match.type;
@@ -132,30 +136,54 @@ AutocompleteMatch& AutocompleteMatch::operator=(
 
 // static
 int AutocompleteMatch::TypeToIcon(Type type) {
-  int icons[] = {
-    IDR_OMNIBOX_HTTP,
-    IDR_OMNIBOX_HTTP,
-    IDR_OMNIBOX_HTTP,
-    IDR_OMNIBOX_HTTP,
-    IDR_OMNIBOX_HTTP,
-    IDR_OMNIBOX_HTTP,
-    IDR_OMNIBOX_SEARCH,
-    IDR_OMNIBOX_SEARCH,
-    IDR_OMNIBOX_SEARCH,
-    IDR_OMNIBOX_SEARCH,
-    IDR_OMNIBOX_SEARCH,
-    IDR_OMNIBOX_SEARCH,
-    IDR_OMNIBOX_SEARCH,
-    IDR_OMNIBOX_SEARCH,
-    IDR_OMNIBOX_EXTENSION_APP,
-    IDR_OMNIBOX_SEARCH,
-    IDR_OMNIBOX_HTTP,
-    IDR_OMNIBOX_HTTP,
-    IDR_OMNIBOX_SEARCH,
+#if !defined(OS_IOS)
+  static const int kIcons[] = {
+      IDR_OMNIBOX_HTTP,           // URL_WHAT_YOU_TYPE
+      IDR_OMNIBOX_HTTP,           // HISTORY_URL
+      IDR_OMNIBOX_HTTP,           // HISTORY_TITLE
+      IDR_OMNIBOX_HTTP,           // HISTORY_BODY
+      IDR_OMNIBOX_HTTP,           // HISTORY_KEYWORD
+      IDR_OMNIBOX_HTTP,           // NAVSUGGEST
+      IDR_OMNIBOX_SEARCH,         // SEARCH_WHAT_YOU_TYPED
+      IDR_OMNIBOX_SEARCH,         // SEARCH_HISTORY
+      IDR_OMNIBOX_SEARCH,         // SEARCH_SUGGEST
+      IDR_OMNIBOX_SEARCH,         // SEARCH_SUGGEST_ENTITY
+      IDR_OMNIBOX_SEARCH,         // SEARCH_SUGGEST_TAIL
+      IDR_OMNIBOX_SEARCH,         // SEARCH_SUGGEST_PERSONALIZED
+      IDR_OMNIBOX_SEARCH,         // SEARCH_SUGGEST_PROFILE
+      IDR_OMNIBOX_SEARCH,         // SEARCH_OTHER_ENGINE
+      IDR_OMNIBOX_EXTENSION_APP,  // EXTENSION_APP
+      IDR_OMNIBOX_SEARCH,         // CONTACT_DEPRECATED
+      IDR_OMNIBOX_HTTP,           // BOOKMARK_TITLE
+      IDR_OMNIBOX_HTTP,           // NAVSUGGEST_PERSONALIZED
+      IDR_OMNIBOX_CALCULATOR,     // CALCULATOR
   };
-  COMPILE_ASSERT(arraysize(icons) == AutocompleteMatchType::NUM_TYPES,
-                 icons_array_must_match_type_enum);
-  return icons[type];
+#else
+  static const int kIcons[] = {
+      IDR_OMNIBOX_HTTP,           // URL_WHAT_YOU_TYPE
+      IDR_OMNIBOX_HISTORY,        // HISTORY_URL
+      IDR_OMNIBOX_HISTORY,        // HISTORY_TITLE
+      IDR_OMNIBOX_HISTORY,        // HISTORY_BODY
+      IDR_OMNIBOX_HISTORY,        // HISTORY_KEYWORD
+      IDR_OMNIBOX_HTTP,           // NAVSUGGEST
+      IDR_OMNIBOX_SEARCH,         // SEARCH_WHAT_YOU_TYPED
+      IDR_OMNIBOX_HISTORY,        // SEARCH_HISTORY
+      IDR_OMNIBOX_SEARCH,         // SEARCH_SUGGEST
+      IDR_OMNIBOX_SEARCH,         // SEARCH_SUGGEST_ENTITY
+      IDR_OMNIBOX_SEARCH,         // SEARCH_SUGGEST_TAIL
+      IDR_OMNIBOX_SEARCH,         // SEARCH_SUGGEST_PERSONALIZED
+      IDR_OMNIBOX_SEARCH,         // SEARCH_SUGGEST_PROFILE
+      IDR_OMNIBOX_SEARCH,         // SEARCH_OTHER_ENGINE
+      IDR_OMNIBOX_EXTENSION_APP,  // EXTENSION_APP
+      IDR_OMNIBOX_SEARCH,         // CONTACT_DEPRECATED
+      IDR_OMNIBOX_HTTP,           // BOOKMARK_TITLE
+      IDR_OMNIBOX_HTTP,           // NAVSUGGEST_PERSONALIZED
+      IDR_OMNIBOX_CALCULATOR,     // CALCULATOR
+  };
+#endif
+  static_assert(arraysize(kIcons) == AutocompleteMatchType::NUM_TYPES,
+                "icons array must have NUM_TYPES elements");
+  return kIcons[type];
 }
 
 // static
@@ -318,16 +346,16 @@ bool AutocompleteMatch::IsSearchType(Type type) {
          type == AutocompleteMatchType::SEARCH_HISTORY ||
          type == AutocompleteMatchType::SEARCH_SUGGEST ||
          type == AutocompleteMatchType::SEARCH_OTHER_ENGINE ||
+         type == AutocompleteMatchType::CALCULATOR ||
          IsSpecializedSearchType(type);
 }
 
 // static
 bool AutocompleteMatch::IsSpecializedSearchType(Type type) {
   return type == AutocompleteMatchType::SEARCH_SUGGEST_ENTITY ||
-         type == AutocompleteMatchType::SEARCH_SUGGEST_INFINITE ||
+         type == AutocompleteMatchType::SEARCH_SUGGEST_TAIL ||
          type == AutocompleteMatchType::SEARCH_SUGGEST_PERSONALIZED ||
-         type == AutocompleteMatchType::SEARCH_SUGGEST_PROFILE ||
-         type == AutocompleteMatchType::SEARCH_SUGGEST_ANSWER;
+         type == AutocompleteMatchType::SEARCH_SUGGEST_PROFILE;
 }
 
 // static
@@ -387,8 +415,7 @@ GURL AutocompleteMatch::GURLToStrippedGURL(
   static const size_t prefix_len = arraysize(prefix) - 1;
   std::string host = stripped_destination_url.host();
   if (host.compare(0, prefix_len, prefix) == 0) {
-    host = host.substr(prefix_len);
-    replacements.SetHostStr(host);
+    replacements.SetHostStr(base::StringPiece(host).substr(prefix_len));
     needs_replacement = true;
   }
 

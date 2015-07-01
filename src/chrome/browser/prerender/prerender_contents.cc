@@ -18,7 +18,6 @@
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/prerender/prerender_resource_throttle.h"
-#include "chrome/browser/prerender/prerender_tracker.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tab_helpers.h"
@@ -38,9 +37,8 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/frame_navigate_params.h"
-#include "net/url_request/url_request_context_getter.h"
 #include "ui/base/page_transition_types.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 using content::BrowserThread;
 using content::DownloadItem;
@@ -55,31 +53,6 @@ namespace prerender {
 
 namespace {
 
-// Internal cookie event.
-// Whenever a prerender interacts with the cookie store, either sending
-// existing cookies that existed before the prerender started, or when a cookie
-// is changed, we record these events for histogramming purposes.
-enum InternalCookieEvent {
-  INTERNAL_COOKIE_EVENT_MAIN_FRAME_SEND = 0,
-  INTERNAL_COOKIE_EVENT_MAIN_FRAME_CHANGE = 1,
-  INTERNAL_COOKIE_EVENT_OTHER_SEND = 2,
-  INTERNAL_COOKIE_EVENT_OTHER_CHANGE = 3,
-  INTERNAL_COOKIE_EVENT_MAX
-};
-
-// Indicates whether existing cookies were sent, and if they were third party
-// cookies, and whether they were for blocking resources.
-// Each value may be inclusive of previous values. We only care about the
-// value with the highest index that has ever occurred in the course of a
-// prerender.
-enum CookieSendType {
-  COOKIE_SEND_TYPE_NONE = 0,
-  COOKIE_SEND_TYPE_FIRST_PARTY = 1,
-  COOKIE_SEND_TYPE_THIRD_PARTY = 2,
-  COOKIE_SEND_TYPE_THIRD_PARTY_BLOCKING_RESOURCE = 3,
-  COOKIE_SEND_TYPE_MAX
-};
-
 void ResumeThrottles(
     std::vector<base::WeakPtr<PrerenderResourceThrottle> > throttles) {
   for (size_t i = 0; i < throttles.size(); i++) {
@@ -90,21 +63,16 @@ void ResumeThrottles(
 
 }  // namespace
 
-// static
-const int PrerenderContents::kNumCookieStatuses =
-    (1 << INTERNAL_COOKIE_EVENT_MAX);
-
-// static
-const int PrerenderContents::kNumCookieSendTypes = COOKIE_SEND_TYPE_MAX;
-
 class PrerenderContentsFactoryImpl : public PrerenderContents::Factory {
  public:
-  virtual PrerenderContents* CreatePrerenderContents(
-      PrerenderManager* prerender_manager, Profile* profile,
-      const GURL& url, const content::Referrer& referrer,
-      Origin origin, uint8 experiment_id) OVERRIDE {
-    return new PrerenderContents(prerender_manager, profile,
-                                 url, referrer, origin, experiment_id);
+  PrerenderContents* CreatePrerenderContents(
+      PrerenderManager* prerender_manager,
+      Profile* profile,
+      const GURL& url,
+      const content::Referrer& referrer,
+      Origin origin) override {
+    return new PrerenderContents(prerender_manager, profile, url, referrer,
+                                 origin);
   }
 };
 
@@ -118,8 +86,8 @@ class PrerenderContents::WebContentsDelegateImpl
   }
 
   // content::WebContentsDelegate implementation:
-  virtual WebContents* OpenURLFromTab(WebContents* source,
-                                      const OpenURLParams& params) OVERRIDE {
+  WebContents* OpenURLFromTab(WebContents* source,
+                              const OpenURLParams& params) override {
     // |OpenURLFromTab| is typically called when a frame performs a navigation
     // that requires the browser to perform the transition instead of WebKit.
     // Examples include prerendering a site that redirects to an app URL,
@@ -131,28 +99,28 @@ class PrerenderContents::WebContentsDelegateImpl
     return NULL;
   }
 
-  virtual void CloseContents(content::WebContents* contents) OVERRIDE {
+  void CloseContents(content::WebContents* contents) override {
     prerender_contents_->Destroy(FINAL_STATUS_CLOSED);
   }
 
-  virtual void CanDownload(
-      RenderViewHost* render_view_host,
-      const GURL& url,
-      const std::string& request_method,
-      const base::Callback<void(bool)>& callback) OVERRIDE {
+  void CanDownload(RenderViewHost* render_view_host,
+                   const GURL& url,
+                   const std::string& request_method,
+                   const base::Callback<void(bool)>& callback) override {
     prerender_contents_->Destroy(FINAL_STATUS_DOWNLOAD);
     // Cancel the download.
     callback.Run(false);
   }
 
-   virtual bool ShouldCreateWebContents(
-       WebContents* web_contents,
-       int route_id,
-       WindowContainerType window_container_type,
-       const base::string16& frame_name,
-       const GURL& target_url,
-       const std::string& partition_id,
-       SessionStorageNamespace* session_storage_namespace) OVERRIDE {
+  bool ShouldCreateWebContents(
+      WebContents* web_contents,
+      int route_id,
+      int main_frame_route_id,
+      WindowContainerType window_container_type,
+      const base::string16& frame_name,
+      const GURL& target_url,
+      const std::string& partition_id,
+      SessionStorageNamespace* session_storage_namespace) override {
     // Since we don't want to permit child windows that would have a
     // window.opener property, terminate prerendering.
     prerender_contents_->Destroy(FINAL_STATUS_CREATE_NEW_WINDOW);
@@ -160,7 +128,7 @@ class PrerenderContents::WebContentsDelegateImpl
     return false;
   }
 
-  virtual bool OnGoToEntryOffset(int offset) OVERRIDE {
+  bool OnGoToEntryOffset(int offset) override {
     // This isn't allowed because the history merge operation
     // does not work if there are renderer issued challenges.
     // TODO(cbentzel): Cancel in this case? May not need to do
@@ -169,7 +137,7 @@ class PrerenderContents::WebContentsDelegateImpl
     return false;
   }
 
-  virtual bool ShouldSuppressDialogs() OVERRIDE {
+  bool ShouldSuppressDialogs(WebContents* source) override {
     // We still want to show the user the message when they navigate to this
     // page, so cancel this prerender.
     prerender_contents_->Destroy(FINAL_STATUS_JAVASCRIPT_ALERT);
@@ -178,17 +146,16 @@ class PrerenderContents::WebContentsDelegateImpl
     return true;
   }
 
-  virtual void RegisterProtocolHandler(WebContents* web_contents,
-                                       const std::string& protocol,
-                                       const GURL& url,
-                                       bool user_gesture) OVERRIDE {
+  void RegisterProtocolHandler(WebContents* web_contents,
+                               const std::string& protocol,
+                               const GURL& url,
+                               bool user_gesture) override {
     // TODO(mmenke): Consider supporting this if it is a common case during
     // prerenders.
     prerender_contents_->Destroy(FINAL_STATUS_REGISTER_PROTOCOL_HANDLER);
   }
 
-  virtual gfx::Size GetSizeForNewRenderView(
-      WebContents* web_contents) const OVERRIDE {
+  gfx::Size GetSizeForNewRenderView(WebContents* web_contents) const override {
     // Have to set the size of the RenderView on initialization to be sure it is
     // set before the RenderView is hidden on all platforms (esp. Android).
     return prerender_contents_->size_;
@@ -221,8 +188,7 @@ PrerenderContents::PrerenderContents(
     Profile* profile,
     const GURL& url,
     const content::Referrer& referrer,
-    Origin origin,
-    uint8 experiment_id)
+    Origin origin)
     : prerendering_has_started_(false),
       session_storage_namespace_id_(-1),
       prerender_manager_(prerender_manager),
@@ -238,17 +204,13 @@ PrerenderContents::PrerenderContents(
       child_id_(-1),
       route_id_(-1),
       origin_(origin),
-      experiment_id_(experiment_id),
-      creator_child_id_(-1),
-      cookie_status_(0),
-      cookie_send_type_(COOKIE_SEND_TYPE_NONE),
       network_bytes_(0) {
   DCHECK(prerender_manager != NULL);
 }
 
 PrerenderContents* PrerenderContents::CreateMatchCompleteReplacement() {
   PrerenderContents* new_contents = prerender_manager_->CreatePrerenderContents(
-      prerender_url(), referrer(), origin(), experiment_id());
+      prerender_url(), referrer(), origin());
 
   new_contents->load_start_time_ = load_start_time_;
   new_contents->session_storage_namespace_id_ = session_storage_namespace_id_;
@@ -291,42 +253,30 @@ PrerenderContents* PrerenderContents::FromWebContents(
 }
 
 void PrerenderContents::StartPrerendering(
-    int creator_child_id,
     const gfx::Size& size,
-    SessionStorageNamespace* session_storage_namespace,
-    net::URLRequestContextGetter* request_context) {
+    SessionStorageNamespace* session_storage_namespace) {
   DCHECK(profile_ != NULL);
   DCHECK(!size.IsEmpty());
   DCHECK(!prerendering_has_started_);
   DCHECK(prerender_contents_.get() == NULL);
-  DCHECK_EQ(-1, creator_child_id_);
   DCHECK(size_.IsEmpty());
   DCHECK_EQ(1U, alias_urls_.size());
 
-  creator_child_id_ = creator_child_id;
   session_storage_namespace_id_ = session_storage_namespace->id();
   size_ = size;
 
   DCHECK(load_start_time_.is_null());
   load_start_time_ = base::TimeTicks::Now();
-  start_time_ = base::Time::Now();
 
   // Everything after this point sets up the WebContents object and associated
   // RenderView for the prerender page. Don't do this for members of the
   // control group.
-  if (prerender_manager_->IsControlGroup(experiment_id()))
+  if (prerender_manager_->IsControlGroup())
     return;
-
-  if (origin_ == ORIGIN_LOCAL_PREDICTOR &&
-      IsLocalPredictorPrerenderAlwaysControlEnabled()) {
-    return;
-  }
 
   prerendering_has_started_ = true;
 
-  alias_session_storage_namespace = session_storage_namespace->CreateAlias();
-  prerender_contents_.reset(
-      CreateWebContents(alias_session_storage_namespace.get()));
+  prerender_contents_.reset(CreateWebContents(session_storage_namespace));
   TabHelpers::AttachTabHelpers(prerender_contents_.get());
   content::WebContentsObserver::Observe(prerender_contents_.get());
 
@@ -335,34 +285,15 @@ void PrerenderContents::StartPrerendering(
   // Set the size of the prerender WebContents.
   ResizeWebContents(prerender_contents_.get(), size_);
 
+  // TODO(davidben): This logic assumes each prerender has at most one
+  // route. https://crbug.com/440544
   child_id_ = GetRenderViewHost()->GetProcess()->GetID();
   route_id_ = GetRenderViewHost()->GetRoutingID();
 
-  // Log transactions to see if we could merge session storage namespaces in
-  // the event of a mismatch.
-  alias_session_storage_namespace->AddTransactionLogProcessId(child_id_);
-
-  // Add the RenderProcessHost to the Prerender Manager.
+  // TODO(davidben): This logic assumes each prerender has at most one
+  // process. https://crbug.com/440544
   prerender_manager()->AddPrerenderProcessHost(
       GetRenderViewHost()->GetProcess());
-
-  // In the prerender tracker, create a Prerender Cookie Store to keep track of
-  // cookie changes performed by the prerender. Once the prerender is shown,
-  // the cookie changes will be committed to the actual cookie store,
-  // otherwise, they will be discarded.
-  // If |request_context| is NULL, the feature must be disabled, so the
-  // operation will not be performed.
-  if (request_context) {
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(&PrerenderTracker::AddPrerenderCookieStoreOnIOThread,
-                   base::Unretained(prerender_manager()->prerender_tracker()),
-                   GetRenderViewHost()->GetProcess()->GetID(),
-                   make_scoped_refptr(request_context),
-                   base::Bind(&PrerenderContents::Destroy,
-                              AsWeakPtr(),
-                              FINAL_STATUS_COOKIE_CONFLICT)));
-  }
 
   NotifyPrerenderStart();
 
@@ -427,17 +358,9 @@ PrerenderContents::~PrerenderContents() {
   DCHECK(
       prerendering_has_been_cancelled() || final_status() == FINAL_STATUS_USED);
   DCHECK_NE(ORIGIN_MAX, origin());
-  // Since a lot of prerenders terminate before any meaningful cookie action
-  // would have happened, only record the cookie status for prerenders who
-  // were used, cancelled, or timed out.
-  if (prerendering_has_started_ && final_status() == FINAL_STATUS_USED) {
-    prerender_manager_->RecordCookieStatus(origin(), experiment_id(),
-                                           cookie_status_);
-    prerender_manager_->RecordCookieSendType(origin(), experiment_id(),
-                                             cookie_send_type_);
-  }
+
   prerender_manager_->RecordFinalStatusWithMatchCompleteStatus(
-      origin(), experiment_id(), match_complete_status(), final_status());
+      origin(), match_complete_status(), final_status());
 
   bool used = final_status() == FINAL_STATUS_USED ||
               final_status() == FINAL_STATUS_WOULD_HAVE_BEEN_USED;
@@ -590,6 +513,8 @@ bool PrerenderContents::AddAliasURL(const GURL& url) {
 bool PrerenderContents::Matches(
     const GURL& url,
     const SessionStorageNamespace* session_storage_namespace) const {
+  // TODO(davidben): Remove any consumers that pass in a NULL
+  // session_storage_namespace and only test with matches.
   if (session_storage_namespace &&
       session_storage_namespace_id_ != session_storage_namespace->id()) {
     return false;
@@ -612,8 +537,7 @@ void PrerenderContents::RenderFrameCreated(
       render_frame_host->GetRoutingID(), true));
 }
 
-void PrerenderContents::DidStopLoading(
-    content::RenderViewHost* render_view_host) {
+void PrerenderContents::DidStopLoading() {
   has_stopped_loading_ = true;
   NotifyPrerenderStopLoading();
 }
@@ -678,7 +602,7 @@ void PrerenderContents::DidNavigateMainFrame(
 }
 
 void PrerenderContents::DidGetRedirectForResourceRequest(
-    RenderViewHost* render_view_host,
+    content::RenderFrameHost* render_frame_host,
     const content::ResourceRedirectDetails& details) {
   // DidGetRedirectForResourceRequest can come for any resource on a page.  If
   // it's a redirect on the top-level resource, the name needs to be remembered
@@ -706,7 +630,7 @@ void PrerenderContents::Destroy(FinalStatus final_status) {
   // not reach the PrerenderHandle. Rather
   // OnPrerenderCreatedMatchCompleteReplacement will propogate that
   // information to the referer.
-  if (!prerender_manager_->IsControlGroup(experiment_id()) &&
+  if (!prerender_manager_->IsControlGroup() &&
       (prerendering_has_started() ||
        match_complete_status() == MATCH_COMPLETE_REPLACEMENT)) {
     NotifyPrerenderStop();
@@ -748,8 +672,6 @@ void PrerenderContents::DestroyWhenUsingTooManyResources() {
 WebContents* PrerenderContents::ReleasePrerenderContents() {
   prerender_contents_->SetDelegate(NULL);
   content::WebContentsObserver::Observe(NULL);
-  if (alias_session_storage_namespace.get())
-    alias_session_storage_namespace->RemoveTransactionLogProcessId(child_id_);
   return prerender_contents_.release();
 }
 
@@ -811,85 +733,17 @@ void PrerenderContents::PrepareForUse() {
   resource_throttles_.clear();
 }
 
-SessionStorageNamespace* PrerenderContents::GetSessionStorageNamespace() const {
-  if (!prerender_contents())
-    return NULL;
-  return prerender_contents()->GetController().
-      GetDefaultSessionStorageNamespace();
-}
-
 void PrerenderContents::OnCancelPrerenderForPrinting() {
   Destroy(FINAL_STATUS_WINDOW_PRINT);
 }
 
-void PrerenderContents::RecordCookieEvent(CookieEvent event,
-                                          bool is_main_frame_http_request,
-                                          bool is_third_party_cookie,
-                                          bool is_for_blocking_resource,
-                                          base::Time earliest_create_date) {
-  // We don't care about sent cookies that were created after this prerender
-  // started.
-  // The reason is that for the purpose of the histograms emitted, we only care
-  // about cookies that existed before the prerender was started, but not
-  // about cookies that were created as part of the prerender. Using the
-  // earliest creation timestamp of all cookies provided by the cookie monster
-  // is a heuristic that yields the desired result pretty closely.
-  // In particular, we pretend no other WebContents make changes to the cookies
-  // relevant to the prerender, which may not actually always be the case, but
-  // hopefully most of the times.
-  if (event == COOKIE_EVENT_SEND && earliest_create_date > start_time_)
-    return;
-
-  InternalCookieEvent internal_event = INTERNAL_COOKIE_EVENT_MAX;
-
-  if (is_main_frame_http_request) {
-    if (event == COOKIE_EVENT_SEND) {
-      internal_event = INTERNAL_COOKIE_EVENT_MAIN_FRAME_SEND;
-    } else {
-      internal_event = INTERNAL_COOKIE_EVENT_MAIN_FRAME_CHANGE;
-    }
-  } else {
-    if (event == COOKIE_EVENT_SEND) {
-      internal_event = INTERNAL_COOKIE_EVENT_OTHER_SEND;
-    } else {
-      internal_event = INTERNAL_COOKIE_EVENT_OTHER_CHANGE;
-    }
-  }
-
-  DCHECK_GE(internal_event, 0);
-  DCHECK_LT(internal_event, INTERNAL_COOKIE_EVENT_MAX);
-
-  cookie_status_ |= (1 << internal_event);
-
-  DCHECK_GE(cookie_status_, 0);
-  DCHECK_LT(cookie_status_, kNumCookieStatuses);
-
-  CookieSendType send_type = COOKIE_SEND_TYPE_NONE;
-  if (event == COOKIE_EVENT_SEND) {
-    if (!is_third_party_cookie) {
-      send_type = COOKIE_SEND_TYPE_FIRST_PARTY;
-    } else {
-      if (is_for_blocking_resource) {
-        send_type = COOKIE_SEND_TYPE_THIRD_PARTY_BLOCKING_RESOURCE;
-      } else {
-        send_type = COOKIE_SEND_TYPE_THIRD_PARTY;
-      }
-    }
-  }
-  DCHECK_GE(send_type, 0);
-  DCHECK_LT(send_type, COOKIE_SEND_TYPE_MAX);
-
-  if (cookie_send_type_ < send_type)
-    cookie_send_type_ = send_type;
+void PrerenderContents::AddResourceThrottle(
+    const base::WeakPtr<PrerenderResourceThrottle>& throttle) {
+  resource_throttles_.push_back(throttle);
 }
 
- void PrerenderContents::AddResourceThrottle(
-     const base::WeakPtr<PrerenderResourceThrottle>& throttle) {
-   resource_throttles_.push_back(throttle);
- }
-
- void PrerenderContents::AddNetworkBytes(int64 bytes) {
-   network_bytes_ += bytes;
- }
+void PrerenderContents::AddNetworkBytes(int64 bytes) {
+  network_bytes_ += bytes;
+}
 
 }  // namespace prerender

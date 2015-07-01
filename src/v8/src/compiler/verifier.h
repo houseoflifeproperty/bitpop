@@ -5,7 +5,7 @@
 #ifndef V8_COMPILER_VERIFIER_H_
 #define V8_COMPILER_VERIFIER_H_
 
-#include "src/v8.h"
+#include "src/base/macros.h"
 
 namespace v8 {
 namespace internal {
@@ -18,7 +18,9 @@ class Schedule;
 // each node, etc.
 class Verifier {
  public:
-  static void Run(Graph* graph);
+  enum Typing { TYPED, UNTYPED };
+
+  static void Run(Graph* graph, Typing typing = TYPED);
 
  private:
   class Visitor;

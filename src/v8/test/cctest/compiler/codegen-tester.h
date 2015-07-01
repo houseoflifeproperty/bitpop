@@ -7,6 +7,7 @@
 
 #include "src/v8.h"
 
+#include "src/compiler/instruction-selector.h"
 #include "src/compiler/pipeline.h"
 #include "src/compiler/raw-machine-assembler.h"
 #include "src/simulator.h"
@@ -23,15 +24,17 @@ class MachineAssemblerTester : public HandleAndZoneScope,
  public:
   MachineAssemblerTester(MachineType return_type, MachineType p0,
                          MachineType p1, MachineType p2, MachineType p3,
-                         MachineType p4)
+                         MachineType p4,
+                         MachineOperatorBuilder::Flags flags =
+                             MachineOperatorBuilder::Flag::kNoFlags)
       : HandleAndZoneScope(),
         CallHelper(
             main_isolate(),
             MakeMachineSignature(main_zone(), return_type, p0, p1, p2, p3, p4)),
         MachineAssembler(
-            new (main_zone()) Graph(main_zone()),
+            main_isolate(), new (main_zone()) Graph(main_zone()),
             MakeMachineSignature(main_zone(), return_type, p0, p1, p2, p3, p4),
-            kMachPtr) {}
+            kMachPtr, flags) {}
 
   Node* LoadFromPointer(void* address, MachineType rep, int32_t offset = 0) {
     return this->Load(rep, this->PointerConstant(address),
@@ -65,10 +68,8 @@ class MachineAssemblerTester : public HandleAndZoneScope,
       Schedule* schedule = this->Export();
       CallDescriptor* call_descriptor = this->call_descriptor();
       Graph* graph = this->graph();
-      CompilationInfo info(graph->zone()->isolate(), graph->zone());
-      Linkage linkage(&info, call_descriptor);
-      Pipeline pipeline(&info);
-      code_ = pipeline.GenerateCodeForMachineGraph(&linkage, graph, schedule);
+      code_ = Pipeline::GenerateCodeForTesting(this->isolate(), call_descriptor,
+                                               graph, schedule);
     }
     return this->code_.ToHandleChecked()->entry();
   }
@@ -89,8 +90,8 @@ class RawMachineAssemblerTester
                             MachineType p3 = kMachNone,
                             MachineType p4 = kMachNone)
       : MachineAssemblerTester<RawMachineAssembler>(
-            ReturnValueTraits<ReturnType>::Representation(), p0, p1, p2, p3,
-            p4) {}
+            ReturnValueTraits<ReturnType>::Representation(), p0, p1, p2, p3, p4,
+            InstructionSelector::SupportedMachineOperatorFlags()) {}
 
   template <typename Ci, typename Fn>
   void Run(const Ci& ci, const Fn& fn) {
@@ -142,7 +143,7 @@ class BinopTester {
       CHECK_EQ(CHECK_VALUE, T->Call());
       return result;
     } else {
-      return T->Call();
+      return static_cast<CType>(T->Call());
     }
   }
 
@@ -196,6 +197,17 @@ class Uint32BinopTester
     p1 = a1;
     return static_cast<uint32_t>(T->Call());
   }
+};
+
+
+// A helper class for testing code sequences that take two float parameters and
+// return a float value.
+// TODO(titzer): figure out how to return floats correctly on ia32.
+class Float32BinopTester
+    : public BinopTester<float, kMachFloat32, USE_RESULT_BUFFER> {
+ public:
+  explicit Float32BinopTester(RawMachineAssemblerTester<int32_t>* tester)
+      : BinopTester<float, kMachFloat32, USE_RESULT_BUFFER>(tester) {}
 };
 
 
@@ -331,6 +343,24 @@ class Int32BinopInputShapeTester {
   void RunLeft(RawMachineAssemblerTester<int32_t>* m);
   void RunRight(RawMachineAssemblerTester<int32_t>* m);
 };
+
+// TODO(bmeurer): Drop this crap once we switch to GTest/Gmock.
+static inline void CheckFloatEq(volatile float x, volatile float y) {
+  if (std::isnan(x)) {
+    CHECK(std::isnan(y));
+  } else {
+    CHECK(x == y);
+  }
+}
+
+static inline void CheckDoubleEq(volatile double x, volatile double y) {
+  if (std::isnan(x)) {
+    CHECK(std::isnan(y));
+  } else {
+    CHECK_EQ(x, y);
+  }
+}
+
 }  // namespace compiler
 }  // namespace internal
 }  // namespace v8

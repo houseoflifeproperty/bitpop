@@ -14,19 +14,19 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "v8/include/v8.h"
 
+namespace gin {
+
 using v8::Array;
 using v8::Boolean;
-using v8::Handle;
 using v8::HandleScope;
 using v8::Integer;
+using v8::Local;
 using v8::Null;
 using v8::Number;
 using v8::Object;
 using v8::String;
 using v8::Undefined;
 using v8::Value;
-
-namespace gin {
 
 typedef V8Test ConverterTest;
 
@@ -39,7 +39,7 @@ TEST_F(ConverterTest, Bool) {
       Boolean::New(instance_->isolate(), false)));
 
   struct {
-    Handle<Value> input;
+    Local<Value> input;
     bool expected;
   } test_data[] = {
     { Boolean::New(instance_->isolate(), false).As<Value>(), false },
@@ -55,7 +55,7 @@ TEST_F(ConverterTest, Bool) {
     { Undefined(instance_->isolate()).As<Value>(), false },
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_data); ++i) {
+  for (size_t i = 0; i < arraysize(test_data); ++i) {
     bool result = false;
     EXPECT_TRUE(Converter<bool>::FromV8(instance_->isolate(),
                                         test_data[i].input, &result));
@@ -72,14 +72,14 @@ TEST_F(ConverterTest, Int32) {
   HandleScope handle_scope(instance_->isolate());
 
   int test_data_to[] = {-1, 0, 1};
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_data_to); ++i) {
+  for (size_t i = 0; i < arraysize(test_data_to); ++i) {
     EXPECT_TRUE(Converter<int32_t>::ToV8(instance_->isolate(), test_data_to[i])
                     ->StrictEquals(
                           Integer::New(instance_->isolate(), test_data_to[i])));
   }
 
   struct {
-    v8::Handle<v8::Value> input;
+    v8::Local<v8::Value> input;
     bool expect_sucess;
     int expected_result;
   } test_data_from[] = {
@@ -98,7 +98,7 @@ TEST_F(ConverterTest, Int32) {
     { v8::Undefined(instance_->isolate()).As<Value>(), false, 0 },
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_data_from); ++i) {
+  for (size_t i = 0; i < arraysize(test_data_from); ++i) {
     int32_t result = std::numeric_limits<int32_t>::min();
     bool success = Converter<int32_t>::FromV8(instance_->isolate(),
                                               test_data_from[i].input, &result);
@@ -116,8 +116,8 @@ TEST_F(ConverterTest, Vector) {
   expected.push_back(0);
   expected.push_back(1);
 
-  Handle<Array> js_array = Handle<Array>::Cast(
-      Converter<std::vector<int> >::ToV8(instance_->isolate(), expected));
+  Local<Array> js_array = Local<Array>::Cast(
+      Converter<std::vector<int>>::ToV8(instance_->isolate(), expected));
   ASSERT_FALSE(js_array.IsEmpty());
   EXPECT_EQ(3u, js_array->Length());
   for (size_t i = 0; i < expected.size(); ++i) {

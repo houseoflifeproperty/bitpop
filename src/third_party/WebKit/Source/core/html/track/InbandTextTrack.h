@@ -38,23 +38,19 @@ class WebString;
 
 namespace blink {
 
-class MediaPlayer;
-class TextTrackCue;
-
-class InbandTextTrack FINAL : public TextTrack, public blink::WebInbandTextTrackClient {
+class InbandTextTrack final : public TextTrack, public WebInbandTextTrackClient {
 public:
-    static PassRefPtrWillBeRawPtr<InbandTextTrack> create(blink::WebInbandTextTrack*);
+    static PassRefPtrWillBeRawPtr<InbandTextTrack> create(WebInbandTextTrack*);
     virtual ~InbandTextTrack();
 
-    size_t inbandTrackIndex();
-    virtual void setTrackList(TextTrackList*) OVERRIDE FINAL;
+    virtual void setTrackList(TextTrackList*) override;
 
 private:
-    InbandTextTrack(blink::WebInbandTextTrack*);
+    InbandTextTrack(WebInbandTextTrack*);
 
-    virtual void addWebVTTCue(double, double, const blink::WebString&, const blink::WebString&, const blink::WebString&) OVERRIDE;
+    virtual void addWebVTTCue(double, double, const WebString&, const WebString&, const WebString&) override;
 
-    blink::WebInbandTextTrack* m_webTrack;
+    WebInbandTextTrack* m_webTrack;
 };
 
 } // namespace blink

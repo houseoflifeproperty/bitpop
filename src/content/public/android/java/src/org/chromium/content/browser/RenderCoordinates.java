@@ -36,10 +36,13 @@ public class RenderCoordinates {
 
     private float mContentOffsetYPix;
 
+    private boolean mHasFrameInfo;
+
     // Internally-visible set of update methods (used by ContentViewCore).
     void reset() {
         mScrollXCss = mScrollYCss = 0;
         mPageScaleFactor = 1.0f;
+        mHasFrameInfo = false;
     }
 
     void updateContentSizeCss(float contentWidthCss, float contentHeightCss) {
@@ -67,6 +70,8 @@ public class RenderCoordinates {
         updateContentSizeCss(contentWidthCss, contentHeightCss);
         mLastFrameViewportWidthCss = viewportWidthCss;
         mLastFrameViewportHeightCss = viewportHeightCss;
+
+        mHasFrameInfo = true;
     }
 
     /**
@@ -82,32 +87,44 @@ public class RenderCoordinates {
         /**
          * @return Absolute CSS (document) X coordinate of the point.
          */
-        public float getXAbsoluteCss() { return mXAbsoluteCss; }
+        public float getXAbsoluteCss() {
+            return mXAbsoluteCss;
+        }
 
         /**
          * @return Absolute CSS (document) Y coordinate of the point.
          */
-        public float getYAbsoluteCss() { return mYAbsoluteCss; }
+        public float getYAbsoluteCss() {
+            return mYAbsoluteCss;
+        }
 
         /**
          * @return Local device-scale-unadjusted X coordinate of the point.
          */
-        public float getXLocalDip() { return (mXAbsoluteCss - mScrollXCss) * mPageScaleFactor; }
+        public float getXLocalDip() {
+            return (mXAbsoluteCss - mScrollXCss) * mPageScaleFactor;
+        }
 
         /**
          * @return Local device-scale-unadjusted Y coordinate of the point.
          */
-        public float getYLocalDip() { return (mYAbsoluteCss - mScrollYCss) * mPageScaleFactor; }
+        public float getYLocalDip() {
+            return (mYAbsoluteCss - mScrollYCss) * mPageScaleFactor;
+        }
 
         /**
          * @return Physical (screen) X coordinate of the point.
          */
-        public float getXPix() { return getXLocalDip() * mDeviceScaleFactor; }
+        public float getXPix() {
+            return getXLocalDip() * mDeviceScaleFactor;
+        }
 
         /**
          * @return Physical (screen) Y coordinate of the point.
          */
-        public float getYPix() { return getYLocalDip() * mDeviceScaleFactor + mContentOffsetYPix; }
+        public float getYPix() {
+            return getYLocalDip() * mDeviceScaleFactor + mContentOffsetYPix;
+        }
 
         /**
          * Sets the point to the given absolute CSS (document) coordinates.
@@ -144,72 +161,100 @@ public class RenderCoordinates {
     /**
      * @return Horizontal scroll offset in CSS pixels.
      */
-    public float getScrollX() { return mScrollXCss; }
+    public float getScrollX() {
+        return mScrollXCss;
+    }
 
     /**
      * @return Vertical scroll offset in CSS pixels.
      */
-    public float getScrollY() { return mScrollYCss; }
+    public float getScrollY() {
+        return mScrollYCss;
+    }
 
     /**
      * @return Horizontal scroll offset in physical pixels.
      */
-    public float getScrollXPix() { return fromLocalCssToPix(mScrollXCss); }
+    public float getScrollXPix() {
+        return fromLocalCssToPix(mScrollXCss);
+    }
 
     /**
      * @return Vertical scroll offset in physical pixels.
      */
-    public float getScrollYPix() { return fromLocalCssToPix(mScrollYCss); }
+    public float getScrollYPix() {
+        return fromLocalCssToPix(mScrollYCss);
+    }
 
     /**
      * @return Horizontal scroll offset in physical pixels (approx, integer).
      */
-    public int getScrollXPixInt() { return (int) Math.floor(getScrollXPix()); }
+    public int getScrollXPixInt() {
+        return (int) Math.floor(getScrollXPix());
+    }
 
     /**
      * @return Vertical scroll offset in physical pixels (approx, integer).
      */
-    public int getScrollYPixInt() { return (int) Math.floor(getScrollYPix()); }
+    public int getScrollYPixInt() {
+        return (int) Math.floor(getScrollYPix());
+    }
 
     /**
      * @return Width of the content in CSS pixels.
      */
-    public float getContentWidthCss() { return mContentWidthCss; }
+    public float getContentWidthCss() {
+        return mContentWidthCss;
+    }
 
     /**
      * @return Height of the content in CSS pixels.
      */
-    public float getContentHeightCss() { return mContentHeightCss; }
+    public float getContentHeightCss() {
+        return mContentHeightCss;
+    }
 
     /**
      * @return Approximate width of the content in physical pixels.
      */
-    public float getContentWidthPix() { return fromLocalCssToPix(mContentWidthCss); }
+    public float getContentWidthPix() {
+        return fromLocalCssToPix(mContentWidthCss);
+    }
 
     /**
      * @return Approximate height of the content in physical pixels.
      */
-    public float getContentHeightPix() { return fromLocalCssToPix(mContentHeightCss); }
+    public float getContentHeightPix() {
+        return fromLocalCssToPix(mContentHeightCss);
+    }
 
     /**
      * @return Approximate width of the content in physical pixels (integer).
      */
-    public int getContentWidthPixInt() { return (int) Math.ceil(getContentWidthPix()); }
+    public int getContentWidthPixInt() {
+        return (int) Math.ceil(getContentWidthPix());
+    }
 
     /**
      * @return Approximate height of the content in physical pixels (integer).
      */
-    public int getContentHeightPixInt() { return (int) Math.ceil(getContentHeightPix()); }
+    public int getContentHeightPixInt() {
+        return (int) Math.ceil(getContentHeightPix());
+    }
 
     /**
      * @return Render-reported width of the viewport in CSS pixels.
      */
-    public float getLastFrameViewportWidthCss() { return mLastFrameViewportWidthCss; }
+    public float getLastFrameViewportWidthCss() {
+        return mLastFrameViewportWidthCss;
+    }
 
     /**
      * @return Render-reported height of the viewport in CSS pixels.
      */
-    public float getLastFrameViewportHeightCss() { return mLastFrameViewportHeightCss; }
+    public float getLastFrameViewportHeightCss() {
+        return mLastFrameViewportHeightCss;
+    }
 
     /**
      * @return Render-reported width of the viewport in physical pixels (approximate).
@@ -249,22 +294,30 @@ public class RenderCoordinates {
     /**
      * @return Current page scale factor (maps CSS pixels to DIP pixels).
      */
-    public float getPageScaleFactor() { return mPageScaleFactor; }
+    public float getPageScaleFactor() {
+        return mPageScaleFactor;
+    }
 
     /**
      * @return Minimum page scale factor to be used with the content.
      */
-    public float getMinPageScaleFactor() { return mMinPageScaleFactor; }
+    public float getMinPageScaleFactor() {
+        return mMinPageScaleFactor;
+    }
 
     /**
      * @return Maximum page scale factor to be used with the content.
      */
-    public float getMaxPageScaleFactor() { return mMaxPageScaleFactor; }
+    public float getMaxPageScaleFactor() {
+        return mMaxPageScaleFactor;
+    }
 
     /**
      * @return Current device scale factor (maps DIP pixels to physical pixels).
      */
-    public float getDeviceScaleFactor() { return mDeviceScaleFactor; }
+    public float getDeviceScaleFactor() {
+        return mDeviceScaleFactor;
+    }
 
     /**
      * @return Maximum possible horizontal scroll in physical pixels.
@@ -292,6 +345,13 @@ public class RenderCoordinates {
      */
     public int getMaxVerticalScrollPixInt() {
         return (int) Math.floor(getMaxVerticalScrollPix());
+    }
+
+    /**
+     * @return Whether a frame info update has been received.
+     */
+    public boolean hasFrameInfo() {
+        return mHasFrameInfo;
     }
 
     /**

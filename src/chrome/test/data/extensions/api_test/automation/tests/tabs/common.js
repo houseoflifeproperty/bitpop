@@ -11,6 +11,7 @@ var RoleType = chrome.automation.RoleType;
 var StateType = chrome.automation.StateType;
 
 var rootNode = null;
+var url = '';
 
 function createTab(url, callback) {
   chrome.tabs.create({"url": url}, function(tab) {
@@ -18,12 +19,13 @@ function createTab(url, callback) {
   });
 }
 
-function setUpAndRunTests(allTests) {
-  getUrlFromConfig(function(url) {
+function setUpAndRunTests(allTests, opt_path) {
+  var path = opt_path || 'index.html';
+  getUrlFromConfig(path, function(url) {
     createTab(url, function(unused_tab) {
       chrome.automation.getTree(function (returnedRootNode) {
         rootNode = returnedRootNode;
-        if (rootNode.attributes.docLoaded) {
+        if (rootNode.docLoaded) {
           chrome.test.runTests(allTests);
           return;
         }
@@ -35,10 +37,10 @@ function setUpAndRunTests(allTests) {
   });
 }
 
-function getUrlFromConfig(callback) {
+function getUrlFromConfig(path, callback) {
   chrome.test.getConfig(function(config) {
     assertTrue('testServer' in config, 'Expected testServer in config');
-    var url = 'http://a.com:PORT/index.html'
+    url = ('http://a.com:PORT/' + path)
         .replace(/PORT/, config.testServer.port);
     callback(url)
   });

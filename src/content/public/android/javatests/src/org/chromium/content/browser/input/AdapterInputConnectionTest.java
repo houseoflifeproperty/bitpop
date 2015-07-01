@@ -8,6 +8,7 @@ import android.content.Context;
 import android.os.IBinder;
 import android.os.ResultReceiver;
 import android.test.suitebuilder.annotation.MediumTest;
+import android.test.suitebuilder.annotation.SmallTest;
 import android.text.Editable;
 import android.text.Selection;
 import android.view.KeyEvent;
@@ -43,6 +44,23 @@ public class AdapterInputConnectionTest extends ContentShellTestBase {
         mEditable = Editable.Factory.getInstance().newEditable("");
         mConnection = new AdapterInputConnection(
                 getContentViewCore().getContainerView(), mImeAdapter, mEditable, info);
+    }
+
+    @SmallTest
+    @Feature({"TextInput", "Main"})
+    public void testAdjustLengthBeforeAndAfterSelection() throws Throwable {
+        final String ga = "\uAC00";
+        final String smiley = "\uD83D\uDE0A"; // multi character codepoint
+
+        // No need to adjust length.
+        assertFalse(AdapterInputConnection.isIndexBetweenUtf16SurrogatePair("a", 0));
+        assertFalse(AdapterInputConnection.isIndexBetweenUtf16SurrogatePair(ga, 0));
+        assertFalse(AdapterInputConnection.isIndexBetweenUtf16SurrogatePair("aa", 1));
+        assertFalse(AdapterInputConnection.isIndexBetweenUtf16SurrogatePair("a" + smiley + "a", 1));
+
+        // Needs to adjust length.
+        assertTrue(AdapterInputConnection.isIndexBetweenUtf16SurrogatePair(smiley, 1));
+        assertTrue(AdapterInputConnection.isIndexBetweenUtf16SurrogatePair(smiley + "a", 1));
     }
 
     @MediumTest
@@ -167,7 +185,7 @@ public class AdapterInputConnectionTest extends ContentShellTestBase {
         @Override
         public void updateSelection(View view, int selStart, int selEnd,
                 int candidatesStart, int candidatesEnd) {
-          mUpdates.add(new ImeState("", selStart, selEnd, candidatesStart, candidatesEnd));
+            mUpdates.add(new ImeState("", selStart, selEnd, candidatesStart, candidatesEnd));
         }
 
         public int getUpdateSelectionCallCount() {
@@ -191,6 +209,9 @@ public class AdapterInputConnectionTest extends ContentShellTestBase {
 
         @Override
         public void onDismissInput() {}
+
+        @Override
+        public void onKeyboardBoundsUnchanged() {}
 
         @Override
         public View getAttachedView() {

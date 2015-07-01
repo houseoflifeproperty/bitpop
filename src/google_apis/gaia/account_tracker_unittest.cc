@@ -136,10 +136,10 @@ class AccountTrackerObserver : public AccountTracker::Observer {
   void SortEventsByUser();
 
   // AccountTracker::Observer implementation
-  virtual void OnAccountAdded(const AccountIds& ids) OVERRIDE;
-  virtual void OnAccountRemoved(const AccountIds& ids) OVERRIDE;
-  virtual void OnAccountSignInChanged(const AccountIds& ids, bool is_signed_in)
-      OVERRIDE;
+  void OnAccountAdded(const AccountIds& ids) override;
+  void OnAccountRemoved(const AccountIds& ids) override;
+  void OnAccountSignInChanged(const AccountIds& ids,
+                              bool is_signed_in) override;
 
  private:
   testing::AssertionResult CheckEvents(
@@ -264,10 +264,9 @@ class IdentityAccountTrackerTest : public testing::Test {
  public:
   IdentityAccountTrackerTest() {}
 
-  virtual ~IdentityAccountTrackerTest() {}
+  ~IdentityAccountTrackerTest() override {}
 
-  virtual void SetUp() OVERRIDE {
-
+  void SetUp() override {
     fake_oauth2_token_service_.reset(new FakeOAuth2TokenService());
 
     fake_identity_provider_.reset(
@@ -280,7 +279,7 @@ class IdentityAccountTrackerTest : public testing::Test {
     account_tracker_->AddObserver(&observer_);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     account_tracker_->RemoveObserver(&observer_);
     account_tracker_->Shutdown();
   }

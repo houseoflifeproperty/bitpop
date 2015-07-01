@@ -4,8 +4,10 @@
 
 #include "ash/system/overview/overview_button_tray.h"
 
+#include "ash/ash_switches.h"
 #include "ash/display/display_manager.h"
 #include "ash/root_window_controller.h"
+#include "ash/rotator/screen_rotation_animator.h"
 #include "ash/shelf/shelf_types.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
@@ -15,7 +17,10 @@
 #include "ash/test/status_area_widget_test_helper.h"
 #include "ash/wm/maximize_mode/maximize_mode_controller.h"
 #include "ash/wm/overview/window_selector_controller.h"
+#include "base/command_line.h"
+#include "base/test/user_action_tester.h"
 #include "base/time/time.h"
+#include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/gestures/gesture_types.h"
@@ -24,6 +29,8 @@
 namespace ash {
 
 namespace {
+
+const char kTrayOverview[] = "Tray_Overview";
 
 OverviewButtonTray* GetTray() {
   return StatusAreaWidgetTestHelper::GetStatusAreaWidget()->
@@ -40,7 +47,9 @@ OverviewButtonTray* GetSecondaryTray() {
 class OverviewButtonTrayTest : public test::AshTestBase {
  public:
   OverviewButtonTrayTest() {}
-  virtual ~OverviewButtonTrayTest() {}
+  ~OverviewButtonTrayTest() override {}
+
+  void SetUp() override;
 
  protected:
   views::ImageView* GetImageView(OverviewButtonTray* tray) {
@@ -50,6 +59,14 @@ class OverviewButtonTrayTest : public test::AshTestBase {
  private:
   DISALLOW_COPY_AND_ASSIGN(OverviewButtonTrayTest);
 };
+
+void OverviewButtonTrayTest::SetUp() {
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kAshUseFirstDisplayAsInternal);
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kAshEnableScreenRotationAnimation);
+  AshTestBase::SetUp();
+}
 
 // Ensures that creation doesn't cause any crashes and adds the image icon.
 TEST_F(OverviewButtonTrayTest, BasicConstruction) {
@@ -83,6 +100,38 @@ TEST_F(OverviewButtonTrayTest, PerformAction) {
   GetTray()->PerformAction(tap);
   EXPECT_TRUE(Shell::GetInstance()->window_selector_controller()->
       IsSelecting());
+}
+
+// Tests that tapping on the control will record the user action Tray_Overview.
+TEST_F(OverviewButtonTrayTest, TrayOverviewUserAction) {
+  ASSERT_FALSE(
+      Shell::GetInstance()->window_selector_controller()->IsSelecting());
+
+  // Tapping on the control when there are no windows (and thus the user cannot
+  // enter overview mode) should still record the action.
+  base::UserActionTester user_action_tester;
+  ui::GestureEvent tap(0, 0, 0, base::TimeDelta(),
+                       ui::GestureEventDetails(ui::ET_GESTURE_TAP));
+  GetTray()->PerformAction(tap);
+  ASSERT_FALSE(
+      Shell::GetInstance()->window_selector_controller()->IsSelecting());
+  EXPECT_EQ(1, user_action_tester.GetActionCount(kTrayOverview));
+
+  // With one window present, tapping on the control to enter overview mode
+  // should record the user action.
+  scoped_ptr<aura::Window> window(
+      CreateTestWindowInShellWithBounds(gfx::Rect(5, 5, 20, 20)));
+  GetTray()->PerformAction(tap);
+  ASSERT_TRUE(
+      Shell::GetInstance()->window_selector_controller()->IsSelecting());
+  EXPECT_EQ(2, user_action_tester.GetActionCount(kTrayOverview));
+
+  // Tapping on the control to exit overview mode should record the
+  // user action.
+  GetTray()->PerformAction(tap);
+  ASSERT_FALSE(
+      Shell::GetInstance()->window_selector_controller()->IsSelecting());
+  EXPECT_EQ(3, user_action_tester.GetActionCount(kTrayOverview));
 }
 
 // Tests that a second OverviewButtonTray has been created, and only shows
@@ -131,6 +180,54 @@ TEST_F(OverviewButtonTrayTest, VisibilityChangesForLoginStatus) {
   EXPECT_TRUE(GetTray()->visible());
   Shell::GetInstance()->maximize_mode_controller()->
       EnableMaximizeModeWindowManager(false);
+}
+
+// Tests that the tray only renders as active while selection is ongoing. Any
+// dismissal of overview mode clears the active state.
+TEST_F(OverviewButtonTrayTest, ActiveStateOnlyDuringOverviewMode) {
+  ASSERT_FALSE(
+      Shell::GetInstance()->window_selector_controller()->IsSelecting());
+  ASSERT_FALSE(GetTray()->draw_background_as_active());
+
+  // Overview Mode only works when there is a window
+  scoped_ptr<aura::Window> window(
+      CreateTestWindowInShellWithBounds(gfx::Rect(5, 5, 20, 20)));
+  ui::GestureEvent tap(
+      0, 0, 0, base::TimeDelta(), ui::GestureEventDetails(ui::ET_GESTURE_TAP));
+  GetTray()->PerformAction(tap);
+  EXPECT_TRUE(
+      Shell::GetInstance()->window_selector_controller()->IsSelecting());
+  EXPECT_TRUE(GetTray()->draw_background_as_active());
+
+  Shell::GetInstance()->window_selector_controller()->OnSelectionEnded();
+  EXPECT_FALSE(
+      Shell::GetInstance()->window_selector_controller()->IsSelecting());
+  EXPECT_FALSE(GetTray()->draw_background_as_active());
+}
+
+// Test that when a hide animation is aborted via deletion, that the
+// OverviewButton is still hidden.
+TEST_F(OverviewButtonTrayTest, HideAnimationAlwaysCompletes) {
+  Shell::GetInstance()
+      ->maximize_mode_controller()
+      ->EnableMaximizeModeWindowManager(true);
+
+  // Long duration for hide animation, to allow it to be interrupted.
+  scoped_ptr<ui::ScopedAnimationDurationScaleMode> hide_duration(
+      new ui::ScopedAnimationDurationScaleMode(
+          ui::ScopedAnimationDurationScaleMode::SLOW_DURATION));
+  GetTray()->SetVisible(false);
+
+  // ScreenRotationAnimator copies the current layers, and deletes them upon
+  // completion. Allow its animation to complete first.
+  scoped_ptr<ui::ScopedAnimationDurationScaleMode> rotate_duration(
+      new ui::ScopedAnimationDurationScaleMode(
+          ui::ScopedAnimationDurationScaleMode::ZERO_DURATION));
+  ash::ScreenRotationAnimator(gfx::Display::InternalDisplayId())
+      .Rotate(gfx::Display::ROTATE_270, gfx::Display::ROTATION_SOURCE_ACTIVE);
+
+  RunAllPendingInMessageLoop();
+  EXPECT_FALSE(GetTray()->visible());
 }
 
 }  // namespace ash

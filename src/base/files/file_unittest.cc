@@ -5,6 +5,7 @@
 #include "base/files/file.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -442,6 +443,49 @@ TEST(FileTest, Seek) {
   EXPECT_EQ(kOffset, file.Seek(base::File::FROM_END, -kOffset));
 }
 
+TEST(FileTest, Duplicate) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  FilePath file_path = temp_dir.path().AppendASCII("file");
+  File file(file_path,(base::File::FLAG_CREATE |
+                       base::File::FLAG_READ |
+                       base::File::FLAG_WRITE));
+  ASSERT_TRUE(file.IsValid());
+
+  File file2(file.Duplicate());
+  ASSERT_TRUE(file2.IsValid());
+
+  // Write through one handle, close it, read through the other.
+  static const char kData[] = "now is a good time.";
+  static const int kDataLen = sizeof(kData) - 1;
+
+  ASSERT_EQ(0, file.Seek(base::File::FROM_CURRENT, 0));
+  ASSERT_EQ(0, file2.Seek(base::File::FROM_CURRENT, 0));
+  ASSERT_EQ(kDataLen, file.WriteAtCurrentPos(kData, kDataLen));
+  ASSERT_EQ(kDataLen, file.Seek(base::File::FROM_CURRENT, 0));
+  ASSERT_EQ(kDataLen, file2.Seek(base::File::FROM_CURRENT, 0));
+  file.Close();
+  char buf[kDataLen];
+  ASSERT_EQ(kDataLen, file2.Read(0, &buf[0], kDataLen));
+  ASSERT_EQ(std::string(kData, kDataLen), std::string(&buf[0], kDataLen));
+}
+
+TEST(FileTest, DuplicateDeleteOnClose) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  FilePath file_path = temp_dir.path().AppendASCII("file");
+  File file(file_path,(base::File::FLAG_CREATE |
+                       base::File::FLAG_READ |
+                       base::File::FLAG_WRITE |
+                       base::File::FLAG_DELETE_ON_CLOSE));
+  ASSERT_TRUE(file.IsValid());
+  File file2(file.Duplicate());
+  ASSERT_TRUE(file2.IsValid());
+  file.Close();
+  file2.Close();
+  ASSERT_FALSE(base::PathExists(file_path));
+}
+
 #if defined(OS_WIN)
 TEST(FileTest, GetInfoForDirectory) {
   base::ScopedTempDir temp_dir;
@@ -466,3 +510,71 @@ TEST(FileTest, GetInfoForDirectory) {
   EXPECT_EQ(0, info.size);
 }
 #endif  // defined(OS_WIN)
+
+#if defined(OS_POSIX) && defined(GTEST_HAS_DEATH_TEST)
+TEST(FileTest, MemoryCorruption) {
+  {
+    // Test that changing the checksum value is detected.
+    base::File file;
+    EXPECT_NE(file.file_.file_memory_checksum_,
+              implicit_cast<unsigned int>(file.GetPlatformFile()));
+    file.file_.file_memory_checksum_ = file.GetPlatformFile();
+    EXPECT_DEATH(file.IsValid(), "");
+
+    file.file_.UpdateChecksum();  // Do not crash on File::~File().
+  }
+
+  {
+    // Test that changing the file descriptor value is detected.
+    base::File file;
+    file.file_.file_.reset(17);
+    EXPECT_DEATH(file.IsValid(), "");
+
+    // Do not crash on File::~File().
+    ignore_result(file.file_.file_.release());
+    file.file_.UpdateChecksum();
+  }
+
+  {
+    // Test that GetPlatformFile() checks for corruption.
+    base::File file;
+    file.file_.file_memory_checksum_ = file.GetPlatformFile();
+    EXPECT_DEATH(file.GetPlatformFile(), "");
+
+    file.file_.UpdateChecksum();  // Do not crash on File::~File().
+  }
+
+  {
+    // Test that the base::File destructor checks for corruption.
+    scoped_ptr<base::File> file(new File());
+    file->file_.file_memory_checksum_ = file->GetPlatformFile();
+    EXPECT_DEATH(file.reset(), "");
+
+    // Do not crash on this thread's destructor call.
+    file->file_.UpdateChecksum();
+  }
+
+  {
+    // Test that the base::File constructor checks for corruption.
+    base::File file;
+    file.file_.file_memory_checksum_ = file.GetPlatformFile();
+    EXPECT_DEATH(File f(file.Pass()), "");
+
+    file.file_.UpdateChecksum();  // Do not crash on File::~File().
+  }
+
+  {
+    // Test that doing IO checks for corruption.
+    base::File file;
+    file.file_.file_.reset(17);  // A fake open FD value.
+
+    EXPECT_DEATH(file.Seek(File::FROM_BEGIN, 0), "");
+    EXPECT_DEATH(file.Read(0, NULL, 0), "");
+    EXPECT_DEATH(file.ReadAtCurrentPos(NULL, 0), "");
+    EXPECT_DEATH(file.Write(0, NULL, 0), "");
+
+    ignore_result(file.file_.file_.release());
+    file.file_.UpdateChecksum();
+  }
+}
+#endif  // defined(OS_POSIX)

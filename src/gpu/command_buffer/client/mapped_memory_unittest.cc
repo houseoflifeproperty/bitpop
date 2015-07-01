@@ -15,10 +15,6 @@
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(OS_MACOSX)
-#include "base/mac/scoped_nsautorelease_pool.h"
-#endif
-
 namespace gpu {
 
 using testing::Return;
@@ -33,7 +29,7 @@ class MappedMemoryTestBase : public testing::Test {
  protected:
   static const unsigned int kBufferSize = 1024;
 
-  virtual void SetUp() {
+  void SetUp() override {
     api_mock_.reset(new AsyncAPIMock(true));
     // ignore noops in the mock - we don't want to inspect the internals of the
     // helper.
@@ -71,10 +67,6 @@ class MappedMemoryTestBase : public testing::Test {
     return command_buffer_->GetLastState().token;
   }
 
-#if defined(OS_MACOSX)
-  base::mac::ScopedNSAutoreleasePool autorelease_pool_;
-#endif
-  base::MessageLoop message_loop_;
   scoped_ptr<AsyncAPIMock> api_mock_;
   scoped_ptr<TransferBufferManagerInterface> transfer_buffer_manager_;
   scoped_ptr<CommandBufferService> command_buffer_;
@@ -98,7 +90,7 @@ void EmptyPoll() {
 class MemoryChunkTest : public MappedMemoryTestBase {
  protected:
   static const int32 kShmId = 123;
-  virtual void SetUp() {
+  void SetUp() override {
     MappedMemoryTestBase::SetUp();
     scoped_ptr<base::SharedMemory> shared_memory(new base::SharedMemory());
     shared_memory->CreateAndMapAnonymous(kBufferSize);
@@ -109,7 +101,7 @@ class MemoryChunkTest : public MappedMemoryTestBase {
                                  base::Bind(&EmptyPoll)));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     // If the GpuScheduler posts any tasks, this forces them to run.
     base::MessageLoop::current()->RunUntilIdle();
 
@@ -163,13 +155,13 @@ class MappedMemoryManagerTest : public MappedMemoryTestBase {
   }
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     MappedMemoryTestBase::SetUp();
     manager_.reset(new MappedMemoryManager(
         helper_.get(), base::Bind(&EmptyPoll), MappedMemoryManager::kNoLimit));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     // If the GpuScheduler posts any tasks, this forces them to run.
     base::MessageLoop::current()->RunUntilIdle();
     manager_.reset();

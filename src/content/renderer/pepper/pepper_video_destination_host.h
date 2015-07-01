@@ -24,11 +24,11 @@ class CONTENT_EXPORT PepperVideoDestinationHost
                              PP_Instance instance,
                              PP_Resource resource);
 
-  virtual ~PepperVideoDestinationHost();
+  ~PepperVideoDestinationHost() override;
 
-  virtual int32_t OnResourceMessageReceived(
+  int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
-      ppapi::host::HostMessageContext* context) OVERRIDE;
+      ppapi::host::HostMessageContext* context) override;
 
  private:
   int32_t OnHostMsgOpen(ppapi::host::HostMessageContext* context,
@@ -38,9 +38,12 @@ class CONTENT_EXPORT PepperVideoDestinationHost
                             PP_TimeTicks timestamp);
   int32_t OnHostMsgClose(ppapi::host::HostMessageContext* context);
 
-  RendererPpapiHost* renderer_ppapi_host_;
-
   scoped_ptr<FrameWriterInterface> frame_writer_;
+  // Used for checking that timestamps are strictly increasing.
+#if DCHECK_IS_ON()
+  bool has_received_frame_;
+  int64_t previous_timestamp_ns_;
+#endif
 
   base::WeakPtrFactory<PepperVideoDestinationHost> weak_factory_;
 

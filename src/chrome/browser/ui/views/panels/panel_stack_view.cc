@@ -12,8 +12,8 @@
 #include "chrome/browser/ui/panels/stacked_panel_collection.h"
 #include "chrome/browser/ui/views/panels/panel_view.h"
 #include "ui/gfx/animation/linear_animation.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image_skia.h"
-#include "ui/gfx/rect.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(OS_WIN)
@@ -34,18 +34,18 @@ class PanelStackWindow : public views::WidgetObserver,
  public:
   PanelStackWindow(const gfx::Rect& bounds,
                    NativePanelStackWindowDelegate* delegate);
-  virtual ~PanelStackWindow();
+  ~PanelStackWindow() override;
 
   // Overridden from views::WidgetDelegate:
-  virtual base::string16 GetWindowTitle() const OVERRIDE;
-  virtual gfx::ImageSkia GetWindowAppIcon() OVERRIDE;
-  virtual gfx::ImageSkia GetWindowIcon() OVERRIDE;
-  virtual views::Widget* GetWidget() OVERRIDE;
-  virtual const views::Widget* GetWidget() const OVERRIDE;
+  base::string16 GetWindowTitle() const override;
+  gfx::ImageSkia GetWindowAppIcon() override;
+  gfx::ImageSkia GetWindowIcon() override;
+  views::Widget* GetWidget() override;
+  const views::Widget* GetWidget() const override;
 
   // Overridden from views::WidgetObserver:
-  virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
-  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
+  void OnWidgetClosing(views::Widget* widget) override;
+  void OnWidgetDestroying(views::Widget* widget) override;
 
  private:
   views::Widget* window_;  // Weak pointer, own us.
@@ -106,7 +106,7 @@ void PanelStackWindow::OnWidgetDestroying(views::Widget* widget) {
   window_ = NULL;
 }
 
-}
+}  // namespace
 
 // static
 NativePanelStackWindow* NativePanelStackWindow::Create(
@@ -339,13 +339,12 @@ void PanelStackView::OnPanelActivated(Panel* panel) {
   // Nothing to do.
 }
 
-void PanelStackView::OnNativeFocusChange(gfx::NativeView focused_before,
-                                         gfx::NativeView focused_now) {
+void PanelStackView::OnNativeFocusChanged(gfx::NativeView focused_now) {
   // When the user selects the stacked panels via ALT-TAB or WIN-TAB, the
   // background stack window, instead of the foreground panel window, receives
   // WM_SETFOCUS message. To deal with this, we listen to the focus change event
   // and activate the most recently active panel.
-  // Note that OnNativeFocusChange might be called when window_ has not be
+  // Note that OnNativeFocusChanged might be called when window_ has not been
   // created yet.
 #if defined(OS_WIN)
   if (!panels_.empty() && window_ && focused_now == window_->GetNativeView()) {

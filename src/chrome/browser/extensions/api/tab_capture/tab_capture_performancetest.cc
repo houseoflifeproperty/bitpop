@@ -4,9 +4,6 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
-#if defined(OS_MACOSX)
-#include "base/mac/mac_util.h"
-#endif
 #include "base/strings/stringprintf.h"
 #include "base/test/trace_event_analyzer.h"
 #include "base/win/windows_version.h"
@@ -14,7 +11,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
+#include "chrome/browser/ui/exclusive_access/fullscreen_controller.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/test/base/test_launcher_utils.h"
@@ -65,7 +62,7 @@ class TabCapturePerformanceTest
   }
 
   bool IsGpuAvailable() const {
-    return CommandLine::ForCurrentProcess()->HasSwitch("enable-gpu");
+    return base::CommandLine::ForCurrentProcess()->HasSwitch("enable-gpu");
   }
 
   std::string ScalingMethod() const {
@@ -98,12 +95,12 @@ class TabCapturePerformanceTest
     return suffix;
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     EnablePixelOutput();
     ExtensionApiTest::SetUp();
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     if (!ScalingMethod().empty()) {
       command_line->AppendSwitchASCII(switches::kTabCaptureUpscaleQuality,
                                       ScalingMethod());
@@ -184,13 +181,13 @@ class TabCapturePerformanceTest
     }
 
     std::string json_events;
-    ASSERT_TRUE(tracing::BeginTracing("gpu,mirroring"));
+    ASSERT_TRUE(tracing::BeginTracing("gpu,gpu.capture"));
     std::string page = "performance.html";
     page += HasFlag(kTestThroughWebRTC) ? "?WebRTC=1" : "?WebRTC=0";
     // Ideally we'd like to run a higher capture rate when vsync is disabled,
     // but libjingle currently doesn't allow that.
     // page += HasFlag(kDisableVsync) ? "&fps=300" : "&fps=30";
-    page += "&fps=30";
+    page += "&fps=60";
     ASSERT_TRUE(RunExtensionSubtest("tab_capture", page)) << message_;
     ASSERT_TRUE(tracing::EndTracing(&json_events));
     scoped_ptr<trace_analyzer::TraceAnalyzer> analyzer;

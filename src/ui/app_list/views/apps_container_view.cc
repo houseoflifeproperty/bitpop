@@ -69,6 +69,8 @@ void AppsContainerView::ShowActiveFolder(AppListFolderItem* folder_item) {
   SetShowState(SHOW_ACTIVE_FOLDER, false);
 
   CreateViewsForFolderTopItemsAnimation(folder_item, true);
+
+  apps_grid_view_->ClearAnySelectedView();
 }
 
 void AppsContainerView::ShowApps(AppListFolderItem* folder_item) {
@@ -142,6 +144,20 @@ bool AppsContainerView::OnKeyPressed(const ui::KeyEvent& event) {
     return app_list_folder_view_->OnKeyPressed(event);
 }
 
+void AppsContainerView::OnWillBeShown() {
+  apps_grid_view()->ClearAnySelectedView();
+  app_list_folder_view()->items_grid_view()->ClearAnySelectedView();
+}
+
+gfx::Rect AppsContainerView::GetPageBoundsForState(
+    AppListModel::State state) const {
+  gfx::Rect onscreen_bounds = GetDefaultContentsBounds();
+  if (state == AppListModel::STATE_APPS)
+    return onscreen_bounds;
+
+  return GetBelowContentsOffscreenBounds(onscreen_bounds.size());
+}
+
 void AppsContainerView::OnTopIconAnimationsComplete() {
   --top_icon_animation_pending_count_;
 
@@ -194,7 +210,7 @@ void AppsContainerView::SetShowState(ShowState show_state,
   Layout();
 }
 
-Rects AppsContainerView::GetTopItemIconBoundsInActiveFolder() {
+std::vector<gfx::Rect> AppsContainerView::GetTopItemIconBoundsInActiveFolder() {
   // Get the active folder's icon bounds relative to AppsContainerView.
   AppListItemView* folder_item_view =
       apps_grid_view_->activated_folder_item_view();
@@ -202,7 +218,7 @@ Rects AppsContainerView::GetTopItemIconBoundsInActiveFolder() {
       folder_item_view->GetIconBounds());
   gfx::Rect to_container = apps_grid_view_->ConvertRectToParent(to_grid_view);
 
-  return AppListFolderItem::GetTopIconsBounds(to_container);
+  return FolderImage::GetTopIconsBounds(to_container);
 }
 
 void AppsContainerView::CreateViewsForFolderTopItemsAnimation(

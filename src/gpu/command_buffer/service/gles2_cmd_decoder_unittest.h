@@ -57,7 +57,7 @@ class GLES2DecoderRGBBackbufferTest : public GLES2DecoderWithShaderTest {
  public:
   GLES2DecoderRGBBackbufferTest() {}
 
-  virtual void SetUp();
+  void SetUp() override;
 };
 
 class GLES2DecoderManualInitTest : public GLES2DecoderWithShaderTest {
@@ -65,13 +65,21 @@ class GLES2DecoderManualInitTest : public GLES2DecoderWithShaderTest {
   GLES2DecoderManualInitTest() {}
 
   // Override default setup so nothing gets setup.
-  virtual void SetUp();
+  void SetUp() override;
 
   void DirtyStateMaskTest(GLuint color_bits,
                           bool depth_mask,
                           GLuint front_stencil_mask,
                           GLuint back_stencil_mask);
   void EnableDisableTest(GLenum cap, bool enable, bool expect_set);
+};
+
+class GLES3DecoderTest : public GLES2DecoderTest {
+ public:
+  GLES3DecoderTest() {}
+
+  // Override default setup so ES3 capabilities are enabled by default.
+  void SetUp() override;
 };
 
 }  // namespace gles2

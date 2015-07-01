@@ -8,6 +8,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/run_loop.h"
 #include "base/test/test_timeouts.h"
+#include "base/thread_task_runner_handle.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -16,12 +17,12 @@
 #include "chrome/browser/sync/test/integration/sync_integration_test_util.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/pref_names.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "sync/internal_api/public/util/sync_db_util.h"
 #include "sync/test/fake_server/fake_server_verifier.h"
 #include "sync/util/time.h"
 
+using bookmarks::BookmarkNode;
 using bookmarks_helper::AddFolder;
 using bookmarks_helper::AddURL;
 using bookmarks_helper::GetOtherNode;
@@ -39,16 +40,16 @@ const char kUrl3[] = "http://plus.google.com";
 class SingleClientBackupRollbackTest : public SyncTest {
  public:
   SingleClientBackupRollbackTest() : SyncTest(SINGLE_CLIENT) {}
-  virtual ~SingleClientBackupRollbackTest() {}
+  ~SingleClientBackupRollbackTest() override {}
 
   void DisableBackup() {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-          switches::kSyncDisableBackup);
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
+        switches::kSyncDisableBackup);
   }
 
   void DisableRollback() {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-          switches::kSyncDisableRollback);
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
+        switches::kSyncDisableRollback);
   }
 
   base::Time GetBackupDbLastModified() {
@@ -57,10 +58,10 @@ class SingleClientBackupRollbackTest : public SyncTest {
     base::Time backup_time;
     syncer::CheckSyncDbLastModifiedTime(
         GetProfile(0)->GetPath().Append(FILE_PATH_LITERAL("Sync Data Backup")),
-        base::MessageLoopProxy::current(),
+        base::ThreadTaskRunnerHandle::Get(),
         base::Bind(&SingleClientBackupRollbackTest::CheckDbCallback,
                    base::Unretained(this), &backup_time));
-    base::MessageLoopProxy::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE, run_loop.QuitClosure());
     run_loop.Run();
     return backup_time;
@@ -75,14 +76,14 @@ class SingleClientBackupRollbackTest : public SyncTest {
 };
 
 // Waits until the ProfileSyncService's backend is in IDLE mode.
-class SyncBackendStoppedChecker : public ProfileSyncServiceBase::Observer {
+class SyncBackendStoppedChecker : public sync_driver::SyncServiceObserver {
  public:
   explicit SyncBackendStoppedChecker(ProfileSyncService* service)
       : pss_(service),
         timeout_(TestTimeouts::action_max_timeout()),
         done_(false) {}
 
-  virtual void OnStateChanged() OVERRIDE {
+  void OnStateChanged() override {
     if (ProfileSyncService::IDLE == pss_->backend_mode()) {
       done_ = true;
       run_loop_.Quit();
@@ -111,7 +112,7 @@ class SyncBackendStoppedChecker : public ProfileSyncServiceBase::Observer {
 };
 
 // Waits until a rollback finishes.
-class SyncRollbackChecker : public ProfileSyncServiceBase::Observer,
+class SyncRollbackChecker : public sync_driver::SyncServiceObserver,
                             public BrowsingDataRemover::Observer {
  public:
   explicit SyncRollbackChecker(ProfileSyncService* service)
@@ -120,8 +121,8 @@ class SyncRollbackChecker : public ProfileSyncServiceBase::Observer,
         rollback_started_(false),
         clear_done_(false) {}
 
-  // ProfileSyncServiceBase::Observer implementation.
-  virtual void OnStateChanged() OVERRIDE {
+  // sync_driver::SyncServiceObserver implementation.
+  void OnStateChanged() override {
     if (ProfileSyncService::ROLLBACK == pss_->backend_mode()) {
       rollback_started_ = true;
       if (clear_done_)
@@ -130,7 +131,7 @@ class SyncRollbackChecker : public ProfileSyncServiceBase::Observer,
   }
 
   // BrowsingDataRemoverObserver::Observer implementation.
-  virtual void OnBrowsingDataRemoverDone() OVERRIDE {
+  void OnBrowsingDataRemoverDone() override {
     clear_done_ = true;
     if (rollback_started_) {
       run_loop_.Quit();
@@ -233,7 +234,7 @@ IN_PROC_BROWSER_TEST_F(SingleClientBackupRollbackTest,
   ASSERT_TRUE(ModelMatchesVerifier(0));
 
   // Let server to return rollback command on next sync request.
-  GetFakeServer()->TriggerError(sync_pb::SyncEnums::USER_ROLLBACK);
+  ASSERT_TRUE(GetFakeServer()->TriggerError(sync_pb::SyncEnums::USER_ROLLBACK));
 
   // Make another change to trigger downloading of rollback command.
   Remove(0, tier1_b, 0);
@@ -287,7 +288,7 @@ IN_PROC_BROWSER_TEST_F(SingleClientBackupRollbackTest,
   ASSERT_TRUE(ModelMatchesVerifier(0));
 
   // Let server to return rollback command on next sync request.
-  GetFakeServer()->TriggerError(sync_pb::SyncEnums::USER_ROLLBACK);
+  ASSERT_TRUE(GetFakeServer()->TriggerError(sync_pb::SyncEnums::USER_ROLLBACK));
 
   // Make another change to trigger downloading of rollback command.
   Remove(0, GetOtherNode(0), 0);
@@ -334,7 +335,8 @@ IN_PROC_BROWSER_TEST_F(SingleClientBackupRollbackTest,
   ASSERT_TRUE(ModelMatchesVerifier(0));
 
   // Let server to return birthday error on next sync request.
-  GetFakeServer()->TriggerError(sync_pb::SyncEnums::NOT_MY_BIRTHDAY);
+  ASSERT_TRUE(GetFakeServer()->TriggerError(
+      sync_pb::SyncEnums::NOT_MY_BIRTHDAY));
 
   // Make another change to trigger downloading of rollback command.
   Remove(0, GetOtherNode(0), 0);
@@ -379,7 +381,7 @@ IN_PROC_BROWSER_TEST_F(SingleClientBackupRollbackTest,
       true);
 
   // Let server to return rollback command on next sync request.
-  GetFakeServer()->TriggerError(sync_pb::SyncEnums::USER_ROLLBACK);
+  ASSERT_TRUE(GetFakeServer()->TriggerError(sync_pb::SyncEnums::USER_ROLLBACK));
 
   // Make another change to trigger downloading of rollback command.
   Remove(0, GetOtherNode(0), 0);
@@ -422,7 +424,7 @@ IN_PROC_BROWSER_TEST_F(SingleClientBackupRollbackTest,
   ASSERT_TRUE(ModelMatchesVerifier(0));
 
   // Let server to return rollback command on next sync request.
-  GetFakeServer()->TriggerError(sync_pb::SyncEnums::USER_ROLLBACK);
+  ASSERT_TRUE(GetFakeServer()->TriggerError(sync_pb::SyncEnums::USER_ROLLBACK));
 
   // Make another change to trigger downloading of rollback command.
   Remove(0, sub_folder, 0);

@@ -11,7 +11,7 @@
 #include "crypto/ghash.h"
 #include "crypto/scoped_nss_types.h"
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
 #include <dlfcn.h>
 #endif
 
@@ -40,7 +40,7 @@ class GcmSupportChecker {
   friend struct base::DefaultLazyInstanceTraits<GcmSupportChecker>;
 
   GcmSupportChecker() {
-#if !defined(USE_NSS)
+#if !defined(USE_NSS_CERTS)
     // Using a bundled version of NSS that is guaranteed to have this symbol.
     pk11_encrypt_func_ = PK11_Encrypt;
 #else
@@ -59,7 +59,7 @@ class GcmSupportChecker {
 };
 
 // static
-PK11_EncryptFunction GcmSupportChecker::pk11_encrypt_func_ = NULL;
+PK11_EncryptFunction GcmSupportChecker::pk11_encrypt_func_ = nullptr;
 
 base::LazyInstance<GcmSupportChecker>::Leaky g_gcm_support_checker =
     LAZY_INSTANCE_INITIALIZER;
@@ -78,7 +78,7 @@ SECStatus My_Encrypt(PK11SymKey* key,
   // being used, then NSS will support AES-GCM directly.
   PK11_EncryptFunction pk11_encrypt_func =
       GcmSupportChecker::pk11_encrypt_func();
-  if (pk11_encrypt_func != NULL) {
+  if (pk11_encrypt_func != nullptr) {
     return pk11_encrypt_func(key, mechanism, param, out, out_len, max_len, data,
                              data_len);
   }
@@ -110,7 +110,7 @@ SECStatus My_Encrypt(PK11SymKey* key,
     return SECFailure;
   }
 
-  SECItem my_param = { siBuffer, NULL, 0 };
+  SECItem my_param = { siBuffer, nullptr, 0 };
 
   // Step 1. Let H = CIPH_K(128 '0' bits).
   unsigned char ghash_key[16] = {0};
@@ -209,9 +209,9 @@ SECStatus My_Encrypt(PK11SymKey* key,
 Aes128Gcm12Encrypter::Aes128Gcm12Encrypter()
     : AeadBaseEncrypter(CKM_AES_GCM, My_Encrypt, kKeySize, kAuthTagSize,
                         kNoncePrefixSize) {
-  COMPILE_ASSERT(kKeySize <= kMaxKeySize, key_size_too_big);
-  COMPILE_ASSERT(kNoncePrefixSize <= kMaxNoncePrefixSize,
-                 nonce_prefix_size_too_big);
+  static_assert(kKeySize <= kMaxKeySize, "key size too big");
+  static_assert(kNoncePrefixSize <= kMaxNoncePrefixSize,
+                "nonce prefix size too big");
   ignore_result(g_gcm_support_checker.Get());
 }
 

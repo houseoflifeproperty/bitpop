@@ -39,11 +39,10 @@ class DesktopSesssionClipboardStub : public protocol::ClipboardStub {
  public:
   explicit DesktopSesssionClipboardStub(
       scoped_refptr<DesktopSessionAgent> desktop_session_agent);
-  virtual ~DesktopSesssionClipboardStub();
+  ~DesktopSesssionClipboardStub() override;
 
   // protocol::ClipboardStub implementation.
-  virtual void InjectClipboardEvent(
-      const protocol::ClipboardEvent& event) OVERRIDE;
+  void InjectClipboardEvent(const protocol::ClipboardEvent& event) override;
 
  private:
   scoped_refptr<DesktopSessionAgent> desktop_session_agent_;
@@ -75,14 +74,11 @@ class DesktopSessionAgent::SharedBuffer : public webrtc::SharedMemory {
                                          int id) {
     scoped_ptr<base::SharedMemory> memory(new base::SharedMemory());
     if (!memory->CreateAndMapAnonymous(size))
-      return scoped_ptr<SharedBuffer>();
-    return scoped_ptr<SharedBuffer>(
-        new SharedBuffer(agent, memory.Pass(), size, id));
+      return nullptr;
+    return make_scoped_ptr(new SharedBuffer(agent, memory.Pass(), size, id));
   }
 
-  virtual ~SharedBuffer() {
-    agent_->OnSharedBufferDeleted(id());
-  }
+  ~SharedBuffer() override { agent_->OnSharedBufferDeleted(id()); }
 
  private:
   SharedBuffer(DesktopSessionAgent* agent,
@@ -143,6 +139,8 @@ bool DesktopSessionAgent::OnMessageReceived(const IPC::Message& message) {
                           OnInjectTextEvent)
       IPC_MESSAGE_HANDLER(ChromotingNetworkDesktopMsg_InjectMouseEvent,
                           OnInjectMouseEvent)
+      IPC_MESSAGE_HANDLER(ChromotingNetworkDesktopMsg_InjectTouchEvent,
+                          OnInjectTouchEvent)
       IPC_MESSAGE_HANDLER(ChromotingNetworkDesktopMsg_SetScreenResolution,
                           SetScreenResolution)
       IPC_MESSAGE_UNHANDLED(handled = false)
@@ -375,7 +373,7 @@ void DesktopSessionAgent::ProcessAudioPacket(scoped_ptr<AudioPacket> packet) {
 bool DesktopSessionAgent::Start(const base::WeakPtr<Delegate>& delegate,
                                 IPC::PlatformFileForTransit* desktop_pipe_out) {
   DCHECK(caller_task_runner_->BelongsToCurrentThread());
-  DCHECK(delegate_.get() == NULL);
+  DCHECK(delegate_.get() == nullptr);
 
   delegate_ = delegate;
 
@@ -517,6 +515,19 @@ void DesktopSessionAgent::OnInjectMouseEvent(
   // InputStub implementations must verify events themselves, so we don't need
   // verification here. This matches HostEventDispatcher.
   remote_input_filter_->InjectMouseEvent(event);
+}
+
+void DesktopSessionAgent::OnInjectTouchEvent(
+    const std::string& serialized_event) {
+  DCHECK(caller_task_runner_->BelongsToCurrentThread());
+
+  protocol::TouchEvent event;
+  if (!event.ParseFromString(serialized_event)) {
+    LOG(ERROR) << "Failed to parse protocol::TouchEvent.";
+    return;
+  }
+
+  remote_input_filter_->InjectTouchEvent(event);
 }
 
 void DesktopSessionAgent::SetScreenResolution(

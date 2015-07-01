@@ -35,17 +35,17 @@ class MockBluetoothDevice : public BluetoothDevice {
   MOCK_CONST_METHOD0(GetDeviceID, uint16());
   MOCK_CONST_METHOD0(GetName, base::string16());
   MOCK_CONST_METHOD0(GetDeviceType, BluetoothDevice::DeviceType());
-  MOCK_CONST_METHOD0(GetRSSI, int());
-  MOCK_CONST_METHOD0(GetCurrentHostTransmitPower, int());
-  MOCK_CONST_METHOD0(GetMaximumHostTransmitPower, int());
   MOCK_CONST_METHOD0(IsPaired, bool());
   MOCK_CONST_METHOD0(IsConnected, bool());
   MOCK_CONST_METHOD0(IsConnectable, bool());
   MOCK_CONST_METHOD0(IsConnecting, bool());
   MOCK_CONST_METHOD0(GetUUIDs, UUIDList());
+  MOCK_CONST_METHOD0(GetInquiryRSSI, int16());
+  MOCK_CONST_METHOD0(GetInquiryTxPower, int16());
   MOCK_CONST_METHOD0(ExpectingPinCode, bool());
   MOCK_CONST_METHOD0(ExpectingPasskey, bool());
   MOCK_CONST_METHOD0(ExpectingConfirmation, bool());
+  MOCK_METHOD1(GetConnectionInfo, void(const ConnectionInfoCallback& callback));
   MOCK_METHOD3(Connect,
                void(BluetoothDevice::PairingDelegate* pairing_delegate,
                     const base::Closure& callback,
@@ -61,6 +61,10 @@ class MockBluetoothDevice : public BluetoothDevice {
                     const BluetoothDevice::ErrorCallback& error_callback));
   MOCK_METHOD1(Forget, void(const BluetoothDevice::ErrorCallback&));
   MOCK_METHOD3(ConnectToService,
+               void(const BluetoothUUID& uuid,
+                    const ConnectToServiceCallback& callback,
+                    const ConnectToServiceErrorCallback& error_callback));
+  MOCK_METHOD3(ConnectToServiceInsecurely,
                void(const BluetoothUUID& uuid,
                     const ConnectToServiceCallback& callback,
                     const ConnectToServiceErrorCallback& error_callback));

@@ -5,9 +5,9 @@
 #include <map>
 
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/api/management/management_api.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -18,6 +18,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/api/management/management_api.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/test_management_policy.h"
 #include "extensions/common/manifest.h"
@@ -43,7 +44,7 @@ Browser* FindOtherBrowser(Browser* browser) {
 
 class ExtensionManagementApiTest : public ExtensionApiTest {
  public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     ExtensionApiTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kEnablePanels);
   }
@@ -240,7 +241,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, DISABLED_LaunchPanelApp) {
 
   // Set a pref indicating that the user wants to launch in a regular tab.
   // This should be ignored, because panel apps always load in a popup.
-  extensions::SetLaunchType(service, app_id, extensions::LAUNCH_TYPE_REGULAR);
+  extensions::SetLaunchType(browser()->profile(), app_id,
+                            extensions::LAUNCH_TYPE_REGULAR);
 
   // Load the extension again.
   std::string app_id_new;
@@ -299,7 +301,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, MAYBE_LaunchTabApp) {
   ASSERT_FALSE(service->GetExtensionById(app_id, true));
 
   // Set a pref indicating that the user wants to launch in a window.
-  extensions::SetLaunchType(service, app_id, extensions::LAUNCH_TYPE_WINDOW);
+  extensions::SetLaunchType(browser()->profile(), app_id,
+                            extensions::LAUNCH_TYPE_WINDOW);
 
   std::string app_id_new;
   LoadAndWaitForLaunch("management/launch_app_tab", &app_id_new);
@@ -308,20 +311,23 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, MAYBE_LaunchTabApp) {
   // If the ID changed, then the pref will not apply to the app.
   ASSERT_EQ(app_id, app_id_new);
 
+  unsigned expected_browser_count = 2;
 #if defined(OS_MACOSX)
-  // App windows are not yet implemented on mac os.  We should fall back
-  // to a normal tab.
-  ASSERT_EQ(1u, chrome::GetBrowserCount(browser()->profile(),
-                                        browser()->host_desktop_type()));
+  // Without the new Bookmark Apps, Mac has no way of making standalone browser
+  // windows for apps, so it will add to the tabstrip instead.
+  EXPECT_FALSE(extensions::util::IsNewBookmarkAppsEnabled());
+  expected_browser_count = 1;
   ASSERT_EQ(2, browser()->tab_strip_model()->count());
-#else
+#endif
   // Find the app's browser.  Opening in a new window will create
   // a new browser.
-  ASSERT_EQ(2u, chrome::GetBrowserCount(browser()->profile(),
-                                        browser()->host_desktop_type()));
-  Browser* app_browser = FindOtherBrowser(browser());
-  ASSERT_TRUE(app_browser->is_app());
-#endif
+  ASSERT_EQ(expected_browser_count,
+            chrome::GetBrowserCount(browser()->profile(),
+                                    browser()->host_desktop_type()));
+  if (expected_browser_count == 2) {
+    Browser* app_browser = FindOtherBrowser(browser());
+    ASSERT_TRUE(app_browser->is_app());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, LaunchType) {
@@ -330,22 +336,4 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, LaunchType) {
   LoadNamedExtension(basedir, "packaged_app");
 
   ASSERT_TRUE(RunExtensionSubtest("management/test", "launchType.html"));
-}
-
-class ExtensionManagementApiStreamlinedAppsTest
-    : public ExtensionManagementApiTest {
- public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    ExtensionManagementApiTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kEnableStreamlinedHostedApps);
-  }
-};
-
-IN_PROC_BROWSER_TEST_F(ExtensionManagementApiStreamlinedAppsTest, LaunchType) {
-  LoadExtensions();
-  base::FilePath basedir = test_data_dir_.AppendASCII("management");
-  LoadNamedExtension(basedir, "packaged_app");
-
-  ASSERT_TRUE(RunExtensionSubtest("management/test",
-                                  "launchType.html?streamlined-hosted-apps"));
 }

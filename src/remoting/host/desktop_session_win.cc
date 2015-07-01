@@ -14,7 +14,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/path_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_checker.h"
@@ -92,14 +91,14 @@ class ConsoleSession : public DesktopSessionWin {
     DaemonProcess* daemon_process,
     int id,
     WtsTerminalMonitor* monitor);
-  virtual ~ConsoleSession();
+  ~ConsoleSession() override;
 
  protected:
   // DesktopSession overrides.
-  virtual void SetScreenResolution(const ScreenResolution& resolution) OVERRIDE;
+  void SetScreenResolution(const ScreenResolution& resolution) override;
 
   // DesktopSessionWin overrides.
-  virtual void InjectSas() OVERRIDE;
+  void InjectSas() override;
 
  private:
   scoped_ptr<SasInjector> sas_injector_;
@@ -120,7 +119,7 @@ class RdpSession : public DesktopSessionWin {
     DaemonProcess* daemon_process,
     int id,
     WtsTerminalMonitor* monitor);
-  virtual ~RdpSession();
+  ~RdpSession() override;
 
   // Performs the part of initialization that can fail.
   bool Initialize(const ScreenResolution& resolution);
@@ -131,10 +130,10 @@ class RdpSession : public DesktopSessionWin {
 
  protected:
   // DesktopSession overrides.
-  virtual void SetScreenResolution(const ScreenResolution& resolution) OVERRIDE;
+  void SetScreenResolution(const ScreenResolution& resolution) override;
 
   // DesktopSessionWin overrides.
-  virtual void InjectSas() OVERRIDE;
+  void InjectSas() override;
 
  private:
   // An implementation of IRdpDesktopSessionEventHandler interface that forwards
@@ -145,13 +144,13 @@ class RdpSession : public DesktopSessionWin {
     virtual ~EventHandler();
 
     // IUnknown interface.
-    STDMETHOD_(ULONG, AddRef)() OVERRIDE;
-    STDMETHOD_(ULONG, Release)() OVERRIDE;
-    STDMETHOD(QueryInterface)(REFIID riid, void** ppv) OVERRIDE;
+    STDMETHOD_(ULONG, AddRef)() override;
+    STDMETHOD_(ULONG, Release)() override;
+    STDMETHOD(QueryInterface)(REFIID riid, void** ppv) override;
 
     // IRdpDesktopSessionEventHandler interface.
-    STDMETHOD(OnRdpConnected)() OVERRIDE;
-    STDMETHOD(OnRdpClosed)() OVERRIDE;
+    STDMETHOD(OnRdpConnected)() override;
+    STDMETHOD(OnRdpClosed)() override;
 
    private:
     ULONG ref_count_;
@@ -257,10 +256,8 @@ bool RdpSession::Initialize(const ScreenResolution& resolution) {
       new EventHandler(weak_factory_.GetWeakPtr()));
   terminal_id_ = base::GenerateGUID();
   base::win::ScopedBstr terminal_id(base::UTF8ToUTF16(terminal_id_).c_str());
-  result = rdp_desktop_session_->Connect(host_size.width(),
-                                         host_size.height(),
-                                         terminal_id,
-                                         event_handler);
+  result = rdp_desktop_session_->Connect(host_size.width(), host_size.height(),
+                                         terminal_id, event_handler.get());
   if (FAILED(result)) {
     LOG(ERROR) << "RdpSession::Create() failed, 0x"
                << std::hex << result << std::dec << ".";
@@ -337,7 +334,7 @@ STDMETHODIMP RdpSession::EventHandler::QueryInterface(REFIID riid, void** ppv) {
     return S_OK;
   }
 
-  *ppv = NULL;
+  *ppv = nullptr;
   return E_NOINTERFACE;
 }
 
@@ -375,7 +372,7 @@ scoped_ptr<DesktopSession> DesktopSessionWin::CreateForConsole(
       caller_task_runner, io_task_runner, daemon_process, id,
       HostService::GetInstance()));
 
-  return session.PassAs<DesktopSession>();
+  return session.Pass();
 }
 
 // static
@@ -389,9 +386,9 @@ scoped_ptr<DesktopSession> DesktopSessionWin::CreateForVirtualTerminal(
       caller_task_runner, io_task_runner, daemon_process, id,
       HostService::GetInstance()));
   if (!session->Initialize(resolution))
-    return scoped_ptr<DesktopSession>();
+    return nullptr;
 
-  return session.PassAs<DesktopSession>();
+  return session.Pass();
 }
 
 DesktopSessionWin::DesktopSessionWin(
@@ -532,12 +529,11 @@ void DesktopSessionWin::OnSessionAttached(uint32 session_id) {
 
   session_attach_timer_.Stop();
 
-  scoped_ptr<CommandLine> target(new CommandLine(desktop_binary));
+  scoped_ptr<base::CommandLine> target(new base::CommandLine(desktop_binary));
   target->AppendSwitchASCII(kProcessTypeSwitchName, kProcessTypeDesktop);
   // Copy the command line switches enabling verbose logging.
-  target->CopySwitchesFrom(*CommandLine::ForCurrentProcess(),
-                           kCopiedSwitchNames,
-                           arraysize(kCopiedSwitchNames));
+  target->CopySwitchesFrom(*base::CommandLine::ForCurrentProcess(),
+                           kCopiedSwitchNames, arraysize(kCopiedSwitchNames));
 
   // Create a delegate capable of launching a process in a different session.
   scoped_ptr<WtsSessionProcessDelegate> delegate(
@@ -552,8 +548,7 @@ void DesktopSessionWin::OnSessionAttached(uint32 session_id) {
   }
 
   // Create a launcher for the desktop process, using the per-session delegate.
-  launcher_.reset(new WorkerProcessLauncher(
-      delegate.PassAs<WorkerProcessLauncher::Delegate>(), this));
+  launcher_.reset(new WorkerProcessLauncher(delegate.Pass(), this));
 }
 
 void DesktopSessionWin::OnSessionDetached() {

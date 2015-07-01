@@ -16,6 +16,7 @@
 #include "content/public/browser/web_contents_observer.h"
 
 class ExtensionEnableFlow;
+class NativeWindowTracker;
 class Profile;
 
 namespace content {
@@ -38,7 +39,7 @@ class EphemeralAppLauncher : public extensions::WebstoreStandaloneInstaller,
   typedef base::Callback<void(extensions::webstore_install::Result result,
                               const std::string& error)> LaunchCallback;
 
-  // Returns true if launching ephemeral apps is enabled.
+  // Returns true if launching ephemeral apps from the webstore is enabled.
   static bool IsFeatureEnabled();
 
   // Create for the app launcher.
@@ -66,16 +67,16 @@ class EphemeralAppLauncher : public extensions::WebstoreStandaloneInstaller,
                        content::WebContents* web_contents,
                        const LaunchCallback& callback);
 
-  virtual ~EphemeralAppLauncher();
+  ~EphemeralAppLauncher() override;
 
   // Creates an install checker. Allows tests to mock the install checker.
   virtual scoped_ptr<extensions::ExtensionInstallChecker>
       CreateInstallChecker();
 
   // WebstoreStandaloneInstaller implementation overridden in tests.
-  virtual scoped_ptr<ExtensionInstallPrompt> CreateInstallUI() OVERRIDE;
-  virtual scoped_ptr<extensions::WebstoreInstaller::Approval> CreateApproval()
-      const OVERRIDE;
+  scoped_ptr<ExtensionInstallPrompt> CreateInstallUI() override;
+  scoped_ptr<extensions::WebstoreInstaller::Approval> CreateApproval()
+      const override;
 
  private:
   friend class base::RefCountedThreadSafe<EphemeralAppLauncher>;
@@ -116,35 +117,34 @@ class EphemeralAppLauncher : public extensions::WebstoreStandaloneInstaller,
   void OnInstallChecked(int check_failures);
 
   // WebstoreStandaloneInstaller implementation.
-  virtual void InitInstallData(
-      extensions::ActiveInstallData* install_data) const OVERRIDE;
-  virtual bool CheckRequestorAlive() const OVERRIDE;
-  virtual const GURL& GetRequestorURL() const OVERRIDE;
-  virtual bool ShouldShowPostInstallUI() const OVERRIDE;
-  virtual bool ShouldShowAppInstalledBubble() const OVERRIDE;
-  virtual content::WebContents* GetWebContents() const OVERRIDE;
-  virtual scoped_refptr<ExtensionInstallPrompt::Prompt> CreateInstallPrompt()
-      const OVERRIDE;
-  virtual bool CheckInlineInstallPermitted(
-      const base::DictionaryValue& webstore_data,
-      std::string* error) const OVERRIDE;
-  virtual bool CheckRequestorPermitted(
-      const base::DictionaryValue& webstore_data,
-      std::string* error) const OVERRIDE;
-  virtual void OnManifestParsed() OVERRIDE;
-  virtual void CompleteInstall(extensions::webstore_install::Result result,
-                               const std::string& error) OVERRIDE;
+  void InitInstallData(
+      extensions::ActiveInstallData* install_data) const override;
+  bool CheckRequestorAlive() const override;
+  const GURL& GetRequestorURL() const override;
+  bool ShouldShowPostInstallUI() const override;
+  bool ShouldShowAppInstalledBubble() const override;
+  content::WebContents* GetWebContents() const override;
+  scoped_refptr<ExtensionInstallPrompt::Prompt> CreateInstallPrompt()
+      const override;
+  bool CheckInlineInstallPermitted(const base::DictionaryValue& webstore_data,
+                                   std::string* error) const override;
+  bool CheckRequestorPermitted(const base::DictionaryValue& webstore_data,
+                               std::string* error) const override;
+  void OnManifestParsed() override;
+  void CompleteInstall(extensions::webstore_install::Result result,
+                       const std::string& error) override;
 
   // content::WebContentsObserver implementation.
-  virtual void WebContentsDestroyed() OVERRIDE;
+  void WebContentsDestroyed() override;
 
   // ExtensionEnableFlowDelegate implementation.
-  virtual void ExtensionEnableFlowFinished() OVERRIDE;
-  virtual void ExtensionEnableFlowAborted(bool user_initiated) OVERRIDE;
+  void ExtensionEnableFlowFinished() override;
+  void ExtensionEnableFlowAborted(bool user_initiated) override;
 
   LaunchCallback launch_callback_;
 
   gfx::NativeWindow parent_window_;
+  scoped_ptr<NativeWindowTracker> parent_window_tracker_;
   scoped_ptr<content::WebContents> dummy_web_contents_;
 
   scoped_ptr<ExtensionEnableFlow> extension_enable_flow_;

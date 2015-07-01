@@ -33,15 +33,15 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
-#include "core/page/InjectedStyleSheets.h"
 #include "core/page/Page.h"
 #include "core/page/PageScaleConstraints.h"
-#include "core/testing/URLTestHelpers.h"
 #include "platform/Length.h"
 #include "platform/geometry/IntPoint.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/scroll/ScrollbarTheme.h"
+#include "platform/testing/URLTestHelpers.h"
+#include "platform/testing/UnitTestHelpers.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebUnitTestSupport.h"
 #include "public/web/WebConsoleMessage.h"
@@ -50,17 +50,17 @@
 #include "public/web/WebSettings.h"
 #include "public/web/WebViewClient.h"
 #include "web/tests/FrameTestHelpers.h"
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <vector>
 
 namespace {
 
-using blink::FrameTestHelpers::runPendingTasks;
+using blink::FrameTestHelpers::UseMockScrollbarSettings;
+using blink::testing::runPendingTasks;
 using namespace blink;
 
-class ViewportTest : public testing::Test {
+class ViewportTest : public ::testing::Test {
 protected:
     ViewportTest()
         : m_baseURL("http://www.test.com/")
@@ -93,22 +93,6 @@ protected:
     std::string m_chromeURL;
 };
 
-class UseMockScrollbarSettings {
-public:
-    UseMockScrollbarSettings()
-    {
-        Settings::setMockScrollbarsEnabled(true);
-        RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(true);
-        EXPECT_TRUE(ScrollbarTheme::theme()->usesOverlayScrollbars());
-    }
-
-    ~UseMockScrollbarSettings()
-    {
-        Settings::setMockScrollbarsEnabled(false);
-        RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(false);
-    }
-};
-
 static void setViewportSettings(WebSettings* settings)
 {
     settings->setViewportEnabled(true);
@@ -124,6 +108,7 @@ static PageScaleConstraints runViewportTest(Page* page, int initialWidth, int in
     PageScaleConstraints constraints = description.resolve(initialViewportSize, Length(980, blink::Fixed));
 
     constraints.fitToContentsWidth(constraints.layoutSize.width(), initialWidth);
+    constraints.resolveAutoInitialScale();
     return constraints;
 }
 

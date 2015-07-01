@@ -10,6 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/containers/hash_tables.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
@@ -37,33 +38,35 @@ class LevelDBPrefStore : public PersistentPrefStore {
                    base::SequencedTaskRunner* sequenced_task_runner);
 
   // PrefStore overrides:
-  virtual bool GetValue(const std::string& key,
-                        const base::Value** result) const OVERRIDE;
-  virtual void AddObserver(PrefStore::Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(PrefStore::Observer* observer) OVERRIDE;
-  virtual bool HasObservers() const OVERRIDE;
-  virtual bool IsInitializationComplete() const OVERRIDE;
+  bool GetValue(const std::string& key,
+                const base::Value** result) const override;
+  void AddObserver(PrefStore::Observer* observer) override;
+  void RemoveObserver(PrefStore::Observer* observer) override;
+  bool HasObservers() const override;
+  bool IsInitializationComplete() const override;
 
   // PersistentPrefStore overrides:
-  virtual bool GetMutableValue(const std::string& key,
-                               base::Value** result) OVERRIDE;
+  bool GetMutableValue(const std::string& key, base::Value** result) override;
   // Takes ownership of value.
-  virtual void SetValue(const std::string& key, base::Value* value) OVERRIDE;
-  virtual void SetValueSilently(const std::string& key,
-                                base::Value* value) OVERRIDE;
-  virtual void RemoveValue(const std::string& key) OVERRIDE;
-  virtual bool ReadOnly() const OVERRIDE;
-  virtual PrefReadError GetReadError() const OVERRIDE;
-  virtual PrefReadError ReadPrefs() OVERRIDE;
-  virtual void ReadPrefsAsync(ReadErrorDelegate* error_delegate) OVERRIDE;
-  virtual void CommitPendingWrite() OVERRIDE;
-  virtual void ReportValueChanged(const std::string& key) OVERRIDE;
+  void SetValue(const std::string& key,
+                base::Value* value,
+                uint32 flags) override;
+  void SetValueSilently(const std::string& key,
+                        base::Value* value,
+                        uint32 flags) override;
+  void RemoveValue(const std::string& key, uint32 flags) override;
+  bool ReadOnly() const override;
+  PrefReadError GetReadError() const override;
+  PrefReadError ReadPrefs() override;
+  void ReadPrefsAsync(ReadErrorDelegate* error_delegate) override;
+  void CommitPendingWrite() override;
+  void ReportValueChanged(const std::string& key, uint32 flags) override;
 
  private:
   struct ReadingResults;
   class FileThreadSerializer;
 
-  virtual ~LevelDBPrefStore();
+  ~LevelDBPrefStore() override;
 
   static scoped_ptr<ReadingResults> DoReading(const base::FilePath& path);
   static void OpenDB(const base::FilePath& path,
@@ -104,8 +107,8 @@ class LevelDBPrefStore : public PersistentPrefStore {
 
   // Changes are accumulated in |keys_to_delete_| and |keys_to_set_| and are
   // stored in the database according to |timer_|.
-  std::set<std::string> keys_to_delete_;
-  std::map<std::string, std::string> keys_to_set_;
+  base::hash_set<std::string> keys_to_delete_;
+  base::hash_map<std::string, std::string> keys_to_set_;
   base::OneShotTimer<LevelDBPrefStore> timer_;
 
   base::WeakPtrFactory<LevelDBPrefStore> weak_ptr_factory_;

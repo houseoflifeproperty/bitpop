@@ -25,22 +25,24 @@
 #ifndef HTMLTextFormControlElement_h
 #define HTMLTextFormControlElement_h
 
+#include "core/CoreExport.h"
+#include "core/dom/Position.h"
 #include "core/html/HTMLFormControlElementWithState.h"
 
 namespace blink {
 
 class ExceptionState;
-class Position;
 class Range;
-class RenderTextControl;
 class VisiblePosition;
 
 enum TextFieldSelectionDirection { SelectionHasNoDirection, SelectionHasForwardDirection, SelectionHasBackwardDirection };
 enum TextFieldEventBehavior { DispatchNoEvent, DispatchChangeEvent, DispatchInputAndChangeEvent };
+enum NeedToDispatchSelectEvent { DispatchSelectEvent, NotDispatchSelectEvent };
 
-class HTMLTextFormControlElement : public HTMLFormControlElementWithState {
+class CORE_EXPORT HTMLTextFormControlElement : public HTMLFormControlElementWithState {
 public:
-    // Common flag for HTMLInputElement::tooLong() and HTMLTextAreaElement::tooLong().
+    // Common flag for HTMLInputElement::tooLong(), HTMLTextAreaElement::tooLong(),
+    // HTMLInputElement::tooShort() and HTMLTextAreaElement::tooShort().
     enum NeedsToCheckDirtyFlag {CheckDirtyFlag, IgnoreDirtyFlag};
     // Option of setSelectionRange.
     enum SelectionOption {
@@ -55,7 +57,7 @@ public:
     void forwardEvent(Event*);
 
 
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
 
     // The derived class should return true if placeholder processing is needed.
     virtual bool supportsPlaceholder() const = 0;
@@ -72,14 +74,19 @@ public:
     void setSelectionStart(int);
     void setSelectionEnd(int);
     void setSelectionDirection(const String&);
-    void select();
+    void select(NeedToDispatchSelectEvent = DispatchSelectEvent);
     virtual void setRangeText(const String& replacement, ExceptionState&);
     virtual void setRangeText(const String& replacement, unsigned start, unsigned end, const String& selectionMode, ExceptionState&);
     void setSelectionRange(int start, int end, const String& direction);
-    void setSelectionRange(int start, int end, TextFieldSelectionDirection = SelectionHasNoDirection, SelectionOption = ChangeSelection);
+    void setSelectionRange(int start, int end, TextFieldSelectionDirection = SelectionHasNoDirection, NeedToDispatchSelectEvent = DispatchSelectEvent, SelectionOption = ChangeSelection);
     PassRefPtrWillBeRawPtr<Range> selection() const;
 
-    virtual void dispatchFormControlChangeEvent() OVERRIDE FINAL;
+    virtual bool supportsAutocapitalize() const = 0;
+    virtual const AtomicString& defaultAutocapitalize() const = 0;
+    const AtomicString& autocapitalize() const;
+    void setAutocapitalize(const AtomicString&);
+
+    virtual void dispatchFormControlChangeEvent() override final;
 
     virtual String value() const = 0;
 
@@ -107,7 +114,7 @@ protected:
     bool isPlaceholderEmpty() const;
     virtual void updatePlaceholderText() = 0;
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
 
     void cacheSelection(int start, int end, TextFieldSelectionDirection direction)
     {
@@ -119,7 +126,7 @@ protected:
 
     void restoreCachedSelection();
 
-    virtual void defaultEventHandler(Event*) OVERRIDE;
+    virtual void defaultEventHandler(Event*) override;
     virtual void subtreeHasChanged() = 0;
 
     void setLastChangeWasNotUserEdit() { m_lastChangeWasUserEdit = false; }
@@ -133,15 +140,16 @@ private:
     int computeSelectionEnd() const;
     TextFieldSelectionDirection computeSelectionDirection() const;
 
-    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusType) OVERRIDE FINAL;
-    virtual void dispatchBlurEvent(Element* newFocusedElement) OVERRIDE FINAL;
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType) override final;
+    virtual void dispatchBlurEvent(Element* newFocusedElement, WebFocusType) override final;
+    void scheduleSelectEvent();
 
     // Returns true if user-editable value is empty. Used to check placeholder visibility.
     virtual bool isEmptyValue() const = 0;
     // Returns true if suggested value is empty. Used to check placeholder visibility.
     virtual bool isEmptySuggestedValue() const { return true; }
     // Called in dispatchFocusEvent(), after placeholder process, before calling parent's dispatchFocusEvent().
-    virtual void handleFocusEvent(Element* /* oldFocusedNode */, FocusType) { }
+    virtual void handleFocusEvent(Element* /* oldFocusedNode */, WebFocusType) { }
     // Called in dispatchBlurEvent(), after placeholder process, before calling parent's dispatchBlurEvent().
     virtual void handleBlurEvent() { }
 

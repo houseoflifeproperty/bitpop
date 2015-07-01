@@ -12,7 +12,7 @@
 #include "ui/aura/window_observer.h"
 #include "ui/base/ime/input_method_observer.h"
 #include "ui/base/ime/text_input_type.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/keyboard/keyboard_export.h"
 #include "url/gurl.h"
 
@@ -34,6 +34,17 @@ class KeyboardControllerProxy;
 // Animation distance.
 const int kAnimationDistance = 30;
 
+enum KeyboardMode {
+  // Invalid mode.
+  NONE,
+  // Full width virtual keyboard. The virtual keyboard window has the same width
+  // as the display.
+  FULL_WIDTH,
+  // Floating virtual keyboard. The virtual keyboard window has customizable
+  // width and is draggable.
+  FLOATING,
+};
+
 // Provides control of the virtual keyboard, including providing a container
 // and controlling visibility.
 class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
@@ -49,7 +60,7 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
 
   // Takes ownership of |proxy|.
   explicit KeyboardController(KeyboardControllerProxy* proxy);
-  virtual ~KeyboardController();
+  ~KeyboardController() override;
 
   // Returns the container for the keyboard, which is owned by
   // KeyboardController.
@@ -81,6 +92,10 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
 
   void set_lock_keyboard(bool lock) { lock_keyboard_ = lock; }
 
+  KeyboardMode keyboard_mode() const { return keyboard_mode_; }
+
+  void SetKeyboardMode(KeyboardMode mode);
+
   // Force the keyboard to show up if not showing and lock the keyboard if
   // |lock| is true.
   void ShowKeyboard(bool lock);
@@ -98,8 +113,8 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
 
   bool show_on_resize() { return show_on_resize_; }
 
-  // Returns the current keyboard bounds. When the keyboard is not shown,
-  // an empty rectangle will get returned.
+  // Returns the current keyboard bounds. An empty rectangle will get returned
+  // when the keyboard is not shown or in FLOATING mode.
   const gfx::Rect& current_keyboard_bounds() {
     return current_keyboard_bounds_;
   }
@@ -115,21 +130,22 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   friend class KeyboardControllerTest;
 
   // aura::WindowObserver overrides
-  virtual void OnWindowHierarchyChanged(
-      const HierarchyChangeParams& params) OVERRIDE;
+  void OnWindowHierarchyChanged(const HierarchyChangeParams& params) override;
+  void OnWindowAddedToRootWindow(aura::Window* window) override;
+  void OnWindowRemovingFromRootWindow(aura::Window* window,
+                                      aura::Window* new_root) override;
+  void OnWindowBoundsChanged(aura::Window* window,
+                             const gfx::Rect& old_bounds,
+                             const gfx::Rect& new_bounds) override;
 
   // InputMethodObserver overrides
-  virtual void OnTextInputTypeChanged(
-      const ui::TextInputClient* client) OVERRIDE {}
-  virtual void OnFocus() OVERRIDE {}
-  virtual void OnBlur() OVERRIDE {}
-  virtual void OnCaretBoundsChanged(
-      const ui::TextInputClient* client) OVERRIDE {}
-  virtual void OnTextInputStateChanged(
-      const ui::TextInputClient* client) OVERRIDE;
-  virtual void OnInputMethodDestroyed(
-      const ui::InputMethod* input_method) OVERRIDE;
-  virtual void OnShowImeIfNeeded() OVERRIDE;
+  void OnTextInputTypeChanged(const ui::TextInputClient* client) override {}
+  void OnFocus() override {}
+  void OnBlur() override {}
+  void OnCaretBoundsChanged(const ui::TextInputClient* client) override {}
+  void OnTextInputStateChanged(const ui::TextInputClient* client) override;
+  void OnInputMethodDestroyed(const ui::InputMethod* input_method) override;
+  void OnShowImeIfNeeded() override;
 
   // Show virtual keyboard immediately with animation.
   void ShowKeyboardInternal();
@@ -162,6 +178,7 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   bool keyboard_visible_;
   bool show_on_resize_;
   bool lock_keyboard_;
+  KeyboardMode keyboard_mode_;
   ui::TextInputType type_;
 
   ObserverList<KeyboardControllerObserver> observer_list_;

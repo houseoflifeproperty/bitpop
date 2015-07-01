@@ -4,49 +4,53 @@
 
 #include "chrome/browser/chromeos/login/screens/eula_screen.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/customization_document.h"
-#include "chrome/browser/chromeos/login/screens/screen_observer.h"
-#include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/chromeos/customization/customization_document.h"
+#include "chrome/browser/chromeos/login/screens/base_screen_delegate.h"
+#include "chrome/browser/chromeos/login/screens/eula_view.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_method_call_status.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 
 namespace chromeos {
 
-EulaScreen::EulaScreen(ScreenObserver* observer, EulaScreenActor* actor)
-    : WizardScreen(observer), actor_(actor), password_fetcher_(this) {
-  DCHECK(actor_);
-  if (actor_)
-    actor_->SetDelegate(this);
+EulaScreen::EulaScreen(BaseScreenDelegate* base_screen_delegate,
+                       Delegate* delegate,
+                       EulaView* view)
+    : EulaModel(base_screen_delegate),
+      delegate_(delegate),
+      view_(view),
+      password_fetcher_(this) {
+  DCHECK(view_);
+  DCHECK(delegate_);
+  if (view_)
+    view_->Bind(*this);
 }
 
 EulaScreen::~EulaScreen() {
-  if (actor_)
-    actor_->SetDelegate(NULL);
+  if (view_)
+    view_->Unbind();
 }
 
 void EulaScreen::PrepareToShow() {
-  if (actor_)
-    actor_->PrepareToShow();
+  if (view_)
+    view_->PrepareToShow();
 }
 
 void EulaScreen::Show() {
   // Command to own the TPM.
   DBusThreadManager::Get()->GetCryptohomeClient()->TpmCanAttemptOwnership(
       EmptyVoidDBusMethodCallback());
-  if (actor_)
-    actor_->Show();
+  if (view_)
+    view_->Show();
 }
 
 void EulaScreen::Hide() {
-  if (actor_)
-    actor_->Hide();
-}
-
-std::string EulaScreen::GetName() const {
-  return WizardController::kEulaScreenName;
+  if (view_)
+    view_->Hide();
 }
 
 GURL EulaScreen::GetOemEulaUrl() const {
@@ -67,35 +71,45 @@ GURL EulaScreen::GetOemEulaUrl() const {
   return GURL();
 }
 
-void EulaScreen::OnExit(bool accepted, bool usage_stats_enabled) {
-  get_screen_observer()->SetUsageStatisticsReporting(usage_stats_enabled);
-  get_screen_observer()->OnExit(accepted
-                   ? ScreenObserver::EULA_ACCEPTED
-                   : ScreenObserver::EULA_BACK);
-}
-
 void EulaScreen::InitiatePasswordFetch() {
   if (tpm_password_.empty()) {
     password_fetcher_.Fetch();
-    // Will call actor after password has been fetched.
-  } else if (actor_) {
-    actor_->OnPasswordFetched(tpm_password_);
+    // Will call view after password has been fetched.
+  } else if (view_) {
+    view_->OnPasswordFetched(tpm_password_);
   }
 }
 
 void EulaScreen::OnPasswordFetched(const std::string& tpm_password) {
   tpm_password_ = tpm_password;
-  if (actor_)
-    actor_->OnPasswordFetched(tpm_password_);
+  if (view_)
+    view_->OnPasswordFetched(tpm_password_);
 }
 
 bool EulaScreen::IsUsageStatsEnabled() const {
-  return get_screen_observer()->GetUsageStatisticsReporting();
+  return delegate_ && delegate_->GetUsageStatisticsReporting();
 }
 
-void EulaScreen::OnActorDestroyed(EulaScreenActor* actor) {
-  if (actor_ == actor)
-    actor_ = NULL;
+void EulaScreen::OnViewDestroyed(EulaView* view) {
+  if (view_ == view)
+    view_ = NULL;
+}
+
+void EulaScreen::OnUserAction(const std::string& action_id) {
+  if (action_id == kUserActionAcceptButtonClicked)
+    Finish(BaseScreenDelegate::EULA_ACCEPTED);
+  else if (action_id == kUserActionBackButtonClicked)
+    Finish(BaseScreenDelegate::EULA_BACK);
+  else
+    BaseScreen::OnUserAction(action_id);
+}
+
+void EulaScreen::OnContextKeyUpdated(
+    const ::login::ScreenContext::KeyType& key) {
+  if (key == kContextKeyUsageStatsEnabled && delegate_) {
+    delegate_->SetUsageStatisticsReporting(
+        context_.GetBoolean(kContextKeyUsageStatsEnabled));
+  }
 }
 
 }  // namespace chromeos

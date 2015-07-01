@@ -26,19 +26,13 @@
 #ifndef ProgressEvent_h
 #define ProgressEvent_h
 
+#include "core/CoreExport.h"
 #include "core/events/Event.h"
+#include "core/events/ProgressEventInit.h"
 
 namespace blink {
 
-struct ProgressEventInit : public EventInit {
-    ProgressEventInit();
-
-    bool lengthComputable;
-    unsigned long long loaded;
-    unsigned long long total;
-};
-
-class ProgressEvent : public Event {
+class CORE_EXPORT ProgressEvent : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<ProgressEvent> create()
@@ -58,9 +52,9 @@ public:
     unsigned long long loaded() const { return m_loaded; }
     unsigned long long total() const { return m_total; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     ProgressEvent();

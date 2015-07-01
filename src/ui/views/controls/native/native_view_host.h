@@ -31,7 +31,7 @@ class VIEWS_EXPORT NativeViewHost : public View {
   static const char kViewClassName[];
 
   NativeViewHost();
-  virtual ~NativeViewHost();
+  ~NativeViewHost() override;
 
   // Attach a gfx::NativeView to this View. Its bounds will be kept in sync
   // with the bounds of this View until Detach is called.
@@ -49,16 +49,6 @@ class VIEWS_EXPORT NativeViewHost : public View {
   // Sets a preferred size for the native view attached to this View.
   void SetPreferredSize(const gfx::Size& size);
 
-  // A NativeViewHost has an associated focus View so that the focus of the
-  // native control and of the View are kept in sync. In simple cases where the
-  // NativeViewHost directly wraps a native window as is, the associated view
-  // is this View. In other cases where the NativeViewHost is part of another
-  // view (such as TextField), the actual View is not the NativeViewHost and
-  // this method must be called to set that.
-  // This method must be called before Attach().
-  void set_focus_view(View* view) { focus_view_ = view; }
-  View* focus_view() { return focus_view_; }
-
   // Fast resizing will move the native view and clip its visible region, this
   // will result in white areas and will not resize the content (so scrollbars
   // will be all wrong and content will flow offscreen). Only use this
@@ -67,6 +57,12 @@ class VIEWS_EXPORT NativeViewHost : public View {
   // end. USE WITH CAUTION.
   void set_fast_resize(bool fast_resize) { fast_resize_ = fast_resize; }
   bool fast_resize() const { return fast_resize_; }
+
+  // Sets the color to paint the background during a resize that involves a
+  // clip. This is white by default.
+  void set_resize_background_color(SkColor resize_background_color) {
+    resize_background_color_ = resize_background_color;
+  }
 
   // Value of fast_resize() the last time Layout() was invoked.
   bool fast_resize_at_last_layout() const {
@@ -79,20 +75,20 @@ class VIEWS_EXPORT NativeViewHost : public View {
   void NativeViewDestroyed();
 
   // Overridden from View:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void Layout() OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual void VisibilityChanged(View* starting_from, bool is_visible) OVERRIDE;
-  virtual void OnFocus() OVERRIDE;
-  virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
-  virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event) OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  void Layout() override;
+  void OnPaint(gfx::Canvas* canvas) override;
+  void VisibilityChanged(View* starting_from, bool is_visible) override;
+  void OnFocus() override;
+  gfx::NativeViewAccessible GetNativeViewAccessible() override;
+  gfx::NativeCursor GetCursor(const ui::MouseEvent& event) override;
 
  protected:
-  virtual bool GetNeedsNotificationWhenVisibleBoundsChange() const OVERRIDE;
-  virtual void OnVisibleBoundsChanged() OVERRIDE;
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE;
-  virtual const char* GetClassName() const OVERRIDE;
+  bool GetNeedsNotificationWhenVisibleBoundsChange() const override;
+  void OnVisibleBoundsChanged() override;
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override;
+  const char* GetClassName() const override;
 
  private:
   friend class test::NativeViewHostTestBase;
@@ -123,8 +119,8 @@ class VIEWS_EXPORT NativeViewHost : public View {
   // Value of |fast_resize_| during the last call to Layout.
   bool fast_resize_at_last_layout_;
 
-  // The view that should be given focus when this NativeViewHost is focused.
-  View* focus_view_;
+  // Color to paint in the background while resizing.
+  SkColor resize_background_color_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeViewHost);
 };

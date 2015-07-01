@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/toolbar/wrench_menu_model.h"
 
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/defaults.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/ui/browser.h"
@@ -12,6 +13,7 @@
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/upgrade_detector.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/menu_model_test.h"
 #include "chrome/test/base/testing_browser_process.h"
@@ -32,15 +34,15 @@ class MenuError : public GlobalError {
 
   int execute_count() { return execute_count_; }
 
-  virtual bool HasMenuItem() OVERRIDE { return true; }
-  virtual int MenuItemCommandID() OVERRIDE { return command_id_; }
-  virtual base::string16 MenuItemLabel() OVERRIDE { return base::string16(); }
-  virtual void ExecuteMenuItem(Browser* browser) OVERRIDE { execute_count_++; }
+  bool HasMenuItem() override { return true; }
+  int MenuItemCommandID() override { return command_id_; }
+  base::string16 MenuItemLabel() override { return base::string16(); }
+  void ExecuteMenuItem(Browser* browser) override { execute_count_++; }
 
-  virtual bool HasBubbleView() OVERRIDE { return false; }
-  virtual bool HasShownBubbleView() OVERRIDE { return false; }
-  virtual void ShowBubbleView(Browser* browser) OVERRIDE { ADD_FAILURE(); }
-  virtual GlobalErrorBubbleViewBase* GetBubbleView() OVERRIDE { return NULL; }
+  bool HasBubbleView() override { return false; }
+  bool HasShownBubbleView() override { return false; }
+  void ShowBubbleView(Browser* browser) override { ADD_FAILURE(); }
+  GlobalErrorBubbleViewBase* GetBubbleView() override { return NULL; }
 
  private:
   int command_id_;
@@ -55,12 +57,13 @@ class WrenchMenuModelTest : public BrowserWithTestWindowTest,
                             public ui::AcceleratorProvider {
  public:
   // Don't handle accelerators.
-  virtual bool GetAcceleratorForCommandId(
-      int command_id,
-      ui::Accelerator* accelerator) OVERRIDE { return false; }
+  bool GetAcceleratorForCommandId(int command_id,
+                                  ui::Accelerator* accelerator) override {
+    return false;
+  }
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     prefs_.reset(new TestingPrefServiceSimple());
     chrome::RegisterLocalState(prefs_->registry());
 
@@ -69,7 +72,7 @@ class WrenchMenuModelTest : public BrowserWithTestWindowTest,
     BrowserWithTestWindowTest::SetUp();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     BrowserWithTestWindowTest::TearDown();
     testing_io_thread_state_.reset();
     TestingBrowserProcess::GetGlobal()->SetLocalState(NULL);
@@ -95,19 +98,19 @@ class TestWrenchMenuModel : public WrenchMenuModel {
   }
 
   // Testing overrides to ui::SimpleMenuModel::Delegate:
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE {
+  bool IsCommandIdChecked(int command_id) const override {
     bool val = WrenchMenuModel::IsCommandIdChecked(command_id);
     if (val)
       checked_count_++;
     return val;
   }
 
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE {
+  bool IsCommandIdEnabled(int command_id) const override {
     ++enable_count_;
     return true;
   }
 
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {
+  void ExecuteCommand(int command_id, int event_flags) override {
     ++execute_count_;
   }
 
@@ -124,6 +127,12 @@ TEST_F(WrenchMenuModelTest, Basics) {
   // the exact number.
   EXPECT_GT(itemCount, 10);
 
+  UpgradeDetector* detector = UpgradeDetector::GetInstance();
+  detector->NotifyUpgradeRecommended();
+  EXPECT_TRUE(detector->notify_upgrade());
+  EXPECT_EQ(browser_defaults::kShowUpgradeMenuItem,
+            model.IsCommandIdVisible(IDC_UPGRADE_DIALOG));
+
   // Execute a couple of the items and make sure it gets back to our delegate.
   // We can't use CountEnabledExecutable() here because the encoding menu's
   // delegate is internal, it doesn't use the one we pass in.
@@ -131,8 +140,9 @@ TEST_F(WrenchMenuModelTest, Basics) {
   model.ActivatedAt(1);
   EXPECT_TRUE(model.IsEnabledAt(1));
   // Make sure to use the index that is not separator in all configurations.
-  model.ActivatedAt(2);
-  EXPECT_TRUE(model.IsEnabledAt(2));
+  model.ActivatedAt(itemCount - 1);
+  EXPECT_TRUE(model.IsEnabledAt(itemCount - 1));
+
   EXPECT_EQ(model.execute_count_, 2);
   EXPECT_EQ(model.enable_count_, 2);
 
@@ -144,7 +154,8 @@ TEST_F(WrenchMenuModelTest, Basics) {
   int bookmarksModelIndex = -1;
   for (int i = 0; i < itemCount; ++i) {
     if (model.GetTypeAt(i) == ui::MenuModel::TYPE_SUBMENU) {
-      bookmarksModelIndex = i;
+      // Tabs is the first submenu item. Bookmarks submenu is under tabs.
+      bookmarksModelIndex = i + 1;
       break;
     }
   }
@@ -154,8 +165,10 @@ TEST_F(WrenchMenuModelTest, Basics) {
   // The bookmarks model may be empty until we tell it we're going to show it.
   bookmarksModel->MenuWillShow();
   EXPECT_GT(bookmarksModel->GetItemCount(), 1);
-  bookmarksModel->ActivatedAt(1);
-  EXPECT_TRUE(bookmarksModel->IsEnabledAt(1));
+
+  // Bookmark manager item.
+  bookmarksModel->ActivatedAt(4);
+  EXPECT_TRUE(bookmarksModel->IsEnabledAt(4));
   EXPECT_EQ(model.execute_count_, 1);
   EXPECT_EQ(model.enable_count_, 1);
 }
@@ -199,5 +212,5 @@ class EncodingMenuModelTest : public BrowserWithTestWindowTest,
 TEST_F(EncodingMenuModelTest, IsCommandIdCheckedWithNoTabs) {
   EncodingMenuModel model(browser());
   ASSERT_EQ(NULL, browser()->tab_strip_model()->GetActiveWebContents());
-  EXPECT_FALSE(model.IsCommandIdChecked(IDC_ENCODING_ISO88591));
+  EXPECT_FALSE(model.IsCommandIdChecked(IDC_ENCODING_WINDOWS1252));
 }

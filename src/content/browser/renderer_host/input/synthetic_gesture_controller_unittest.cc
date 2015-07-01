@@ -9,10 +9,13 @@
 #include "content/browser/renderer_host/input/synthetic_gesture_controller.h"
 #include "content/browser/renderer_host/input/synthetic_gesture_target.h"
 #include "content/browser/renderer_host/input/synthetic_pinch_gesture.h"
+#include "content/browser/renderer_host/input/synthetic_smooth_drag_gesture.h"
+#include "content/browser/renderer_host/input/synthetic_smooth_move_gesture.h"
 #include "content/browser/renderer_host/input/synthetic_smooth_scroll_gesture.h"
 #include "content/browser/renderer_host/input/synthetic_tap_gesture.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/common/input/synthetic_pinch_gesture_params.h"
+#include "content/common/input/synthetic_smooth_drag_gesture_params.h"
 #include "content/common/input/synthetic_smooth_scroll_gesture_params.h"
 #include "content/common/input/synthetic_tap_gesture_params.h"
 #include "content/public/test/mock_render_process_host.h"
@@ -20,10 +23,10 @@
 #include "content/test/test_render_view_host.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/point_f.h"
-#include "ui/gfx/vector2d.h"
-#include "ui/gfx/vector2d_f.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/point_f.h"
+#include "ui/gfx/geometry/vector2d.h"
+#include "ui/gfx/geometry/vector2d_f.h"
 
 using blink::WebInputEvent;
 using blink::WebMouseEvent;
@@ -39,6 +42,8 @@ const int kPointerAssumedStoppedTimeMs = 43;
 const float kTouchSlopInDips = 7.0f;
 const float kMinScalingSpanInDips = 27.5f;
 
+enum TouchGestureType { TOUCH_SCROLL, TOUCH_DRAG };
+
 class MockSyntheticGesture : public SyntheticGesture {
  public:
   MockSyntheticGesture(bool* finished, int num_steps)
@@ -47,10 +52,10 @@ class MockSyntheticGesture : public SyntheticGesture {
         step_count_(0) {
     *finished_ = false;
   }
-  virtual ~MockSyntheticGesture() {}
+  ~MockSyntheticGesture() override {}
 
-  virtual Result ForwardInputEvents(const base::TimeTicks& timestamp,
-                                    SyntheticGestureTarget* target) OVERRIDE {
+  Result ForwardInputEvents(const base::TimeTicks& timestamp,
+                            SyntheticGestureTarget* target) override {
     step_count_++;
     if (step_count_ == num_steps_) {
       *finished_ = true;
@@ -75,22 +80,19 @@ class MockSyntheticGestureTarget : public SyntheticGestureTarget {
   MockSyntheticGestureTarget()
       : flush_requested_(false),
         pointer_assumed_stopped_time_ms_(kPointerAssumedStoppedTimeMs) {}
-  virtual ~MockSyntheticGestureTarget() {}
+  ~MockSyntheticGestureTarget() override {}
 
   // SyntheticGestureTarget:
-  virtual void DispatchInputEventToPlatform(
-      const WebInputEvent& event) OVERRIDE {}
+  void DispatchInputEventToPlatform(const WebInputEvent& event) override {}
 
-  virtual void SetNeedsFlush() OVERRIDE {
-    flush_requested_ = true;
-  }
+  void SetNeedsFlush() override { flush_requested_ = true; }
 
-  virtual SyntheticGestureParams::GestureSourceType
-  GetDefaultSyntheticGestureSourceType() const OVERRIDE {
+  SyntheticGestureParams::GestureSourceType
+  GetDefaultSyntheticGestureSourceType() const override {
     return SyntheticGestureParams::TOUCH_INPUT;
   }
 
-  virtual base::TimeDelta PointerAssumedStoppedTime() const OVERRIDE {
+  base::TimeDelta PointerAssumedStoppedTime() const override {
     return base::TimeDelta::FromMilliseconds(pointer_assumed_stopped_time_ms_);
   }
 
@@ -98,11 +100,9 @@ class MockSyntheticGestureTarget : public SyntheticGestureTarget {
     pointer_assumed_stopped_time_ms_ = time_ms;
   }
 
-  virtual float GetTouchSlopInDips() const OVERRIDE {
-    return kTouchSlopInDips;
-  }
+  float GetTouchSlopInDips() const override { return kTouchSlopInDips; }
 
-  virtual float GetMinScalingSpanInDips() const OVERRIDE {
+  float GetMinScalingSpanInDips() const override {
     return kMinScalingSpanInDips;
   }
 
@@ -115,46 +115,44 @@ class MockSyntheticGestureTarget : public SyntheticGestureTarget {
   int pointer_assumed_stopped_time_ms_;
 };
 
-class MockScrollGestureTarget : public MockSyntheticGestureTarget {
+class MockMoveGestureTarget : public MockSyntheticGestureTarget {
  public:
-  MockScrollGestureTarget() : total_abs_scroll_distance_length_(0) {}
-  virtual ~MockScrollGestureTarget() {}
+  MockMoveGestureTarget() : total_abs_move_distance_length_(0) {}
+  ~MockMoveGestureTarget() override {}
 
   gfx::Vector2dF start_to_end_distance() const {
     return start_to_end_distance_;
   }
-  float total_abs_scroll_distance_length() const {
-    return total_abs_scroll_distance_length_;
+  float total_abs_move_distance_length() const {
+    return total_abs_move_distance_length_;
   }
 
  protected:
   gfx::Vector2dF start_to_end_distance_;
-  float total_abs_scroll_distance_length_;
+  float total_abs_move_distance_length_;
 };
 
-class MockScrollMouseTarget : public MockScrollGestureTarget {
+class MockScrollMouseTarget : public MockMoveGestureTarget {
  public:
   MockScrollMouseTarget() {}
-  virtual ~MockScrollMouseTarget() {}
+  ~MockScrollMouseTarget() override {}
 
-  virtual void DispatchInputEventToPlatform(
-      const WebInputEvent& event) OVERRIDE {
+  void DispatchInputEventToPlatform(const WebInputEvent& event) override {
     ASSERT_EQ(event.type, WebInputEvent::MouseWheel);
     const WebMouseWheelEvent& mouse_wheel_event =
         static_cast<const WebMouseWheelEvent&>(event);
     gfx::Vector2dF delta(mouse_wheel_event.deltaX, mouse_wheel_event.deltaY);
     start_to_end_distance_ += delta;
-    total_abs_scroll_distance_length_ += delta.Length();
+    total_abs_move_distance_length_ += delta.Length();
   }
 };
 
-class MockScrollTouchTarget : public MockScrollGestureTarget {
+class MockMoveTouchTarget : public MockMoveGestureTarget {
  public:
-  MockScrollTouchTarget() : started_(false) {}
-  virtual ~MockScrollTouchTarget() {}
+  MockMoveTouchTarget() : started_(false) {}
+  ~MockMoveTouchTarget() override {}
 
-  virtual void DispatchInputEventToPlatform(
-      const WebInputEvent& event) OVERRIDE {
+  void DispatchInputEventToPlatform(const WebInputEvent& event) override {
     ASSERT_TRUE(WebInputEvent::isTouchEventType(event.type));
     const WebTouchEvent& touch_event = static_cast<const WebTouchEvent&>(event);
     ASSERT_EQ(touch_event.touchesLength, 1U);
@@ -172,7 +170,7 @@ class MockScrollTouchTarget : public MockScrollGestureTarget {
       gfx::PointF touch_point(touch_event.touches[0].position.x,
                               touch_event.touches[0].position.y);
       gfx::Vector2dF delta = touch_point - last_touch_point_;
-      total_abs_scroll_distance_length_ += delta.Length();
+      total_abs_move_distance_length_ += delta.Length();
 
       if (touch_event.type == WebInputEvent::TouchEnd)
         start_to_end_distance_ = touch_point - start_;
@@ -185,6 +183,39 @@ class MockScrollTouchTarget : public MockScrollGestureTarget {
   gfx::Point start_;
   gfx::PointF last_touch_point_;
   bool started_;
+};
+
+class MockDragMouseTarget : public MockMoveGestureTarget {
+ public:
+  MockDragMouseTarget() : started_(false) {}
+  ~MockDragMouseTarget() override {}
+
+  void DispatchInputEventToPlatform(const WebInputEvent& event) override {
+    ASSERT_TRUE(WebInputEvent::isMouseEventType(event.type));
+    const WebMouseEvent& mouse_event = static_cast<const WebMouseEvent&>(event);
+    if (!started_) {
+      EXPECT_EQ(mouse_event.button, WebMouseEvent::ButtonLeft);
+      EXPECT_EQ(mouse_event.clickCount, 1);
+      EXPECT_EQ(mouse_event.type, WebInputEvent::MouseDown);
+      start_.SetPoint(mouse_event.x, mouse_event.y);
+      last_mouse_point_ = start_;
+      started_ = true;
+    } else {
+      EXPECT_EQ(mouse_event.button, WebMouseEvent::ButtonLeft);
+      ASSERT_NE(mouse_event.type, WebInputEvent::MouseDown);
+
+      gfx::PointF mouse_point(mouse_event.x, mouse_event.y);
+      gfx::Vector2dF delta = mouse_point - last_mouse_point_;
+      total_abs_move_distance_length_ += delta.Length();
+      if (mouse_event.type == WebInputEvent::MouseUp)
+        start_to_end_distance_ = mouse_point - start_;
+      last_mouse_point_ = mouse_point;
+    }
+  }
+
+ private:
+  bool started_;
+  gfx::PointF start_, last_mouse_point_;
 };
 
 class MockSyntheticPinchTouchTarget : public MockSyntheticGestureTarget {
@@ -200,10 +231,9 @@ class MockSyntheticPinchTouchTarget : public MockSyntheticGestureTarget {
         last_pointer_distance_(0),
         zoom_direction_(ZOOM_DIRECTION_UNKNOWN),
         started_(false) {}
-  virtual ~MockSyntheticPinchTouchTarget() {}
+  ~MockSyntheticPinchTouchTarget() override {}
 
-  virtual void DispatchInputEventToPlatform(
-      const WebInputEvent& event) OVERRIDE {
+  void DispatchInputEventToPlatform(const WebInputEvent& event) override {
     ASSERT_TRUE(WebInputEvent::isTouchEventType(event.type));
     const WebTouchEvent& touch_event = static_cast<const WebTouchEvent&>(event);
     ASSERT_EQ(touch_event.touchesLength, 2U);
@@ -278,7 +308,7 @@ class MockSyntheticPinchTouchTarget : public MockSyntheticGestureTarget {
 class MockSyntheticTapGestureTarget : public MockSyntheticGestureTarget {
  public:
   MockSyntheticTapGestureTarget() : state_(NOT_STARTED) {}
-  virtual ~MockSyntheticTapGestureTarget() {}
+  ~MockSyntheticTapGestureTarget() override {}
 
   bool GestureFinished() const { return state_ == FINISHED; }
   gfx::PointF position() const { return position_; }
@@ -300,10 +330,9 @@ class MockSyntheticTapGestureTarget : public MockSyntheticGestureTarget {
 class MockSyntheticTapTouchTarget : public MockSyntheticTapGestureTarget {
  public:
   MockSyntheticTapTouchTarget() {}
-  virtual ~MockSyntheticTapTouchTarget() {}
+  ~MockSyntheticTapTouchTarget() override {}
 
-  virtual void DispatchInputEventToPlatform(
-        const WebInputEvent& event) OVERRIDE {
+  void DispatchInputEventToPlatform(const WebInputEvent& event) override {
     ASSERT_TRUE(WebInputEvent::isTouchEventType(event.type));
     const WebTouchEvent& touch_event = static_cast<const WebTouchEvent&>(event);
     ASSERT_EQ(touch_event.touchesLength, 1U);
@@ -333,10 +362,9 @@ class MockSyntheticTapTouchTarget : public MockSyntheticTapGestureTarget {
 class MockSyntheticTapMouseTarget : public MockSyntheticTapGestureTarget {
  public:
   MockSyntheticTapMouseTarget() {}
-  virtual ~MockSyntheticTapMouseTarget() {}
+  ~MockSyntheticTapMouseTarget() override {}
 
-  virtual void DispatchInputEventToPlatform(
-        const WebInputEvent& event) OVERRIDE {
+  void DispatchInputEventToPlatform(const WebInputEvent& event) override {
     ASSERT_TRUE(WebInputEvent::isMouseEventType(event.type));
     const WebMouseEvent& mouse_event = static_cast<const WebMouseEvent&>(event);
 
@@ -366,10 +394,10 @@ class MockSyntheticTapMouseTarget : public MockSyntheticTapGestureTarget {
   }
 };
 
-class SyntheticGestureControllerTest : public testing::Test {
+class SyntheticGestureControllerTestBase {
  public:
-  SyntheticGestureControllerTest() {}
-  virtual ~SyntheticGestureControllerTest() {}
+  SyntheticGestureControllerTestBase() {}
+  ~SyntheticGestureControllerTestBase() {}
 
  protected:
   template<typename MockGestureTarget>
@@ -379,22 +407,11 @@ class SyntheticGestureControllerTest : public testing::Test {
         scoped_ptr<SyntheticGestureTarget>(target_)));
   }
 
-  virtual void SetUp() OVERRIDE {
-    start_time_ = base::TimeTicks::Now();
-    time_ = start_time_;
-    num_success_ = 0;
-    num_failure_ = 0;
-  }
-
-  virtual void TearDown() OVERRIDE {
-    controller_.reset();
-    target_ = NULL;
-    time_ = base::TimeTicks();
-  }
-
   void QueueSyntheticGesture(scoped_ptr<SyntheticGesture> gesture) {
-    controller_->QueueSyntheticGesture(gesture.Pass(),
-        base::Bind(&SyntheticGestureControllerTest::OnSyntheticGestureCompleted,
+    controller_->QueueSyntheticGesture(
+        gesture.Pass(),
+        base::Bind(
+            &SyntheticGestureControllerTestBase::OnSyntheticGestureCompleted,
             base::Unretained(this)));
   }
 
@@ -427,13 +444,49 @@ class SyntheticGestureControllerTest : public testing::Test {
   int num_failure_;
 };
 
+class SyntheticGestureControllerTest
+    : public SyntheticGestureControllerTestBase,
+      public testing::Test {
+ protected:
+  void SetUp() override {
+    start_time_ = base::TimeTicks::Now();
+    time_ = start_time_;
+    num_success_ = 0;
+    num_failure_ = 0;
+  }
+
+  void TearDown() override {
+    controller_.reset();
+    target_ = nullptr;
+    time_ = base::TimeTicks();
+  }
+};
+
+class SyntheticGestureControllerTestWithParam
+    : public SyntheticGestureControllerTestBase,
+      public testing::TestWithParam<bool> {
+ protected:
+  void SetUp() override {
+    start_time_ = base::TimeTicks::Now();
+    time_ = start_time_;
+    num_success_ = 0;
+    num_failure_ = 0;
+  }
+
+  void TearDown() override {
+    controller_.reset();
+    target_ = nullptr;
+    time_ = base::TimeTicks();
+  }
+};
+
 TEST_F(SyntheticGestureControllerTest, SingleGesture) {
   CreateControllerAndTarget<MockSyntheticGestureTarget>();
 
   bool finished = false;
   scoped_ptr<MockSyntheticGesture> gesture(
       new MockSyntheticGesture(&finished, 3));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
   EXPECT_TRUE(finished);
@@ -447,7 +500,7 @@ TEST_F(SyntheticGestureControllerTest, GestureFailed) {
   bool finished = false;
   scoped_ptr<MockSyntheticGesture> gesture(
       new MockSyntheticGesture(&finished, 0));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
   EXPECT_TRUE(finished);
@@ -466,7 +519,7 @@ TEST_F(SyntheticGestureControllerTest, SuccessiveGestures) {
       new MockSyntheticGesture(&finished_2, 4));
 
   // Queue first gesture and wait for it to finish
-  QueueSyntheticGesture(gesture_1.PassAs<SyntheticGesture>());
+  QueueSyntheticGesture(gesture_1.Pass());
   FlushInputUntilComplete();
 
   EXPECT_TRUE(finished_1);
@@ -474,7 +527,7 @@ TEST_F(SyntheticGestureControllerTest, SuccessiveGestures) {
   EXPECT_EQ(0, num_failure_);
 
   // Queue second gesture.
-  QueueSyntheticGesture(gesture_2.PassAs<SyntheticGesture>());
+  QueueSyntheticGesture(gesture_2.Pass());
   FlushInputUntilComplete();
 
   EXPECT_TRUE(finished_2);
@@ -492,8 +545,8 @@ TEST_F(SyntheticGestureControllerTest, TwoGesturesInFlight) {
   scoped_ptr<MockSyntheticGesture> gesture_2(
       new MockSyntheticGesture(&finished_2, 4));
 
-  QueueSyntheticGesture(gesture_1.PassAs<SyntheticGesture>());
-  QueueSyntheticGesture(gesture_2.PassAs<SyntheticGesture>());
+  QueueSyntheticGesture(gesture_1.Pass());
+  QueueSyntheticGesture(gesture_2.Pass());
   FlushInputUntilComplete();
 
   EXPECT_TRUE(finished_1);
@@ -512,8 +565,8 @@ TEST_F(SyntheticGestureControllerTest, GestureCompletedOnDidFlushInput) {
   scoped_ptr<MockSyntheticGesture> gesture_2(
       new MockSyntheticGesture(&finished_2, 4));
 
-  QueueSyntheticGesture(gesture_1.PassAs<SyntheticGesture>());
-  QueueSyntheticGesture(gesture_2.PassAs<SyntheticGesture>());
+  QueueSyntheticGesture(gesture_1.Pass());
+  QueueSyntheticGesture(gesture_2.Pass());
 
   while (target_->flush_requested()) {
     target_->ClearFlushRequest();
@@ -534,7 +587,7 @@ TEST_F(SyntheticGestureControllerTest, GestureCompletedOnDidFlushInput) {
   EXPECT_EQ(2, num_success_);
 }
 
-gfx::Vector2d AddTouchSlopToVector(const gfx::Vector2d& vector,
+gfx::Vector2d AddTouchSlopToVector(const gfx::Vector2dF& vector,
                                    SyntheticGestureTarget* target) {
   const int kTouchSlop = target->GetTouchSlopInDips();
 
@@ -553,46 +606,62 @@ gfx::Vector2d AddTouchSlopToVector(const gfx::Vector2d& vector,
   return gfx::Vector2d(x, y);
 }
 
-TEST_F(SyntheticGestureControllerTest, SingleScrollGestureTouchVertical) {
-  CreateControllerAndTarget<MockScrollTouchTarget>();
+TEST_P(SyntheticGestureControllerTestWithParam,
+       SingleMoveGestureTouchVertical) {
+  CreateControllerAndTarget<MockMoveTouchTarget>();
 
-  SyntheticSmoothScrollGestureParams params;
-  params.gesture_source_type = SyntheticGestureParams::TOUCH_INPUT;
-  params.anchor.SetPoint(89, 32);
+  SyntheticSmoothMoveGestureParams params;
+  params.input_type = SyntheticSmoothMoveGestureParams::TOUCH_INPUT;
+  if (GetParam() == TOUCH_DRAG) {
+    params.add_slop = false;
+  }
+  params.start_point.SetPoint(89, 32);
   params.distances.push_back(gfx::Vector2d(0, 123));
 
-  scoped_ptr<SyntheticSmoothScrollGesture> gesture(
-      new SyntheticSmoothScrollGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  scoped_ptr<SyntheticSmoothMoveGesture> gesture(
+      new SyntheticSmoothMoveGesture(params));
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
-  MockScrollGestureTarget* scroll_target =
-      static_cast<MockScrollGestureTarget*>(target_);
+  MockMoveGestureTarget* scroll_target =
+      static_cast<MockMoveGestureTarget*>(target_);
   EXPECT_EQ(1, num_success_);
   EXPECT_EQ(0, num_failure_);
-  EXPECT_EQ(AddTouchSlopToVector(params.distances[0], target_),
-            scroll_target->start_to_end_distance());
+  if (GetParam() == TOUCH_SCROLL) {
+    EXPECT_EQ(AddTouchSlopToVector(params.distances[0], target_),
+              scroll_target->start_to_end_distance());
+  } else {
+    EXPECT_EQ(params.distances[0], scroll_target->start_to_end_distance());
+  }
 }
 
-TEST_F(SyntheticGestureControllerTest, SingleScrollGestureTouchHorizontal) {
-  CreateControllerAndTarget<MockScrollTouchTarget>();
+TEST_P(SyntheticGestureControllerTestWithParam,
+       SingleScrollGestureTouchHorizontal) {
+  CreateControllerAndTarget<MockMoveTouchTarget>();
 
-  SyntheticSmoothScrollGestureParams params;
-  params.gesture_source_type = SyntheticGestureParams::TOUCH_INPUT;
-  params.anchor.SetPoint(12, -23);
+  SyntheticSmoothMoveGestureParams params;
+  params.input_type = SyntheticSmoothMoveGestureParams::TOUCH_INPUT;
+  if (GetParam() == TOUCH_DRAG) {
+    params.add_slop = false;
+  }
+  params.start_point.SetPoint(12, -23);
   params.distances.push_back(gfx::Vector2d(-234, 0));
 
-  scoped_ptr<SyntheticSmoothScrollGesture> gesture(
-      new SyntheticSmoothScrollGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  scoped_ptr<SyntheticSmoothMoveGesture> gesture(
+      new SyntheticSmoothMoveGesture(params));
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
-  MockScrollGestureTarget* scroll_target =
-      static_cast<MockScrollGestureTarget*>(target_);
+  MockMoveGestureTarget* scroll_target =
+      static_cast<MockMoveGestureTarget*>(target_);
   EXPECT_EQ(1, num_success_);
   EXPECT_EQ(0, num_failure_);
-  EXPECT_EQ(AddTouchSlopToVector(params.distances[0], target_),
-            scroll_target->start_to_end_distance());
+  if (GetParam() == TOUCH_SCROLL) {
+    EXPECT_EQ(AddTouchSlopToVector(params.distances[0], target_),
+              scroll_target->start_to_end_distance());
+  } else {
+    EXPECT_EQ(params.distances[0], scroll_target->start_to_end_distance());
+  }
 }
 
 void CheckIsWithinRangeSingle(float scroll_distance,
@@ -609,27 +678,27 @@ void CheckIsWithinRangeSingle(float scroll_distance,
 
 void CheckSingleScrollDistanceIsWithinRange(
     const gfx::Vector2dF& scroll_distance,
-    const gfx::Vector2d& target_distance,
+    const gfx::Vector2dF& target_distance,
     SyntheticGestureTarget* target) {
   CheckIsWithinRangeSingle(scroll_distance.x(), target_distance.x(), target);
   CheckIsWithinRangeSingle(scroll_distance.y(), target_distance.y(), target);
 }
 
 TEST_F(SyntheticGestureControllerTest, SingleScrollGestureTouchDiagonal) {
-  CreateControllerAndTarget<MockScrollTouchTarget>();
+  CreateControllerAndTarget<MockMoveTouchTarget>();
 
-  SyntheticSmoothScrollGestureParams params;
-  params.gesture_source_type = SyntheticGestureParams::TOUCH_INPUT;
-  params.anchor.SetPoint(0, 7);
+  SyntheticSmoothMoveGestureParams params;
+  params.input_type = SyntheticSmoothMoveGestureParams::TOUCH_INPUT;
+  params.start_point.SetPoint(0, 7);
   params.distances.push_back(gfx::Vector2d(413, -83));
 
-  scoped_ptr<SyntheticSmoothScrollGesture> gesture(
-      new SyntheticSmoothScrollGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  scoped_ptr<SyntheticSmoothMoveGesture> gesture(
+      new SyntheticSmoothMoveGesture(params));
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
-  MockScrollGestureTarget* scroll_target =
-      static_cast<MockScrollGestureTarget*>(target_);
+  MockMoveGestureTarget* scroll_target =
+      static_cast<MockMoveGestureTarget*>(target_);
   EXPECT_EQ(1, num_success_);
   EXPECT_EQ(0, num_failure_);
   CheckSingleScrollDistanceIsWithinRange(
@@ -637,26 +706,25 @@ TEST_F(SyntheticGestureControllerTest, SingleScrollGestureTouchDiagonal) {
 }
 
 TEST_F(SyntheticGestureControllerTest, SingleScrollGestureTouchLongStop) {
-  CreateControllerAndTarget<MockScrollTouchTarget>();
+  CreateControllerAndTarget<MockMoveTouchTarget>();
 
   // Create a smooth scroll with a short distance and set the pointer assumed
   // stopped time high, so that the stopping should dominate the time the
   // gesture is active.
-  SyntheticSmoothScrollGestureParams params;
-  params.gesture_source_type = SyntheticGestureParams::TOUCH_INPUT;
-  params.anchor.SetPoint(-98, -23);
+  SyntheticSmoothMoveGestureParams params;
+  params.input_type = SyntheticSmoothMoveGestureParams::TOUCH_INPUT;
+  params.start_point.SetPoint(-98, -23);
   params.distances.push_back(gfx::Vector2d(21, -12));
   params.prevent_fling = true;
-
   target_->set_pointer_assumed_stopped_time_ms(543);
 
-  scoped_ptr<SyntheticSmoothScrollGesture> gesture(
-      new SyntheticSmoothScrollGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  scoped_ptr<SyntheticSmoothMoveGesture> gesture(
+      new SyntheticSmoothMoveGesture(params));
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
-  MockScrollGestureTarget* scroll_target =
-      static_cast<MockScrollGestureTarget*>(target_);
+  MockMoveGestureTarget* scroll_target =
+      static_cast<MockMoveGestureTarget*>(target_);
   EXPECT_EQ(1, num_success_);
   EXPECT_EQ(0, num_failure_);
   CheckSingleScrollDistanceIsWithinRange(
@@ -665,26 +733,26 @@ TEST_F(SyntheticGestureControllerTest, SingleScrollGestureTouchLongStop) {
 }
 
 TEST_F(SyntheticGestureControllerTest, SingleScrollGestureTouchFling) {
-  CreateControllerAndTarget<MockScrollTouchTarget>();
+  CreateControllerAndTarget<MockMoveTouchTarget>();
 
   // Create a smooth scroll with a short distance and set the pointer assumed
   // stopped time high. Disable 'prevent_fling' and check that the gesture
   // finishes without waiting before it stops.
-  SyntheticSmoothScrollGestureParams params;
-  params.gesture_source_type = SyntheticGestureParams::TOUCH_INPUT;
-  params.anchor.SetPoint(-89, 78);
+  SyntheticSmoothMoveGestureParams params;
+  params.input_type = SyntheticSmoothMoveGestureParams::TOUCH_INPUT;
+  params.start_point.SetPoint(-89, 78);
   params.distances.push_back(gfx::Vector2d(-43, 19));
   params.prevent_fling = false;
 
   target_->set_pointer_assumed_stopped_time_ms(543);
 
-  scoped_ptr<SyntheticSmoothScrollGesture> gesture(
-      new SyntheticSmoothScrollGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  scoped_ptr<SyntheticSmoothMoveGesture> gesture(
+      new SyntheticSmoothMoveGesture(params));
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
-  MockScrollGestureTarget* scroll_target =
-      static_cast<MockScrollGestureTarget*>(target_);
+  MockMoveGestureTarget* scroll_target =
+      static_cast<MockMoveGestureTarget*>(target_);
   EXPECT_EQ(1, num_success_);
   EXPECT_EQ(0, num_failure_);
   CheckSingleScrollDistanceIsWithinRange(
@@ -692,21 +760,25 @@ TEST_F(SyntheticGestureControllerTest, SingleScrollGestureTouchFling) {
   EXPECT_LE(GetTotalTime(), target_->PointerAssumedStoppedTime());
 }
 
-TEST_F(SyntheticGestureControllerTest, SingleScrollGestureTouchZeroDistance) {
-  CreateControllerAndTarget<MockScrollTouchTarget>();
+TEST_P(SyntheticGestureControllerTestWithParam,
+       SingleScrollGestureTouchZeroDistance) {
+  CreateControllerAndTarget<MockMoveTouchTarget>();
 
-  SyntheticSmoothScrollGestureParams params;
-  params.gesture_source_type = SyntheticGestureParams::TOUCH_INPUT;
-  params.anchor.SetPoint(-32, 43);
+  SyntheticSmoothMoveGestureParams params;
+  params.input_type = SyntheticSmoothMoveGestureParams::TOUCH_INPUT;
+  if (GetParam() == TOUCH_DRAG) {
+    params.add_slop = false;
+  }
+  params.start_point.SetPoint(-32, 43);
   params.distances.push_back(gfx::Vector2d(0, 0));
 
-  scoped_ptr<SyntheticSmoothScrollGesture> gesture(
-      new SyntheticSmoothScrollGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  scoped_ptr<SyntheticSmoothMoveGesture> gesture(
+      new SyntheticSmoothMoveGesture(params));
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
-  MockScrollGestureTarget* scroll_target =
-      static_cast<MockScrollGestureTarget*>(target_);
+  MockMoveGestureTarget* scroll_target =
+      static_cast<MockMoveGestureTarget*>(target_);
   EXPECT_EQ(1, num_success_);
   EXPECT_EQ(0, num_failure_);
   EXPECT_EQ(gfx::Vector2dF(0, 0), scroll_target->start_to_end_distance());
@@ -715,18 +787,18 @@ TEST_F(SyntheticGestureControllerTest, SingleScrollGestureTouchZeroDistance) {
 TEST_F(SyntheticGestureControllerTest, SingleScrollGestureMouseVertical) {
   CreateControllerAndTarget<MockScrollMouseTarget>();
 
-  SyntheticSmoothScrollGestureParams params;
-  params.gesture_source_type = SyntheticGestureParams::MOUSE_INPUT;
-  params.anchor.SetPoint(432, 89);
+  SyntheticSmoothMoveGestureParams params;
+  params.input_type = SyntheticSmoothMoveGestureParams::MOUSE_WHEEL_INPUT;
+  params.start_point.SetPoint(432, 89);
   params.distances.push_back(gfx::Vector2d(0, -234));
 
-  scoped_ptr<SyntheticSmoothScrollGesture> gesture(
-      new SyntheticSmoothScrollGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  scoped_ptr<SyntheticSmoothMoveGesture> gesture(
+      new SyntheticSmoothMoveGesture(params));
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
-  MockScrollGestureTarget* scroll_target =
-      static_cast<MockScrollGestureTarget*>(target_);
+  MockMoveGestureTarget* scroll_target =
+      static_cast<MockMoveGestureTarget*>(target_);
   EXPECT_EQ(1, num_success_);
   EXPECT_EQ(0, num_failure_);
   EXPECT_EQ(params.distances[0], scroll_target->start_to_end_distance());
@@ -735,18 +807,18 @@ TEST_F(SyntheticGestureControllerTest, SingleScrollGestureMouseVertical) {
 TEST_F(SyntheticGestureControllerTest, SingleScrollGestureMouseHorizontal) {
   CreateControllerAndTarget<MockScrollMouseTarget>();
 
-  SyntheticSmoothScrollGestureParams params;
-  params.gesture_source_type = SyntheticGestureParams::MOUSE_INPUT;
-  params.anchor.SetPoint(90, 12);
+  SyntheticSmoothMoveGestureParams params;
+  params.input_type = SyntheticSmoothMoveGestureParams::MOUSE_WHEEL_INPUT;
+  params.start_point.SetPoint(90, 12);
   params.distances.push_back(gfx::Vector2d(345, 0));
 
-  scoped_ptr<SyntheticSmoothScrollGesture> gesture(
-      new SyntheticSmoothScrollGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  scoped_ptr<SyntheticSmoothMoveGesture> gesture(
+      new SyntheticSmoothMoveGesture(params));
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
-  MockScrollGestureTarget* scroll_target =
-      static_cast<MockScrollGestureTarget*>(target_);
+  MockMoveGestureTarget* scroll_target =
+      static_cast<MockMoveGestureTarget*>(target_);
   EXPECT_EQ(1, num_success_);
   EXPECT_EQ(0, num_failure_);
   EXPECT_EQ(params.distances[0], scroll_target->start_to_end_distance());
@@ -755,18 +827,18 @@ TEST_F(SyntheticGestureControllerTest, SingleScrollGestureMouseHorizontal) {
 TEST_F(SyntheticGestureControllerTest, SingleScrollGestureMouseDiagonal) {
   CreateControllerAndTarget<MockScrollMouseTarget>();
 
-  SyntheticSmoothScrollGestureParams params;
-  params.gesture_source_type = SyntheticGestureParams::MOUSE_INPUT;
-  params.anchor.SetPoint(90, 12);
+  SyntheticSmoothMoveGestureParams params;
+  params.input_type = SyntheticSmoothMoveGestureParams::MOUSE_WHEEL_INPUT;
+  params.start_point.SetPoint(90, 12);
   params.distances.push_back(gfx::Vector2d(-194, 303));
 
-  scoped_ptr<SyntheticSmoothScrollGesture> gesture(
-      new SyntheticSmoothScrollGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  scoped_ptr<SyntheticSmoothMoveGesture> gesture(
+      new SyntheticSmoothMoveGesture(params));
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
-  MockScrollGestureTarget* scroll_target =
-      static_cast<MockScrollGestureTarget*>(target_);
+  MockMoveGestureTarget* scroll_target =
+      static_cast<MockMoveGestureTarget*>(target_);
   EXPECT_EQ(1, num_success_);
   EXPECT_EQ(0, num_failure_);
   EXPECT_EQ(params.distances[0], scroll_target->start_to_end_distance());
@@ -775,19 +847,19 @@ TEST_F(SyntheticGestureControllerTest, SingleScrollGestureMouseDiagonal) {
 TEST_F(SyntheticGestureControllerTest, MultiScrollGestureMouse) {
   CreateControllerAndTarget<MockScrollMouseTarget>();
 
-  SyntheticSmoothScrollGestureParams params;
-  params.gesture_source_type = SyntheticGestureParams::MOUSE_INPUT;
-  params.anchor.SetPoint(90, 12);
+  SyntheticSmoothMoveGestureParams params;
+  params.input_type = SyntheticSmoothMoveGestureParams::MOUSE_WHEEL_INPUT;
+  params.start_point.SetPoint(90, 12);
   params.distances.push_back(gfx::Vector2d(-129, 212));
   params.distances.push_back(gfx::Vector2d(8, -9));
 
-  scoped_ptr<SyntheticSmoothScrollGesture> gesture(
-      new SyntheticSmoothScrollGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  scoped_ptr<SyntheticSmoothMoveGesture> gesture(
+      new SyntheticSmoothMoveGesture(params));
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
-  MockScrollGestureTarget* scroll_target =
-      static_cast<MockScrollGestureTarget*>(target_);
+  MockMoveGestureTarget* scroll_target =
+      static_cast<MockMoveGestureTarget*>(target_);
   EXPECT_EQ(1, num_success_);
   EXPECT_EQ(0, num_failure_);
   EXPECT_EQ(params.distances[0] + params.distances[1],
@@ -797,25 +869,25 @@ TEST_F(SyntheticGestureControllerTest, MultiScrollGestureMouse) {
 TEST_F(SyntheticGestureControllerTest, MultiScrollGestureMouseHorizontal) {
   CreateControllerAndTarget<MockScrollMouseTarget>();
 
-  SyntheticSmoothScrollGestureParams params;
-  params.gesture_source_type = SyntheticGestureParams::MOUSE_INPUT;
-  params.anchor.SetPoint(90, 12);
+  SyntheticSmoothMoveGestureParams params;
+  params.input_type = SyntheticSmoothMoveGestureParams::MOUSE_WHEEL_INPUT;
+  params.start_point.SetPoint(90, 12);
   params.distances.push_back(gfx::Vector2d(-129, 0));
   params.distances.push_back(gfx::Vector2d(79, 0));
 
-  scoped_ptr<SyntheticSmoothScrollGesture> gesture(
-      new SyntheticSmoothScrollGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  scoped_ptr<SyntheticSmoothMoveGesture> gesture(
+      new SyntheticSmoothMoveGesture(params));
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
-  MockScrollGestureTarget* scroll_target =
-      static_cast<MockScrollGestureTarget*>(target_);
+  MockMoveGestureTarget* scroll_target =
+      static_cast<MockMoveGestureTarget*>(target_);
   EXPECT_EQ(1, num_success_);
   EXPECT_EQ(0, num_failure_);
   // This check only works for horizontal or vertical scrolls because of
   // floating point precision issues with diagonal scrolls.
   EXPECT_FLOAT_EQ(params.distances[0].Length() + params.distances[1].Length(),
-                  scroll_target->total_abs_scroll_distance_length());
+                  scroll_target->total_abs_move_distance_length());
   EXPECT_EQ(params.distances[0] + params.distances[1],
             scroll_target->start_to_end_distance());
 }
@@ -834,28 +906,28 @@ void CheckIsWithinRangeMulti(float scroll_distance,
 
 void CheckMultiScrollDistanceIsWithinRange(
     const gfx::Vector2dF& scroll_distance,
-    const gfx::Vector2d& target_distance,
+    const gfx::Vector2dF& target_distance,
     SyntheticGestureTarget* target) {
   CheckIsWithinRangeMulti(scroll_distance.x(), target_distance.x(), target);
   CheckIsWithinRangeMulti(scroll_distance.y(), target_distance.y(), target);
 }
 
 TEST_F(SyntheticGestureControllerTest, MultiScrollGestureTouch) {
-  CreateControllerAndTarget<MockScrollTouchTarget>();
+  CreateControllerAndTarget<MockMoveTouchTarget>();
 
-  SyntheticSmoothScrollGestureParams params;
-  params.gesture_source_type = SyntheticGestureParams::TOUCH_INPUT;
-  params.anchor.SetPoint(8, -13);
+  SyntheticSmoothMoveGestureParams params;
+  params.input_type = SyntheticSmoothMoveGestureParams::TOUCH_INPUT;
+  params.start_point.SetPoint(8, -13);
   params.distances.push_back(gfx::Vector2d(234, 133));
   params.distances.push_back(gfx::Vector2d(-9, 78));
 
-  scoped_ptr<SyntheticSmoothScrollGesture> gesture(
-      new SyntheticSmoothScrollGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  scoped_ptr<SyntheticSmoothMoveGesture> gesture(
+      new SyntheticSmoothMoveGesture(params));
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
-  MockScrollGestureTarget* scroll_target =
-      static_cast<MockScrollGestureTarget*>(target_);
+  MockMoveGestureTarget* scroll_target =
+      static_cast<MockMoveGestureTarget*>(target_);
   EXPECT_EQ(1, num_success_);
   EXPECT_EQ(0, num_failure_);
   CheckMultiScrollDistanceIsWithinRange(
@@ -864,31 +936,168 @@ TEST_F(SyntheticGestureControllerTest, MultiScrollGestureTouch) {
       target_);
 }
 
-TEST_F(SyntheticGestureControllerTest, MultiScrollGestureTouchVertical) {
-  CreateControllerAndTarget<MockScrollTouchTarget>();
+TEST_P(SyntheticGestureControllerTestWithParam,
+       MultiScrollGestureTouchVertical) {
+  CreateControllerAndTarget<MockMoveTouchTarget>();
 
-  SyntheticSmoothScrollGestureParams params;
-  params.gesture_source_type = SyntheticGestureParams::TOUCH_INPUT;
-  params.anchor.SetPoint(234, -13);
+  SyntheticSmoothMoveGestureParams params;
+  params.input_type = SyntheticSmoothMoveGestureParams::TOUCH_INPUT;
+  if (GetParam() == TOUCH_DRAG) {
+    params.add_slop = false;
+  }
+  params.start_point.SetPoint(234, -13);
   params.distances.push_back(gfx::Vector2d(0, 133));
   params.distances.push_back(gfx::Vector2d(0, 78));
 
-  scoped_ptr<SyntheticSmoothScrollGesture> gesture(
-      new SyntheticSmoothScrollGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  scoped_ptr<SyntheticSmoothMoveGesture> gesture(
+      new SyntheticSmoothMoveGesture(params));
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
-  MockScrollGestureTarget* scroll_target =
-      static_cast<MockScrollGestureTarget*>(target_);
+  MockMoveGestureTarget* scroll_target =
+      static_cast<MockMoveGestureTarget*>(target_);
   EXPECT_EQ(1, num_success_);
   EXPECT_EQ(0, num_failure_);
-  EXPECT_FLOAT_EQ(
-      params.distances[0].Length() + params.distances[1].Length() +
-          target_->GetTouchSlopInDips(),
-      scroll_target->total_abs_scroll_distance_length());
+  if (GetParam() == TOUCH_SCROLL) {
+    EXPECT_FLOAT_EQ(params.distances[0].Length() +
+                        params.distances[1].Length() +
+                        target_->GetTouchSlopInDips(),
+                    scroll_target->total_abs_move_distance_length());
   EXPECT_EQ(AddTouchSlopToVector(params.distances[0] + params.distances[1],
                                  target_),
             scroll_target->start_to_end_distance());
+  } else {
+    EXPECT_FLOAT_EQ(params.distances[0].Length() + params.distances[1].Length(),
+                    scroll_target->total_abs_move_distance_length());
+    EXPECT_EQ(params.distances[0] + params.distances[1],
+              scroll_target->start_to_end_distance());
+  }
+}
+
+INSTANTIATE_TEST_CASE_P(Single,
+                        SyntheticGestureControllerTestWithParam,
+                        testing::Values(TOUCH_SCROLL, TOUCH_DRAG));
+
+TEST_F(SyntheticGestureControllerTest, SingleDragGestureMouseDiagonal) {
+  CreateControllerAndTarget<MockDragMouseTarget>();
+
+  SyntheticSmoothMoveGestureParams params;
+  params.input_type = SyntheticSmoothMoveGestureParams::MOUSE_DRAG_INPUT;
+  params.start_point.SetPoint(0, 7);
+  params.distances.push_back(gfx::Vector2d(413, -83));
+
+  scoped_ptr<SyntheticSmoothMoveGesture> gesture(
+      new SyntheticSmoothMoveGesture(params));
+  QueueSyntheticGesture(gesture.Pass());
+  FlushInputUntilComplete();
+
+  MockMoveGestureTarget* drag_target =
+      static_cast<MockMoveGestureTarget*>(target_);
+  EXPECT_EQ(1, num_success_);
+  EXPECT_EQ(0, num_failure_);
+  EXPECT_EQ(drag_target->start_to_end_distance(), params.distances[0]);
+}
+
+TEST_F(SyntheticGestureControllerTest, SingleDragGestureMouseZeroDistance) {
+  CreateControllerAndTarget<MockDragMouseTarget>();
+
+  SyntheticSmoothMoveGestureParams params;
+  params.input_type = SyntheticSmoothMoveGestureParams::MOUSE_DRAG_INPUT;
+  params.start_point.SetPoint(-32, 43);
+  params.distances.push_back(gfx::Vector2d(0, 0));
+
+  scoped_ptr<SyntheticSmoothMoveGesture> gesture(
+      new SyntheticSmoothMoveGesture(params));
+  QueueSyntheticGesture(gesture.Pass());
+  FlushInputUntilComplete();
+
+  MockMoveGestureTarget* drag_target =
+      static_cast<MockMoveGestureTarget*>(target_);
+  EXPECT_EQ(1, num_success_);
+  EXPECT_EQ(0, num_failure_);
+  EXPECT_EQ(gfx::Vector2dF(0, 0), drag_target->start_to_end_distance());
+}
+
+TEST_F(SyntheticGestureControllerTest, MultiDragGestureMouse) {
+  CreateControllerAndTarget<MockDragMouseTarget>();
+
+  SyntheticSmoothMoveGestureParams params;
+  params.input_type = SyntheticSmoothMoveGestureParams::MOUSE_DRAG_INPUT;
+  params.start_point.SetPoint(8, -13);
+  params.distances.push_back(gfx::Vector2d(234, 133));
+  params.distances.push_back(gfx::Vector2d(-9, 78));
+
+  scoped_ptr<SyntheticSmoothMoveGesture> gesture(
+      new SyntheticSmoothMoveGesture(params));
+  QueueSyntheticGesture(gesture.Pass());
+  FlushInputUntilComplete();
+
+  MockMoveGestureTarget* drag_target =
+      static_cast<MockMoveGestureTarget*>(target_);
+  EXPECT_EQ(1, num_success_);
+  EXPECT_EQ(0, num_failure_);
+  EXPECT_EQ(drag_target->start_to_end_distance(),
+            params.distances[0] + params.distances[1]);
+}
+
+TEST_F(SyntheticGestureControllerTest,
+       SyntheticSmoothDragTestUsingSingleMouseDrag) {
+  CreateControllerAndTarget<MockDragMouseTarget>();
+
+  SyntheticSmoothDragGestureParams params;
+  params.gesture_source_type = SyntheticGestureParams::MOUSE_INPUT;
+  params.distances.push_back(gfx::Vector2d(234, 133));
+  params.speed_in_pixels_s = 800;
+
+  scoped_ptr<SyntheticSmoothDragGesture> gesture(
+      new SyntheticSmoothDragGesture(params));
+  const base::TimeTicks timestamp;
+  gesture->ForwardInputEvents(timestamp, target_);
+}
+
+TEST_F(SyntheticGestureControllerTest,
+       SyntheticSmoothDragTestUsingSingleTouchDrag) {
+  CreateControllerAndTarget<MockMoveTouchTarget>();
+
+  SyntheticSmoothDragGestureParams params;
+  params.gesture_source_type = SyntheticGestureParams::TOUCH_INPUT;
+  params.start_point.SetPoint(89, 32);
+  params.distances.push_back(gfx::Vector2d(0, 123));
+  params.speed_in_pixels_s = 800;
+
+  scoped_ptr<SyntheticSmoothDragGesture> gesture(
+      new SyntheticSmoothDragGesture(params));
+  const base::TimeTicks timestamp;
+  gesture->ForwardInputEvents(timestamp, target_);
+}
+
+TEST_F(SyntheticGestureControllerTest,
+       SyntheticSmoothScrollTestUsingSingleTouchScroll) {
+  CreateControllerAndTarget<MockMoveTouchTarget>();
+
+  SyntheticSmoothScrollGestureParams params;
+  params.gesture_source_type = SyntheticGestureParams::TOUCH_INPUT;
+
+  scoped_ptr<SyntheticSmoothScrollGesture> gesture(
+      new SyntheticSmoothScrollGesture(params));
+  const base::TimeTicks timestamp;
+  gesture->ForwardInputEvents(timestamp, target_);
+}
+
+TEST_F(SyntheticGestureControllerTest,
+       SyntheticSmoothScrollTestUsingSingleMouseScroll) {
+  CreateControllerAndTarget<MockScrollMouseTarget>();
+
+  SyntheticSmoothScrollGestureParams params;
+  params.gesture_source_type = SyntheticGestureParams::MOUSE_INPUT;
+  params.anchor.SetPoint(432, 89);
+  params.distances.push_back(gfx::Vector2d(0, -234));
+  params.speed_in_pixels_s = 800;
+
+  scoped_ptr<SyntheticSmoothScrollGesture> gesture(
+      new SyntheticSmoothScrollGesture(params));
+  const base::TimeTicks timestamp;
+  gesture->ForwardInputEvents(timestamp, target_);
 }
 
 TEST_F(SyntheticGestureControllerTest, PinchGestureTouchZoomIn) {
@@ -900,7 +1109,7 @@ TEST_F(SyntheticGestureControllerTest, PinchGestureTouchZoomIn) {
   params.anchor.SetPoint(54, 89);
 
   scoped_ptr<SyntheticPinchGesture> gesture(new SyntheticPinchGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
   MockSyntheticPinchTouchTarget* pinch_target =
@@ -921,7 +1130,7 @@ TEST_F(SyntheticGestureControllerTest, PinchGestureTouchZoomOut) {
   params.anchor.SetPoint(-12, 93);
 
   scoped_ptr<SyntheticPinchGesture> gesture(new SyntheticPinchGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
   MockSyntheticPinchTouchTarget* pinch_target =
@@ -941,7 +1150,7 @@ TEST_F(SyntheticGestureControllerTest, PinchGestureTouchNoScaling) {
   params.scale_factor = 1.0f;
 
   scoped_ptr<SyntheticPinchGesture> gesture(new SyntheticPinchGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
   MockSyntheticPinchTouchTarget* pinch_target =
@@ -962,7 +1171,7 @@ TEST_F(SyntheticGestureControllerTest, TapGestureTouch) {
   params.position.SetPoint(87, -124);
 
   scoped_ptr<SyntheticTapGesture> gesture(new SyntheticTapGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
   MockSyntheticTapTouchTarget* tap_target =
@@ -985,7 +1194,7 @@ TEST_F(SyntheticGestureControllerTest, TapGestureMouse) {
   params.position.SetPoint(98, 123);
 
   scoped_ptr<SyntheticTapGesture> gesture(new SyntheticTapGesture(params));
-  QueueSyntheticGesture(gesture.PassAs<SyntheticGesture>());
+  QueueSyntheticGesture(gesture.Pass());
   FlushInputUntilComplete();
 
   MockSyntheticTapMouseTarget* tap_target =

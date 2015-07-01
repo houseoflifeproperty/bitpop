@@ -18,13 +18,13 @@
 
 namespace {
 
-void CloseBalloon(const std::string& id) {
+void CloseBalloon(const std::string& id, ProfileID profile_id) {
   // The browser process may have gone away during shutting down, in this case
   // notification_ui_manager() will close the balloon in its destructor.
   if (!g_browser_process)
     return;
 
-  g_browser_process->notification_ui_manager()->CancelById(id);
+  g_browser_process->notification_ui_manager()->CancelById(id, profile_id);
 }
 
 // Prefix added to the notification ids.
@@ -35,39 +35,36 @@ const size_t kTimeoutSeconds = 6;
 
 class DummyNotificationDelegate : public NotificationDelegate {
  public:
-  explicit DummyNotificationDelegate(const std::string& id)
-      : id_(kNotificationPrefix + id) {}
+  explicit DummyNotificationDelegate(const std::string& id, Profile* profile)
+      : id_(kNotificationPrefix + id), profile_(profile) {}
 
-  virtual void Display() OVERRIDE {
+  void Display() override {
     base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
-        base::Bind(&CloseBalloon, id()),
+        base::Bind(
+            &CloseBalloon, id(), NotificationUIManager::GetProfileID(profile_)),
         base::TimeDelta::FromSeconds(kTimeoutSeconds));
   }
-  virtual void Error() OVERRIDE {}
-  virtual void Close(bool by_user) OVERRIDE {}
-  virtual void Click() OVERRIDE {}
-  virtual std::string id() const OVERRIDE { return id_; }
-  virtual content::WebContents* GetWebContents() const OVERRIDE {
-    return NULL;
-  }
+  std::string id() const override { return id_; }
 
  private:
-  virtual ~DummyNotificationDelegate() {}
+  ~DummyNotificationDelegate() override {}
 
   std::string id_;
+  Profile* profile_;
 };
 
 }  // anonymous namespace
 
 int DesktopNotificationBalloon::id_count_ = 1;
 
-DesktopNotificationBalloon::DesktopNotificationBalloon() {
+DesktopNotificationBalloon::DesktopNotificationBalloon() : profile_(NULL) {
 }
 
 DesktopNotificationBalloon::~DesktopNotificationBalloon() {
   if (!notification_id_.empty())
-    CloseBalloon(notification_id_);
+    CloseBalloon(notification_id_,
+                 NotificationUIManager::GetProfileID(profile_));
 }
 
 void DesktopNotificationBalloon::DisplayBalloon(
@@ -82,7 +79,14 @@ void DesktopNotificationBalloon::DisplayBalloon(
     base::ThreadRestrictions::ScopedAllowIO allow_io;
     profile = ProfileManager::GetLastUsedProfile();
   }
-  notification_id_ = DesktopNotificationService::AddIconNotification(
-      GURL(), title, contents, gfx::Image(icon), base::string16(),
-      new DummyNotificationDelegate(base::IntToString(id_count_++)), profile);
+
+  NotificationDelegate* delegate =
+      new DummyNotificationDelegate(base::IntToString(id_count_++), profile_);
+  Notification notification(GURL(), title, contents, gfx::Image(icon),
+      base::string16(), std::string(), delegate);
+
+  g_browser_process->notification_ui_manager()->Add(notification, profile);
+
+  notification_id_ = notification.delegate_id();
+  profile_ = profile;
 }

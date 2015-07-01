@@ -9,6 +9,7 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/tracked_objects.h"
 #include "chrome/browser/sync/glue/frontend_data_type_controller.h"
 #include "chrome/browser/sync/glue/frontend_data_type_controller_mock.h"
@@ -41,16 +42,16 @@ class FrontendDataTypeControllerFake : public FrontendDataTypeController {
       Profile* profile,
       ProfileSyncService* sync_service,
       FrontendDataTypeControllerMock* mock)
-      : FrontendDataTypeController(base::MessageLoopProxy::current(),
+      : FrontendDataTypeController(base::ThreadTaskRunnerHandle::Get(),
                                    base::Closure(),
                                    profile_sync_factory,
                                    profile,
                                    sync_service),
         mock_(mock) {}
-  virtual syncer::ModelType type() const OVERRIDE { return syncer::BOOKMARKS; }
+  syncer::ModelType type() const override { return syncer::BOOKMARKS; }
 
  private:
-  virtual void CreateSyncComponents() OVERRIDE {
+  void CreateSyncComponents() override {
     ProfileSyncComponentsFactory::SyncComponents sync_components =
         profile_sync_factory_->
             CreateBookmarkSyncComponents(sync_service_, this);
@@ -60,26 +61,20 @@ class FrontendDataTypeControllerFake : public FrontendDataTypeController {
 
   // We mock the following methods because their default implementations do
   // nothing, but we still want to make sure they're called appropriately.
-  virtual bool StartModels() OVERRIDE {
-    return mock_->StartModels();
-  }
-  virtual void CleanUpState() OVERRIDE {
-    mock_->CleanUpState();
-  }
-  virtual void RecordUnrecoverableError(
-      const tracked_objects::Location& from_here,
-      const std::string& message) OVERRIDE {
+  bool StartModels() override { return mock_->StartModels(); }
+  void CleanUpState() override { mock_->CleanUpState(); }
+  void RecordUnrecoverableError(const tracked_objects::Location& from_here,
+                                const std::string& message) override {
     mock_->RecordUnrecoverableError(from_here, message);
   }
-  virtual void RecordAssociationTime(base::TimeDelta time) OVERRIDE {
+  void RecordAssociationTime(base::TimeDelta time) override {
     mock_->RecordAssociationTime(time);
   }
-  virtual void RecordStartFailure(
-      DataTypeController::ConfigureResult result) OVERRIDE {
+  void RecordStartFailure(DataTypeController::ConfigureResult result) override {
     mock_->RecordStartFailure(result);
   }
  private:
-  virtual ~FrontendDataTypeControllerFake() {}
+  ~FrontendDataTypeControllerFake() override {}
   FrontendDataTypeControllerMock* mock_;
 };
 
@@ -89,7 +84,7 @@ class SyncFrontendDataTypeControllerTest : public testing::Test {
       : thread_bundle_(content::TestBrowserThreadBundle::DEFAULT),
         service_(&profile_) {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     profile_sync_factory_.reset(new ProfileSyncComponentsFactoryMock());
     dtc_mock_ = new StrictMock<FrontendDataTypeControllerMock>();
     frontend_dtc_ =
@@ -146,6 +141,7 @@ class SyncFrontendDataTypeControllerTest : public testing::Test {
     frontend_dtc_->StartAssociating(
         base::Bind(&StartCallbackMock::Run,
                    base::Unretained(&start_callback_)));
+    PumpLoop();
   }
 
   void PumpLoop() { base::MessageLoop::current()->RunUntilIdle(); }
@@ -184,6 +180,17 @@ TEST_F(SyncFrontendDataTypeControllerTest, StartFirstRun) {
   EXPECT_EQ(DataTypeController::NOT_RUNNING, frontend_dtc_->state());
   Start();
   EXPECT_EQ(DataTypeController::RUNNING, frontend_dtc_->state());
+}
+
+TEST_F(SyncFrontendDataTypeControllerTest, StartStopBeforeAssociation) {
+  EXPECT_CALL(*dtc_mock_.get(), StartModels()).WillOnce(Return(true));
+  EXPECT_CALL(*dtc_mock_.get(), CleanUpState());
+  EXPECT_CALL(model_load_callback_, Run(_, _));
+  EXPECT_EQ(DataTypeController::NOT_RUNNING, frontend_dtc_->state());
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE, base::Bind(&FrontendDataTypeController::Stop, frontend_dtc_));
+  Start();
+  EXPECT_EQ(DataTypeController::NOT_RUNNING, frontend_dtc_->state());
 }
 
 TEST_F(SyncFrontendDataTypeControllerTest, AbortDuringStartModels) {

@@ -6,15 +6,17 @@ import os
 import subprocess
 import threading
 
-from telemetry.core import util
 from telemetry.core.backends.chrome import android_browser_finder
 from telemetry.core.platform import profiler
+from telemetry.core import util
 
 util.AddDirToPythonPath(util.GetChromiumSrcDir(), 'build', 'android')
 try:
   from pylib import constants  # pylint: disable=F0401
-except Exception:
+  from pylib.device import device_errors  # pylint: disable=F0401
+except ImportError:
   constants = None
+  device_errors = None
 
 
 class JavaHeapProfiler(profiler.Profiler):
@@ -46,7 +48,7 @@ class JavaHeapProfiler(profiler.Profiler):
   def CollectProfile(self):
     self._timer.cancel()
     self._DumpJavaHeap(True)
-    self._browser_backend.adb.device().old_interface.Adb().Pull(
+    self._browser_backend.adb.device().PullFile(
         self._DEFAULT_DEVICE_DIR, self._output_path)
     self._browser_backend.adb.RunShellCommand(
         'rm ' + os.path.join(self._DEFAULT_DEVICE_DIR, '*'))
@@ -83,5 +85,7 @@ class JavaHeapProfiler(profiler.Profiler):
     self._run_count += 1
 
   def _FileSize(self, file_name):
-    f = self._browser_backend.adb.device().Ls(file_name)
-    return f.get(os.path.basename(file_name), (0, ))[0]
+    try:
+      return self._browser_backend.adb.device().Stat(file_name).st_size
+    except device_errors.CommandFailedError:
+      return 0

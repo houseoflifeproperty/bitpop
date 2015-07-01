@@ -6,8 +6,8 @@
 #define MOJO_SERVICES_NETWORK_NETWORK_SERVICE_IMPL_H_
 
 #include "base/compiler_specific.h"
-#include "mojo/public/cpp/bindings/interface_impl.h"
-#include "mojo/services/public/interfaces/network/network_service.mojom.h"
+#include "mojo/services/network/public/interfaces/network_service.mojom.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_impl.h"
 #include "url/gurl.h"
 
 namespace mojo {
@@ -18,12 +18,26 @@ class NetworkServiceImpl : public InterfaceImpl<NetworkService> {
  public:
   NetworkServiceImpl(ApplicationConnection* connection,
                      NetworkContext* context);
-  virtual ~NetworkServiceImpl();
+  ~NetworkServiceImpl() override;
 
   // NetworkService methods:
-  virtual void CreateURLLoader(InterfaceRequest<URLLoader> loader) OVERRIDE;
-  virtual void GetCookieStore(InterfaceRequest<CookieStore> store) OVERRIDE;
-  virtual void CreateWebSocket(InterfaceRequest<WebSocket> socket) OVERRIDE;
+  void CreateURLLoader(InterfaceRequest<URLLoader> loader) override;
+  void GetCookieStore(InterfaceRequest<CookieStore> store) override;
+  void CreateWebSocket(InterfaceRequest<WebSocket> socket) override;
+  void CreateTCPBoundSocket(
+      NetAddressPtr local_address,
+      InterfaceRequest<TCPBoundSocket> bound_socket,
+      const CreateTCPBoundSocketCallback& callback) override;
+  void CreateTCPConnectedSocket(
+      NetAddressPtr remote_address,
+      ScopedDataPipeConsumerHandle send_stream,
+      ScopedDataPipeProducerHandle receive_stream,
+      InterfaceRequest<TCPConnectedSocket> client_socket,
+      const CreateTCPConnectedSocketCallback& callback) override;
+  void CreateUDPSocket(InterfaceRequest<UDPSocket> socket) override;
+  void CreateHttpServer(NetAddressPtr local_address,
+                        HttpServerDelegatePtr delegate,
+                        const CreateHttpServerCallback& callback) override;
 
  private:
   NetworkContext* context_;

@@ -4,84 +4,39 @@
 
 #include "chrome/browser/geolocation/geolocation_permission_context_android.h"
 
-#include "base/prefs/pref_service.h"
-#include "chrome/browser/android/google_location_settings_helper.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/common/pref_names.h"
-#include "content/public/browser/browser_thread.h"
+#include "chrome/browser/android/location_settings.h"
+#include "chrome/browser/android/location_settings_impl.h"
+#include "components/content_settings/core/common/permission_request_id.h"
 #include "content/public/browser/web_contents.h"
-
-GeolocationPermissionContextAndroid::
-PermissionRequestInfo::PermissionRequestInfo()
-    : id(0, 0, 0, GURL()),
-      user_gesture(false) {}
+#include "url/gurl.h"
 
 GeolocationPermissionContextAndroid::
     GeolocationPermissionContextAndroid(Profile* profile)
     : GeolocationPermissionContext(profile),
-      google_location_settings_helper_(
-          GoogleLocationSettingsHelper::Create()) {
+      location_settings_(new LocationSettingsImpl()) {
 }
 
 GeolocationPermissionContextAndroid::~GeolocationPermissionContextAndroid() {
 }
 
-void GeolocationPermissionContextAndroid::ProceedDecidePermission(
+void GeolocationPermissionContextAndroid::RequestPermission(
     content::WebContents* web_contents,
-    const PermissionRequestInfo& info,
-    base::Callback<void(bool)> callback) {
-  // Super class implementation expects everything in UI thread instead.
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  GeolocationPermissionContext::DecidePermission(
-      web_contents, info.id, info.requesting_frame, info.user_gesture,
-      info.embedder, callback);
-}
-
-void GeolocationPermissionContextAndroid::CheckSystemLocation(
-    content::WebContents* web_contents,
-    const PermissionRequestInfo& info,
-    base::Callback<void(bool)> callback) {
-  // Check to see if the feature in its entirety has been disabled.
-  // This must happen before other services (e.g. tabs, extensions)
-  // get an opportunity to allow the geolocation request.
-  bool enabled = google_location_settings_helper_->IsSystemLocationEnabled();
-
-  base::Closure ui_closure;
-  if (enabled) {
-    ui_closure = base::Bind(
-        &GeolocationPermissionContextAndroid::ProceedDecidePermission,
-        this, web_contents, info, callback);
-  } else {
-    ui_closure = base::Bind(
-        &GeolocationPermissionContextAndroid::PermissionDecided,
-        this, info.id, info.requesting_frame, info.embedder, callback, false);
+     const PermissionRequestID& id,
+     const GURL& requesting_frame_origin,
+     bool user_gesture,
+     const BrowserPermissionCallback& callback) {
+  if (!location_settings_->IsLocationEnabled()) {
+    PermissionDecided(id, requesting_frame_origin,
+                      web_contents->GetLastCommittedURL().GetOrigin(),
+                      callback, false /* persist */, CONTENT_SETTING_BLOCK);
+    return;
   }
 
-  // This method is executed from the BlockingPool, post the result
-  // back to the UI thread.
-  content::BrowserThread::PostTask(
-      content::BrowserThread::UI, FROM_HERE, ui_closure);
+  GeolocationPermissionContext::RequestPermission(
+      web_contents, id, requesting_frame_origin, user_gesture, callback);
 }
 
-void GeolocationPermissionContextAndroid::DecidePermission(
-    content::WebContents* web_contents,
-    const PermissionRequestID& id,
-    const GURL& requesting_frame,
-    bool user_gesture,
-    const GURL& embedder,
-    base::Callback<void(bool)> callback) {
-
-  PermissionRequestInfo info;
-  info.id = id;
-  info.requesting_frame = requesting_frame;
-  info.user_gesture = user_gesture;
-  info.embedder = embedder;
-
-  // Called on the UI thread. However, do the work on a separate thread
-  // to avoid strict mode violation.
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  content::BrowserThread::PostBlockingPoolTask(FROM_HERE,
-      base::Bind(
-          &GeolocationPermissionContextAndroid::CheckSystemLocation,
-          this, web_contents, info, callback));
+void GeolocationPermissionContextAndroid::SetLocationSettingsForTesting(
+    scoped_ptr<LocationSettings> settings) {
+  location_settings_ = settings.Pass();
 }

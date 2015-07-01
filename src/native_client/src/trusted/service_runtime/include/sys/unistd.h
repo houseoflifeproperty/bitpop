@@ -20,7 +20,7 @@ extern "C" {
  * We need this file in the service_runtime only to agree on enum values,
  * therefore most of it should be compiled only for NaCl applications
  */
-#ifdef __native_client__
+#if defined(NACL_IN_TOOLCHAIN_HEADERS)
 #include <_ansi.h>
 #include <sys/types.h>
 #include <sys/_types.h>
@@ -131,7 +131,8 @@ int     _EXFUN(pause, (void ));
 #ifdef __CYGWIN__
 int _EXFUN(pthread_atfork, (void (*)(void), void (*)(void), void (*)(void)));
 #endif
-int     _EXFUN(pipe, (int __fildes[2] ));
+int     _EXFUN(pipe, (int __fildes[2]));
+int     _EXFUN(pipe2, (int __fildes[2], int __flags));
 ssize_t _EXFUN(pread, (int __fd, void *__buf, size_t __nbytes, off_t __offset));
 ssize_t _EXFUN(pwrite, (int __fd, const void *__buf, size_t __nbytes, off_t __offset));
 _READ_WRITE_RETURN_TYPE _EXFUN(read, (int __fd, void *__buf, size_t __nbyte ));
@@ -218,14 +219,15 @@ int     _EXFUN(_execve, (const char *__path, char * const __argv[], char * const
 #endif
 
 #if defined(__CYGWIN__) || defined(__rtems__) || defined(__sh__) \
-    || defined(__SPU__) || defined(__native_client__)
+    || defined(__SPU__) || defined(NACL_IN_TOOLCHAIN_HEADERS)
 #if !defined(__INSIDE_CYGWIN__)
 int     _EXFUN(ftruncate, (int __fd, off_t __length));
 int     _EXFUN(truncate, (const char *, off_t __length));
 #endif
 #endif
 
-#if defined(__CYGWIN__) || defined(__rtems__) || defined(__native_client__)
+#if defined(__CYGWIN__) || defined(__rtems__) || \
+    defined(NACL_IN_TOOLCHAIN_HEADERS)
 int _EXFUN(getdtablesize, (void));
 int _EXFUN(setdtablesize, (int));
 useconds_t _EXFUN(ualarm, (useconds_t __useconds, useconds_t __interval));
@@ -255,7 +257,7 @@ int     _EXFUN(symlink, (const char *__name1, const char *__name2));
 #define STDOUT_FILENO   1       /* standard output file descriptor */
 #define STDERR_FILENO   2       /* standard error file descriptor */
 
-#endif  /* __native_client__ */
+#endif  /* defined(NACL_IN_TOOLCHAIN_HEADERS) */
 
 #define NACL_ABI_F_OK 0
 #define NACL_ABI_R_OK 4
@@ -280,11 +282,14 @@ enum {
 #define NACL_ABI__SC_NPROCESSORS_ONLN NACL_ABI__SC_NPROCESSORS_ONLN
   NACL_ABI__SC_PAGESIZE = 2,
 #define NACL_ABI__SC_PAGESIZE NACL_ABI__SC_PAGESIZE
+  NACL_ABI__SC_NACL_CPU_FEATURE_X86 = 1 << 16,
+#define NACL_ABI__SC_NACL_CPU_FEATURE_X86 \
+    NACL_ABI__SC_NACL_CPU_FEATURE_X86
 
   /*
    * The sysconf values below are not part of the stable ABI.
    */
-  NACL_ABI__SC_NACL_FILE_ACCESS_ENABLED = 1000,
+  NACL_ABI__SC_NACL_FILE_ACCESS_ENABLED = 1 << 24,
 #define NACL_ABI__SC_NACL_FILE_ACCESS_ENABLED \
     NACL_ABI__SC_NACL_FILE_ACCESS_ENABLED
   NACL_ABI__SC_NACL_LIST_MAPPINGS_ENABLED,
@@ -295,7 +300,7 @@ enum {
     NACL_ABI__SC_NACL_PNACL_MODE
 };
 
-#ifdef __native_client__
+#if defined(NACL_IN_TOOLCHAIN_HEADERS)
 /*
  * TODO(gregoryd) pathconf and confstr are not supported on NaCl,
  * consider removing the definitions below.
@@ -364,7 +369,7 @@ enum {
 #define _CS_POSIX_V6_WIDTH_RESTRICTED_ENVS    17
 #endif
 
-#endif  /* __native_client__ */
+#endif  /* defined(NACL_IN_TOOLCHAIN_HEADERS) */
 
 #ifndef __CYGWIN__
 # define MAXPATHLEN 1024

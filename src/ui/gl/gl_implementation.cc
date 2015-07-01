@@ -72,7 +72,7 @@ EGLApi* g_current_egl_context;
 #endif
 
 GLImplementation GetNamedGLImplementation(const std::string& name) {
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kGLImplementationNamePairs); ++i) {
+  for (size_t i = 0; i < arraysize(kGLImplementationNamePairs); ++i) {
     if (name == kGLImplementationNamePairs[i].name)
       return kGLImplementationNamePairs[i].implementation;
   }
@@ -81,7 +81,7 @@ GLImplementation GetNamedGLImplementation(const std::string& name) {
 }
 
 const char* GetGLImplementationName(GLImplementation implementation) {
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kGLImplementationNamePairs); ++i) {
+  for (size_t i = 0; i < arraysize(kGLImplementationNamePairs); ++i) {
     if (implementation == kGLImplementationNamePairs[i].implementation)
       return kGLImplementationNamePairs[i].name;
   }
@@ -99,6 +99,7 @@ GLImplementation GetGLImplementation() {
 
 bool HasDesktopGLFeatures() {
   return kGLImplementationDesktopGL == g_gl_implementation ||
+         kGLImplementationDesktopGLCoreProfile == g_gl_implementation ||
          kGLImplementationOSMesaGL == g_gl_implementation ||
          kGLImplementationAppleGL == g_gl_implementation;
 }

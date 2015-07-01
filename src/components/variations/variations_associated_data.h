@@ -60,6 +60,9 @@ enum IDCollectionKey {
   // This collection is used by Google update services, transmitted through the
   // Google Update experiment labels.
   GOOGLE_UPDATE_SERVICE,
+  // This collection is used by Chrome Sync services, transmitted through the
+  // Chrome Sync experiment labels.
+  CHROME_SYNC_SERVICE,
   // The total count of collections.
   ID_COLLECTION_COUNT,
 };
@@ -82,6 +85,11 @@ void AssociateGoogleVariationIDForce(IDCollectionKey key,
                                      const std::string& group_name,
                                      VariationID id);
 
+// As above, but takes an ActiveGroupId hash pair, rather than the string names.
+void AssociateGoogleVariationIDForceHashes(IDCollectionKey key,
+                                           const ActiveGroupId& active_group,
+                                           VariationID id);
+
 // Retrieve the variations::VariationID associated with a FieldTrial group for
 // collection |key|. The group is denoted by |trial_name| and |group_name|.
 // This will return variations::kEmptyID if there is currently no associated ID
@@ -91,6 +99,11 @@ void AssociateGoogleVariationIDForce(IDCollectionKey key,
 VariationID GetGoogleVariationID(IDCollectionKey key,
                                  const std::string& trial_name,
                                  const std::string& group_name);
+
+// Same as GetGoogleVariationID(), but takes in a hashed |active_group| rather
+// than the string trial and group name.
+VariationID GetGoogleVariationIDFromHashes(IDCollectionKey key,
+                                           const ActiveGroupId& active_group);
 
 // Associates the specified set of key-value |params| with the variation
 // specified by |trial_name| and |group_name|. Fails and returns false if the

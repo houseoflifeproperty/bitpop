@@ -24,35 +24,34 @@ class CHROMEOS_EXPORT FakeBluetoothGattDescriptorClient
  public:
   struct Properties : public BluetoothGattDescriptorClient::Properties {
     explicit Properties(const PropertyChangedCallback& callback);
-    virtual ~Properties();
+    ~Properties() override;
 
     // dbus::PropertySet override
-    virtual void Get(dbus::PropertyBase* property,
-                     dbus::PropertySet::GetCallback callback) OVERRIDE;
-    virtual void GetAll() OVERRIDE;
-    virtual void Set(dbus::PropertyBase* property,
-                     dbus::PropertySet::SetCallback callback) OVERRIDE;
+    void Get(dbus::PropertyBase* property,
+             dbus::PropertySet::GetCallback callback) override;
+    void GetAll() override;
+    void Set(dbus::PropertyBase* property,
+             dbus::PropertySet::SetCallback callback) override;
   };
 
   FakeBluetoothGattDescriptorClient();
-  virtual ~FakeBluetoothGattDescriptorClient();
+  ~FakeBluetoothGattDescriptorClient() override;
 
   // DBusClient override.
-  virtual void Init(dbus::Bus* bus) OVERRIDE;
+  void Init(dbus::Bus* bus) override;
 
   // BluetoothGattDescriptorClient overrides.
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual std::vector<dbus::ObjectPath> GetDescriptors() OVERRIDE;
-  virtual Properties* GetProperties(const dbus::ObjectPath& object_path)
-      OVERRIDE;
-  virtual void ReadValue(const dbus::ObjectPath& object_path,
-                         const ValueCallback& callback,
-                         const ErrorCallback& error_callback) OVERRIDE;
-  virtual void WriteValue(const dbus::ObjectPath& object_path,
-                          const std::vector<uint8>& value,
-                          const base::Closure& callback,
-                          const ErrorCallback& error_callback) OVERRIDE;
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
+  std::vector<dbus::ObjectPath> GetDescriptors() override;
+  Properties* GetProperties(const dbus::ObjectPath& object_path) override;
+  void ReadValue(const dbus::ObjectPath& object_path,
+                 const ValueCallback& callback,
+                 const ErrorCallback& error_callback) override;
+  void WriteValue(const dbus::ObjectPath& object_path,
+                  const std::vector<uint8>& value,
+                  const base::Closure& callback,
+                  const ErrorCallback& error_callback) override;
 
   // Makes the descriptor with the UUID |uuid| visible under the characteristic
   // with object path |characteristic_path|. Descriptor object paths are
@@ -83,7 +82,6 @@ class CHROMEOS_EXPORT FakeBluetoothGattDescriptorClient
     ~DescriptorData();
 
     scoped_ptr<Properties> properties;
-    std::vector<uint8> value;
   };
   typedef std::map<dbus::ObjectPath, DescriptorData*> PropertiesMap;
   PropertiesMap properties_;

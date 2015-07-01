@@ -31,6 +31,7 @@
 #ifndef URLRegistry_h
 #define URLRegistry_h
 
+#include "core/CoreExport.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -39,21 +40,21 @@ class KURL;
 class SecurityOrigin;
 class URLRegistry;
 
-class URLRegistrable {
+class CORE_EXPORT URLRegistrable {
 public:
     virtual ~URLRegistrable() { }
     virtual URLRegistry& registry() const = 0;
 };
 
-class URLRegistry {
-    WTF_MAKE_FAST_ALLOCATED;
+class CORE_EXPORT URLRegistry {
+    WTF_MAKE_FAST_ALLOCATED(URLRegistry);
 public:
     virtual ~URLRegistry() { }
     virtual void registerURL(SecurityOrigin*, const KURL&, URLRegistrable*) = 0;
     virtual void unregisterURL(const KURL&) = 0;
 
     // These are optional APIs
-    virtual URLRegistrable* lookup(const String&) { ASSERT_NOT_REACHED(); return 0; }
+    virtual URLRegistrable* lookup(const String&) { ASSERT_NOT_REACHED(); return nullptr; }
     virtual bool contains(const String&) { ASSERT_NOT_REACHED(); return false; }
 };
 

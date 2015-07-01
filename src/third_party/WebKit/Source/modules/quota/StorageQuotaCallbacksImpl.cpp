@@ -37,7 +37,7 @@
 
 namespace blink {
 
-StorageQuotaCallbacksImpl::StorageQuotaCallbacksImpl(PassRefPtr<ScriptPromiseResolver> resolver)
+StorageQuotaCallbacksImpl::StorageQuotaCallbacksImpl(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
     : m_resolver(resolver)
 {
 }
@@ -58,7 +58,13 @@ void StorageQuotaCallbacksImpl::didGrantStorageQuota(unsigned long long usageInB
 
 void StorageQuotaCallbacksImpl::didFail(WebStorageQuotaError error)
 {
-    m_resolver->reject(DOMError::create(static_cast<ExceptionCode>(error)).get());
+    m_resolver->reject(DOMError::create(static_cast<ExceptionCode>(error)));
+}
+
+DEFINE_TRACE(StorageQuotaCallbacksImpl)
+{
+    visitor->trace(m_resolver);
+    StorageQuotaCallbacks::trace(visitor);
 }
 
 } // namespace blink

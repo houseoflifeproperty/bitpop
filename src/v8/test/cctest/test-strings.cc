@@ -36,7 +36,9 @@
 
 #include "src/api.h"
 #include "src/factory.h"
+#include "src/messages.h"
 #include "src/objects.h"
+#include "src/unicode-decoder.h"
 #include "test/cctest/cctest.h"
 
 // Adapted from http://en.wikipedia.org/wiki/Multiply-with-carry
@@ -356,10 +358,10 @@ void AccumulateStats(Handle<String> cons_string, ConsStringStats* stats) {
 
 void AccumulateStatsWithOperator(
     ConsString* cons_string, ConsStringStats* stats) {
-  ConsStringIteratorOp op(cons_string);
+  ConsStringIterator iter(cons_string);
   String* string;
   int offset;
-  while (NULL != (string = op.Next(&offset))) {
+  while (NULL != (string = iter.Next(&offset))) {
     // Accumulate stats.
     CHECK_EQ(0, offset);
     stats->leaves_++;
@@ -523,13 +525,10 @@ static Handle<String> ConstructBalanced(
 }
 
 
-static ConsStringIteratorOp cons_string_iterator_op_1;
-static ConsStringIteratorOp cons_string_iterator_op_2;
-
 static void Traverse(Handle<String> s1, Handle<String> s2) {
   int i = 0;
-  StringCharacterStream character_stream_1(*s1, &cons_string_iterator_op_1);
-  StringCharacterStream character_stream_2(*s2, &cons_string_iterator_op_2);
+  StringCharacterStream character_stream_1(*s1);
+  StringCharacterStream character_stream_2(*s2);
   while (character_stream_1.HasMore()) {
     CHECK(character_stream_2.HasMore());
     uint16_t c = character_stream_1.GetNext();
@@ -545,8 +544,8 @@ static void Traverse(Handle<String> s1, Handle<String> s2) {
 
 static void TraverseFirst(Handle<String> s1, Handle<String> s2, int chars) {
   int i = 0;
-  StringCharacterStream character_stream_1(*s1, &cons_string_iterator_op_1);
-  StringCharacterStream character_stream_2(*s2, &cons_string_iterator_op_2);
+  StringCharacterStream character_stream_1(*s1);
+  StringCharacterStream character_stream_2(*s2);
   while (character_stream_1.HasMore() && i < chars) {
     CHECK(character_stream_2.HasMore());
     uint16_t c = character_stream_1.GetNext();
@@ -615,10 +614,8 @@ static void VerifyCharacterStream(
     if (offset < 0) offset = 0;
     // Want to test the offset == length case.
     if (offset > length) offset = length;
-    StringCharacterStream flat_stream(
-        flat_string, &cons_string_iterator_op_1, offset);
-    StringCharacterStream cons_stream(
-        cons_string, &cons_string_iterator_op_2, offset);
+    StringCharacterStream flat_stream(flat_string, offset);
+    StringCharacterStream cons_stream(cons_string, offset);
     for (int i = offset; i < length; i++) {
       uint16_t c = flat_string->Get(i);
       CHECK(flat_stream.HasMore());
@@ -634,14 +631,11 @@ static void VerifyCharacterStream(
 
 static inline void PrintStats(const ConsStringGenerationData& data) {
 #ifdef DEBUG
-printf(
-    "%s: [%d], %s: [%d], %s: [%d], %s: [%d], %s: [%d], %s: [%d]\n",
-    "leaves", data.stats_.leaves_,
-    "empty", data.stats_.empty_leaves_,
-    "chars", data.stats_.chars_,
-    "lefts", data.stats_.left_traversals_,
-    "rights", data.stats_.right_traversals_,
-    "early_terminations", data.early_terminations_);
+  printf("%s: [%u], %s: [%u], %s: [%u], %s: [%u], %s: [%u], %s: [%u]\n",
+         "leaves", data.stats_.leaves_, "empty", data.stats_.empty_leaves_,
+         "chars", data.stats_.chars_, "lefts", data.stats_.left_traversals_,
+         "rights", data.stats_.right_traversals_, "early_terminations",
+         data.early_terminations_);
 #endif
 }
 
@@ -1027,11 +1021,13 @@ TEST(JSONStringifySliceMadeExternal) {
   // into a two-byte external string.  Check that JSON.stringify works.
   v8::HandleScope handle_scope(CcTest::isolate());
   v8::Handle<v8::String> underlying =
-      CompileRun("var underlying = 'abcdefghijklmnopqrstuvwxyz';"
-                 "underlying")->ToString();
-  v8::Handle<v8::String> slice =
-      CompileRun("var slice = underlying.slice(1);"
-                 "slice")->ToString();
+      CompileRun(
+          "var underlying = 'abcdefghijklmnopqrstuvwxyz';"
+          "underlying")->ToString(CcTest::isolate());
+  v8::Handle<v8::String> slice = CompileRun(
+                                     "var slice = '';"
+                                     "slice = underlying.slice(1);"
+                                     "slice")->ToString(CcTest::isolate());
   CHECK(v8::Utils::OpenHandle(*slice)->IsSlicedString());
   CHECK(v8::Utils::OpenHandle(*underlying)->IsSeqOneByteString());
 
@@ -1043,8 +1039,9 @@ TEST(JSONStringifySliceMadeExternal) {
   CHECK(v8::Utils::OpenHandle(*slice)->IsSlicedString());
   CHECK(v8::Utils::OpenHandle(*underlying)->IsExternalTwoByteString());
 
-  CHECK_EQ("\"bcdefghijklmnopqrstuvwxyz\"",
-           *v8::String::Utf8Value(CompileRun("JSON.stringify(slice)")));
+  CHECK_EQ(0,
+           strcmp("\"bcdefghijklmnopqrstuvwxyz\"",
+                  *v8::String::Utf8Value(CompileRun("JSON.stringify(slice)"))));
 }
 
 
@@ -1089,7 +1086,7 @@ TEST(CachedHashOverflow) {
     CHECK_EQ(results[i]->IsNumber(), result->IsNumber());
     if (result->IsNumber()) {
       CHECK_EQ(Object::ToSmi(isolate, results[i]).ToHandleChecked()->value(),
-               result->ToInt32()->Value());
+               result->ToInt32(CcTest::isolate())->Value());
     }
   }
 }
@@ -1176,7 +1173,7 @@ TEST(TrivialSlice) {
   CHECK(result->IsString());
   string = v8::Utils::OpenHandle(v8::String::Cast(*result));
   CHECK(string->IsSlicedString());
-  CHECK_EQ("bcdefghijklmnopqrstuvwxy", string->ToCString().get());
+  CHECK_EQ(0, strcmp("bcdefghijklmnopqrstuvwxy", string->ToCString().get()));
 }
 
 
@@ -1189,7 +1186,7 @@ TEST(SliceFromSlice) {
   v8::Local<v8::Value> result;
   Handle<String> string;
   const char* init = "var str = 'abcdefghijklmnopqrstuvwxyz';";
-  const char* slice = "var slice = str.slice(1,-1); slice";
+  const char* slice = "var slice = ''; slice = str.slice(1,-1); slice";
   const char* slice_from_slice = "slice.slice(1,-1);";
 
   CompileRun(init);
@@ -1198,14 +1195,14 @@ TEST(SliceFromSlice) {
   string = v8::Utils::OpenHandle(v8::String::Cast(*result));
   CHECK(string->IsSlicedString());
   CHECK(SlicedString::cast(*string)->parent()->IsSeqString());
-  CHECK_EQ("bcdefghijklmnopqrstuvwxy", string->ToCString().get());
+  CHECK_EQ(0, strcmp("bcdefghijklmnopqrstuvwxy", string->ToCString().get()));
 
   result = CompileRun(slice_from_slice);
   CHECK(result->IsString());
   string = v8::Utils::OpenHandle(v8::String::Cast(*result));
   CHECK(string->IsSlicedString());
   CHECK(SlicedString::cast(*string)->parent()->IsSeqString());
-  CHECK_EQ("cdefghijklmnopqrstuvwx", string->ToCString().get());
+  CHECK_EQ(0, strcmp("cdefghijklmnopqrstuvwx", string->ToCString().get()));
 }
 
 
@@ -1213,7 +1210,8 @@ UNINITIALIZED_TEST(OneByteArrayJoin) {
   v8::Isolate::CreateParams create_params;
   // Set heap limits.
   create_params.constraints.set_max_semi_space_size(1);
-  create_params.constraints.set_max_old_space_size(4);
+  create_params.constraints.set_max_old_space_size(6);
+  create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
   v8::Isolate* isolate = v8::Isolate::New(create_params);
   isolate->Enter();
 
@@ -1268,7 +1266,7 @@ TEST(RobustSubStringStub) {
   // Ordinary HeapNumbers can be handled (in runtime).
   result = CompileRun("%_SubString(short, Math.sqrt(4), 5.1);");
   string = v8::Utils::OpenHandle(v8::String::Cast(*result));
-  CHECK_EQ("cde", string->ToCString().get());
+  CHECK_EQ(0, strcmp("cde", string->ToCString().get()));
 
   CompileRun("var long = 'abcdefghijklmnopqrstuvwxyz';");
   // Invalid indices.
@@ -1283,12 +1281,48 @@ TEST(RobustSubStringStub) {
   // Ordinary HeapNumbers within bounds can be handled (in runtime).
   result = CompileRun("%_SubString(long, Math.sqrt(4), 17.1);");
   string = v8::Utils::OpenHandle(v8::String::Cast(*result));
-  CHECK_EQ("cdefghijklmnopq", string->ToCString().get());
+  CHECK_EQ(0, strcmp("cdefghijklmnopq", string->ToCString().get()));
 
   // Test that out-of-bounds substring of a slice fails when the indices
   // would have been valid for the underlying string.
   CompileRun("var slice = long.slice(1, 15);");
   CheckException("%_SubString(slice, 0, 17);");
+}
+
+
+namespace {
+
+int* global_use_counts = NULL;
+
+void MockUseCounterCallback(v8::Isolate* isolate,
+                            v8::Isolate::UseCounterFeature feature) {
+  ++global_use_counts[feature];
+}
+}
+
+
+TEST(CountBreakIterator) {
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+  LocalContext context;
+  int use_counts[v8::Isolate::kUseCounterFeatureCount] = {};
+  global_use_counts = use_counts;
+  CcTest::isolate()->SetUseCounterCallback(MockUseCounterCallback);
+  CHECK_EQ(0, use_counts[v8::Isolate::kBreakIterator]);
+  v8::Local<v8::Value> result = CompileRun(
+      "(function() {"
+      "  if (!this.Intl) return 0;"
+      "  var iterator = Intl.v8BreakIterator(['en']);"
+      "  iterator.adoptText('Now is the time');"
+      "  iterator.next();"
+      "  return iterator.next();"
+      "})();");
+  CHECK(result->IsNumber());
+  int uses = result->ToInt32(CcTest::isolate())->Value() == 0 ? 0 : 1;
+  CHECK_EQ(uses, use_counts[v8::Isolate::kBreakIterator]);
+  // Make sure GC cleans up the break iterator, so we don't get a memory leak
+  // reported by ASAN.
+  CcTest::isolate()->LowMemoryNotification();
 }
 
 
@@ -1414,6 +1448,7 @@ TEST(InvalidExternalString) {
     static const int invalid = String::kMaxLength + 1;                         \
     HandleScope scope(isolate);                                                \
     Vector<TYPE> dummy = Vector<TYPE>::New(invalid);                           \
+    memset(dummy.start(), 0x0, dummy.length() * sizeof(TYPE));                 \
     CHECK(isolate->factory()->FUN(Vector<const TYPE>::cast(dummy)).is_null()); \
     memset(dummy.start(), 0x20, dummy.length() * sizeof(TYPE));                \
     CHECK(isolate->has_pending_exception());                                   \
@@ -1426,3 +1461,20 @@ INVALID_STRING_TEST(NewStringFromUtf8, char)
 INVALID_STRING_TEST(NewStringFromOneByte, uint8_t)
 
 #undef INVALID_STRING_TEST
+
+
+TEST(FormatMessage) {
+  CcTest::InitializeVM();
+  LocalContext context;
+  Isolate* isolate = CcTest::i_isolate();
+  HandleScope scope(isolate);
+  Handle<String> arg0 = isolate->factory()->NewStringFromAsciiChecked("arg0");
+  Handle<String> arg1 = isolate->factory()->NewStringFromAsciiChecked("arg1");
+  Handle<String> arg2 = isolate->factory()->NewStringFromAsciiChecked("arg2");
+  Handle<String> result =
+      MessageTemplate::FormatMessage(MessageTemplate::kPropertyNotFunction,
+                                     arg0, arg1, arg2).ToHandleChecked();
+  Handle<String> expected = isolate->factory()->NewStringFromAsciiChecked(
+      "Property 'arg0' of object arg1 is not a function");
+  CHECK(String::Equals(result, expected));
+}

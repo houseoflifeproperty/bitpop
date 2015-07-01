@@ -24,11 +24,11 @@ namespace diagnostics {
 // run a test in.
 class DiagnosticsControllerTest : public testing::Test {
  protected:
-  DiagnosticsControllerTest() : cmdline_(CommandLine::NO_PROGRAM) {}
+  DiagnosticsControllerTest() : cmdline_(base::CommandLine::NO_PROGRAM) {}
 
-  virtual ~DiagnosticsControllerTest() {}
+  ~DiagnosticsControllerTest() override {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     base::FilePath test_data;
     PathService::Get(chrome::DIR_TEST_DATA, &test_data);
@@ -45,7 +45,7 @@ class DiagnosticsControllerTest : public testing::Test {
     PathService::Override(base::DIR_HOME, profile_dir_);
 #endif
 
-    cmdline_ = CommandLine(CommandLine::NO_PROGRAM);
+    cmdline_ = base::CommandLine(base::CommandLine::NO_PROGRAM);
     cmdline_.AppendSwitchPath(switches::kUserDataDir, profile_dir_);
     cmdline_.AppendSwitch(switches::kDiagnostics);
     cmdline_.AppendSwitch(switches::kDiagnosticsRecovery);
@@ -54,7 +54,7 @@ class DiagnosticsControllerTest : public testing::Test {
     // writer_.reset(new DiagnosticsWriter(DiagnosticsWriter::MACHINE));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     DiagnosticsController::GetInstance()->ClearResults();
 #if defined(OS_CHROMEOS)
     PathService::Override(base::DIR_HOME, old_home_dir_);
@@ -70,7 +70,7 @@ class DiagnosticsControllerTest : public testing::Test {
   }
 
   scoped_ptr<DiagnosticsModel> model_;
-  CommandLine cmdline_;
+  base::CommandLine cmdline_;
   base::ScopedTempDir temp_dir_;
   scoped_ptr<DiagnosticsWriter> writer_;
   base::FilePath profile_dir_;

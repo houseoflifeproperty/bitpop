@@ -8,10 +8,9 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "net/base/io_buffer.h"
 #include "net/quic/quic_data_stream.h"
 #include "net/quic/quic_protocol.h"
-#include "net/tools/balsa/balsa_headers.h"
+#include "net/spdy/spdy_framer.h"
 
 namespace net {
 
@@ -28,17 +27,19 @@ class QuicSpdyServerStreamPeer;
 class QuicSpdyServerStream : public QuicDataStream {
  public:
   QuicSpdyServerStream(QuicStreamId id, QuicSession* session);
-  virtual ~QuicSpdyServerStream();
+  ~QuicSpdyServerStream() override;
 
   // ReliableQuicStream implementation called by the session when there's
   // data for us.
-  virtual uint32 ProcessData(const char* data, uint32 data_len) OVERRIDE;
-  virtual void OnFinRead() OVERRIDE;
-
-  void ParseRequestHeaders();
+  uint32 ProcessData(const char* data, uint32 data_len) override;
+  void OnFinRead() override;
 
  private:
   friend class test::QuicSpdyServerStreamPeer;
+
+  // Parses the request headers from |data| to |request_headers_|.
+  // Returns false if there was an error parsing the headers.
+  bool ParseRequestHeaders(const char* data, uint32 data_len);
 
   // Sends a basic 200 response using SendHeaders for the headers and WriteData
   // for the body.
@@ -48,15 +49,16 @@ class QuicSpdyServerStream : public QuicDataStream {
   // for the body
   void SendErrorResponse();
 
-  void SendHeadersAndBody(const BalsaHeaders& response_headers,
+  void SendHeadersAndBody(const SpdyHeaderBlock& response_headers,
                           base::StringPiece body);
 
-  BalsaHeaders headers_;
-  string body_;
+  // Returns the key for |request_headers_| which identifies the host.
+  const std::string GetHostKey();
 
-  // Buffer into which response header data is read.
-  scoped_refptr<GrowableIOBuffer> read_buf_;
-  bool request_headers_received_;
+  // The parsed headers received from the client.
+  SpdyHeaderBlock request_headers_;
+  int content_length_;
+  std::string body_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicSpdyServerStream);
 };

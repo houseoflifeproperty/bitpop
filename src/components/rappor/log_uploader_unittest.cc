@@ -21,6 +21,7 @@ class TestLogUploader : public LogUploader {
  public:
   TestLogUploader(net::URLRequestContextGetter* request_context) :
       LogUploader(GURL(kTestServerURL), kTestMimeType, request_context) {
+    Start();
   }
 
   base::TimeDelta last_interval_set() const { return last_interval_set_; };
@@ -35,13 +36,13 @@ class TestLogUploader : public LogUploader {
   }
 
  protected:
-  virtual bool IsUploadScheduled() const OVERRIDE {
+  bool IsUploadScheduled() const override {
     return last_interval_set() != base::TimeDelta();
   }
 
   // Schedules a future call to StartScheduledUpload if one isn't already
   // pending.
-  virtual void ScheduleNextUpload(base::TimeDelta interval) OVERRIDE {
+  void ScheduleNextUpload(base::TimeDelta interval) override {
     EXPECT_EQ(last_interval_set(), base::TimeDelta());
     last_interval_set_ = interval;
   }

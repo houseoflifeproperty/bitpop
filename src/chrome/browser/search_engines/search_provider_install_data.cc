@@ -60,7 +60,7 @@ class IOThreadSearchTermsData : public SearchTermsData {
   explicit IOThreadSearchTermsData(const std::string& google_base_url);
 
   // Implementation of SearchTermsData.
-  virtual std::string GoogleBaseURLValue() const OVERRIDE;
+  std::string GoogleBaseURLValue() const override;
 
  private:
   std::string google_base_url_;
@@ -107,7 +107,7 @@ GoogleURLChangeNotifier::GoogleURLChangeNotifier(
 }
 
 void GoogleURLChangeNotifier::OnChange(const std::string& google_base_url) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (install_data_.get())
     install_data_->OnGoogleURLChange(google_base_url);
 }
@@ -121,11 +121,10 @@ class GoogleURLObserver : public content::RenderProcessHostObserver {
                     content::RenderProcessHost* host);
 
   // Implementation of content::RenderProcessHostObserver.
-  virtual void RenderProcessHostDestroyed(
-        content::RenderProcessHost* host) OVERRIDE;
+  void RenderProcessHostDestroyed(content::RenderProcessHost* host) override;
 
  private:
-  virtual ~GoogleURLObserver() {}
+  ~GoogleURLObserver() override {}
 
   // Callback that is called when the Google URL is updated.
   void OnGoogleURLUpdated();
@@ -144,7 +143,7 @@ GoogleURLObserver::GoogleURLObserver(
     content::RenderProcessHost* host)
     : google_url_tracker_(google_url_tracker),
       change_notifier_(change_notifier) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   google_url_updated_subscription_ =
       google_url_tracker_->RegisterCallback(base::Bind(
           &GoogleURLObserver::OnGoogleURLUpdated, base::Unretained(this)));
@@ -198,11 +197,11 @@ SearchProviderInstallData::SearchProviderInstallData(
 }
 
 SearchProviderInstallData::~SearchProviderInstallData() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 }
 
 void SearchProviderInstallData::CallWhenLoaded(const base::Closure& closure) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (provider_map_.get()) {
     closure.Run();
@@ -231,7 +230,7 @@ void SearchProviderInstallData::CallWhenLoaded(const base::Closure& closure) {
 
 SearchProviderInstallData::State SearchProviderInstallData::GetInstallState(
     const GURL& requested_origin) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(provider_map_.get());
 
   // First check to see if the origin is the default search provider.
@@ -261,7 +260,7 @@ void SearchProviderInstallData::OnGoogleURLChange(
 void SearchProviderInstallData::OnTemplateURLsLoaded(
     ScopedVector<TemplateURL> template_urls,
     TemplateURL* default_provider) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   template_urls_ = template_urls.Pass();
 
@@ -273,7 +272,7 @@ void SearchProviderInstallData::OnTemplateURLsLoaded(
 }
 
 void SearchProviderInstallData::SetDefault(const TemplateURL* template_url) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (!template_url) {
     default_search_origin_.clear();
@@ -292,7 +291,7 @@ void SearchProviderInstallData::SetDefault(const TemplateURL* template_url) {
 }
 
 void SearchProviderInstallData::OnLoadFailed() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   provider_map_.reset(new SearchHostToURLsMap());
   IOThreadSearchTermsData search_terms_data(google_base_url_);
@@ -302,7 +301,7 @@ void SearchProviderInstallData::OnLoadFailed() {
 }
 
 void SearchProviderInstallData::NotifyLoaded() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   std::vector<base::Closure> closure_queue;
   closure_queue.swap(closure_queue_);

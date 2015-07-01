@@ -78,7 +78,15 @@ public enum ModelType {
      * A supervised user setting object. The old name "managed user" is used for backwards
      * compatibility.
      */
-    MANAGED_USER_SETTING("MANAGED_USER_SETTING");
+    MANAGED_USER_SETTING("MANAGED_USER_SETTING"),
+    /**
+     * A supervised user whitelist object.
+     */
+    MANAGED_USER_WHITELIST("MANAGED_USER_WHITELIST"),
+    /**
+     * An autofill wallet data object.
+     */
+    AUTOFILL_WALLET("AUTOFILL_WALLET");
 
     /** Special type representing all possible types. */
     public static final String ALL_TYPES_TYPE = "ALL_TYPES";
@@ -100,12 +108,12 @@ public enum ModelType {
     }
 
     private boolean isNonInvalidationType() {
-      if ((this == SESSION || this == FAVICON_TRACKING) && LibraryLoader.isInitialized()) {
-        return FieldTrialList
-            .findFullName("AndroidSessionNotifications")
-            .equals("Disabled");
-      }
-      return mNonInvalidationType;
+        if ((this == SESSION || this == FAVICON_TRACKING) && LibraryLoader.isInitialized()) {
+            return FieldTrialList
+                    .findFullName("AndroidSessionNotifications")
+                    .equals("Disabled");
+        }
+        return mNonInvalidationType;
     }
 
     /**

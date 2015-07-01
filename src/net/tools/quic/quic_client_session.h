@@ -26,36 +26,42 @@ namespace tools {
 class QuicClientSession : public QuicClientSessionBase {
  public:
   QuicClientSession(const QuicConfig& config, QuicConnection* connection);
-  virtual ~QuicClientSession();
-
-  // QuicClientSessionBase methods:
-  virtual void OnProofValid(
-      const QuicCryptoClientConfig::CachedState& cached) OVERRIDE;
-  virtual void OnProofVerifyDetailsAvailable(
-      const ProofVerifyDetails& verify_details) OVERRIDE;
+  ~QuicClientSession() override;
 
   void InitializeSession(const QuicServerId& server_id,
                          QuicCryptoClientConfig* config);
 
   // QuicSession methods:
-  virtual QuicSpdyClientStream* CreateOutgoingDataStream() OVERRIDE;
-  virtual QuicCryptoClientStream* GetCryptoStream() OVERRIDE;
+  QuicSpdyClientStream* CreateOutgoingDataStream() override;
+  QuicCryptoClientStream* GetCryptoStream() override;
 
-  // Performs a crypto handshake with the server. Returns true if the crypto
-  // handshake is started successfully.
-  bool CryptoConnect();
+  // QuicClientSessionBase methods:
+  void OnProofValid(const QuicCryptoClientConfig::CachedState& cached) override;
+  void OnProofVerifyDetailsAvailable(
+      const ProofVerifyDetails& verify_details) override;
+
+  // Performs a crypto handshake with the server.
+  void CryptoConnect();
 
   // Returns the number of client hello messages that have been sent on the
   // crypto stream. If the handshake has completed then this is one greater
   // than the number of round-trips needed for the handshake.
   int GetNumSentClientHellos() const;
 
+  void set_respect_goaway(bool respect_goaway) {
+    respect_goaway_ = respect_goaway;
+  }
+
  protected:
   // QuicSession methods:
-  virtual QuicDataStream* CreateIncomingDataStream(QuicStreamId id) OVERRIDE;
+  QuicDataStream* CreateIncomingDataStream(QuicStreamId id) override;
 
  private:
   scoped_ptr<QuicCryptoClientStream> crypto_stream_;
+
+  // If this is set to false, the client will ignore server GOAWAYs and allow
+  // the creation of streams regardless of the high chance they will fail.
+  bool respect_goaway_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicClientSession);
 };

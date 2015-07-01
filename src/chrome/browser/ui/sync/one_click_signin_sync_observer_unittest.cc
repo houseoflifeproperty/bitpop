@@ -16,7 +16,7 @@
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/signin/core/browser/signin_manager.h"
-#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -38,12 +38,13 @@ class MockWebContentsObserver : public content::WebContentsObserver {
   // to the continue URL. Navigations in unit_tests never complete, but a
   // navigation start is a sufficient signal for the purposes of this test.
   // Listening for this call also has the advantage of being synchronous.
-  MOCK_METHOD1(AboutToNavigateRenderView, void(content::RenderViewHost*));
+  MOCK_METHOD2(AboutToNavigateRenderFrame, void(content::RenderFrameHost*,
+                                                content::RenderFrameHost*));
 };
 
 class OneClickTestProfileSyncService : public TestProfileSyncService {
  public:
-  virtual ~OneClickTestProfileSyncService() {}
+  ~OneClickTestProfileSyncService() override {}
 
   // Helper routine to be used in conjunction with
   // BrowserContextKeyedServiceFactory::SetTestingFactory().
@@ -51,18 +52,18 @@ class OneClickTestProfileSyncService : public TestProfileSyncService {
     return new OneClickTestProfileSyncService(static_cast<Profile*>(profile));
   }
 
-  virtual bool FirstSetupInProgress() const OVERRIDE {
+  bool FirstSetupInProgress() const override {
     return first_setup_in_progress_;
   }
 
-  virtual bool sync_initialized() const OVERRIDE { return sync_initialized_; }
+  bool SyncActive() const override { return sync_active_; }
 
   void set_first_setup_in_progress(bool in_progress) {
     first_setup_in_progress_ = in_progress;
   }
 
-  void set_sync_initialized(bool initialized) {
-    sync_initialized_ = initialized;
+  void set_sync_active(bool active) {
+    sync_active_ = active;
   }
 
  private:
@@ -75,10 +76,10 @@ class OneClickTestProfileSyncService : public TestProfileSyncService {
           ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
           browser_sync::MANUAL_START),
         first_setup_in_progress_(false),
-        sync_initialized_(false) {}
+        sync_active_(false) {}
 
   bool first_setup_in_progress_;
-  bool sync_initialized_;
+  bool sync_active_;
 };
 
 class TestOneClickSigninSyncObserver : public OneClickSigninSyncObserver {
@@ -91,7 +92,9 @@ class TestOneClickSigninSyncObserver : public OneClickSigninSyncObserver {
                                  const DestructionCallback& callback)
       : OneClickSigninSyncObserver(web_contents, continue_url),
         destruction_callback_(callback) {}
-  virtual ~TestOneClickSigninSyncObserver() { destruction_callback_.Run(this); }
+  ~TestOneClickSigninSyncObserver() override {
+    destruction_callback_.Run(this);
+  }
 
  private:
   DestructionCallback destruction_callback_;
@@ -113,7 +116,7 @@ class OneClickSigninSyncObserverTest : public ChromeRenderViewHostTestHarness {
         sync_observer_(NULL),
         sync_observer_destroyed_(true) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ChromeRenderViewHostTestHarness::SetUp();
     web_contents_observer_.reset(new MockWebContentsObserver(web_contents()));
     sync_service_ =
@@ -122,7 +125,7 @@ class OneClickSigninSyncObserverTest : public ChromeRenderViewHostTestHarness {
                 profile(), OneClickTestProfileSyncService::Build));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // Verify that the |sync_observer_| unregistered as an observer from the
     // sync service and freed its memory.
     EXPECT_TRUE(sync_observer_destroyed_);
@@ -167,7 +170,7 @@ TEST_F(OneClickSigninSyncObserverTest, NoSyncService_RedirectsImmediately) {
               profile(), BuildNullService));
 
   // The observer should immediately redirect to the continue URL.
-  EXPECT_CALL(*web_contents_observer_, AboutToNavigateRenderView(_));
+  EXPECT_CALL(*web_contents_observer_, AboutToNavigateRenderFrame(_, _));
   CreateSyncObserver(kContinueUrl);
   EXPECT_EQ(GURL(kContinueUrl), web_contents()->GetVisibleURL());
 
@@ -179,7 +182,8 @@ TEST_F(OneClickSigninSyncObserverTest, NoSyncService_RedirectsImmediately) {
 // Verify that when the WebContents is destroyed without any Sync notifications
 // firing, the observer cleans up its memory without loading the continue URL.
 TEST_F(OneClickSigninSyncObserverTest, WebContentsDestroyed) {
-  EXPECT_CALL(*web_contents_observer_, AboutToNavigateRenderView(_)).Times(0);
+  EXPECT_CALL(*web_contents_observer_,
+              AboutToNavigateRenderFrame(_, _)).Times(0);
   CreateSyncObserver(kContinueUrl);
   SetContents(NULL);
 }
@@ -190,9 +194,9 @@ TEST_F(OneClickSigninSyncObserverTest,
        OnSyncStateChanged_SyncConfiguredSuccessfully) {
   CreateSyncObserver(kContinueUrl);
   sync_service_->set_first_setup_in_progress(false);
-  sync_service_->set_sync_initialized(true);
+  sync_service_->set_sync_active(true);
 
-  EXPECT_CALL(*web_contents_observer_, AboutToNavigateRenderView(_));
+  EXPECT_CALL(*web_contents_observer_, AboutToNavigateRenderFrame(_, _));
   sync_service_->NotifyObservers();
   EXPECT_EQ(GURL(kContinueUrl), web_contents()->GetVisibleURL());
 }
@@ -203,9 +207,10 @@ TEST_F(OneClickSigninSyncObserverTest,
        OnSyncStateChanged_SyncConfigurationFailed) {
   CreateSyncObserver(kContinueUrl);
   sync_service_->set_first_setup_in_progress(false);
-  sync_service_->set_sync_initialized(false);
+  sync_service_->set_sync_active(false);
 
-  EXPECT_CALL(*web_contents_observer_, AboutToNavigateRenderView(_)).Times(0);
+  EXPECT_CALL(*web_contents_observer_,
+              AboutToNavigateRenderFrame(_, _)).Times(0);
   sync_service_->NotifyObservers();
   EXPECT_NE(GURL(kContinueUrl), web_contents()->GetVisibleURL());
 }
@@ -216,9 +221,10 @@ TEST_F(OneClickSigninSyncObserverTest,
        OnSyncStateChanged_SyncConfigurationInProgress) {
   CreateSyncObserver(kContinueUrl);
   sync_service_->set_first_setup_in_progress(true);
-  sync_service_->set_sync_initialized(false);
+  sync_service_->set_sync_active(false);
 
-  EXPECT_CALL(*web_contents_observer_, AboutToNavigateRenderView(_)).Times(0);
+  EXPECT_CALL(*web_contents_observer_,
+              AboutToNavigateRenderFrame(_, _)).Times(0);
   sync_service_->NotifyObservers();
   EXPECT_NE(GURL(kContinueUrl), web_contents()->GetVisibleURL());
 
@@ -230,12 +236,14 @@ TEST_F(OneClickSigninSyncObserverTest,
 // triggered, since it would be redundant.
 TEST_F(OneClickSigninSyncObserverTest,
        OnSyncStateChanged_SyncConfiguredSuccessfully_SourceIsSettings) {
-  GURL continue_url = signin::GetPromoURL(signin::SOURCE_SETTINGS, false);
+  GURL continue_url = signin::GetPromoURL(
+      signin_metrics::SOURCE_SETTINGS, false);
   CreateSyncObserver(continue_url.spec());
   sync_service_->set_first_setup_in_progress(false);
-  sync_service_->set_sync_initialized(true);
+  sync_service_->set_sync_active(true);
 
-  EXPECT_CALL(*web_contents_observer_, AboutToNavigateRenderView(_)).Times(0);
+  EXPECT_CALL(*web_contents_observer_,
+              AboutToNavigateRenderFrame(_, _)).Times(0);
   sync_service_->NotifyObservers();
   EXPECT_NE(GURL(kContinueUrl), web_contents()->GetVisibleURL());
 }

@@ -9,9 +9,7 @@
 #include "build/build_config.h"
 #include "ui/gfx/gfx_export.h"
 
-#if defined(USE_X11)
-#include "ui/gfx/x/x11_types.h"
-#endif
+extern "C" typedef struct _ClientBuffer* ClientBuffer;
 
 namespace gfx {
 
@@ -19,48 +17,21 @@ enum GpuMemoryBufferType {
   EMPTY_BUFFER,
   SHARED_MEMORY_BUFFER,
   IO_SURFACE_BUFFER,
-  ANDROID_NATIVE_BUFFER,
   SURFACE_TEXTURE_BUFFER,
-  X11_PIXMAP_BUFFER,
   OZONE_NATIVE_BUFFER,
   GPU_MEMORY_BUFFER_TYPE_LAST = OZONE_NATIVE_BUFFER
 };
 
-// TODO(alexst): Merge this with GpuMemoryBufferId as part of switchover to
-// the new API for GpuMemoryBuffer allocation when it's done.
-#if defined(OS_ANDROID)
-struct SurfaceTextureId {
-  SurfaceTextureId() : primary_id(0), secondary_id(0) {}
-  SurfaceTextureId(int32 primary_id, int32 secondary_id)
-      : primary_id(primary_id), secondary_id(secondary_id) {}
-  int32 primary_id;
-  int32 secondary_id;
-};
-#endif
-
-struct GpuMemoryBufferId {
-  GpuMemoryBufferId() : primary_id(0), secondary_id(0) {}
-  GpuMemoryBufferId(int32 primary_id, int32 secondary_id)
-      : primary_id(primary_id), secondary_id(secondary_id) {}
-  int32 primary_id;
-  int32 secondary_id;
-};
+using GpuMemoryBufferId = int32;
 
 struct GFX_EXPORT GpuMemoryBufferHandle {
   GpuMemoryBufferHandle();
   bool is_null() const { return type == EMPTY_BUFFER; }
   GpuMemoryBufferType type;
+  GpuMemoryBufferId id;
   base::SharedMemoryHandle handle;
-  GpuMemoryBufferId global_id;
 #if defined(OS_MACOSX)
   uint32 io_surface_id;
-#endif
-#if defined(OS_ANDROID)
-  long buffer_id;
-  SurfaceTextureId surface_texture_id;
-#endif
-#if defined(USE_X11)
-  XID pixmap;
 #endif
 };
 
@@ -69,14 +40,35 @@ struct GFX_EXPORT GpuMemoryBufferHandle {
 // regular CPU code, but can also be read by the GPU.
 class GFX_EXPORT GpuMemoryBuffer {
  public:
-  GpuMemoryBuffer();
-  virtual ~GpuMemoryBuffer();
+  // The format needs to be taken into account when mapping a buffer into the
+  // client's address space.
+  enum Format {
+    ATC,
+    ATCIA,
+    DXT1,
+    DXT5,
+    ETC1,
+    R_8,
+    RGBA_8888,
+    RGBX_8888,
+    BGRA_8888,
+    YUV_420,
 
-  // Maps the buffer into the client's address space so it can be written to by
-  // the CPU. This call may block, for instance if the GPU needs to finish
-  // accessing the buffer or if CPU caches need to be synchronized. Returns NULL
-  // on failure.
-  virtual void* Map() = 0;
+    FORMAT_LAST = YUV_420
+  };
+
+  // The usage mode affects how a buffer can be used. Only buffers created with
+  // MAP can be mapped into the client's address space and accessed by the CPU.
+  enum Usage { MAP, SCANOUT, USAGE_LAST = SCANOUT };
+
+  virtual ~GpuMemoryBuffer() {}
+
+  // Maps each plane of the buffer into the client's address space so it can be
+  // written to by the CPU. A pointer to plane K is stored at index K-1 of the
+  // |data| array. This call may block, for instance if the GPU needs to finish
+  // accessing the buffer or if CPU caches need to be synchronized. Returns
+  // false on failure.
+  virtual bool Map(void** data) = 0;
 
   // Unmaps the buffer. It's illegal to use the pointer returned by Map() after
   // this has been called.
@@ -85,11 +77,18 @@ class GFX_EXPORT GpuMemoryBuffer {
   // Returns true iff the buffer is mapped.
   virtual bool IsMapped() const = 0;
 
-  // Returns the stride in bytes for the buffer.
-  virtual uint32 GetStride() const = 0;
+  // Returns the format for the buffer.
+  virtual Format GetFormat() const = 0;
+
+  // Fills the stride in bytes for each plane of the buffer. The stride of
+  // plane K is stored at index K-1 of the |stride| array.
+  virtual void GetStride(int* stride) const = 0;
 
   // Returns a platform specific handle for this buffer.
   virtual GpuMemoryBufferHandle GetHandle() const = 0;
+
+  // Type-checking downcast routine.
+  virtual ClientBuffer AsClientBuffer() = 0;
 };
 
 }  // namespace gfx

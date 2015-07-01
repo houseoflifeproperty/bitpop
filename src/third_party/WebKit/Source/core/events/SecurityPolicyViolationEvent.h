@@ -26,25 +26,11 @@
 #define SecurityPolicyViolationEvent_h
 
 #include "core/events/Event.h"
+#include "core/events/SecurityPolicyViolationEventInit.h"
 
 namespace blink {
 
-struct SecurityPolicyViolationEventInit : public EventInit {
-    SecurityPolicyViolationEventInit() { }
-
-    String documentURI;
-    String referrer;
-    String blockedURI;
-    String violatedDirective;
-    String effectiveDirective;
-    String originalPolicy;
-    String sourceFile;
-    int lineNumber;
-    int columnNumber;
-    int statusCode;
-};
-
-class SecurityPolicyViolationEvent FINAL : public Event {
+class SecurityPolicyViolationEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<SecurityPolicyViolationEvent> create()
@@ -68,25 +54,40 @@ public:
     int columnNumber() const { return m_columnNumber; }
     int statusCode() const { return m_statusCode; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::SecurityPolicyViolationEvent; }
+    virtual const AtomicString& interfaceName() const override { return EventNames::SecurityPolicyViolationEvent; }
 
-    virtual void trace(Visitor* visitor) OVERRIDE { Event::trace(visitor); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { Event::trace(visitor); }
 
 private:
     SecurityPolicyViolationEvent() { }
 
     SecurityPolicyViolationEvent(const AtomicString& type, const SecurityPolicyViolationEventInit& initializer)
         : Event(type, initializer)
-        , m_documentURI(initializer.documentURI)
-        , m_referrer(initializer.referrer)
-        , m_blockedURI(initializer.blockedURI)
-        , m_violatedDirective(initializer.violatedDirective)
-        , m_effectiveDirective(initializer.effectiveDirective)
-        , m_originalPolicy(initializer.originalPolicy)
-        , m_sourceFile(initializer.sourceFile)
-        , m_lineNumber(initializer.lineNumber)
-        , m_columnNumber(initializer.columnNumber)
-        , m_statusCode(initializer.statusCode) { }
+        , m_lineNumber(0)
+        , m_columnNumber(0)
+        , m_statusCode(0)
+    {
+        if (initializer.hasDocumentURI())
+            m_documentURI = initializer.documentURI();
+        if (initializer.hasReferrer())
+            m_referrer = initializer.referrer();
+        if (initializer.hasBlockedURI())
+            m_blockedURI = initializer.blockedURI();
+        if (initializer.hasViolatedDirective())
+            m_violatedDirective = initializer.violatedDirective();
+        if (initializer.hasEffectiveDirective())
+            m_effectiveDirective = initializer.effectiveDirective();
+        if (initializer.hasOriginalPolicy())
+            m_originalPolicy = initializer.originalPolicy();
+        if (initializer.hasSourceFile())
+            m_sourceFile = initializer.sourceFile();
+        if (initializer.hasLineNumber())
+            m_lineNumber = initializer.lineNumber();
+        if (initializer.hasColumnNumber())
+            m_columnNumber = initializer.columnNumber();
+        if (initializer.hasStatusCode())
+            m_statusCode = initializer.statusCode();
+    }
 
     String m_documentURI;
     String m_referrer;

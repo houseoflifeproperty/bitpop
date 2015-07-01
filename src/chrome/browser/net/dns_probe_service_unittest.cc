@@ -11,7 +11,7 @@
 #include "base/run_loop.h"
 #include "chrome/browser/net/dns_probe_runner.h"
 #include "chrome/browser/net/dns_probe_test_util.h"
-#include "chrome/common/net/net_error_info.h"
+#include "components/error_page/common/net_error_info.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "net/dns/dns_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -74,10 +74,10 @@ class DnsProbeServiceTest : public testing::Test {
     callback_result_ = result;
   }
 
+  TestBrowserThreadBundle bundle_;
   DnsProbeService service_;
   bool callback_called_;
   DnsProbeStatus callback_result_;
-  TestBrowserThreadBundle bundle_;
 };
 
 TEST_F(DnsProbeServiceTest, Probe_OK_OK) {

@@ -47,31 +47,30 @@ class VPNConfigView : public ChildNetworkConfigView,
                       public CertLibrary::Observer {
  public:
   VPNConfigView(NetworkConfigView* parent, const std::string& service_path);
-  virtual ~VPNConfigView();
+  ~VPNConfigView() override;
 
   // views::TextfieldController:
-  virtual void ContentsChanged(views::Textfield* sender,
-                               const base::string16& new_contents) OVERRIDE;
-  virtual bool HandleKeyEvent(views::Textfield* sender,
-                              const ui::KeyEvent& key_event) OVERRIDE;
+  void ContentsChanged(views::Textfield* sender,
+                       const base::string16& new_contents) override;
+  bool HandleKeyEvent(views::Textfield* sender,
+                      const ui::KeyEvent& key_event) override;
 
   // views::ButtonListener:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   // views::ComboboxListener:
-  virtual void OnPerformAction(views::Combobox* combobox) OVERRIDE;
+  void OnPerformAction(views::Combobox* combobox) override;
 
   // CertLibrary::Observer:
-  virtual void OnCertificatesLoaded(bool initial_load) OVERRIDE;
+  void OnCertificatesLoaded(bool initial_load) override;
 
   // ChildNetworkConfigView:
-  virtual base::string16 GetTitle() const OVERRIDE;
-  virtual views::View* GetInitiallyFocusedView() OVERRIDE;
-  virtual bool CanLogin() OVERRIDE;
-  virtual bool Login() OVERRIDE;
-  virtual void Cancel() OVERRIDE;
-  virtual void InitFocus() OVERRIDE;
+  base::string16 GetTitle() const override;
+  views::View* GetInitiallyFocusedView() override;
+  bool CanLogin() override;
+  bool Login() override;
+  void Cancel() override;
+  void InitFocus() override;
 
  private:
   // Initializes data members and create UI controls.

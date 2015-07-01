@@ -4,6 +4,7 @@
 
 #include "base/run_loop.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
+#include "chrome/browser/ui/toolbar/toolbar_actions_bar.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/test_with_browser_view.h"
 #include "chrome/browser/ui/views/tabs/tab_drag_controller_interactive_uitest.h"
@@ -25,7 +26,7 @@
 class ToolbarViewInteractiveUITest : public ExtensionBrowserTest {
  public:
   ToolbarViewInteractiveUITest();
-  virtual ~ToolbarViewInteractiveUITest();
+  ~ToolbarViewInteractiveUITest() override;
 
  protected:
   ToolbarView* toolbar_view() { return toolbar_view_; }
@@ -46,9 +47,9 @@ class ToolbarViewInteractiveUITest : public ExtensionBrowserTest {
   void FinishDragAndDrop(const base::Closure& quit_closure);
 
   // InProcessBrowserTest:
-  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
-  virtual void SetUpOnMainThread() OVERRIDE;
-  virtual void TearDownOnMainThread() OVERRIDE;
+  void SetUpCommandLine(base::CommandLine* command_line) override;
+  void SetUpOnMainThread() override;
+  void TearDownOnMainThread() override;
 
   ToolbarView* toolbar_view_;
 
@@ -126,7 +127,7 @@ void ToolbarViewInteractiveUITest::SetUpCommandLine(
   // are constructed.
   feature_override_.reset(new extensions::FeatureSwitch::ScopedOverride(
       extensions::FeatureSwitch::extension_action_redesign(), true));
-  BrowserActionsContainer::disable_animations_during_testing_ = true;
+  ToolbarActionsBar::disable_animations_for_testing_ = true;
   WrenchToolbarButton::g_open_wrench_immediately_for_testing = true;
 }
 
@@ -138,7 +139,7 @@ void ToolbarViewInteractiveUITest::SetUpOnMainThread() {
 }
 
 void ToolbarViewInteractiveUITest::TearDownOnMainThread() {
-  BrowserActionsContainer::disable_animations_during_testing_ = false;
+  ToolbarActionsBar::disable_animations_for_testing_ = false;
   WrenchToolbarButton::g_open_wrench_immediately_for_testing = false;
 }
 
@@ -152,7 +153,7 @@ IN_PROC_BROWSER_TEST_F(ToolbarViewInteractiveUITest,
 
   ASSERT_EQ(1u, browser_actions()->VisibleBrowserActions());
 
-  BrowserActionView* view = browser_actions()->GetBrowserActionViewAt(0);
+  ToolbarActionView* view = browser_actions()->GetToolbarActionViewAt(0);
   ASSERT_TRUE(view);
 
   gfx::Point browser_action_view_loc = test::GetCenterInScreenCoordinates(view);

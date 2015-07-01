@@ -21,10 +21,10 @@
 #include "base/threading/platform_thread.h"
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/signin/profile_identity_provider.h"
@@ -35,6 +35,7 @@
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/test/integration/fake_server_invalidation_service.h"
 #include "chrome/browser/sync/test/integration/p2p_invalidation_forwarder.h"
+#include "chrome/browser/sync/test/integration/p2p_sync_refresher.h"
 #include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/single_client_status_change_checker.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
@@ -43,7 +44,9 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_browser_process.h"
@@ -59,6 +62,7 @@
 #include "components/os_crypt/os_crypt.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_browser_thread.h"
 #include "google_apis/gaia/gaia_urls.h"
@@ -66,9 +70,6 @@
 #include "net/base/load_flags.h"
 #include "net/base/network_change_notifier.h"
 #include "net/cookies/cookie_monster.h"
-#include "net/proxy/proxy_config.h"
-#include "net/proxy/proxy_config_service_fixed.h"
-#include "net/proxy/proxy_service.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_fetcher.h"
@@ -101,7 +102,7 @@ class SyncServerStatusChecker : public net::URLFetcherDelegate {
  public:
   SyncServerStatusChecker() : running_(false) {}
 
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE {
+  void OnURLFetchComplete(const net::URLFetcher* source) override {
     std::string data;
     source->GetResponseAsString(&data);
     running_ =
@@ -126,13 +127,11 @@ class EncryptionChecker : public SingleClientStatusChangeChecker {
   explicit EncryptionChecker(ProfileSyncService* service)
       : SingleClientStatusChangeChecker(service) {}
 
-  virtual bool IsExitConditionSatisfied() OVERRIDE {
+  bool IsExitConditionSatisfied() override {
     return IsEncryptionComplete(service());
   }
 
-  virtual std::string GetDebugMessage() const OVERRIDE {
-    return "Encryption";
-  }
+  std::string GetDebugMessage() const override { return "Encryption"; }
 };
 
 void SetupNetworkCallback(
@@ -140,17 +139,6 @@ void SetupNetworkCallback(
     net::URLRequestContextGetter* url_request_context_getter) {
   url_request_context_getter->GetURLRequestContext()->
       set_cookie_store(new net::CookieMonster(NULL, NULL));
-  done->Signal();
-}
-
-void SetProxyConfigCallback(
-    base::WaitableEvent* done,
-    net::URLRequestContextGetter* url_request_context_getter,
-    const net::ProxyConfig& proxy_config) {
-  net::ProxyService* proxy_service =
-      url_request_context_getter->GetURLRequestContext()->proxy_service();
-  proxy_service->ResetConfigService(
-      new net::ProxyConfigServiceFixed(proxy_config));
   done->Signal();
 }
 
@@ -193,8 +181,7 @@ SyncTest::SyncTest(TestType test_type)
       server_type_(SERVER_TYPE_UNDECIDED),
       num_clients_(-1),
       use_verifier_(true),
-      notifications_enabled_(true),
-      test_server_handle_(base::kNullProcessHandle) {
+      notifications_enabled_(true) {
   sync_datatype_helper::AssociateWithTest(this);
   switch (test_type_) {
     case SINGLE_CLIENT:
@@ -285,14 +272,68 @@ void SyncTest::AddTestSwitches(base::CommandLine* cl) {
 
 void SyncTest::AddOptionalTypesToCommandLine(base::CommandLine* cl) {}
 
+// Called when the ProfileManager has created a profile.
 // static
+void SyncTest::CreateProfileCallback(const base::Closure& quit_closure,
+                                     Profile* profile,
+                                     Profile::CreateStatus status) {
+  EXPECT_TRUE(profile);
+  EXPECT_NE(Profile::CREATE_STATUS_LOCAL_FAIL, status);
+  EXPECT_NE(Profile::CREATE_STATUS_REMOTE_FAIL, status);
+  // This will be called multiple times. Wait until the profile is initialized
+  // fully to quit the loop.
+  if (status == Profile::CREATE_STATUS_INITIALIZED)
+    quit_closure.Run();
+}
+
+// TODO(shadi): Ideally creating a new profile should not depend on signin
+// process. We should try to consolidate MakeProfileForUISignin() and
+// MakeProfile(). Major differences are profile paths and creation methods. For
+// UI signin we need profiles in unique user data dir's and we need to use
+// ProfileManager::CreateProfileAsync() for proper profile creation.
+// static
+Profile* SyncTest::MakeProfileForUISignin(
+    const base::FilePath::StringType name) {
+  // For multi profile UI signin, profile paths should be outside user data dir.
+  // Otherwise, we get an error that the profile has already signed in on this
+  // device.
+  // Note that prefix |name| is implemented only on Win. On other platforms the
+  // com.google.Chrome.XXXXXX prefix is used.
+  base::FilePath profile_path;
+  CHECK(base::CreateNewTempDirectory(name, &profile_path));
+
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  base::RunLoop run_loop;
+  ProfileManager::CreateCallback create_callback = base::Bind(
+      &CreateProfileCallback, run_loop.QuitClosure());
+  profile_manager->CreateProfileAsync(profile_path,
+                                      create_callback,
+                                      base::string16(),
+                                      base::string16(),
+                                      std::string());
+  run_loop.Run();
+  return profile_manager->GetProfileByPath(profile_path);
+}
+
 Profile* SyncTest::MakeProfile(const base::FilePath::StringType name) {
   base::FilePath path;
+  // Create new profiles in user data dir so that other profiles can know about
+  // it. This is needed in tests such as supervised user cases which assume
+  // browser->profile() as the custodian profile.
   PathService::Get(chrome::DIR_USER_DATA, &path);
   path = path.Append(name);
 
   if (!base::PathExists(path))
     CHECK(base::CreateDirectory(path));
+
+  if (!preexisting_preferences_file_contents_.empty()) {
+    base::FilePath pref_path(path.Append(chrome::kPreferencesFilename));
+    const char* contents = preexisting_preferences_file_contents_.c_str();
+    size_t contents_length = preexisting_preferences_file_contents_.size();
+    if (!base::WriteFile(pref_path, contents, contents_length)) {
+      LOG(FATAL) << "Preexisting Preferences file could not be written.";
+    }
+  }
 
   Profile* profile =
       Profile::CreateProfile(path, NULL, Profile::CREATE_MODE_SYNCHRONOUS);
@@ -339,6 +380,8 @@ std::vector<ProfileSyncService*> SyncTest::GetSyncServices() {
 }
 
 Profile* SyncTest::verifier() {
+  if (!use_verifier_)
+    LOG(FATAL) << "Verifier account is disabled.";
   if (verifier_ == NULL)
     LOG(FATAL) << "SetupClients() has not yet been called.";
   return verifier_;
@@ -359,33 +402,53 @@ bool SyncTest::SetupClients() {
   browsers_.resize(num_clients_);
   clients_.resize(num_clients_);
   invalidation_forwarders_.resize(num_clients_);
+  sync_refreshers_.resize(num_clients_);
   fake_server_invalidation_services_.resize(num_clients_);
   for (int i = 0; i < num_clients_; ++i) {
     InitializeInstance(i);
   }
 
+  // Verifier account is not useful when running against external servers.
+  if (UsingExternalServers())
+    DisableVerifier();
+
   // Create the verifier profile.
-  verifier_ = MakeProfile(FILE_PATH_LITERAL("Verifier"));
-  test::WaitForBookmarkModelToLoad(
-      BookmarkModelFactory::GetForProfile(verifier()));
-  ui_test_utils::WaitForHistoryToLoad(HistoryServiceFactory::GetForProfile(
-      verifier(), Profile::EXPLICIT_ACCESS));
-  ui_test_utils::WaitForTemplateURLServiceToLoad(
-      TemplateURLServiceFactory::GetForProfile(verifier()));
-  return (verifier_ != NULL);
+  if (use_verifier_) {
+    verifier_ = MakeProfile(FILE_PATH_LITERAL("Verifier"));
+    bookmarks::test::WaitForBookmarkModelToLoad(
+        BookmarkModelFactory::GetForProfile(verifier()));
+    ui_test_utils::WaitForHistoryToLoad(HistoryServiceFactory::GetForProfile(
+        verifier(), ServiceAccessType::EXPLICIT_ACCESS));
+    ui_test_utils::WaitForTemplateURLServiceToLoad(
+        TemplateURLServiceFactory::GetForProfile(verifier()));
+  }
+  // Error cases are all handled by LOG(FATAL) messages. So there is not really
+  // a case that returns false.  In case we failed to create a verifier profile,
+  // any call to the verifier() would fail.
+  return true;
 }
 
 void SyncTest::InitializeInstance(int index) {
-  profiles_[index] = MakeProfile(
-      base::StringPrintf(FILE_PATH_LITERAL("Profile%d"), index));
+  base::FilePath::StringType profile_name =
+      base::StringPrintf(FILE_PATH_LITERAL("Profile%d"), index);
+  // If running against an EXTERNAL_LIVE_SERVER, we need to signin profiles
+  // using real GAIA server. This requires creating profiles with no test hooks.
+  if (UsingExternalServers()) {
+    profiles_[index] = MakeProfileForUISignin(profile_name);
+  } else {
+    // Without need of real GAIA authentication, we create new test profiles.
+    profiles_[index] = MakeProfile(profile_name);
+  }
+
   EXPECT_FALSE(GetProfile(index) == NULL) << "Could not create Profile "
                                           << index << ".";
 
+  // CheckInitialState() assumes that no windows are open at startup.
   browsers_[index] = new Browser(Browser::CreateParams(
       GetProfile(index), chrome::GetActiveDesktop()));
+
   EXPECT_FALSE(GetBrowser(index) == NULL) << "Could not create Browser "
                                           << index << ".";
-
 
   // Make sure the ProfileSyncService has been created before creating the
   // ProfileSyncServiceHarness - some tests expect the ProfileSyncService to
@@ -402,25 +465,33 @@ void SyncTest::InitializeInstance(int index) {
             new fake_server::FakeServerNetworkResources(fake_server_.get())));
   }
 
+  ProfileSyncServiceHarness::SigninType singin_type = UsingExternalServers()
+          ? ProfileSyncServiceHarness::SigninType::UI_SIGNIN
+          : ProfileSyncServiceHarness::SigninType::FAKE_SIGNIN;
+
   clients_[index] =
-      ProfileSyncServiceHarness::Create(
-          GetProfile(index),
-          username_,
-          password_);
+      ProfileSyncServiceHarness::Create(GetProfile(index),
+                                        username_,
+                                        password_,
+                                        singin_type);
   EXPECT_FALSE(GetClient(index) == NULL) << "Could not create Client "
                                          << index << ".";
   InitializeInvalidations(index);
 
-  test::WaitForBookmarkModelToLoad(
+  bookmarks::test::WaitForBookmarkModelToLoad(
       BookmarkModelFactory::GetForProfile(GetProfile(index)));
   ui_test_utils::WaitForHistoryToLoad(HistoryServiceFactory::GetForProfile(
-      GetProfile(index), Profile::EXPLICIT_ACCESS));
+      GetProfile(index), ServiceAccessType::EXPLICIT_ACCESS));
   ui_test_utils::WaitForTemplateURLServiceToLoad(
       TemplateURLServiceFactory::GetForProfile(GetProfile(index)));
 }
 
 void SyncTest::InitializeInvalidations(int index) {
-  if (server_type_ == IN_PROCESS_FAKE_SERVER) {
+  if (UsingExternalServers()) {
+    // DO NOTHING. External live sync servers use GCM to notify profiles of any
+    // invalidations in sync'ed data. In this case, to notify other profiles of
+    // invalidations, we use sync refresh notifications instead.
+  } else if (server_type_ == IN_PROCESS_FAKE_SERVER) {
     CHECK(fake_server_.get());
     fake_server::FakeServerInvalidationService* invalidation_service =
         static_cast<fake_server::FakeServerInvalidationService*>(
@@ -480,6 +551,29 @@ bool SyncTest::SetupSync() {
     AwaitQuiescence();
   }
 
+  // SyncRefresher is used instead of invalidations to notify other profiles to
+  // do a sync refresh on committed data sets. This is only needed when running
+  // tests against external live server, otherwise invalidation service is used.
+  // With external live servers, the profiles commit data on first sync cycle
+  // automatically after signing in. To avoid misleading sync commit
+  // notifications at start up, we start the SyncRefresher observers post
+  // client set up.
+  if (UsingExternalServers()) {
+    for (int i = 0; i < num_clients_; ++i) {
+      sync_refreshers_[i] = new P2PSyncRefresher(clients_[i]->service());
+    }
+
+    // OneClickSigninSyncStarter observer is created with a real user sign in.
+    // It is deleted on certain conditions which are not satisfied by our tests,
+    // and this causes the SigninTracker observer to stay hanging at shutdown.
+    // Calling LoginUIService::SyncConfirmationUIClosed forces the observer to
+    // be removed. http://crbug.com/484388
+    for (int i = 0; i < num_clients_; ++i) {
+      LoginUIServiceFactory::GetForProfile(GetProfile(i))->
+          SyncConfirmationUIClosed(false /* configure_sync_first */);
+    }
+  }
+
   return true;
 }
 
@@ -507,6 +601,7 @@ void SyncTest::TearDownOnMainThread() {
   // corruption in QuitBrowser().
   CHECK_EQ(0U, chrome::GetTotalBrowserCount());
   invalidation_forwarders_.clear();
+  sync_refreshers_.clear();
   fake_server_invalidation_services_.clear();
   clients_.clear();
 }
@@ -670,7 +765,9 @@ void SyncTest::DecideServerType() {
 // Start up a local sync server based on the value of server_type_, which
 // was determined from the command line parameters.
 void SyncTest::SetUpTestServerIfRequired() {
-  if (server_type_ == LOCAL_PYTHON_SERVER) {
+  if (UsingExternalServers()) {
+    // Nothing to do; we'll just talk to the URL we were given.
+  } else if (server_type_ == LOCAL_PYTHON_SERVER) {
     if (!SetUpLocalPythonTestServer())
       LOG(FATAL) << "Failed to set up local python sync and XMPP servers";
     SetupMockGaiaResponses();
@@ -683,8 +780,6 @@ void SyncTest::SetUpTestServerIfRequired() {
   } else if (server_type_ == IN_PROCESS_FAKE_SERVER) {
     fake_server_.reset(new fake_server::FakeServer());
     SetupMockGaiaResponses();
-  } else if (server_type_ == EXTERNAL_LIVE_SERVER) {
-    // Nothing to do; we'll just talk to the URL we were given.
   } else {
     LOG(FATAL) << "Don't know which server environment to run test in.";
   }
@@ -739,7 +834,8 @@ bool SyncTest::SetUpLocalTestServer() {
 #if defined(OS_WIN)
   options.start_hidden = true;
 #endif
-  if (!base::LaunchProcess(server_cmdline, options, &test_server_handle_))
+  test_server_ = base::LaunchProcess(server_cmdline, options);
+  if (!test_server_.IsValid())
     LOG(ERROR) << "Could not launch local test server.";
 
   const base::TimeDelta kMaxWaitTime = TestTimeouts::action_max_timeout();
@@ -765,11 +861,10 @@ bool SyncTest::TearDownLocalPythonTestServer() {
 }
 
 bool SyncTest::TearDownLocalTestServer() {
-  if (test_server_handle_ != base::kNullProcessHandle) {
-    EXPECT_TRUE(base::KillProcess(test_server_handle_, 0, false))
+  if (test_server_.IsValid()) {
+    EXPECT_TRUE(test_server_.Terminate(0, false))
         << "Could not stop local test server.";
-    base::CloseProcessHandle(test_server_handle_);
-    test_server_handle_ = base::kNullProcessHandle;
+    test_server_.Close();
   }
   return true;
 }
@@ -788,8 +883,8 @@ bool SyncTest::IsTestServerRunning() {
   std::string sync_url = cl->GetSwitchValueASCII(switches::kSyncServiceURL);
   GURL sync_url_status(sync_url.append("/healthz"));
   SyncServerStatusChecker delegate;
-  scoped_ptr<net::URLFetcher> fetcher(net::URLFetcher::Create(
-    sync_url_status, net::URLFetcher::GET, &delegate));
+  scoped_ptr<net::URLFetcher> fetcher =
+      net::URLFetcher::Create(sync_url_status, net::URLFetcher::GET, &delegate);
   fetcher->SetLoadFlags(net::LOAD_DISABLE_CACHE |
                         net::LOAD_DO_NOT_SEND_COOKIES |
                         net::LOAD_DO_NOT_SAVE_COOKIES);
@@ -797,35 +892,6 @@ bool SyncTest::IsTestServerRunning() {
   fetcher->Start();
   content::RunMessageLoop();
   return delegate.running();
-}
-
-void SyncTest::EnableNetwork(Profile* profile) {
-  // TODO(pvalenzuela): Remove this restriction when FakeServer's observers
-  // (namely FakeServerInvaldationService) are aware of a network disconnect.
-  ASSERT_NE(IN_PROCESS_FAKE_SERVER, server_type_)
-      << "FakeServer does not support EnableNetwork.";
-  SetProxyConfig(profile->GetRequestContext(),
-                 net::ProxyConfig::CreateDirect());
-  if (notifications_enabled_) {
-    EnableNotificationsImpl();
-  }
-  // TODO(rsimha): Remove this line once http://crbug.com/53857 is fixed.
-  net::NetworkChangeNotifier::NotifyObserversOfIPAddressChangeForTests();
-}
-
-void SyncTest::DisableNetwork(Profile* profile) {
-  // TODO(pvalenzuela): Remove this restriction when FakeServer's observers
-  // (namely FakeServerInvaldationService) are aware of a network disconnect.
-  ASSERT_NE(IN_PROCESS_FAKE_SERVER, server_type_)
-      << "FakeServer does not support DisableNetwork.";
-  DisableNotificationsImpl();
-  // Set the current proxy configuration to a nonexistent proxy to effectively
-  // disable networking.
-  net::ProxyConfig config;
-  config.proxy_rules().ParseFromString("http=127.0.0.1:0");
-  SetProxyConfig(profile->GetRequestContext(), config);
-  // TODO(rsimha): Remove this line once http://crbug.com/53857 is fixed.
-  net::NetworkChangeNotifier::NotifyObserversOfIPAddressChangeForTests();
 }
 
 bool SyncTest::TestUsesSelfNotifications() {
@@ -863,6 +929,10 @@ bool SyncTest::AwaitEncryptionComplete(int index) {
 
 bool SyncTest::AwaitQuiescence() {
   return ProfileSyncServiceHarness::AwaitQuiescence(clients());
+}
+
+bool SyncTest::UsingExternalServers() {
+  return server_type_ == EXTERNAL_LIVE_SERVER;
 }
 
 bool SyncTest::ServerSupportsNotificationControl() const {
@@ -946,105 +1016,10 @@ void SyncTest::TriggerMigrationDoneError(syncer::ModelTypeSet model_types) {
                     GetTitle()));
 }
 
-void SyncTest::TriggerTransientError() {
-  ASSERT_TRUE(ServerSupportsErrorTriggering());
-  std::string path = "chromiumsync/transienterror";
-  ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
-  ASSERT_EQ("Transient error",
-            base::UTF16ToASCII(
-                browser()->tab_strip_model()->GetActiveWebContents()->
-                    GetTitle()));
-}
-
 void SyncTest::TriggerXmppAuthError() {
   ASSERT_TRUE(ServerSupportsErrorTriggering());
   std::string path = "chromiumsync/xmppcred";
   ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
-}
-
-namespace {
-
-sync_pb::SyncEnums::ErrorType
-    GetClientToServerResponseErrorType(
-        syncer::SyncProtocolErrorType error) {
-  switch (error) {
-    case syncer::SYNC_SUCCESS:
-      return sync_pb::SyncEnums::SUCCESS;
-    case syncer::NOT_MY_BIRTHDAY:
-      return sync_pb::SyncEnums::NOT_MY_BIRTHDAY;
-    case syncer::THROTTLED:
-      return sync_pb::SyncEnums::THROTTLED;
-    case syncer::CLEAR_PENDING:
-      return sync_pb::SyncEnums::CLEAR_PENDING;
-    case syncer::TRANSIENT_ERROR:
-      return sync_pb::SyncEnums::TRANSIENT_ERROR;
-    case syncer::MIGRATION_DONE:
-      return sync_pb::SyncEnums::MIGRATION_DONE;
-    case syncer::UNKNOWN_ERROR:
-      return sync_pb::SyncEnums::UNKNOWN;
-    case syncer::INVALID_CREDENTIAL:
-      NOTREACHED();   // NOTREACHED() because auth error is not set through
-                      // error code in sync response.
-      return sync_pb::SyncEnums::UNKNOWN;
-    case syncer::DISABLED_BY_ADMIN:
-      return sync_pb::SyncEnums::DISABLED_BY_ADMIN;
-    case syncer::USER_ROLLBACK:
-      return sync_pb::SyncEnums::USER_ROLLBACK;
-    case syncer::NON_RETRIABLE_ERROR:
-      return sync_pb::SyncEnums::UNKNOWN;
-  }
-  return sync_pb::SyncEnums::UNKNOWN;
-}
-
-sync_pb::SyncEnums::Action GetClientToServerResponseAction(
-    const syncer::ClientAction& action) {
-  switch (action) {
-    case syncer::UPGRADE_CLIENT:
-      return sync_pb::SyncEnums::UPGRADE_CLIENT;
-    case syncer::CLEAR_USER_DATA_AND_RESYNC:
-      return sync_pb::SyncEnums::CLEAR_USER_DATA_AND_RESYNC;
-    case syncer::ENABLE_SYNC_ON_ACCOUNT:
-      return sync_pb::SyncEnums::ENABLE_SYNC_ON_ACCOUNT;
-    case syncer::STOP_AND_RESTART_SYNC:
-      return sync_pb::SyncEnums::STOP_AND_RESTART_SYNC;
-    case syncer::DISABLE_SYNC_ON_CLIENT:
-      return sync_pb::SyncEnums::DISABLE_SYNC_ON_CLIENT;
-    case syncer::STOP_SYNC_FOR_DISABLED_ACCOUNT:
-    case syncer::DISABLE_SYNC_AND_ROLLBACK:
-    case syncer::ROLLBACK_DONE:
-      NOTREACHED();   // No corresponding proto action for these. Shouldn't
-                      // test.
-      return sync_pb::SyncEnums::UNKNOWN_ACTION;
-    case syncer::UNKNOWN_ACTION:
-      return sync_pb::SyncEnums::UNKNOWN_ACTION;
-  }
-  return sync_pb::SyncEnums::UNKNOWN_ACTION;
-}
-
-}  // namespace
-
-void SyncTest::TriggerSyncError(const syncer::SyncProtocolError& error,
-                                SyncErrorFrequency frequency) {
-  ASSERT_TRUE(ServerSupportsErrorTriggering());
-  std::string path = "chromiumsync/error";
-  int error_type =
-      static_cast<int>(GetClientToServerResponseErrorType(
-          error.error_type));
-  int action = static_cast<int>(GetClientToServerResponseAction(
-      error.action));
-
-  path.append(base::StringPrintf("?error=%d", error_type));
-  path.append(base::StringPrintf("&action=%d", action));
-
-  path.append(base::StringPrintf("&error_description=%s",
-                                 error.error_description.c_str()));
-  path.append(base::StringPrintf("&url=%s", error.url.c_str()));
-  path.append(base::StringPrintf("&frequency=%d", frequency));
-
-  ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
-  std::string output = base::UTF16ToASCII(
-      browser()->tab_strip_model()->GetActiveWebContents()->GetTitle());
-  ASSERT_TRUE(output.find("SetError: 200") != base::string16::npos);
 }
 
 void SyncTest::TriggerCreateSyncedBookmarks() {
@@ -1066,16 +1041,19 @@ void SyncTest::SetupNetwork(net::URLRequestContextGetter* context_getter) {
   done.Wait();
 }
 
-void SyncTest::SetProxyConfig(net::URLRequestContextGetter* context_getter,
-                              const net::ProxyConfig& proxy_config) {
-  base::WaitableEvent done(false, false);
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&SetProxyConfigCallback, &done,
-                 make_scoped_refptr(context_getter), proxy_config));
-  done.Wait();
-}
-
 fake_server::FakeServer* SyncTest::GetFakeServer() const {
   return fake_server_.get();
+}
+
+void SyncTest::TriggerSyncForModelTypes(int index,
+                                        syncer::ModelTypeSet model_types) {
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_SYNC_REFRESH_LOCAL,
+      content::Source<Profile>(GetProfile(index)),
+      content::Details<const syncer::ModelTypeSet>(&model_types));
+}
+
+void SyncTest::SetPreexistingPreferencesFileContents(
+    const std::string& contents) {
+  preexisting_preferences_file_contents_ = contents;
 }

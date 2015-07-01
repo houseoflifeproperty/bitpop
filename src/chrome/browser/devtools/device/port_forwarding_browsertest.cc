@@ -6,9 +6,9 @@
 #include "base/compiler_specific.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
-#include "chrome/browser/devtools/browser_list_tabcontents_provider.h"
 #include "chrome/browser/devtools/device/devtools_android_bridge.h"
 #include "chrome/browser/devtools/device/self_device_provider.h"
+#include "chrome/browser/devtools/remote_debugging_server.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -25,13 +25,19 @@ const char kPortForwardingTestPage[] =
     "files/devtools/port_forwarding/main.html";
 
 const int kDefaultDebuggingPort = 9223;
+const int kAlternativeDebuggingPort = 9224;
+
 }
 
 class PortForwardingTest: public InProcessBrowserTest {
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  virtual int GetRemoteDebuggingPort() {
+    return kDefaultDebuggingPort;
+  }
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     InProcessBrowserTest::SetUpCommandLine(command_line);
     command_line->AppendSwitchASCII(switches::kRemoteDebuggingPort,
-        base::IntToString(kDefaultDebuggingPort));
+        base::IntToString(GetRemoteDebuggingPort()));
   }
 
  protected:
@@ -44,12 +50,12 @@ class PortForwardingTest: public InProcessBrowserTest {
           AddPortForwardingListener(this);
     }
 
-    virtual ~Listener() {
+    ~Listener() override {
       DevToolsAndroidBridge::Factory::GetForProfile(profile_)->
           RemovePortForwardingListener(this);
     }
 
-    virtual void PortStatusChanged(const DevicesStatus& status) OVERRIDE {
+    void PortStatusChanged(const ForwardingStatus& status) override {
       if (status.empty() && skip_empty_devices_)
         return;
       base::MessageLoop::current()->PostTask(
@@ -66,8 +72,9 @@ class PortForwardingTest: public InProcessBrowserTest {
   };
 };
 
+// Flaky on all platforms. https://crbug.com/477696
 IN_PROC_BROWSER_TEST_F(PortForwardingTest,
-                       LoadPageWithStyleAnsScript) {
+                       DISABLED_LoadPageWithStyleAnsScript) {
   Profile* profile = browser()->profile();
 
   AndroidDeviceManager::DeviceProviders device_providers;
@@ -93,7 +100,7 @@ IN_PROC_BROWSER_TEST_F(PortForwardingTest,
   Listener wait_for_port_forwarding(profile);
   content::RunMessageLoop();
 
-  BrowserListTabContentsProvider::EnableTethering();
+  RemoteDebuggingServer::EnableTetheringForDebug();
 
   ui_test_utils::NavigateToURL(browser(), forwarding_url);
 
@@ -125,5 +132,50 @@ IN_PROC_BROWSER_TEST_F(PortForwardingTest,
   // Test that disabling port forwarding is handled normally.
   wait_for_port_forwarding.set_skip_empty_devices(false);
   prefs->SetBoolean(prefs::kDevToolsPortForwardingEnabled, false);
+  content::RunMessageLoop();
+}
+
+class PortForwardingDisconnectTest : public PortForwardingTest {
+  int GetRemoteDebuggingPort() override {
+    return kAlternativeDebuggingPort;
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(PortForwardingDisconnectTest, DisconnectOnRelease) {
+  Profile* profile = browser()->profile();
+
+  AndroidDeviceManager::DeviceProviders device_providers;
+
+  scoped_refptr<SelfAsDeviceProvider> self_provider(
+      new SelfAsDeviceProvider(kAlternativeDebuggingPort));
+  device_providers.push_back(self_provider);
+
+  DevToolsAndroidBridge::Factory::GetForProfile(profile)->
+      set_device_providers_for_test(device_providers);
+
+  ASSERT_TRUE(test_server()->Start());
+  GURL original_url = test_server()->GetURL(kPortForwardingTestPage);
+
+  std::string forwarding_port("8000");
+  GURL forwarding_url(original_url.scheme() + "://" +
+      original_url.host() + ":" + forwarding_port + original_url.path());
+
+  PrefService* prefs = profile->GetPrefs();
+  prefs->SetBoolean(prefs::kDevToolsPortForwardingEnabled, true);
+
+  base::DictionaryValue config;
+  config.SetString(
+      forwarding_port, original_url.host() + ":" + original_url.port());
+  prefs->Set(prefs::kDevToolsPortForwardingConfig, config);
+
+  scoped_ptr<Listener> wait_for_port_forwarding(new Listener(profile));
+  content::RunMessageLoop();
+
+  self_provider->set_release_callback_for_test(
+      base::Bind(&base::MessageLoop::PostTask,
+                 base::Unretained(base::MessageLoop::current()),
+                 FROM_HERE,
+                 base::MessageLoop::QuitClosure()));
+  wait_for_port_forwarding.reset();
   content::RunMessageLoop();
 }

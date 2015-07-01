@@ -32,20 +32,20 @@ class CC_EXPORT HeadsUpDisplayLayerImpl : public LayerImpl {
                                                     int id) {
     return make_scoped_ptr(new HeadsUpDisplayLayerImpl(tree_impl, id));
   }
-  virtual ~HeadsUpDisplayLayerImpl();
+  ~HeadsUpDisplayLayerImpl() override;
 
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
 
-  virtual bool WillDraw(DrawMode draw_mode,
-                        ResourceProvider* resource_provider) OVERRIDE;
-  virtual void AppendQuads(RenderPass* render_pass,
-                           const OcclusionTracker<LayerImpl>& occlusion_tracker,
-                           AppendQuadsData* append_quads_data) OVERRIDE;
+  bool WillDraw(DrawMode draw_mode,
+                ResourceProvider* resource_provider) override;
+  void AppendQuads(RenderPass* render_pass,
+                   AppendQuadsData* append_quads_data) override;
   void UpdateHudTexture(DrawMode draw_mode,
                         ResourceProvider* resource_provider);
 
-  virtual void ReleaseResources() OVERRIDE;
+  void ReleaseResources() override;
+
+  gfx::Rect GetEnclosingRectInTargetSpace() const override;
 
   bool IsAnimatingHUDContents() const { return fade_step_ > 0; }
 
@@ -70,13 +70,14 @@ class CC_EXPORT HeadsUpDisplayLayerImpl : public LayerImpl {
 
   HeadsUpDisplayLayerImpl(LayerTreeImpl* tree_impl, int id);
 
-  virtual const char* LayerTypeAsString() const OVERRIDE;
+  const char* LayerTypeAsString() const override;
 
-  virtual void AsValueInto(base::debug::TracedValue* dict) const OVERRIDE;
+  void AsValueInto(base::trace_event::TracedValue* dict) const override;
 
   void UpdateHudContents();
   void DrawHudContents(SkCanvas* canvas);
 
+  int MeasureText(SkPaint* paint, const std::string& text, int size) const;
   void DrawText(SkCanvas* canvas,
                 SkPaint* paint,
                 const std::string& text,
@@ -106,6 +107,10 @@ class CC_EXPORT HeadsUpDisplayLayerImpl : public LayerImpl {
                            int top,
                            int right,
                            int width) const;
+  SkRect DrawGpuRasterizationStatus(SkCanvas* canvas,
+                                    int right,
+                                    int top,
+                                    int width) const;
   SkRect DrawPaintTimeDisplay(SkCanvas* canvas,
                               const PaintTimeCounter* paint_time_counter,
                               int top,
@@ -123,9 +128,12 @@ class CC_EXPORT HeadsUpDisplayLayerImpl : public LayerImpl {
   void ReleaseUnmatchedSizeResources(ResourceProvider* resource_provider);
 
   ScopedPtrVector<ScopedResource> resources_;
-  scoped_ptr<SkCanvas> hud_canvas_;
+  skia::RefPtr<SkSurface> hud_surface_;
 
   skia::RefPtr<SkTypeface> typeface_;
+
+  float internal_contents_scale_;
+  gfx::Size internal_content_bounds_;
 
   Graph fps_graph_;
   Graph paint_time_graph_;

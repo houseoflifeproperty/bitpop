@@ -21,33 +21,19 @@
 #define SVGPathStringBuilder_h
 
 #include "core/svg/SVGPathConsumer.h"
-#include "platform/geometry/FloatPoint.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace blink {
 
-class SVGPathStringBuilder FINAL : public SVGPathConsumer {
+class SVGPathStringBuilder final : public SVGPathConsumer {
 public:
     String result();
 
 private:
-    virtual void cleanup() OVERRIDE { m_stringBuilder.clear(); }
-    virtual void incrementPathSegmentCount() OVERRIDE { }
-    virtual bool continueConsuming() OVERRIDE { return true; }
+    virtual void incrementPathSegmentCount() override { }
+    virtual bool continueConsuming() override { return true; }
 
-    // Used in UnalteredParsing/NormalizedParsing modes.
-    virtual void moveTo(const FloatPoint&, bool closed, PathCoordinateMode) OVERRIDE;
-    virtual void lineTo(const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void curveToCubic(const FloatPoint&, const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void closePath() OVERRIDE;
-
-    // Only used in UnalteredParsing mode.
-    virtual void lineToHorizontal(float, PathCoordinateMode) OVERRIDE;
-    virtual void lineToVertical(float, PathCoordinateMode) OVERRIDE;
-    virtual void curveToCubicSmooth(const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void curveToQuadratic(const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void curveToQuadraticSmooth(const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void arcTo(float, float, float, bool largeArcFlag, bool sweepFlag, const FloatPoint&, PathCoordinateMode) OVERRIDE;
+    virtual void emitSegment(const PathSegmentData&) override;
 
     StringBuilder m_stringBuilder;
 };

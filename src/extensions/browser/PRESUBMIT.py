@@ -5,17 +5,10 @@
 """Chromium presubmit script for src/extensions/browser.
 
 See http://dev.chromium.org/developers/how-tos/depottools/presubmit-scripts
-for more details on the presubmit API built into gcl.
+for more details on the presubmit API built into depot_tools.
 """
 
 import sys
-
-def GetPreferredTryMasters(project, change):
-  return {
-    'tryserver.chromium.linux': {
-      'linux_chromium_chromeos_rel_swarming': set(['defaulttests']),
-    }
-  }
 
 def _CreateHistogramValueChecker(input_api, output_api):
   original_sys_path = sys.path

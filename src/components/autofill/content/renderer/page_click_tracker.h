@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/weak_ptr.h"
+#include "content/public/renderer/render_frame_observer.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 
@@ -16,34 +17,52 @@ namespace autofill {
 
 class PageClickListener;
 
-// This class is responsible notifiying the associated listener when a node is
+// This class is responsible notifying the associated listener when a node is
 // clicked or tapped. It also tracks whether a node was focused before the event
 // was handled.
 //
 // This is useful for password/form autofill where we want to trigger a
 // suggestion popup when a text input is clicked.
 //
-// There is one PageClickTracker per RenderView.
-class PageClickTracker : public content::RenderViewObserver {
+// There is one PageClickTracker per AutofillAgent.
+class PageClickTracker : public content::RenderFrameObserver {
  public:
   // The |listener| will be notified when an element is clicked.  It must
   // outlive this class.
-  PageClickTracker(content::RenderView* render_view,
+  PageClickTracker(content::RenderFrame* render_frame,
                    PageClickListener* listener);
-  virtual ~PageClickTracker();
+  ~PageClickTracker() override;
 
  private:
-  // RenderView::Observer implementation.
-  virtual void DidHandleMouseEvent(const blink::WebMouseEvent& event) OVERRIDE;
-  virtual void DidHandleGestureEvent(
-      const blink::WebGestureEvent& event) OVERRIDE;
-  virtual void FocusedNodeChanged(const blink::WebNode& node) OVERRIDE;
+  // TODO(estade): migrate this stuff to content::RenderFrameObserver, and
+  // remove this class.
+  class Legacy : public content::RenderViewObserver {
+   public:
+    Legacy(PageClickTracker* tracker);
 
-  // Called there is a tap or click at |x|, |y|.
-  void PotentialActivationAt(int x, int y);
+    // RenderViewObserver implementation.
+    void OnDestruct() override;
+    void DidHandleMouseEvent(const blink::WebMouseEvent& event) override;
+    void DidHandleGestureEvent(const blink::WebGestureEvent& event) override;
+    void FocusChangeComplete() override;
 
-  // Sets |was_focused_before_now_| to true.
-  void SetWasFocused();
+   private:
+    PageClickTracker* tracker_;
+  };
+  friend class Legacy;
+
+  // RenderFrameObserver implementation.
+  void FocusedNodeChanged(const blink::WebNode& node) override;
+
+  // RenderViewObserver methods forwarded from Legacy. Should be
+  // merged into RenderFrameObserver.
+  void DidHandleMouseEvent(const blink::WebMouseEvent& event);
+  void DidHandleGestureEvent(const blink::WebGestureEvent& event);
+  void FocusChangeComplete();
+  void DoFocusChangeComplete();
+
+  // True when the last click was on the focused node.
+  bool focused_node_was_last_clicked_;
 
   // This is set to false when the focus changes, then set back to true soon
   // afterwards. This helps track whether an event happened after a node was
@@ -53,7 +72,7 @@ class PageClickTracker : public content::RenderViewObserver {
   // The listener getting the actual notifications.
   PageClickListener* listener_;
 
-  base::WeakPtrFactory<PageClickTracker> weak_ptr_factory_;
+  Legacy legacy_;
 
   DISALLOW_COPY_AND_ASSIGN(PageClickTracker);
 };

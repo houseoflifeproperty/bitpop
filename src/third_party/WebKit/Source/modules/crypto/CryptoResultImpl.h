@@ -33,15 +33,15 @@
 
 #include "bindings/core/v8/ScriptPromise.h"
 #include "core/dom/ExceptionCode.h"
+#include "modules/ModulesExport.h"
 #include "platform/CryptoResult.h"
 #include "public/platform/WebCrypto.h"
 #include "wtf/Forward.h"
-#include "wtf/WeakPtr.h"
 
 namespace blink {
 
 class ScriptPromiseResolver;
-ExceptionCode webCryptoErrorToExceptionCode(WebCryptoErrorType);
+MODULES_EXPORT ExceptionCode webCryptoErrorToExceptionCode(WebCryptoErrorType);
 
 // Wrapper around a Promise to notify completion of the crypto operation.
 //
@@ -53,31 +53,34 @@ ExceptionCode webCryptoErrorToExceptionCode(WebCryptoErrorType);
 //  * ref(), deref(), cancelled() and cancel() can be called from any thread.
 //  * One of the completeWith***() functions must be called, or the
 //    m_resolver will be leaked until the ExecutionContext is destroyed.
-class CryptoResultImpl FINAL : public CryptoResult {
+class CryptoResultImpl final : public CryptoResult {
 public:
     ~CryptoResultImpl();
 
-    static PassRefPtr<CryptoResultImpl> create(ScriptState*);
+    static PassRefPtrWillBeRawPtr<CryptoResultImpl> create(ScriptState*);
 
-    virtual void completeWithError(WebCryptoErrorType, const WebString&) OVERRIDE;
-    virtual void completeWithBuffer(const WebArrayBuffer&) OVERRIDE;
-    virtual void completeWithJson(const char* utf8Data, unsigned length) OVERRIDE;
-    virtual void completeWithBoolean(bool) OVERRIDE;
-    virtual void completeWithKey(const WebCryptoKey&) OVERRIDE;
-    virtual void completeWithKeyPair(const WebCryptoKey& publicKey, const WebCryptoKey& privateKey) OVERRIDE;
-    virtual bool cancelled() const OVERRIDE;
+    virtual void completeWithError(WebCryptoErrorType, const WebString&) override;
+    virtual void completeWithBuffer(const void* bytes, unsigned bytesSize) override;
+    virtual void completeWithJson(const char* utf8Data, unsigned length) override;
+    virtual void completeWithBoolean(bool) override;
+    virtual void completeWithKey(const WebCryptoKey&) override;
+    virtual void completeWithKeyPair(const WebCryptoKey& publicKey, const WebCryptoKey& privateKey) override;
+    virtual bool cancelled() const override;
 
     // If called after completion (including cancellation) will return an empty
     // ScriptPromise.
     ScriptPromise promise();
 
 private:
-    class WeakResolver;
+    class Resolver;
     explicit CryptoResultImpl(ScriptState*);
 
+    void clearResolver();
     void cancel();
 
-    WeakPtr<ScriptPromiseResolver> m_resolver;
+    // FIXME: ScriptPromiseResolver should not be exported.
+    // Instead, use ScriptPromise.
+    ScriptPromiseResolver* m_resolver;
     volatile int m_cancelled;
 };
 

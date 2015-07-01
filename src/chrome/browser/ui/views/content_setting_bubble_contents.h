@@ -52,9 +52,9 @@ class ContentSettingBubbleContents : public content::WebContentsObserver,
       content::WebContents* web_contents,
       views::View* anchor_view,
       views::BubbleBorder::Arrow arrow);
-  virtual ~ContentSettingBubbleContents();
+  ~ContentSettingBubbleContents() override;
 
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
 
   // Callback to allow ContentSettingMediaMenuModel to update the menu label.
   void UpdateMenuLabel(content::MediaStreamType type,
@@ -62,33 +62,32 @@ class ContentSettingBubbleContents : public content::WebContentsObserver,
 
  protected:
   // views::BubbleDelegateView:
-  virtual void Init() OVERRIDE;
+  void Init() override;
 
  private:
   class Favicon;
   struct MediaMenuParts;
 
-  typedef std::map<views::Link*, int> PopupLinks;
+  typedef std::map<views::Link*, int> ListItemLinks;
   typedef std::map<views::MenuButton*, MediaMenuParts*> MediaMenuPartsMap;
 
   // content::WebContentsObserver:
-  virtual void DidNavigateMainFrame(
+  void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
-      const content::FrameNavigateParams& params) OVERRIDE;
+      const content::FrameNavigateParams& params) override;
 
   // views::View:
-  virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
+  void OnNativeThemeChanged(const ui::NativeTheme* theme) override;
 
   // views::ButtonListener:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   // views::LinkListener:
-  virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
+  void LinkClicked(views::Link* source, int event_flags) override;
 
   // views::MenuButtonListener:
-  virtual void OnMenuButtonClicked(views::View* source,
-                                   const gfx::Point& point) OVERRIDE;
+  void OnMenuButtonClicked(views::View* source,
+                           const gfx::Point& point) override;
 
   // Helper to get the preferred width of the media menu.
   void UpdateMenuButtonSizes(const ui::NativeTheme* theme);
@@ -98,7 +97,7 @@ class ContentSettingBubbleContents : public content::WebContentsObserver,
 
   // Some of our controls, so we can tell what's been clicked when we get a
   // message.
-  PopupLinks popup_links_;
+  ListItemLinks list_item_links_;
   typedef std::vector<views::RadioButton*> RadioGroup;
   RadioGroup radio_group_;
   views::Link* custom_link_;

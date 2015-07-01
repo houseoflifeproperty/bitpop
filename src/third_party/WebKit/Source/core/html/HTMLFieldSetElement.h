@@ -24,19 +24,18 @@
 #ifndef HTMLFieldSetElement_h
 #define HTMLFieldSetElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/HTMLFormControlElement.h"
 
 namespace blink {
 
-class FormAssociatedElement;
-class HTMLCollection;
 class HTMLFormControlsCollection;
 
-class HTMLFieldSetElement FINAL : public HTMLFormControlElement {
+class CORE_EXPORT HTMLFieldSetElement final : public HTMLFormControlElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLFieldSetElement> create(Document&, HTMLFormElement*);
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
     HTMLLegendElement* legend() const;
 
     PassRefPtrWillBeRawPtr<HTMLFormControlsCollection> elements();
@@ -44,18 +43,20 @@ public:
     const FormAssociatedElement::List& associatedElements() const;
 
 protected:
-    virtual void disabledAttributeChanged() OVERRIDE;
+    virtual void disabledAttributeChanged() override;
 
 private:
     HTMLFieldSetElement(Document&, HTMLFormElement*);
 
-    virtual bool isEnumeratable() const OVERRIDE { return true; }
-    virtual bool supportsFocus() const OVERRIDE;
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual const AtomicString& formControlType() const OVERRIDE;
-    virtual bool recalcWillValidate() const OVERRIDE { return false; }
-    virtual void childrenChanged(const ChildrenChange&) OVERRIDE;
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
+    virtual bool isEnumeratable() const override { return true; }
+    virtual bool supportsFocus() const override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    virtual const AtomicString& formControlType() const override;
+    virtual bool recalcWillValidate() const override { return false; }
+    virtual bool matchesValidityPseudoClasses() const override final;
+    virtual bool isValidElement() override final;
+    virtual void childrenChanged(const ChildrenChange&) override;
+    virtual bool areAuthorShadowsAllowed() const override { return false; }
 
     static void invalidateDisabledStateUnder(Element&);
     void refreshElementsIfNeeded() const;

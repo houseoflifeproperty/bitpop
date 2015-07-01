@@ -61,11 +61,28 @@
 #include <openssl/mem.h>
 #include <openssl/obj.h>
 #include <openssl/stack.h>
+#include <openssl/thread.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
-#include "../asn1/asn1_locl.h"
+/* Method to handle CRL access.
+ * In general a CRL could be very large (several Mb) and can consume large
+ * amounts of resources if stored in memory by multiple processes.
+ * This method allows general CRL operations to be redirected to more
+ * efficient callbacks: for example a CRL entry database.
+ */
 
+#define X509_CRL_METHOD_DYNAMIC		1
+
+struct x509_crl_method_st
+	{
+	int flags;
+	int (*crl_init)(X509_CRL *crl);
+	int (*crl_free)(X509_CRL *crl);
+	int (*crl_lookup)(X509_CRL *crl, X509_REVOKED **ret,
+				ASN1_INTEGER *ser, X509_NAME *issuer);
+	int (*crl_verify)(X509_CRL *crl, EVP_PKEY *pk);
+	};
 
 static int X509_REVOKED_cmp(const X509_REVOKED **a,
 				const X509_REVOKED **b);
@@ -81,7 +98,7 @@ static int def_crl_verify(X509_CRL *crl, EVP_PKEY *r);
 static int def_crl_lookup(X509_CRL *crl,
 		X509_REVOKED **ret, ASN1_INTEGER *serial, X509_NAME *issuer);
 
-static X509_CRL_METHOD int_crl_meth =
+static const X509_CRL_METHOD int_crl_meth =
 	{
 	0,
 	0,0,

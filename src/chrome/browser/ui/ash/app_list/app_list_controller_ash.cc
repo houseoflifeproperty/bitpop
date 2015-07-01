@@ -6,6 +6,7 @@
 
 #include "ash/shell.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
+#include "chrome/browser/ui/browser_navigator.h"
 #include "extensions/common/extension.h"
 #include "ui/app_list/views/app_list_view.h"
 
@@ -86,11 +87,27 @@ void AppListControllerDelegateAsh::CreateNewWindow(Profile* profile,
     ChromeLauncherController::instance()->CreateNewWindow();
 }
 
+void AppListControllerDelegateAsh::OpenURL(Profile* profile,
+                                           const GURL& url,
+                                           ui::PageTransition transition,
+                                           WindowOpenDisposition disposition) {
+  chrome::NavigateParams params(profile, url, transition);
+  params.disposition = disposition;
+  chrome::Navigate(&params);
+}
+
 void AppListControllerDelegateAsh::ActivateApp(
     Profile* profile,
     const extensions::Extension* extension,
     AppListSource source,
     int event_flags) {
+  // Platform apps treat activations as a launch. The app can decide whether to
+  // show a new window or focus an existing window as it sees fit.
+  if (extension->is_platform_app()) {
+    LaunchApp(profile, extension, source, event_flags);
+    return;
+  }
+
   ChromeLauncherController::instance()->ActivateApp(
       extension->id(),
       AppListSourceToLaunchSource(source),

@@ -24,7 +24,7 @@ namespace {
 
 void TerminateIfNoAppWindows() {
   bool app_windows_left =
-      AppWindowRegistryUtil::IsAppWindowRegisteredInAnyProfile(0);
+      AppWindowRegistryUtil::IsAppWindowVisibleInAnyProfile(0);
   if (!app_windows_left &&
       !AppListService::Get(chrome::HOST_DESKTOP_TYPE_NATIVE)
            ->IsAppListVisible()) {
@@ -91,13 +91,12 @@ class AppShimHandlerRegistry : public content::NotificationObserver {
         content::NotificationService::AllBrowserContextsAndSources());
   }
 
-  virtual ~AppShimHandlerRegistry() {}
+  ~AppShimHandlerRegistry() override {}
 
   // content::NotificationObserver override:
-  virtual void Observe(
-      int type,
-      const content::NotificationSource& source,
-      const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     switch (type) {
       case chrome::NOTIFICATION_BROWSER_OPENED:
       case chrome::NOTIFICATION_BROWSER_CLOSE_CANCELLED:

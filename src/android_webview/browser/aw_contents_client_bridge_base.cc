@@ -25,7 +25,7 @@ class UserData : public base::SupportsUserData::Data {
       content::WebContents* web_contents) {
     if (!web_contents)
       return NULL;
-    UserData* data = reinterpret_cast<UserData*>(
+    UserData* data = static_cast<UserData*>(
         web_contents->GetUserData(kAwContentsClientBridgeBase));
     return data ? data->contents_ : NULL;
   }
@@ -47,11 +47,6 @@ void AwContentsClientBridgeBase::Associate(
                             new UserData(handler));
 }
 
-void AwContentsClientBridgeBase::Disassociate(
-  WebContents* web_contents) {
-  web_contents->RemoveUserData(kAwContentsClientBridgeBase);
-}
-
 // static
 AwContentsClientBridgeBase* AwContentsClientBridgeBase::FromWebContents(
     WebContents* web_contents) {
@@ -62,7 +57,7 @@ AwContentsClientBridgeBase* AwContentsClientBridgeBase::FromWebContents(
 AwContentsClientBridgeBase* AwContentsClientBridgeBase::FromID(
     int render_process_id,
     int render_frame_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   content::RenderFrameHost* rfh =
       content::RenderFrameHost::FromID(render_process_id, render_frame_id);
   content::WebContents* web_contents =

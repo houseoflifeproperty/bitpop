@@ -20,7 +20,7 @@ namespace ct {
 
 class CTObjectsExtractorTest : public ::testing::Test {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     precert_chain_ =
         CreateCertificateListFromFile(GetTestCertsDirectory(),
                                       "ct-test-embedded-cert.pem",
@@ -31,7 +31,8 @@ class CTObjectsExtractorTest : public ::testing::Test {
     test_cert_ = X509Certificate::CreateFromBytes(der_test_cert.data(),
                                                   der_test_cert.length());
 
-    log_ = CTLogVerifier::Create(ct::GetTestPublicKey(), "testlog").Pass();
+    log_ = CTLogVerifier::Create(ct::GetTestPublicKey(), "testlog",
+                                 "https://ct.example.com").Pass();
     ASSERT_TRUE(log_);
   }
 

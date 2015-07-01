@@ -8,16 +8,16 @@
 #include "device/serial/serial.mojom.h"
 #include "device/serial/serial_service_impl.h"
 #include "device/serial/test_serial_io_handler.h"
-#include "mojo/public/cpp/bindings/error_handler.h"
-#include "mojo/public/cpp/bindings/interface_ptr.h"
-#include "mojo/public/cpp/bindings/interface_request.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/error_handler.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_ptr.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_request.h"
 
 namespace device {
 namespace {
 
 class FakeSerialDeviceEnumerator : public SerialDeviceEnumerator {
-  virtual mojo::Array<serial::DeviceInfoPtr> GetDevices() OVERRIDE {
+  mojo::Array<serial::DeviceInfoPtr> GetDevices() override {
     mojo::Array<serial::DeviceInfoPtr> devices(1);
     devices[0] = serial::DeviceInfo::New();
     devices[0]->path = "device";
@@ -27,13 +27,14 @@ class FakeSerialDeviceEnumerator : public SerialDeviceEnumerator {
 
 class FailToOpenIoHandler : public TestSerialIoHandler {
  public:
-  virtual void Open(const std::string& port,
-                    const OpenCompleteCallback& callback) OVERRIDE {
+  void Open(const std::string& port,
+            const serial::ConnectionOptions& options,
+            const OpenCompleteCallback& callback) override {
     callback.Run(false);
   }
 
  protected:
-  virtual ~FailToOpenIoHandler() {}
+  ~FailToOpenIoHandler() override {}
 };
 
 }  // namespace
@@ -47,7 +48,7 @@ class SerialServiceTest : public testing::Test, public mojo::ErrorHandler {
     StopMessageLoop();
   }
 
-  virtual void OnConnectionError() OVERRIDE {
+  void OnConnectionError() override {
     StopMessageLoop();
     EXPECT_TRUE(expecting_error_);
   }
@@ -78,17 +79,17 @@ class SerialServiceTest : public testing::Test, public mojo::ErrorHandler {
             new SerialConnectionFactory(
                 base::Bind(&SerialServiceTest::ReturnIoHandler,
                            base::Unretained(this)),
-                base::MessageLoopProxy::current()),
+                base::ThreadTaskRunnerHandle::Get()),
             scoped_ptr<SerialDeviceEnumerator>(new FakeSerialDeviceEnumerator)),
         &service);
     mojo::InterfacePtr<serial::Connection> connection;
     mojo::InterfacePtr<serial::DataSink> sink;
     mojo::InterfacePtr<serial::DataSource> source;
-    service->Connect(path,
-                     serial::ConnectionOptions::New(),
-                     mojo::Get(&connection),
-                     mojo::Get(&sink),
-                     mojo::Get(&source));
+    mojo::InterfacePtr<serial::DataSourceClient> source_client;
+    mojo::GetProxy(&source_client);
+    service->Connect(path, serial::ConnectionOptions::New(),
+                     mojo::GetProxy(&connection), mojo::GetProxy(&sink),
+                     mojo::GetProxy(&source), source_client.Pass());
     connection.set_error_handler(this);
     expecting_error_ = !expecting_success;
     connection->GetInfo(
@@ -113,7 +114,7 @@ class SerialServiceTest : public testing::Test, public mojo::ErrorHandler {
 
 TEST_F(SerialServiceTest, GetDevices) {
   mojo::InterfacePtr<serial::SerialService> service;
-  SerialServiceImpl::Create(NULL, mojo::Get(&service));
+  SerialServiceImpl::Create(NULL, NULL, mojo::GetProxy(&service));
   service.set_error_handler(this);
   mojo::Array<serial::DeviceInfoPtr> result;
   service->GetDevices(

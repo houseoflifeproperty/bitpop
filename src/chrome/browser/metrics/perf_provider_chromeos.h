@@ -12,11 +12,10 @@
 #include "base/threading/non_thread_safe.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/sessions/session_restore.h"
 #include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/login/login_state.h"
 #include "components/metrics/proto/sampled_profile.pb.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 
 namespace metrics {
 
@@ -26,11 +25,10 @@ class WindowedIncognitoObserver;
 // performance profiling infrastructure built into the linux kernel. For more
 // information, see: https://perf.wiki.kernel.org/index.php/Main_Page.
 class PerfProvider : public base::NonThreadSafe,
-                     public chromeos::PowerManagerClient::Observer,
-                     public content::NotificationObserver {
+                     public chromeos::PowerManagerClient::Observer {
  public:
   PerfProvider();
-  virtual ~PerfProvider();
+  ~PerfProvider() override;
 
   // Stores collected perf data protobufs in |sampled_profiles|. Clears all the
   // stored profile data. Returns true if it wrote to |sampled_profiles|.
@@ -45,7 +43,7 @@ class PerfProvider : public base::NonThreadSafe,
 
     // Called when either the login state or the logged in user type changes.
     // Activates |perf_provider_| to start collecting.
-    virtual void LoggedInStateChanged() OVERRIDE;
+    void LoggedInStateChanged() override;
 
    private:
     // Points to a PerfProvider instance that can be turned on or off based on
@@ -56,17 +54,14 @@ class PerfProvider : public base::NonThreadSafe,
   // Called when a suspend finishes. This is either a successful suspend
   // followed by a resume, or a suspend that was canceled. Inherited from
   // PowerManagerClient::Observer.
-  virtual void SuspendDone(const base::TimeDelta& sleep_duration) OVERRIDE;
+  void SuspendDone(const base::TimeDelta& sleep_duration) override;
 
   // Turns on perf collection. Resets the timer that's used to schedule
   // collections.
   void OnUserLoggedIn();
 
   // Called when a session restore has finished.
-  // Inherited from content::NotificationObserver.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void OnSessionRestoreDone(int num_tabs_restored);
 
   // Turns off perf collection. Does not delete any data that was already
   // collected and stored in |cached_perf_data_|.
@@ -92,9 +87,11 @@ class PerfProvider : public base::NonThreadSafe,
                                   const base::TimeDelta& time_after_resume);
 
   // Collects perf data after a session restore. |time_after_restore| is how
-  // long ago the session restore started.
+  // long ago the session restore started. |num_tabs_restored| is the total
+  // number of tabs being restored.
   void CollectPerfDataAfterSessionRestore(
-      const base::TimeDelta& time_after_restore);
+      const base::TimeDelta& time_after_restore,
+      int num_tabs_restored);
 
   // Parses a perf data protobuf from the |data| passed in only if the
   // |incognito_observer| indicates that no incognito window had been opened
@@ -120,12 +117,16 @@ class PerfProvider : public base::NonThreadSafe,
   // Record of the start of the upcoming profiling interval.
   base::TimeTicks next_profiling_interval_start_;
 
-  // Used to register objects of this class as observers to be notified of
-  // session restore events.
-  content::NotificationRegistrar session_restore_registrar_;
-
   // Tracks the last time a session restore was collected.
   base::TimeTicks last_session_restore_collection_time_;
+
+  // Points to the on-session-restored callback that was registered with
+  // SessionRestore's callback list. When objects of this class are destroyed,
+  // the subscription object's destructor will automatically unregister the
+  // callback in SessionRestore, so that the callback list does not contain any
+  // obsolete callbacks.
+  SessionRestore::CallbackSubscription
+      on_session_restored_callback_subscription_;
 
   // To pass around the "this" pointer across threads safely.
   base::WeakPtrFactory<PerfProvider> weak_factory_;

@@ -22,7 +22,6 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/infobars/core/confirm_infobar_delegate.h"
@@ -54,7 +53,7 @@ class SupervisedUserBlockModeTest : public InProcessBrowserTest {
   };
 
   SupervisedUserBlockModeTest() : supervised_user_service_(NULL) {}
-  virtual ~SupervisedUserBlockModeTest() {}
+  ~SupervisedUserBlockModeTest() override {}
 
   void CheckShownPageIsInterstitial(WebContents* tab) {
     CheckShownPage(tab, content::PAGE_TYPE_INTERSTITIAL);
@@ -97,7 +96,7 @@ class SupervisedUserBlockModeTest : public InProcessBrowserTest {
   }
 
  protected:
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     // Set up the SupervisedUserNavigationObserver manually since the profile
     // was not supervised when the browser was created.
     content::WebContents* web_contents =
@@ -109,13 +108,13 @@ class SupervisedUserBlockModeTest : public InProcessBrowserTest {
         SupervisedUserServiceFactory::GetForProfile(profile);
     SupervisedUserSettingsService* supervised_user_settings_service =
         SupervisedUserSettingsServiceFactory::GetForProfile(profile);
-    supervised_user_settings_service->SetLocalSettingForTesting(
+    supervised_user_settings_service->SetLocalSetting(
         supervised_users::kContentPackDefaultFilteringBehavior,
         scoped_ptr<base::Value>(
             new base::FundamentalValue(SupervisedUserURLFilter::BLOCK)));
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     // Enable the test server and remap all URLs to it.
     ASSERT_TRUE(test_server()->Start());
     std::string host_port = test_server()->host_port_pair().ToString();
@@ -129,7 +128,7 @@ class SupervisedUserBlockModeTest : public InProcessBrowserTest {
 
   // Acts like a synchronous call to history's QueryHistory. Modified from
   // history_querying_unittest.cc.
-  void QueryHistory(HistoryService* history_service,
+  void QueryHistory(history::HistoryService* history_service,
                     const std::string& text_query,
                     const history::QueryOptions& options,
                     history::QueryResults* results) {
@@ -228,18 +227,21 @@ IN_PROC_BROWSER_TEST_F(SupervisedUserBlockModeTest,
                        HistoryVisitRecorded) {
   GURL allowed_url("http://www.example.com/files/simple.html");
 
+  scoped_refptr<SupervisedUserURLFilter> filter =
+      supervised_user_service_->GetURLFilterForUIThread();
+
   // Set the host as allowed.
   scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue);
   dict->SetBooleanWithoutPathExpansion(allowed_url.host(), true);
   SupervisedUserSettingsService* supervised_user_settings_service =
       SupervisedUserSettingsServiceFactory::GetForProfile(
           browser()->profile());
-  supervised_user_settings_service->SetLocalSettingForTesting(
-      supervised_users::kContentPackManualBehaviorHosts,
-      dict.PassAs<base::Value>());
-  EXPECT_EQ(
-      SupervisedUserService::MANUAL_ALLOW,
-      supervised_user_service_->GetManualBehaviorForHost(allowed_url.host()));
+  supervised_user_settings_service->SetLocalSetting(
+      supervised_users::kContentPackManualBehaviorHosts, dict.Pass());
+  EXPECT_EQ(SupervisedUserURLFilter::ALLOW,
+            filter->GetFilteringBehaviorForURL(allowed_url));
+  EXPECT_EQ(SupervisedUserURLFilter::ALLOW,
+            filter->GetFilteringBehaviorForURL(allowed_url.GetWithEmptyPath()));
 
   ui_test_utils::NavigateToURL(browser(), allowed_url);
 
@@ -259,17 +261,15 @@ IN_PROC_BROWSER_TEST_F(SupervisedUserBlockModeTest,
   // Check that we went back to the first URL and that the manual behaviors
   // have not changed.
   EXPECT_EQ(allowed_url.spec(), tab->GetURL().spec());
-  EXPECT_EQ(SupervisedUserService::MANUAL_ALLOW,
-            supervised_user_service_->GetManualBehaviorForHost(
-                "www.example.com"));
-  EXPECT_EQ(
-      SupervisedUserService::MANUAL_NONE,
-      supervised_user_service_->GetManualBehaviorForHost(
-          "www.new-example.com"));
+  EXPECT_EQ(SupervisedUserURLFilter::ALLOW,
+            filter->GetFilteringBehaviorForURL(allowed_url.GetWithEmptyPath()));
+  EXPECT_EQ(SupervisedUserURLFilter::BLOCK,
+            filter->GetFilteringBehaviorForURL(blocked_url.GetWithEmptyPath()));
 
   // Query the history entry.
-  HistoryService* history_service = HistoryServiceFactory::GetForProfile(
-      browser()->profile(), Profile::EXPLICIT_ACCESS);
+  history::HistoryService* history_service =
+      HistoryServiceFactory::GetForProfile(browser()->profile(),
+                                           ServiceAccessType::EXPLICIT_ACCESS);
   history::QueryOptions options;
   history::QueryResults results;
   QueryHistory(history_service, "", options, &results);
@@ -301,12 +301,13 @@ IN_PROC_BROWSER_TEST_F(SupervisedUserBlockModeTest, Unblock) {
   SupervisedUserSettingsService* supervised_user_settings_service =
       SupervisedUserSettingsServiceFactory::GetForProfile(
           browser()->profile());
-  supervised_user_settings_service->SetLocalSettingForTesting(
-      supervised_users::kContentPackManualBehaviorHosts,
-      dict.PassAs<base::Value>());
-  EXPECT_EQ(
-      SupervisedUserService::MANUAL_ALLOW,
-      supervised_user_service_->GetManualBehaviorForHost(test_url.host()));
+  supervised_user_settings_service->SetLocalSetting(
+      supervised_users::kContentPackManualBehaviorHosts, dict.Pass());
+
+  scoped_refptr<SupervisedUserURLFilter> filter =
+      supervised_user_service_->GetURLFilterForUIThread();
+  EXPECT_EQ(SupervisedUserURLFilter::ALLOW,
+            filter->GetFilteringBehaviorForURL(test_url.GetWithEmptyPath()));
 
   observer.Wait();
   EXPECT_EQ(test_url, web_contents->GetURL());

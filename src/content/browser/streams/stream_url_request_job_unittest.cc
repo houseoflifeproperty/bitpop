@@ -38,9 +38,9 @@ class StreamURLRequestJobTest : public testing::Test {
     MockProtocolHandler(StreamRegistry* registry) : registry_(registry) {}
 
     // net::URLRequestJobFactory::ProtocolHandler override.
-    virtual net::URLRequestJob* MaybeCreateJob(
+    net::URLRequestJob* MaybeCreateJob(
         net::URLRequest* request,
-        net::NetworkDelegate* network_delegate) const OVERRIDE {
+        net::NetworkDelegate* network_delegate) const override {
       scoped_refptr<Stream> stream = registry_->GetStream(request->url());
       if (stream.get())
         return new StreamURLRequestJob(request, network_delegate, stream);
@@ -53,7 +53,7 @@ class StreamURLRequestJobTest : public testing::Test {
 
   StreamURLRequestJobTest() {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     registry_.reset(new StreamRegistry());
 
     url_request_job_factory_.SetProtocolHandler(
@@ -61,8 +61,7 @@ class StreamURLRequestJobTest : public testing::Test {
     url_request_context_.set_job_factory(&url_request_job_factory_);
   }
 
-  virtual void TearDown() {
-  }
+  void TearDown() override {}
 
   void TestSuccessRequest(const GURL& url,
                           const std::string& expected_response) {
@@ -76,7 +75,7 @@ class StreamURLRequestJobTest : public testing::Test {
                    const std::string& expected_response) {
     net::TestDelegate delegate;
     request_ = url_request_context_.CreateRequest(
-        url, net::DEFAULT_PRIORITY, &delegate, NULL);
+        url, net::DEFAULT_PRIORITY, &delegate);
     request_->set_method(method);
     if (!extra_headers.IsEmpty())
       request_->SetExtraRequestHeaders(extra_headers);
@@ -134,7 +133,7 @@ TEST_F(StreamURLRequestJobTest, TestGetLargeStreamRequest) {
 TEST_F(StreamURLRequestJobTest, TestGetNonExistentStreamRequest) {
   net::TestDelegate delegate;
   request_ = url_request_context_.CreateRequest(
-      kStreamURL, net::DEFAULT_PRIORITY, &delegate, NULL);
+      kStreamURL, net::DEFAULT_PRIORITY, &delegate);
   request_->set_method("GET");
   request_->Start();
 

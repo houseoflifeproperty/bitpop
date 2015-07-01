@@ -6,6 +6,7 @@
 #define V8_TOKEN_H_
 
 #include "src/base/logging.h"
+#include "src/globals.h"
 
 namespace v8 {
 namespace internal {
@@ -39,6 +40,7 @@ namespace internal {
   T(COLON, ":", 0)                                                   \
   T(SEMICOLON, ";", 0)                                               \
   T(PERIOD, ".", 0)                                                  \
+  T(ELLIPSIS, "...", 0)                                              \
   T(CONDITIONAL, "?", 3)                                             \
   T(INC, "++", 0)                                                    \
   T(DEC, "--", 0)                                                    \
@@ -140,6 +142,7 @@ namespace internal {
   K(TRUE_LITERAL, "true", 0)                                         \
   K(FALSE_LITERAL, "false", 0)                                       \
   T(NUMBER, NULL, 0)                                                 \
+  T(SMI, NULL, 0)                                                    \
   T(STRING, NULL, 0)                                                 \
                                                                      \
   /* Identifiers (not keywords or future reserved words). */         \
@@ -162,7 +165,11 @@ namespace internal {
   T(ILLEGAL, "ILLEGAL", 0)                                           \
                                                                      \
   /* Scanner-internal use only. */                                   \
-  T(WHITESPACE, NULL, 0)
+  T(WHITESPACE, NULL, 0)                                             \
+                                                                     \
+  /* ES6 Template Literals */                                        \
+  T(TEMPLATE_SPAN, NULL, 0)                                          \
+  T(TEMPLATE_TAIL, NULL, 0)
 
 
 class Token {
@@ -185,6 +192,24 @@ class Token {
   // Predicates
   static bool IsKeyword(Value tok) {
     return token_type[tok] == 'K';
+  }
+
+  static bool IsIdentifier(Value tok, LanguageMode language_mode,
+                           bool is_generator) {
+    switch (tok) {
+      case IDENTIFIER:
+        return true;
+      case FUTURE_STRICT_RESERVED_WORD:
+      case LET:
+      case STATIC:
+        return is_sloppy(language_mode);
+      case YIELD:
+        return !is_generator && is_sloppy(language_mode);
+      default:
+        return false;
+    }
+    UNREACHABLE();
+    return false;
   }
 
   static bool IsAssignmentOp(Value tok) {

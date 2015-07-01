@@ -30,9 +30,9 @@ goog.addSingletonGetter(cvox.ConsoleTts);
 cvox.ConsoleTts.prototype.speak = function(textString, queueMode, properties) {
   if (this.enabled_ && window['console']) {
     var logStr = 'Speak';
-    if (queueMode == cvox.AbstractTts.QUEUE_MODE_FLUSH) {
+    if (queueMode == cvox.QueueMode.FLUSH) {
       logStr += ' (I)';
-    } else if (queueMode == cvox.AbstractTts.QUEUE_MODE_CATEGORY_FLUSH) {
+    } else if (queueMode == cvox.QueueMode.CATEGORY_FLUSH) {
       logStr += ' (C)';
     } else {
       logStr += ' (Q)';
@@ -42,14 +42,6 @@ cvox.ConsoleTts.prototype.speak = function(textString, queueMode, properties) {
     }
     logStr += ' "' + textString + '"';
     window['console']['log'](logStr);
-
-    if (properties && properties['startCallback'] != undefined) {
-      window.console.log('  using startCallback');
-    }
-
-    if (properties && properties['endCallback'] != undefined) {
-      window.console.log('  using endCallback');
-    }
   }
   return this;
 };

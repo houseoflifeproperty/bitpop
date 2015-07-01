@@ -18,18 +18,22 @@ namespace chromeos {
 namespace {
 
 // Apps/extensions explicitly whitelisted for use in public sessions.
-const char* kPublicSessionWhitelist[] = {
+const char* const kPublicSessionWhitelist[] = {
     // Public sessions in general:
     "cbkkbcmdlboombapidmoeolnmdacpkch",  // Chrome RDP
     "djflhoibgkdhkhhcedjiklpkjnoahfmg",  // User Agent Switcher
     "iabmpiboiopbgfabjmgeedhcmjenhbla",  // VNC Viewer
+    "haiffjcadagjlijoggckpgfnoeiflnem",  // Citrix Receiver
+    "mfaihdlpglflfgpfjcifdjdjcckigekc",  // ARC Runtime
 
     // Libraries:
     "aclofikceldphonlfmghmimkodjdmhck",  // Ancoris login component
     "eilbnahdgoddoedakcmfkcgfoegeloil",  // Ancoris proxy component
     "ceehlgckkmkaoggdnjhibffkphfnphmg",  // Libdata login
+    "fnhgfoccpcjdnjcobejogdnlnidceemb",  // OverDrive
 
     // Retail mode:
+    "bjfeaefhaooblkndnoabbkkkenknkemb",  // 500 px demo
     "ehcabepphndocfmgbdkbjibfodelmpbb",  // Angry Birds demo
     "kgimkbnclbekdkabkpjhpakhhalfanda",  // Bejeweled demo
     "joodangkbfjnajiiifokapkpmhfnpleo",  // Calculator
@@ -37,6 +41,7 @@ const char* kPublicSessionWhitelist[] = {
     "hfhhnacclhffhdffklopdkcgdhifgngh",  // Camera
     "cdjikkcakjcdjemakobkmijmikhkegcj",  // Chrome Remote Desktop demo
     "jkoildpomkimndcphjpffmephmcmkfhn",  // Chromebook Demo App
+    "lbhdhapagjhalobandnbdnmblnmocojh",  // Crackle demo
     "ielkookhdphmgbipcfmafkaiagademfp",  // Custom bookmarks
     "kogjlbfgggambihdjcpijgcbmenblimd",  // Custom bookmarks
     "ogbkmlkceflgpilgbmbcfbifckpkfacf",  // Custom bookmarks
@@ -46,29 +51,48 @@ const char* kPublicSessionWhitelist[] = {
     "iggnealjakkgfofealilhkkclnbnfnmo",  // Custom bookmarks
     "lplkobnahgbopmpkdapaihnnojkphahc",  // Custom bookmarks
     "lejnflfhjpcannpaghnahbedlabpmhoh",  // Custom bookmarks
+    "dhjmfhojkfjmfbnbnpichdmcdghdpccg",  // Cut the Rope demo
     "ebkhfdfghngbimnpgelagnfacdafhaba",  // Deezer demo
     "npnjdccdffhdndcbeappiamcehbhjibf",  // Docs.app demo
+    "ekgadegabdkcbkodfbgidncffijbghhl",  // Duolingo demo
     "iddohohhpmajlkbejjjcfednjnhlnenk",  // Evernote demo
     "bjdhhokmhgelphffoafoejjmlfblpdha",  // Gmail demo
+    "nldmakcnfaflagmohifhcihkfgcbmhph",  // Gmail offline demo
     "mdhnphfgagkpdhndljccoackjjhghlif",  // Google Drive demo
     "dondgdlndnpianbklfnehgdhkickdjck",  // Google Keep demo
+    "amfoiggnkefambnaaphodjdmdooiinna",  // Google Play Movie and TV demo
     "fgjnkhlabjcaajddbaenilcmpcidahll",  // Google+ demo
     "ifpkhncdnjfipfjlhfidljjffdgklanh",  // Google+ Photos demo
     "cgmlfbhkckbedohgdepgbkflommbfkep",  // Hangouts.app demo
+    "ndlgnmfmgpdecjgehbcejboifbbmlkhp",  // Hash demo
     "edhhaiphkklkcfcbnlbpbiepchnkgkpn",  // Helper.extension demo
+    "jckncghadoodfbbbmbpldacojkooophh",  // Journal demo
     "diehajhcjifpahdplfdkhiboknagmfii",  // Kindle demo
+    "idneggepppginmaklfbaniklagjghpio",  // Kingsroad demo
     "nhpmmldpbfjofkipjaieeomhnmcgihfm",  // Menu.app demo
+    "kcjbmmhccecjokfmckhddpmghepcnidb",  // Mint demo
     "onbhgdmifjebcabplolilidlpgeknifi",  // Music.app demo
     "kkkbcoabfhgekpnddfkaphobhinociem",  // Netflix demo
     "adlphlfdhhjenpgimjochcpelbijkich",  // New York Times demo
     "cgefhjmlaifaamhhoojmpcnihlbddeki",  // Pandora demo
     "kpjjigggmcjinapdeipapdcnmnjealll",  // Pixlr demo
+    "ifnadhpngkodeccijnalokiabanejfgm",  // Pixsta demo
+    "klcojgagjmpgmffcildkgbfmfffncpcd",  // Plex demo
+    "nnikmgjhdlphciaonjmoppfckbpoinnb",  // Pocket demo
+    "khldngaiohpnnoikfmnmfnebecgeobep",  // Polarr Photo demo
     "aleodiobpjillgfjdkblghiiaegggmcm",  // Quickoffice demo
     "nifkmgcdokhkjghdlgflonppnefddien",  // Sheets demo
     "hdmobeajeoanbanmdlabnbnlopepchip",  // Slides demo
+    "ikmidginfdcbojdbmejkeakncgdbmonc",  // Soundtrap demo
     "dgohlccohkojjgkkfholmobjjoledflp",  // Spotify demo
     "dhmdaeekeihmajjnmichlhiffffdbpde",  // Store.app demo
+    "onklhlmbpfnmgmelakhgehkfdmkpmekd",  // Todoist demo
     "jeabmjjifhfcejonjjhccaeigpnnjaak",  // TweetDeck demo
+    "gnckahkflocidcgjbeheneogeflpjien",  // Vine demo
+    "pdckcbpciaaicoomipamcabpdadhofgh",  // Weatherbug demo
+    "biliocemfcghhioihldfdmkkhnofcgmb",  // Webcam Toy demo
+    "bhfoghflalnnjfcfkaelngenjgjjhapk",  // Wevideo demo
+    "pjckdjlmdcofkkkocnmhcbehkiapalho",  // Wunderlist demo
     "pbdihpaifchmclcmkfdgffnnpfbobefh",  // YouTube demo
 
     // Testing extensions:
@@ -118,8 +142,9 @@ bool DeviceLocalAccountManagementPolicyProvider::UserMayLoad(
         return true;
     }
   } else if (account_type_ == policy::DeviceLocalAccount::TYPE_KIOSK_APP) {
-    // For single-app kiosk sessions, allow only platform apps.
-    if (extension->GetType() == extensions::Manifest::TYPE_PLATFORM_APP)
+    // For single-app kiosk sessions, allow platform apps and shared modules.
+    if (extension->GetType() == extensions::Manifest::TYPE_PLATFORM_APP ||
+        extension->GetType() == extensions::Manifest::TYPE_SHARED_MODULE)
       return true;
   }
 

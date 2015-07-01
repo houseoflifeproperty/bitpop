@@ -32,7 +32,7 @@ class AppListServiceImplTestApi;
 class AppListServiceImpl : public AppListService,
                            public ProfileInfoCacheObserver {
  public:
-  virtual ~AppListServiceImpl();
+  ~AppListServiceImpl() override;
 
   // Constructor used for testing.
   AppListServiceImpl(const base::CommandLine& command_line,
@@ -45,22 +45,30 @@ class AppListServiceImpl : public AppListService,
 
   void RecordAppListLaunch();
   static void RecordAppListAppLaunch();
+  static void RecordAppListLastLaunch();
 
   // AppListService overrides:
-  virtual void SetAppListNextPaintCallback(void (*callback)()) OVERRIDE;
-  virtual void HandleFirstRun() OVERRIDE;
-  virtual void Init(Profile* initial_profile) OVERRIDE;
-  virtual base::FilePath GetProfilePath(
-      const base::FilePath& user_data_dir) OVERRIDE;
-  virtual void SetProfilePath(const base::FilePath& profile_path) OVERRIDE;
-  virtual void Show() OVERRIDE;
-  virtual void AutoShowForProfile(Profile* requested_profile) OVERRIDE;
-  virtual void EnableAppList(Profile* initial_profile,
-                             AppListEnableSource enable_source) OVERRIDE;
-  virtual void CreateShortcut() OVERRIDE;
+  void SetAppListNextPaintCallback(void (*callback)()) override;
+  void Init(Profile* initial_profile) override;
+  base::FilePath GetProfilePath(const base::FilePath& user_data_dir) override;
+  void SetProfilePath(const base::FilePath& profile_path) override;
+  void Show() override;
+  void ShowForVoiceSearch(
+      Profile* profile,
+      const scoped_refptr<content::SpeechRecognitionSessionPreamble>& preamble)
+      override;
+  void ShowForAppInstall(Profile* profile,
+                         const std::string& extension_id,
+                         bool start_discovery_tracking) override;
+  void EnableAppList(Profile* initial_profile,
+                     AppListEnableSource enable_source) override;
+  void CreateShortcut() override;
 
  protected:
   AppListServiceImpl();
+
+  // Create the app list UI, and maintain its state, but do not show it.
+  virtual void CreateForProfile(Profile* requested_profile) = 0;
 
   // Destroy the app list. Called when the profile that the app list is showing
   // is being deleted.
@@ -79,17 +87,10 @@ class AppListServiceImpl : public AppListService,
   friend class test::AppListServiceImplTestApi;
   static void SendAppListStats();
 
-  // Loads a profile asynchronously and calls OnProfileLoaded() when done.
-  void LoadProfileAsync(const base::FilePath& profile_file_path);
-
-  // Callback for asynchronous profile load.
-  void OnProfileLoaded(int profile_load_sequence_id,
-                       Profile* profile,
-                       Profile::CreateStatus status);
+  std::string GetProfileName();
 
   // ProfileInfoCacheObserver overrides:
-  virtual void OnProfileWillBeRemoved(
-      const base::FilePath& profile_path) OVERRIDE;
+  void OnProfileWillBeRemoved(const base::FilePath& profile_path) override;
 
   scoped_ptr<ProfileStore> profile_store_;
   base::CommandLine command_line_;

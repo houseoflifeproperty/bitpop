@@ -39,8 +39,8 @@ namespace blink {
 
 DeviceOrientationDispatcher& DeviceOrientationDispatcher::instance()
 {
-    DEFINE_STATIC_LOCAL(DeviceOrientationDispatcher, deviceOrientationDispatcher, ());
-    return deviceOrientationDispatcher;
+    DEFINE_STATIC_LOCAL(Persistent<DeviceOrientationDispatcher>, deviceOrientationDispatcher, (new DeviceOrientationDispatcher()));
+    return *deviceOrientationDispatcher;
 }
 
 DeviceOrientationDispatcher::DeviceOrientationDispatcher()
@@ -49,6 +49,12 @@ DeviceOrientationDispatcher::DeviceOrientationDispatcher()
 
 DeviceOrientationDispatcher::~DeviceOrientationDispatcher()
 {
+}
+
+DEFINE_TRACE(DeviceOrientationDispatcher)
+{
+    visitor->trace(m_lastDeviceOrientationData);
+    PlatformEventDispatcher::trace(visitor);
 }
 
 void DeviceOrientationDispatcher::startListening()

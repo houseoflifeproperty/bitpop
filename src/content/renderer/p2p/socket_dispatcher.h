@@ -55,13 +55,13 @@ class CONTENT_EXPORT P2PSocketDispatcher : public IPC::MessageFilter,
   explicit P2PSocketDispatcher(base::MessageLoopProxy* ipc_message_loop);
 
   // NetworkListManager interface:
-  virtual void AddNetworkListObserver(
-      NetworkListObserver* network_list_observer) OVERRIDE;
-  virtual void RemoveNetworkListObserver(
-      NetworkListObserver* network_list_observer) OVERRIDE;
+  void AddNetworkListObserver(
+      NetworkListObserver* network_list_observer) override;
+  void RemoveNetworkListObserver(
+      NetworkListObserver* network_list_observer) override;
 
  protected:
-  virtual ~P2PSocketDispatcher();
+  ~P2PSocketDispatcher() override;
 
  private:
   friend class P2PAsyncAddressResolver;
@@ -71,10 +71,10 @@ class CONTENT_EXPORT P2PSocketDispatcher : public IPC::MessageFilter,
   virtual void Send(IPC::Message* message);
 
   // IPC::MessageFilter override. Called on IO thread.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
-  virtual void OnFilterRemoved() OVERRIDE;
-  virtual void OnChannelClosing() OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnFilterAdded(IPC::Sender* sender) override;
+  void OnFilterRemoved() override;
+  void OnChannelClosing() override;
 
   // Returns the IO message loop.
   base::MessageLoopProxy* message_loop();
@@ -96,7 +96,7 @@ class CONTENT_EXPORT P2PSocketDispatcher : public IPC::MessageFilter,
                        const net::IPEndPoint& local_address,
                        const net::IPEndPoint& remote_address);
   void OnIncomingTcpConnection(int socket_id, const net::IPEndPoint& address);
-  void OnSendComplete(int socket_id);
+  void OnSendComplete(int socket_id, const P2PSendPacketMetrics& send_metrics);
   void OnError(int socket_id);
   void OnDataReceived(int socket_id, const net::IPEndPoint& address,
                       const std::vector<char>& data,

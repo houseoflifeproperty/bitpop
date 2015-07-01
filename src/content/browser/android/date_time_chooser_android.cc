@@ -9,11 +9,11 @@
 #include "base/i18n/char_iterator.h"
 #include "content/common/date_time_suggestion.h"
 #include "content/common/view_messages.h"
-#include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/render_view_host.h"
 #include "jni/DateTimeChooserAndroid_jni.h"
 #include "third_party/icu/source/common/unicode/uchar.h"
 #include "third_party/icu/source/common/unicode/unistr.h"
+#include "ui/android/window_android.h"
 
 using base::android::AttachCurrentThread;
 using base::android::ConvertJavaStringToUTF16;
@@ -49,19 +49,6 @@ DateTimeChooserAndroid::DateTimeChooserAndroid()
 DateTimeChooserAndroid::~DateTimeChooserAndroid() {
 }
 
-// static
-void DateTimeChooserAndroid::InitializeDateInputTypes(
-      int text_input_type_date, int text_input_type_date_time,
-      int text_input_type_date_time_local, int text_input_type_month,
-      int text_input_type_time, int text_input_type_week) {
-  JNIEnv* env = AttachCurrentThread();
-  Java_DateTimeChooserAndroid_initializeDateInputTypes(
-         env,
-         text_input_type_date, text_input_type_date_time,
-         text_input_type_date_time_local, text_input_type_month,
-         text_input_type_time, text_input_type_week);
-}
-
 void DateTimeChooserAndroid::ReplaceDateTime(JNIEnv* env,
                                              jobject,
                                              jdouble value) {
@@ -73,7 +60,7 @@ void DateTimeChooserAndroid::CancelDialog(JNIEnv* env, jobject) {
 }
 
 void DateTimeChooserAndroid::ShowDialog(
-    ContentViewCore* content,
+    gfx::NativeWindow native_window,
     RenderViewHost* host,
     ui::TextInputType dialog_type,
     double dialog_value,
@@ -104,7 +91,7 @@ void DateTimeChooserAndroid::ShowDialog(
 
   j_date_time_chooser_.Reset(Java_DateTimeChooserAndroid_createDateTimeChooser(
       env,
-      content->GetJavaObject().obj(),
+      native_window->GetJavaObject().obj(),
       reinterpret_cast<intptr_t>(this),
       dialog_type,
       dialog_value,
@@ -112,22 +99,15 @@ void DateTimeChooserAndroid::ShowDialog(
       max,
       step,
       suggestions_array.obj()));
+  if (j_date_time_chooser_.is_null())
+    ReplaceDateTime(env, j_date_time_chooser_.obj(), dialog_value);
 }
 
 // ----------------------------------------------------------------------------
 // Native JNI methods
 // ----------------------------------------------------------------------------
 bool RegisterDateTimeChooserAndroid(JNIEnv* env) {
-  bool registered = RegisterNativesImpl(env);
-  if (registered)
-    DateTimeChooserAndroid::InitializeDateInputTypes(
-        ui::TEXT_INPUT_TYPE_DATE,
-        ui::TEXT_INPUT_TYPE_DATE_TIME,
-        ui::TEXT_INPUT_TYPE_DATE_TIME_LOCAL,
-        ui::TEXT_INPUT_TYPE_MONTH,
-        ui::TEXT_INPUT_TYPE_TIME,
-        ui::TEXT_INPUT_TYPE_WEEK);
-  return registered;
+  return RegisterNativesImpl(env);
 }
 
 }  // namespace content

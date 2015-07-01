@@ -8,9 +8,9 @@
 #include "ash/system/tray/system_tray.h"
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/debug/trace_event.h"
 #include "base/i18n/rtl.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
@@ -39,9 +39,10 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/common/renderer_preferences.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/views/controls/webview/webview.h"
 #include "ui/views/widget/widget.h"
 
@@ -55,6 +56,7 @@ namespace {
 // These strings must be kept in sync with handleAccelerator()
 // in display_manager.js.
 const char kAccelNameCancel[] = "cancel";
+const char kAccelNameEnableDebugging[] = "debugging";
 const char kAccelNameEnrollment[] = "enrollment";
 const char kAccelNameKioskEnable[] = "kiosk_enable";
 const char kAccelNameVersion[] = "version";
@@ -66,8 +68,10 @@ const char kAccelNameDeviceRequisitionRemora[] = "device_requisition_remora";
 const char kAccelNameDeviceRequisitionShark[] = "device_requisition_shark";
 const char kAccelNameAppLaunchBailout[] = "app_launch_bailout";
 const char kAccelNameAppLaunchNetworkConfig[] = "app_launch_network_config";
-const char kAccelNameShowRollbackOption[] = "show_rollback_on_reset_screen";
-const char kAccelNameHideRollbackOption[] = "hide_rollback_on_reset_screen";
+const char kAccelNameNewOobe[] = "new_oobe";
+const char kAccelNameToggleWebviewSignin[] = "toggle_webview_signin";
+const char kAccelNameToggleNewLoginUI[] = "toggle_new_login_ui";
+const char kAccelNameToggleEasyBootstrap[] = "toggle_easy_bootstrap";
 
 // A class to change arrow key traversal behavior when it's alive.
 class ScopedArrowKeyTraversal {
@@ -124,6 +128,18 @@ WebUILoginView::WebUILoginView()
   accel_map_[ui::Accelerator(ui::VKEY_R,
       ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN | ui::EF_SHIFT_DOWN)] =
       kAccelNameReset;
+  accel_map_[ui::Accelerator(ui::VKEY_X,
+      ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN | ui::EF_SHIFT_DOWN)] =
+      kAccelNameEnableDebugging;
+  accel_map_[ui::Accelerator(ui::VKEY_W,
+      ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN | ui::EF_SHIFT_DOWN)] =
+      kAccelNameToggleWebviewSignin;
+  accel_map_[ui::Accelerator(
+      ui::VKEY_L, ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN | ui::EF_SHIFT_DOWN)] =
+      kAccelNameToggleNewLoginUI;
+  accel_map_[ui::Accelerator(
+      ui::VKEY_B, ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN | ui::EF_SHIFT_DOWN)] =
+      kAccelNameToggleEasyBootstrap;
 
   accel_map_[ui::Accelerator(ui::VKEY_LEFT, ui::EF_NONE)] =
       kAccelFocusPrev;
@@ -157,13 +173,9 @@ WebUILoginView::WebUILoginView()
                              ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN)] =
       kAccelNameAppLaunchNetworkConfig;
 
-  ui::Accelerator show_rollback(ui::VKEY_MENU, ui::EF_ALT_DOWN);
-  show_rollback.set_type(ui::ET_KEY_PRESSED);
-  accel_map_[show_rollback] = kAccelNameShowRollbackOption;
-
-  ui::Accelerator hide_rollback(ui::VKEY_MENU, ui::EF_NONE);
-  hide_rollback.set_type(ui::ET_KEY_RELEASED);
-  accel_map_[hide_rollback] = kAccelNameHideRollbackOption;
+  accel_map_[ui::Accelerator(
+      ui::VKEY_O, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN)] =
+      kAccelNameNewOobe;
 
   for (AccelMap::iterator i(accel_map_.begin()); i != accel_map_.end(); ++i)
     AddAccelerator(i->first);
@@ -174,17 +186,14 @@ WebUILoginView::~WebUILoginView() {
                     observer_list_,
                     OnHostDestroying());
 
-#if !defined(USE_ATHENA)
   if (ash::Shell::GetInstance()->HasPrimaryStatusArea()) {
     ash::Shell::GetInstance()->GetPrimarySystemTray()->
         SetNextFocusableView(NULL);
   }
-#endif
 }
 
 void WebUILoginView::Init() {
   Profile* signin_profile = ProfileHelper::GetSigninProfile();
-  auth_extension_.reset(new ScopedGaiaAuthExtension(signin_profile));
   webui_login_ = new views::WebView(signin_profile);
   webui_login_->set_allow_accelerators(true);
   AddChildView(webui_login_);
@@ -213,9 +222,9 @@ void WebUILoginView::Init() {
   extensions::ChromeExtensionWebContentsObserver::CreateForWebContents(
       web_contents);
   WebContentsObserver::Observe(web_contents);
+  content::RendererPreferences* prefs = web_contents->GetMutableRendererPrefs();
   renderer_preferences_util::UpdateFromSystemSettings(
-      web_contents->GetMutableRendererPrefs(),
-      signin_profile);
+      prefs, signin_profile, web_contents);
 }
 
 const char* WebUILoginView::GetClassName() const {
@@ -286,7 +295,8 @@ void WebUILoginView::LoadURL(const GURL & url) {
 
   // TODO(nkostylev): Use WebContentsObserver::RenderViewCreated to track
   // when RenderView is created.
-  GetWebContents()->GetRenderViewHost()->GetView()->SetBackgroundOpaque(false);
+  GetWebContents()->GetRenderViewHost()->GetView()->SetBackgroundColor(
+      SK_ColorTRANSPARENT);
 }
 
 content::WebUI* WebUILoginView::GetWebUI() {
@@ -316,7 +326,6 @@ void WebUILoginView::OnPostponedShow() {
 }
 
 void WebUILoginView::SetStatusAreaVisible(bool visible) {
-#if !defined(USE_ATHENA)
   if (ash::Shell::GetInstance()->HasPrimaryStatusArea()) {
     ash::SystemTray* tray = ash::Shell::GetInstance()->GetPrimarySystemTray();
     if (visible) {
@@ -327,14 +336,11 @@ void WebUILoginView::SetStatusAreaVisible(bool visible) {
       tray->GetWidget()->Hide();
     }
   }
-#endif
 }
 
 void WebUILoginView::SetUIEnabled(bool enabled) {
   forward_keyboard_event_ = enabled;
-#if !defined(USE_ATHENA)
   ash::Shell::GetInstance()->GetPrimarySystemTray()->SetEnabled(enabled);
-#endif
 }
 
 void WebUILoginView::AddFrameObserver(FrameObserver* frame_observer) {
@@ -433,14 +439,12 @@ bool WebUILoginView::TakeFocus(content::WebContents* source, bool reverse) {
   if (!forward_keyboard_event_)
     return false;
 
-#if !defined(USE_ATHENA)
   ash::SystemTray* tray = ash::Shell::GetInstance()->GetPrimarySystemTray();
   if (tray && tray->GetWidget()->IsVisible()) {
     tray->SetNextFocusableView(this);
     ash::Shell::GetInstance()->RotateFocus(reverse ? ash::Shell::BACKWARD :
                                                     ash::Shell::FORWARD);
   }
-#endif
 
   return true;
 }

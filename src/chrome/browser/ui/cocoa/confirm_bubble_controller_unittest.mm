@@ -12,7 +12,7 @@
 #include "grit/theme_resources.h"
 #import "testing/gtest_mac.h"
 #include "ui/base/resource/resource_bundle.h"
-#import "ui/gfx/point.h"
+#import "ui/gfx/geometry/point.h"
 
 namespace {
 
@@ -25,16 +25,16 @@ class TestConfirmBubbleModel : public ConfirmBubbleModel {
                          bool* cancel_clicked,
                          bool* link_clicked);
   TestConfirmBubbleModel();
-  virtual ~TestConfirmBubbleModel() OVERRIDE;
-  virtual base::string16 GetTitle() const OVERRIDE;
-  virtual base::string16 GetMessageText() const OVERRIDE;
-  virtual gfx::Image* GetIcon() const OVERRIDE;
-  virtual int GetButtons() const OVERRIDE;
-  virtual base::string16 GetButtonLabel(BubbleButton button) const OVERRIDE;
-  virtual void Accept() OVERRIDE;
-  virtual void Cancel() OVERRIDE;
-  virtual base::string16 GetLinkText() const OVERRIDE;
-  virtual void LinkClicked() OVERRIDE;
+  ~TestConfirmBubbleModel() override;
+  base::string16 GetTitle() const override;
+  base::string16 GetMessageText() const override;
+  gfx::Image* GetIcon() const override;
+  int GetButtons() const override;
+  base::string16 GetButtonLabel(BubbleButton button) const override;
+  void Accept() override;
+  void Cancel() override;
+  base::string16 GetLinkText() const override;
+  void LinkClicked() override;
 
  private:
   bool* model_deleted_;
@@ -107,15 +107,15 @@ class ConfirmBubbleControllerTest : public CocoaTest {
         link_clicked_(false) {
     NSView* view = [test_window() contentView];
     // This model is owned by the controller created below.
-    model_ = new TestConfirmBubbleModel(&model_deleted_,
-                                        &accept_clicked_,
-                                        &cancel_clicked_,
-                                        &link_clicked_);
+    model_.reset(new TestConfirmBubbleModel(&model_deleted_,
+                                            &accept_clicked_,
+                                            &cancel_clicked_,
+                                            &link_clicked_));
     gfx::Point origin(0, 0);
     controller_ =
         [[ConfirmBubbleController alloc] initWithParent:view
                                                  origin:origin.ToCGPoint()
-                                                  model:model_];
+                                                  model:model_.Pass()];
     [view addSubview:[controller_ view]
           positioned:NSWindowAbove
           relativeTo:nil];
@@ -125,7 +125,6 @@ class ConfirmBubbleControllerTest : public CocoaTest {
     return (ConfirmBubbleCocoa*)[controller_ view];
   }
 
-  TestConfirmBubbleModel* model() const { return model_; }
   bool model_deleted() const { return model_deleted_; }
   bool accept_clicked() const { return accept_clicked_; }
   bool cancel_clicked() const { return cancel_clicked_; }
@@ -133,7 +132,7 @@ class ConfirmBubbleControllerTest : public CocoaTest {
 
  private:
   ConfirmBubbleController* controller_;  // weak; owns self
-  TestConfirmBubbleModel* model_;  // weak
+  scoped_ptr<TestConfirmBubbleModel> model_;
   bool model_deleted_;
   bool accept_clicked_;
   bool cancel_clicked_;

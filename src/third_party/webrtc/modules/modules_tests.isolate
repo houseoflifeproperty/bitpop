@@ -7,11 +7,13 @@
 # be found in the AUTHORS file in the root of the source tree.
 {
   'conditions': [
-    ['OS=="android"', {
+    ['OS=="linux" or OS=="mac" or OS=="win" or OS=="android"', {
       'variables': {
-        'isolate_dependency_untracked': [
-          '<(DEPTH)/data/',
-          '<(DEPTH)/resources/',
+        'files': [
+          '<(DEPTH)/resources/audio_coding/testfile32kHz.pcm',
+          '<(DEPTH)/resources/audio_coding/teststereo32kHz.pcm',
+          '<(DEPTH)/resources/foreman_cif.yuv',
+          '<(DEPTH)/resources/paris_qcif.yuv',
         ],
       },
     }],
@@ -21,17 +23,10 @@
           '<(DEPTH)/testing/test_env.py',
           '<(PRODUCT_DIR)/modules_tests<(EXECUTABLE_SUFFIX)',
         ],
-        'isolate_dependency_tracked': [
+        'files': [
           '<(DEPTH)/DEPS',
-          '<(DEPTH)/resources/audio_coding/testfile32kHz.pcm',
-          '<(DEPTH)/resources/audio_coding/teststereo32kHz.pcm',
-          '<(DEPTH)/resources/foreman_cif.yuv',
-          '<(DEPTH)/resources/paris_qcif.yuv',
           '<(DEPTH)/testing/test_env.py',
           '<(PRODUCT_DIR)/modules_tests<(EXECUTABLE_SUFFIX)',
-        ],
-        'isolate_dependency_untracked': [
-          '<(DEPTH)/tools/swarming_client/',
         ],
       },
     }],

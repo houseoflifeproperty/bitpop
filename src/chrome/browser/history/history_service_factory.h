@@ -6,22 +6,26 @@
 #define CHROME_BROWSER_HISTORY_HISTORY_SERVICE_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile.h"
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
+#include "components/keyed_service/core/service_access_type.h"
 
+class Profile;
+
+namespace history {
 class HistoryService;
+}
 
 // Singleton that owns all HistoryService and associates them with
 // Profiles.
 class HistoryServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
-  static HistoryService* GetForProfile(
-      Profile* profile, Profile::ServiceAccessType sat);
+  static history::HistoryService* GetForProfile(Profile* profile,
+                                                ServiceAccessType sat);
 
-  static HistoryService* GetForProfileIfExists(
-      Profile* profile, Profile::ServiceAccessType sat);
+  static history::HistoryService* GetForProfileIfExists(Profile* profile,
+                                                        ServiceAccessType sat);
 
-  static HistoryService* GetForProfileWithoutCreating(
+  static history::HistoryService* GetForProfileWithoutCreating(
       Profile* profile);
 
   static HistoryServiceFactory* GetInstance();
@@ -36,14 +40,14 @@ class HistoryServiceFactory : public BrowserContextKeyedServiceFactory {
   friend struct DefaultSingletonTraits<HistoryServiceFactory>;
 
   HistoryServiceFactory();
-  virtual ~HistoryServiceFactory();
+  ~HistoryServiceFactory() override;
 
   // BrowserContextKeyedServiceFactory:
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* context) const OVERRIDE;
-  virtual content::BrowserContext* GetBrowserContextToUse(
-      content::BrowserContext* context) const OVERRIDE;
-  virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* context) const override;
+  content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const override;
+  bool ServiceIsNULLWhileTesting() const override;
 };
 
 #endif  // CHROME_BROWSER_HISTORY_HISTORY_SERVICE_FACTORY_H_

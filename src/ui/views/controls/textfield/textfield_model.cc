@@ -160,7 +160,7 @@ class InsertEdit : public Edit {
   }
 
   // Edit implementation.
-  virtual bool DoMerge(const Edit* edit) OVERRIDE {
+  bool DoMerge(const Edit* edit) override {
     if (edit->type() != INSERT_EDIT || new_text_end() != edit->new_text_start_)
       return false;
     // If continuous edit, merge it.
@@ -193,7 +193,7 @@ class ReplaceEdit : public Edit {
   }
 
   // Edit implementation.
-  virtual bool DoMerge(const Edit* edit) OVERRIDE {
+  bool DoMerge(const Edit* edit) override {
     if (edit->type() == DELETE_EDIT ||
         new_text_end() != edit->old_text_start_ ||
         edit->old_text_start_ != edit->new_text_start_)
@@ -223,7 +223,7 @@ class DeleteEdit : public Edit {
   }
 
   // Edit implementation.
-  virtual bool DoMerge(const Edit* edit) OVERRIDE {
+  bool DoMerge(const Edit* edit) override {
     if (edit->type() != DELETE_EDIT)
       return false;
 
@@ -278,7 +278,7 @@ TextfieldModel::Delegate::~Delegate() {}
 
 TextfieldModel::TextfieldModel(Delegate* delegate)
     : delegate_(delegate),
-      render_text_(gfx::RenderText::CreateInstance()),
+      render_text_(gfx::RenderText::CreateInstanceForEditing()),
       current_edit_(edit_history_.end()) {
 }
 
@@ -564,8 +564,12 @@ void TextfieldModel::SetCompositionText(
   size_t cursor = GetCursorPosition();
   base::string16 new_text = text();
   render_text_->SetText(new_text.insert(cursor, composition.text));
-  gfx::Range range(cursor, cursor + composition.text.length());
-  render_text_->SetCompositionRange(range);
+  composition_range_ = gfx::Range(cursor, cursor + composition.text.length());
+  // Don't render transparent composition underlines.
+  if (composition.underlines.size() > 0 && composition.underlines[0].color != 0)
+    render_text_->SetCompositionRange(composition_range_);
+  else
+    render_text_->SetCompositionRange(gfx::Range::InvalidRange());
   gfx::Range emphasized_range = GetFirstEmphasizedRange(composition);
   if (emphasized_range.IsValid()) {
     // This is a workaround due to the lack of support in RenderText to draw
@@ -589,12 +593,13 @@ void TextfieldModel::SetCompositionText(
 
 void TextfieldModel::ConfirmCompositionText() {
   DCHECK(HasCompositionText());
-  gfx::Range range = render_text_->GetCompositionRange();
-  base::string16 composition = text().substr(range.start(), range.length());
+  base::string16 composition = text().substr(
+      composition_range_.start(), composition_range_.length());
   // TODO(oshima): current behavior on ChromeOS is a bit weird and not
   // sure exactly how this should work. Find out and fix if necessary.
-  AddOrMergeEditHistory(new InsertEdit(false, composition, range.start()));
-  render_text_->SetCursorPosition(range.end());
+  AddOrMergeEditHistory(
+      new InsertEdit(false, composition, composition_range_.start()));
+  render_text_->SetCursorPosition(composition_range_.end());
   ClearComposition();
   if (delegate_)
     delegate_->OnCompositionTextConfirmedOrCleared();
@@ -602,7 +607,7 @@ void TextfieldModel::ConfirmCompositionText() {
 
 void TextfieldModel::CancelCompositionText() {
   DCHECK(HasCompositionText());
-  gfx::Range range = render_text_->GetCompositionRange();
+  gfx::Range range = composition_range_;
   ClearComposition();
   base::string16 new_text = text();
   render_text_->SetText(new_text.erase(range.start(), range.length()));
@@ -612,15 +617,16 @@ void TextfieldModel::CancelCompositionText() {
 }
 
 void TextfieldModel::ClearComposition() {
-  render_text_->SetCompositionRange(gfx::Range::InvalidRange());
+  composition_range_ = gfx::Range::InvalidRange();
+  render_text_->SetCompositionRange(composition_range_);
 }
 
 void TextfieldModel::GetCompositionTextRange(gfx::Range* range) const {
-  *range = gfx::Range(render_text_->GetCompositionRange());
+  *range = composition_range_;
 }
 
 bool TextfieldModel::HasCompositionText() const {
-  return !render_text_->GetCompositionRange().is_empty();
+  return !composition_range_.is_empty();
 }
 
 void TextfieldModel::ClearEditHistory() {

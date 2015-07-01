@@ -5,51 +5,56 @@
 #ifndef CHROMEOS_DBUS_FAKE_CROS_DISKS_CLIENT_H_
 #define CHROMEOS_DBUS_FAKE_CROS_DISKS_CLIENT_H_
 
+#include <set>
 #include <string>
 
 #include "base/callback.h"
+#include "base/files/file_path.h"
 #include "chromeos/dbus/cros_disks_client.h"
 
 namespace chromeos {
 
 // A fake implementation of CrosDiskeClient. This class provides a fake behavior
 // and the user of this class can raise a fake mouse events.
-class FakeCrosDisksClient : public CrosDisksClient {
+class CHROMEOS_EXPORT FakeCrosDisksClient : public CrosDisksClient {
  public:
   FakeCrosDisksClient();
-  virtual ~FakeCrosDisksClient();
+  ~FakeCrosDisksClient() override;
 
   // CrosDisksClient overrides
-  virtual void Init(dbus::Bus* bus) OVERRIDE;
-  virtual void Mount(const std::string& source_path,
-                     const std::string& source_format,
-                     const std::string& mount_label,
-                     const base::Closure& callback,
-                     const base::Closure& error_callback) OVERRIDE;
-  virtual void Unmount(const std::string& device_path,
-                       UnmountOptions options,
-                       const base::Closure& callback,
-                       const base::Closure& error_callback) OVERRIDE;
-  virtual void EnumerateAutoMountableDevices(
+  void Init(dbus::Bus* bus) override;
+
+  // Performs fake mounting for archive files. Instead of actually extracting
+  // contents of archive files, this function creates a directory that
+  // contains a dummy file.
+  void Mount(const std::string& source_path,
+             const std::string& source_format,
+             const std::string& mount_label,
+             const base::Closure& callback,
+             const base::Closure& error_callback) override;
+  // Deletes the directory created in Mount().
+  void Unmount(const std::string& device_path,
+               UnmountOptions options,
+               const base::Closure& callback,
+               const base::Closure& error_callback) override;
+  void EnumerateAutoMountableDevices(
       const EnumerateAutoMountableDevicesCallback& callback,
-      const base::Closure& error_callback) OVERRIDE;
-  virtual void EnumerateMountEntries(
-      const EnumerateMountEntriesCallback& callback,
-      const base::Closure& error_callback) OVERRIDE;
-  virtual void Format(const std::string& device_path,
-                      const std::string& filesystem,
-                      const base::Closure& callback,
-                      const base::Closure& error_callback) OVERRIDE;
-  virtual void GetDeviceProperties(
-      const std::string& device_path,
-      const GetDevicePropertiesCallback& callback,
-      const base::Closure& error_callback) OVERRIDE;
-  virtual void SetMountEventHandler(
-      const MountEventHandler& mount_event_handler) OVERRIDE;
-  virtual void SetMountCompletedHandler(
-      const MountCompletedHandler& mount_completed_handler) OVERRIDE;
-  virtual void SetFormatCompletedHandler(
-      const FormatCompletedHandler& format_completed_handler) OVERRIDE;
+      const base::Closure& error_callback) override;
+  void EnumerateMountEntries(const EnumerateMountEntriesCallback& callback,
+                             const base::Closure& error_callback) override;
+  void Format(const std::string& device_path,
+              const std::string& filesystem,
+              const base::Closure& callback,
+              const base::Closure& error_callback) override;
+  void GetDeviceProperties(const std::string& device_path,
+                           const GetDevicePropertiesCallback& callback,
+                           const base::Closure& error_callback) override;
+  void SetMountEventHandler(
+      const MountEventHandler& mount_event_handler) override;
+  void SetMountCompletedHandler(
+      const MountCompletedHandler& mount_completed_handler) override;
+  void SetFormatCompletedHandler(
+      const FormatCompletedHandler& format_completed_handler) override;
 
   // Used in tests to simulate signals sent by cros disks layer.
   // Invokes handlers set in |SetMountEventHandler|, |SetMountCompletedHandler|,
@@ -122,6 +127,7 @@ class FakeCrosDisksClient : public CrosDisksClient {
   std::string last_format_device_path_;
   std::string last_format_filesystem_;
   bool format_success_;
+  std::set<base::FilePath> mounted_paths_;
 };
 
 }  // namespace chromeos

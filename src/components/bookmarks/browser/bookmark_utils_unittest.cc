@@ -28,11 +28,11 @@ class BookmarkUtilsTest : public testing::Test,
   BookmarkUtilsTest()
       : grouped_changes_beginning_count_(0),
         grouped_changes_ended_count_(0) {}
-  virtual ~BookmarkUtilsTest() {}
+  ~BookmarkUtilsTest() override {}
 
 // Copy and paste is not yet supported on iOS. http://crbug.com/228147
 #if !defined(OS_IOS)
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     ui::Clipboard::DestroyClipboardForCurrentThread();
   }
 #endif  // !defined(OS_IOS)
@@ -54,13 +54,13 @@ class BookmarkUtilsTest : public testing::Test,
 
  private:
   // BaseBookmarkModelObserver:
-  virtual void BookmarkModelChanged() OVERRIDE {}
+  void BookmarkModelChanged() override {}
 
-  virtual void GroupedBookmarkChangesBeginning(BookmarkModel* model) OVERRIDE {
+  void GroupedBookmarkChangesBeginning(BookmarkModel* model) override {
     ++grouped_changes_beginning_count_;
   }
 
-  virtual void GroupedBookmarkChangesEnded(BookmarkModel* model) OVERRIDE {
+  void GroupedBookmarkChangesEnded(BookmarkModel* model) override {
     ++grouped_changes_ended_count_;
   }
 
@@ -314,6 +314,42 @@ TEST_F(BookmarkUtilsTest, CopyPaste) {
   EXPECT_FALSE(CanPasteFromClipboard(model.get(), model->bookmark_bar_node()));
 }
 
+// Test for updating title such that url and title pair are unique among the
+// children of parent.
+TEST_F(BookmarkUtilsTest, MakeTitleUnique) {
+  TestBookmarkClient client;
+  scoped_ptr<BookmarkModel> model(client.CreateModel());
+  const base::string16 url_text = ASCIIToUTF16("http://www.google.com/");
+  const base::string16 title_text = ASCIIToUTF16("foobar");
+  const BookmarkNode* bookmark_bar_node = model->bookmark_bar_node();
+
+  const BookmarkNode* node =
+      model->AddURL(bookmark_bar_node, 0, title_text, GURL(url_text));
+
+  EXPECT_EQ(url_text,
+            ASCIIToUTF16(bookmark_bar_node->GetChild(0)->url().spec()));
+  EXPECT_EQ(title_text, bookmark_bar_node->GetChild(0)->GetTitle());
+
+  // Copy a node to the clipboard.
+  std::vector<const BookmarkNode*> nodes;
+  nodes.push_back(node);
+  CopyToClipboard(model.get(), nodes, false);
+
+  // Now we should be able to paste from the clipboard.
+  EXPECT_TRUE(CanPasteFromClipboard(model.get(), bookmark_bar_node));
+
+  PasteFromClipboard(model.get(), bookmark_bar_node, 1);
+  ASSERT_EQ(2, bookmark_bar_node->child_count());
+
+  // Url for added node should be same as url_text.
+  EXPECT_EQ(url_text,
+            ASCIIToUTF16(bookmark_bar_node->GetChild(1)->url().spec()));
+  // Title for added node should be numeric subscript suffix with copied node
+  // title.
+  EXPECT_EQ(ASCIIToUTF16("foobar (1)"),
+            bookmark_bar_node->GetChild(1)->GetTitle());
+}
+
 TEST_F(BookmarkUtilsTest, CopyPasteMetaInfo) {
   TestBookmarkClient client;
   scoped_ptr<BookmarkModel> model(client.CreateModel());
@@ -484,6 +520,57 @@ TEST_F(BookmarkUtilsTest, CloneMetaInfo) {
   EXPECT_EQ("somevalue", value);
   EXPECT_TRUE(clone->GetMetaInfo("someotherkey", &value));
   EXPECT_EQ("someothervalue", value);
+}
+
+// Verifies that meta info fields in the non cloned set are not copied when
+// cloning a bookmark.
+TEST_F(BookmarkUtilsTest, CloneBookmarkResetsNonClonedKey) {
+  TestBookmarkClient client;
+  scoped_ptr<BookmarkModel> model(client.CreateModel());
+  model->AddNonClonedKey("foo");
+  const BookmarkNode* parent = model->other_node();
+  const BookmarkNode* node = model->AddURL(
+      parent, 0, ASCIIToUTF16("title"), GURL("http://www.google.com"));
+  model->SetNodeMetaInfo(node, "foo", "ignored value");
+  model->SetNodeMetaInfo(node, "bar", "kept value");
+  std::vector<BookmarkNodeData::Element> elements;
+  BookmarkNodeData::Element node_data(node);
+  elements.push_back(node_data);
+
+  // Cloning a bookmark should clear the non cloned key.
+  CloneBookmarkNode(model.get(), elements, parent, 0, true);
+  ASSERT_EQ(2, parent->child_count());
+  std::string value;
+  EXPECT_FALSE(parent->GetChild(0)->GetMetaInfo("foo", &value));
+
+  // Other keys should still be cloned.
+  EXPECT_TRUE(parent->GetChild(0)->GetMetaInfo("bar", &value));
+  EXPECT_EQ("kept value", value);
+}
+
+// Verifies that meta info fields in the non cloned set are not copied when
+// cloning a folder.
+TEST_F(BookmarkUtilsTest, CloneFolderResetsNonClonedKey) {
+  TestBookmarkClient client;
+  scoped_ptr<BookmarkModel> model(client.CreateModel());
+  model->AddNonClonedKey("foo");
+  const BookmarkNode* parent = model->other_node();
+  const BookmarkNode* node = model->AddFolder(parent, 0, ASCIIToUTF16("title"));
+  model->SetNodeMetaInfo(node, "foo", "ignored value");
+  model->SetNodeMetaInfo(node, "bar", "kept value");
+  std::vector<BookmarkNodeData::Element> elements;
+  BookmarkNodeData::Element node_data(node);
+  elements.push_back(node_data);
+
+  // Cloning a folder should clear the non cloned key.
+  CloneBookmarkNode(model.get(), elements, parent, 0, true);
+  ASSERT_EQ(2, parent->child_count());
+  std::string value;
+  EXPECT_FALSE(parent->GetChild(0)->GetMetaInfo("foo", &value));
+
+  // Other keys should still be cloned.
+  EXPECT_TRUE(parent->GetChild(0)->GetMetaInfo("bar", &value));
+  EXPECT_EQ("kept value", value);
 }
 
 TEST_F(BookmarkUtilsTest, RemoveAllBookmarks) {

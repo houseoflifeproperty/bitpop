@@ -34,9 +34,9 @@ public class BookmarkId {
     private static int getBookmarkTypeFromChar(char c) {
         switch (c) {
             case TYPE_PARTNER:
-                return BookmarkType.BOOKMARK_TYPE_PARTNER;
+                return BookmarkType.PARTNER;
             default:
-                return BookmarkType.BOOKMARK_TYPE_NORMAL;
+                return BookmarkType.NORMAL;
         }
     }
 
@@ -55,9 +55,8 @@ public class BookmarkId {
      */
     public static BookmarkId getBookmarkIdFromString(String s) {
         long id = ROOT_FOLDER_ID;
-        int type = BookmarkType.BOOKMARK_TYPE_NORMAL;
-        if (TextUtils.isEmpty(s))
-            return new BookmarkId(id, type);
+        int type = BookmarkType.NORMAL;
+        if (TextUtils.isEmpty(s)) return new BookmarkId(id, type);
         char folderTypeChar = s.charAt(0);
         if (isValidBookmarkTypeFromChar(folderTypeChar)) {
             type = getBookmarkTypeFromChar(folderTypeChar);
@@ -87,11 +86,21 @@ public class BookmarkId {
         return mType;
     }
 
+    /**
+     * @param id The id of the bookmark.
+     * @param type The bookmark type.
+     * @return The BookmarkId Object.
+     */
+    @CalledByNative
+    private static BookmarkId createBookmarkId(long id, int type) {
+        return new BookmarkId(id, type);
+    }
+
     private String getBookmarkTypeString() {
         switch (mType) {
-            case BookmarkType.BOOKMARK_TYPE_PARTNER:
+            case BookmarkType.PARTNER:
                 return String.valueOf(TYPE_PARTNER);
-            case BookmarkType.BOOKMARK_TYPE_NORMAL:
+            case BookmarkType.NORMAL:
             default:
                 return "";
         }
@@ -104,8 +113,7 @@ public class BookmarkId {
 
     @Override
     public boolean equals(Object o) {
-        if (!(o instanceof BookmarkId))
-            return false;
+        if (!(o instanceof BookmarkId)) return false;
         BookmarkId item = (BookmarkId) o;
         return (item.mId == mId && item.mType == mType);
     }

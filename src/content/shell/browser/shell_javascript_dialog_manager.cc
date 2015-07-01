@@ -8,8 +8,8 @@
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/web_contents.h"
+#include "content/shell/browser/blink_test_controller.h"
 #include "content/shell/browser/shell_javascript_dialog.h"
-#include "content/shell/browser/webkit_test_controller.h"
 #include "content/shell/common/shell_switches.h"
 #include "net/base/net_util.h"
 
@@ -30,11 +30,6 @@ void ShellJavaScriptDialogManager::RunJavaScriptDialog(
     const base::string16& default_prompt_text,
     const DialogClosedCallback& callback,
     bool* did_suppress_message) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
-    callback.Run(true, base::string16());
-    return;
-  }
-
   if (!dialog_request_callback_.is_null()) {
     dialog_request_callback_.Run();
     callback.Run(true, base::string16());
@@ -74,11 +69,6 @@ void ShellJavaScriptDialogManager::RunBeforeUnloadDialog(
     const base::string16& message_text,
     bool is_reload,
     const DialogClosedCallback& callback) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
-    callback.Run(true, base::string16());
-    return;
-  }
-
   if (!dialog_request_callback_.is_null()) {
     dialog_request_callback_.Run();
     callback.Run(true, base::string16());
@@ -124,8 +114,7 @@ void ShellJavaScriptDialogManager::CancelActiveAndPendingDialogs(
 #endif
 }
 
-void ShellJavaScriptDialogManager::WebContentsDestroyed(
-    WebContents* web_contents) {
+void ShellJavaScriptDialogManager::ResetDialogState(WebContents* web_contents) {
 }
 
 void ShellJavaScriptDialogManager::DialogClosed(ShellJavaScriptDialog* dialog) {

@@ -15,17 +15,19 @@ namespace sandbox {
 class HandleDispatcher : public Dispatcher {
  public:
   explicit HandleDispatcher(PolicyBase* policy_base);
-  ~HandleDispatcher() {}
+  ~HandleDispatcher() override {}
 
   // Dispatcher interface.
-  virtual bool SetupService(InterceptionManager* manager, int service);
+  bool SetupService(InterceptionManager* manager, int service) override;
 
  private:
   // Processes IPC requests coming from calls to
   // TargetServices::DuplicateHandle() in the target.
-  bool DuplicateHandleProxy(IPCInfo* ipc, HANDLE source_handle,
-                            DWORD target_process_id, DWORD desired_access,
-                            DWORD options);
+  bool DuplicateHandleProxy(IPCInfo* ipc,
+                            HANDLE source_handle,
+                            uint32 target_process_id,
+                            uint32 desired_access,
+                            uint32 options);
 
   PolicyBase* policy_base_;
   DISALLOW_COPY_AND_ASSIGN(HandleDispatcher);

@@ -29,18 +29,13 @@
 
 #include "core/html/MediaKeyError.h"
 #include "modules/EventModules.h"
-#include "wtf/ArrayBuffer.h"
+#include "modules/encryptedmedia/MediaKeyMessageEventInit.h"
 
 namespace blink {
 
-struct MediaKeyMessageEventInit : public EventInit {
-    MediaKeyMessageEventInit();
+class DOMArrayBuffer;
 
-    RefPtr<ArrayBuffer> message;
-    String destinationURL;
-};
-
-class MediaKeyMessageEvent FINAL : public Event {
+class MediaKeyMessageEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~MediaKeyMessageEvent();
@@ -55,19 +50,19 @@ public:
         return adoptRefWillBeNoop(new MediaKeyMessageEvent(type, initializer));
     }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    ArrayBuffer* message() const { return m_message.get(); }
-    String destinationURL() const { return m_destinationURL; }
+    String messageType() const { return m_messageType; }
+    DOMArrayBuffer* message() const { return m_message.get(); }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     MediaKeyMessageEvent();
     MediaKeyMessageEvent(const AtomicString& type, const MediaKeyMessageEventInit& initializer);
 
-    RefPtr<ArrayBuffer> m_message;
-    String m_destinationURL;
+    String m_messageType;
+    RefPtr<DOMArrayBuffer> m_message;
 };
 
 } // namespace blink

@@ -69,7 +69,7 @@ void ScopedEventQueue::enqueueEventDispatchMediator(PassRefPtrWillBeRawPtr<Event
 
 void ScopedEventQueue::dispatchAllEvents()
 {
-    WillBeHeapVector<RefPtrWillBeMember<EventDispatchMediator> > queuedEventDispatchMediators;
+    WillBeHeapVector<RefPtrWillBeMember<EventDispatchMediator>> queuedEventDispatchMediators;
     queuedEventDispatchMediators.swap(m_queuedEventDispatchMediators);
 
     for (size_t i = 0; i < queuedEventDispatchMediators.size(); i++)
@@ -78,9 +78,9 @@ void ScopedEventQueue::dispatchAllEvents()
 
 void ScopedEventQueue::dispatchEvent(PassRefPtrWillBeRawPtr<EventDispatchMediator> mediator) const
 {
-    ASSERT(mediator->event()->target());
-    Node* node = mediator->event()->target()->toNode();
-    EventDispatcher::dispatchEvent(node, mediator);
+    ASSERT(mediator->event().target());
+    Node* node = mediator->event().target()->toNode();
+    EventDispatcher::dispatchEvent(*node, mediator);
 }
 
 ScopedEventQueue* ScopedEventQueue::instance()

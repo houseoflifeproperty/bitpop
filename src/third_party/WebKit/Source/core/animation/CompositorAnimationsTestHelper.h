@@ -75,6 +75,7 @@ public:
     virtual WebCompositorAnimation::TargetProperty targetProperty() const { return m_property; };
 
     MOCK_METHOD0(id, int());
+    MOCK_METHOD0(group, int());
 
     MOCK_CONST_METHOD0(iterations, double());
     MOCK_METHOD1(setIterations, void(double));
@@ -107,6 +108,12 @@ public:
     MOCK_METHOD1_T(add, void(const KeyframeType&));
     MOCK_METHOD2_T(add, void(const KeyframeType&, WebCompositorAnimationCurve::TimingFunctionType));
     MOCK_METHOD5_T(add, void(const KeyframeType&, double, double, double, double));
+    MOCK_METHOD3_T(add, void(const KeyframeType&, int steps, float stepsStartOffset));
+
+    MOCK_METHOD0(setLinearTimingFunction, void());
+    MOCK_METHOD4(setCubicBezierTimingFunction, void(double, double, double, double));
+    MOCK_METHOD1(setCubicBezierTimingFunction, void(WebCompositorAnimationCurve::TimingFunctionType));
+    MOCK_METHOD2(setStepsTimingFunction, void(int, float));
 
     MOCK_CONST_METHOD1_T(getValue, float(double)); // Only on WebFloatAnimationCurve, but can't hurt to have here.
 
@@ -116,7 +123,7 @@ public:
     ~WebCompositorAnimationCurveMock() { delete_(); }
 };
 
-typedef WebCompositorAnimationCurveMock<WebFloatAnimationCurve, WebCompositorAnimationCurve::AnimationCurveTypeFloat, WebFloatKeyframe> WebFloatAnimationCurveMock;
+using WebFloatAnimationCurveMock = WebCompositorAnimationCurveMock<WebFloatAnimationCurve, WebCompositorAnimationCurve::AnimationCurveTypeFloat, WebFloatKeyframe>;
 
 } // namespace blink
 
@@ -128,7 +135,7 @@ public:
 
     class WebCompositorSupportMock : public WebCompositorSupport {
     public:
-        MOCK_METHOD3(createAnimation, WebCompositorAnimation*(const WebCompositorAnimationCurve& curve, WebCompositorAnimation::TargetProperty target, int animationId));
+        MOCK_METHOD4(createAnimation, WebCompositorAnimation*(const WebCompositorAnimationCurve& curve, WebCompositorAnimation::TargetProperty target, int groupId, int animationId));
         MOCK_METHOD0(createFloatAnimationCurve, WebFloatAnimationCurve*());
     };
 
@@ -138,9 +145,15 @@ private:
         PlatformProxy(WebCompositorSupportMock** compositor) : m_compositor(compositor) { }
 
         virtual void cryptographicallyRandomValues(unsigned char* buffer, size_t length) { ASSERT_NOT_REACHED(); }
+        const unsigned char* getTraceCategoryEnabledFlag(const char* categoryName) override
+        {
+            static const unsigned char tracingIsDisabled = 0;
+            return &tracingIsDisabled;
+        }
+
     private:
         WebCompositorSupportMock** m_compositor;
-        virtual WebCompositorSupport* compositorSupport() OVERRIDE { return *m_compositor; }
+        virtual WebCompositorSupport* compositorSupport() override { return *m_compositor; }
     };
 
     WebCompositorSupportMock* m_mockCompositor;

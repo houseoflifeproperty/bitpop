@@ -18,22 +18,21 @@ class ASH_EXPORT ScreenShareTrayItem : public ScreenTrayItem,
                                        public ScreenShareObserver {
  public:
   explicit ScreenShareTrayItem(SystemTray* system_tray);
-  virtual ~ScreenShareTrayItem();
+  ~ScreenShareTrayItem() override;
 
  private:
   // Overridden from SystemTrayItem.
-  virtual views::View* CreateTrayView(user::LoginStatus status) OVERRIDE;
-  virtual views::View* CreateDefaultView(user::LoginStatus status) OVERRIDE;
+  views::View* CreateTrayView(user::LoginStatus status) override;
+  views::View* CreateDefaultView(user::LoginStatus status) override;
 
   // Overridden from ScreenTrayItem.
-  virtual void CreateOrUpdateNotification() OVERRIDE;
-  virtual std::string GetNotificationId() OVERRIDE;
+  void CreateOrUpdateNotification() override;
+  std::string GetNotificationId() override;
 
   // Overridden from ScreenShareObserver.
-  virtual void OnScreenShareStart(
-      const base::Closure& stop_callback,
-      const base::string16& helper_name) OVERRIDE;
-  virtual void OnScreenShareStop() OVERRIDE;
+  void OnScreenShareStart(const base::Closure& stop_callback,
+                          const base::string16& helper_name) override;
+  void OnScreenShareStop() override;
 
   base::string16 helper_name_;
 

@@ -9,14 +9,14 @@
 #include "net/http/http_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using net::HttpUtil;
+namespace net {
 
 namespace {
 class HttpUtilTest : public testing::Test {};
 }
 
 TEST(HttpUtilTest, IsSafeHeader) {
-  static const char* unsafe_headers[] = {
+  static const char* const unsafe_headers[] = {
     "sec-",
     "sEc-",
     "sec-foo",
@@ -53,7 +53,7 @@ TEST(HttpUtilTest, IsSafeHeader) {
     EXPECT_FALSE(HttpUtil::IsSafeHeader(StringToUpperASCII(std::string(
         unsafe_headers[i])))) << unsafe_headers[i];
   }
-  static const char* safe_headers[] = {
+  static const char* const safe_headers[] = {
     "foo",
     "x-",
     "x-foo",
@@ -102,8 +102,8 @@ TEST(HttpUtilTest, IsSafeHeader) {
 
 TEST(HttpUtilTest, HasHeader) {
   static const struct {
-    const char* headers;
-    const char* name;
+    const char* const headers;
+    const char* const name;
     bool expected_result;
   } tests[] = {
     { "", "foo", false },
@@ -114,14 +114,14 @@ TEST(HttpUtilTest, HasHeader) {
     { "fOO: 1\r\nbar: 2", "foo", true },
     { "g: 0\r\nfoo: 1\r\nbar: 2", "foo", true },
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     bool result = HttpUtil::HasHeader(tests[i].headers, tests[i].name);
     EXPECT_EQ(tests[i].expected_result, result);
   }
 }
 
 TEST(HttpUtilTest, StripHeaders) {
-  static const char* headers =
+  static const char* const headers =
       "Origin: origin\r\n"
       "Content-Type: text/plain\r\n"
       "Cookies: foo1\r\n"
@@ -130,11 +130,11 @@ TEST(HttpUtilTest, StripHeaders) {
       "Server: Apache\r\n"
       "OrIGin: origin2\r\n";
 
-  static const char* header_names[] = {
+  static const char* const header_names[] = {
     "origin", "content-type", "cookies"
   };
 
-  static const char* expected_stripped_headers =
+  static const char* const expected_stripped_headers =
       "Custom: baz\r\n"
       "Server: Apache\r\n";
 
@@ -262,7 +262,7 @@ TEST(HttpUtilTest, Quote) {
 
 TEST(HttpUtilTest, LocateEndOfHeaders) {
   struct {
-    const char* input;
+    const char* const input;
     int expected_result;
   } tests[] = {
     { "foo\r\nbar\r\n\r\n", 12 },
@@ -272,7 +272,7 @@ TEST(HttpUtilTest, LocateEndOfHeaders) {
     { "foo\nbar\n\r\njunk", 10 },
     { "foo\nbar\r\n\njunk", 10 },
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     int input_len = static_cast<int>(strlen(tests[i].input));
     int eoh = HttpUtil::LocateEndOfHeaders(tests[i].input, input_len);
     EXPECT_EQ(tests[i].expected_result, eoh);
@@ -281,8 +281,8 @@ TEST(HttpUtilTest, LocateEndOfHeaders) {
 
 TEST(HttpUtilTest, AssembleRawHeaders) {
   struct {
-    const char* input;  // with '|' representing '\0'
-    const char* expected_result;  // with '\0' changed to '|'
+    const char* const input;  // with '|' representing '\0'
+    const char* const expected_result;  // with '\0' changed to '|'
   } tests[] = {
     { "HTTP/1.0 200 OK\r\nFoo: 1\r\nBar: 2\r\n\r\n",
       "HTTP/1.0 200 OK|Foo: 1|Bar: 2||" },
@@ -582,7 +582,7 @@ TEST(HttpUtilTest, AssembleRawHeaders) {
       "HTTP/1.0 200 OK|Foo: 1Foo2: 3|Bar: 2||"
     },
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     std::string input = tests[i].input;
     std::replace(input.begin(), input.end(), '|', '\0');
     std::string raw = HttpUtil::AssembleRawHeaders(input.data(), input.size());
@@ -594,9 +594,9 @@ TEST(HttpUtilTest, AssembleRawHeaders) {
 // Test SpecForRequest() and PathForRequest().
 TEST(HttpUtilTest, RequestUrlSanitize) {
   struct {
-    const char* url;
-    const char* expected_spec;
-    const char* expected_path;
+    const char* const url;
+    const char* const expected_spec;
+    const char* const expected_path;
   } tests[] = {
     { // Check that #hash is removed.
       "http://www.google.com:78/foobar?query=1#hash",
@@ -629,7 +629,7 @@ TEST(HttpUtilTest, RequestUrlSanitize) {
       "/foobar?query=1"
     }
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     GURL url(GURL(tests[i].url));
     std::string expected_spec(tests[i].expected_spec);
     std::string expected_path(tests[i].expected_path);
@@ -657,11 +657,11 @@ TEST(HttpUtilTest, GenerateAcceptLanguageHeader) {
 // HttpResponseHeadersTest.GetMimeType also tests ParseContentType.
 TEST(HttpUtilTest, ParseContentType) {
   const struct {
-    const char* content_type;
-    const char* expected_mime_type;
-    const char* expected_charset;
+    const char* const content_type;
+    const char* const expected_mime_type;
+    const char* const expected_charset;
     const bool expected_had_charset;
-    const char* expected_boundary;
+    const char* const expected_boundary;
   } tests[] = {
     { "text/html; charset=utf-8",
       "text/html",
@@ -725,13 +725,13 @@ TEST(HttpUtilTest, ParseContentType) {
     },
     // TODO(abarth): Add more interesting test cases.
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     std::string mime_type;
     std::string charset;
     bool had_charset = false;
     std::string boundary;
-    net::HttpUtil::ParseContentType(tests[i].content_type, &mime_type,
-                                    &charset, &had_charset, &boundary);
+    HttpUtil::ParseContentType(tests[i].content_type, &mime_type, &charset,
+                               &had_charset, &boundary);
     EXPECT_EQ(tests[i].expected_mime_type, mime_type) << "i=" << i;
     EXPECT_EQ(tests[i].expected_charset, charset) << "i=" << i;
     EXPECT_EQ(tests[i].expected_had_charset, had_charset) << "i=" << i;
@@ -741,7 +741,7 @@ TEST(HttpUtilTest, ParseContentType) {
 
 TEST(HttpUtilTest, ParseRanges) {
   const struct {
-    const char* headers;
+    const char* const headers;
     bool expected_return_value;
     size_t expected_ranges_size;
     const struct {
@@ -853,8 +853,8 @@ TEST(HttpUtilTest, ParseRanges) {
     },
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
-    std::vector<net::HttpByteRange> ranges;
+  for (size_t i = 0; i < arraysize(tests); ++i) {
+    std::vector<HttpByteRange> ranges;
     bool return_value = HttpUtil::ParseRanges(std::string(tests[i].headers),
                                               &ranges);
     EXPECT_EQ(tests[i].expected_return_value, return_value);
@@ -868,6 +868,49 @@ TEST(HttpUtilTest, ParseRanges) {
         EXPECT_EQ(tests[i].expected_ranges[j].expected_suffix_length,
                   ranges[j].suffix_length());
       }
+    }
+  }
+}
+
+TEST(HttpUtilTest, ParseRetryAfterHeader) {
+  base::Time::Exploded now_exploded = { 2014, 11, -1, 5, 22, 39, 30, 0 };
+  base::Time now = base::Time::FromUTCExploded(now_exploded);
+
+  base::Time::Exploded later_exploded = { 2015, 1, -1, 1, 12, 34, 56, 0 };
+  base::Time later = base::Time::FromUTCExploded(later_exploded);
+
+  const struct {
+    const char* retry_after_string;
+    bool expected_return_value;
+    base::TimeDelta expected_retry_after;
+  } tests[] = {
+    { "", false, base::TimeDelta() },
+    { "-3", false, base::TimeDelta() },
+    { "-2", false, base::TimeDelta() },
+    { "-1", false, base::TimeDelta() },
+    { "0", true, base::TimeDelta::FromSeconds(0) },
+    { "1", true, base::TimeDelta::FromSeconds(1) },
+    { "2", true, base::TimeDelta::FromSeconds(2) },
+    { "3", true, base::TimeDelta::FromSeconds(3) },
+    { "60", true, base::TimeDelta::FromSeconds(60) },
+    { "3600", true, base::TimeDelta::FromSeconds(3600) },
+    { "86400", true, base::TimeDelta::FromSeconds(86400) },
+    { "Thu, 1 Jan 2015 12:34:56 GMT", true, later - now },
+    { "Mon, 1 Jan 1900 12:34:56 GMT", false, base::TimeDelta() }
+  };
+
+  for (size_t i = 0; i < arraysize(tests); ++i) {
+    base::TimeDelta retry_after;
+    bool return_value = HttpUtil::ParseRetryAfterHeader(
+        tests[i].retry_after_string, now, &retry_after);
+    EXPECT_EQ(tests[i].expected_return_value, return_value)
+        << "Test case " << i << ": expected " << tests[i].expected_return_value
+        << " but got " << return_value << ".";
+    if (tests[i].expected_return_value && return_value) {
+      EXPECT_EQ(tests[i].expected_retry_after, retry_after)
+          << "Test case " << i << ": expected "
+          << tests[i].expected_retry_after.InSeconds() << "s but got "
+          << retry_after.InSeconds() << "s.";
     }
   }
 }
@@ -950,7 +993,7 @@ void CheckInvalidNameValuePair(std::string valid_part,
   ASSERT_FALSE(invalid_parser.valid());
 }
 
-}  // anonymous namespace
+}  // namespace
 
 TEST(HttpUtilTest, NameValuePairsIteratorCopyAndAssign) {
   std::string data = "alpha='\\'a\\''; beta=\" b \"; cappa='c;'; delta=\"d\"";
@@ -1071,3 +1114,5 @@ TEST(HttpUtilTest, NameValuePairsIteratorMissingEndQuote) {
   ASSERT_NO_FATAL_FAILURE(CheckNextNameValuePair(
       &parser, false, true, std::string(), std::string()));
 }
+
+}  // namespace net

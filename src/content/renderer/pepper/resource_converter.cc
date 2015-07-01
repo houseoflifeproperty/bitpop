@@ -122,8 +122,8 @@ bool DOMFileSystemToResource(
 
 bool ResourceHostToDOMFileSystem(
     content::PepperFileSystemHost* file_system_host,
-    v8::Handle<v8::Context> context,
-    v8::Handle<v8::Value>* dom_file_system) {
+    v8::Local<v8::Context> context,
+    v8::Local<v8::Value>* dom_file_system) {
   GURL root_url = file_system_host->GetRootUrl();
   GURL origin;
   storage::FileSystemType type;
@@ -148,8 +148,8 @@ bool ResourceHostToDOMFileSystem(
 
 bool ResourceHostToDOMMediaStreamVideoTrack(
     content::PepperMediaStreamVideoTrackHost* host,
-    v8::Handle<v8::Context> context,
-    v8::Handle<v8::Value>* dom_video_track) {
+    v8::Local<v8::Context> context,
+    v8::Local<v8::Value>* dom_video_track) {
   // TODO(ronghuawu): Implement this once crbug/352219 is resolved.
   // blink::WebMediaStreamTrack track = host->track();
   // *dom_video_track = track.toV8Value();
@@ -197,9 +197,8 @@ bool DOMMediaStreamTrackToResource(
 
 ResourceConverter::~ResourceConverter() {}
 
-ResourceConverterImpl::ResourceConverterImpl(PP_Instance instance,
-                                             RendererPpapiHost* host)
-    : instance_(instance), host_(host) {}
+ResourceConverterImpl::ResourceConverterImpl(PP_Instance instance)
+    : instance_(instance) {}
 
 ResourceConverterImpl::~ResourceConverterImpl() {
   // Verify Flush() was called.
@@ -207,12 +206,13 @@ ResourceConverterImpl::~ResourceConverterImpl() {
   DCHECK(browser_vars_.empty());
 }
 
-bool ResourceConverterImpl::FromV8Value(v8::Handle<v8::Object> val,
-                                        v8::Handle<v8::Context> context,
+bool ResourceConverterImpl::FromV8Value(v8::Local<v8::Object> val,
+                                        v8::Local<v8::Context> context,
                                         PP_Var* result,
                                         bool* was_resource) {
   v8::Context::Scope context_scope(context);
   v8::HandleScope handle_scope(context->GetIsolate());
+  RendererPpapiHost* host = RendererPpapiHost::GetForPPInstance(instance_);
 
   *was_resource = false;
 
@@ -223,7 +223,7 @@ bool ResourceConverterImpl::FromV8Value(v8::Handle<v8::Object> val,
     scoped_ptr<IPC::Message> create_message;
     scoped_ptr<IPC::Message> browser_host_create_message;
     if (!DOMFileSystemToResource(instance_,
-                                 host_,
+                                 host,
                                  dom_file_system,
                                  &pending_renderer_id,
                                  &create_message,
@@ -246,7 +246,7 @@ bool ResourceConverterImpl::FromV8Value(v8::Handle<v8::Object> val,
     int pending_renderer_id;
     scoped_ptr<IPC::Message> create_message;
     if (!DOMMediaStreamTrackToResource(instance_,
-                                       host_,
+                                       host,
                                        dom_media_stream_track,
                                        &pending_renderer_id,
                                        &create_message)) {
@@ -276,7 +276,7 @@ bool ResourceConverterImpl::NeedsFlush() {
 }
 
 void ResourceConverterImpl::Flush(const base::Callback<void(bool)>& callback) {
-  host_->CreateBrowserResourceHosts(
+  RendererPpapiHost::GetForPPInstance(instance_)->CreateBrowserResourceHosts(
       instance_,
       browser_host_create_messages_,
       base::Bind(&FlushComplete, callback, browser_vars_));
@@ -285,8 +285,8 @@ void ResourceConverterImpl::Flush(const base::Callback<void(bool)>& callback) {
 }
 
 bool ResourceConverterImpl::ToV8Value(const PP_Var& var,
-                                      v8::Handle<v8::Context> context,
-                                      v8::Handle<v8::Value>* result) {
+                                      v8::Local<v8::Context> context,
+                                      v8::Local<v8::Value>* result) {
   DCHECK(var.type == PP_VARTYPE_RESOURCE);
 
   ResourceVar* resource = ResourceVar::FromPPVar(var);

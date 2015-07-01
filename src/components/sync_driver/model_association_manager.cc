@@ -7,10 +7,10 @@
 #include <algorithm>
 #include <functional>
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/trace_event/trace_event.h"
 #include "sync/internal_api/public/base/model_type.h"
 
 using syncer::ModelTypeSet;
@@ -30,6 +30,7 @@ static const syncer::ModelType kStartOrder[] = {
   syncer::PASSWORDS,
   syncer::AUTOFILL,
   syncer::AUTOFILL_PROFILE,
+  syncer::AUTOFILL_WALLET_DATA,
   syncer::EXTENSION_SETTINGS,
   syncer::APP_SETTINGS,
   syncer::TYPED_URLS,
@@ -56,12 +57,15 @@ static const syncer::ModelType kStartOrder[] = {
   syncer::FAVICON_TRACKING,
   syncer::SUPERVISED_USER_SETTINGS,
   syncer::SUPERVISED_USER_SHARED_SETTINGS,
+  syncer::SUPERVISED_USER_WHITELISTS,
   syncer::ARTICLES,
+  syncer::WIFI_CREDENTIALS,
 };
 
-COMPILE_ASSERT(arraysize(kStartOrder) ==
-               syncer::MODEL_TYPE_COUNT - syncer::FIRST_REAL_MODEL_TYPE,
-               kStartOrder_IncorrectSize);
+static_assert(arraysize(kStartOrder) ==
+              syncer::MODEL_TYPE_COUNT - syncer::FIRST_REAL_MODEL_TYPE,
+              "kStartOrder must have MODEL_TYPE_COUNT - "
+              "FIRST_REAL_MODEL_TYPE elements");
 
 // The amount of time we wait for association to finish. If some types haven't
 // finished association by the time, DataTypeManager is notified of the

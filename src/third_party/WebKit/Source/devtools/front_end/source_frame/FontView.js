@@ -27,14 +27,20 @@
  */
 
 /**
- * @extends {WebInspector.ResourceView}
  * @constructor
+ * @extends {WebInspector.VBox}
+ * @param {string} url
+ * @param {string} mimeType
+ * @param {!WebInspector.ContentProvider} contentProvider
  */
-WebInspector.FontView = function(resource)
+WebInspector.FontView = function(url, mimeType, contentProvider)
 {
-    WebInspector.ResourceView.call(this, resource);
-
-    this.element.classList.add("font");
+    WebInspector.VBox.call(this);
+    this.registerRequiredCSS("source_frame/fontView.css");
+    this.element.classList.add("font-view");
+    this._url = url;
+    this._mimeType = mimeType;
+    this._contentProvider = contentProvider;
 }
 
 WebInspector.FontView._fontPreviewLines = [ "ABCDEFGHIJKLM", "NOPQRSTUVWXYZ", "abcdefghijklm", "nopqrstuvwxyz", "1234567890" ];
@@ -45,11 +51,13 @@ WebInspector.FontView._measureFontSize = 50;
 
 WebInspector.FontView.prototype = {
     /**
-     * @return {boolean}
+     * @param {string} uniqueFontName
+     * @param {?string} content
      */
-    hasContent: function()
+    _onFontContentLoaded: function(uniqueFontName, content)
     {
-        return true;
+        var url = content ? WebInspector.Resource.contentAsDataURL(content, this._mimeType, true) : this._url;
+        this.fontStyleElement.textContent = String.sprintf("@font-face { font-family: \"%s\"; src: url(%s); }", uniqueFontName, url);
     },
 
     _createContentIfNeeded: function()
@@ -59,11 +67,11 @@ WebInspector.FontView.prototype = {
 
         var uniqueFontName = "WebInspectorFontPreview" + (++WebInspector.FontView._fontId);
 
-        this.fontStyleElement = document.createElement("style");
-        this.fontStyleElement.textContent = "@font-face { font-family: \"" + uniqueFontName + "\"; src: url(" + this.resource.url + "); }";
-        document.head.appendChild(this.fontStyleElement);
+        this.fontStyleElement = createElement("style");
+        this._contentProvider.requestContent(this._onFontContentLoaded.bind(this, uniqueFontName));
+        this.element.appendChild(this.fontStyleElement);
 
-        var fontPreview = document.createElement("div");
+        var fontPreview = createElement("div");
         for (var i = 0; i < WebInspector.FontView._fontPreviewLines.length; ++i) {
             if (i > 0)
                 fontPreview.createChild("br");
@@ -140,5 +148,5 @@ WebInspector.FontView.prototype = {
         this.fontPreviewElement.style.setProperty("font-size", finalFontSize + "px", null);
     },
 
-    __proto__: WebInspector.ResourceView.prototype
+    __proto__: WebInspector.VBox.prototype
 }

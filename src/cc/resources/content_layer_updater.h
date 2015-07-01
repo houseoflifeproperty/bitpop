@@ -7,7 +7,7 @@
 
 #include "cc/base/cc_export.h"
 #include "cc/resources/layer_updater.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 class SkCanvas;
 
@@ -21,16 +21,13 @@ class RenderingStatsInstrumentation;
 // their respective PaintContents implementations.
 class CC_EXPORT ContentLayerUpdater : public LayerUpdater {
  public:
-  void set_rendering_stats_instrumentation(RenderingStatsInstrumentation* rsi);
-  virtual void SetOpaque(bool opaque) OVERRIDE;
-  virtual void SetFillsBoundsCompletely(bool fills_bounds) OVERRIDE;
-  virtual void SetBackgroundColor(SkColor background_color) OVERRIDE;
+  void SetOpaque(bool opaque) override;
+  void SetFillsBoundsCompletely(bool fills_bounds) override;
+  void SetBackgroundColor(SkColor background_color) override;
 
  protected:
-  ContentLayerUpdater(scoped_ptr<LayerPainter> painter,
-                      RenderingStatsInstrumentation* stats_instrumentation,
-                      int layer_id);
-  virtual ~ContentLayerUpdater();
+  ContentLayerUpdater(scoped_ptr<LayerPainter> painter, int layer_id);
+  ~ContentLayerUpdater() override;
 
   // Paints the contents. |content_size| size of the underlying layer in
   // layer's content space. |paint_rect| bounds to paint in content space of the
@@ -49,7 +46,6 @@ class CC_EXPORT ContentLayerUpdater : public LayerUpdater {
 
   SkColor background_color() const { return background_color_; }
 
-  RenderingStatsInstrumentation* rendering_stats_instrumentation_;
   int layer_id_;
 
   // True when it is known that all output pixels will be opaque.

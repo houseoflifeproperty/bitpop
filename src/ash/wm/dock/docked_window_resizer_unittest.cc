@@ -45,16 +45,14 @@ class DockedWindowResizerTest
   DockedWindowResizerTest() : model_(NULL), window_type_(GetParam()) {}
   virtual ~DockedWindowResizerTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     AshTestBase::SetUp();
     UpdateDisplay("600x400");
     test::ShellTestApi test_api(Shell::GetInstance());
     model_ = test_api.shelf_model();
   }
 
-  virtual void TearDown() OVERRIDE {
-    AshTestBase::TearDown();
-  }
+  void TearDown() override { AshTestBase::TearDown(); }
 
  protected:
   enum DockedEdge {
@@ -94,7 +92,7 @@ class DockedWindowResizerTest
     aura::Window* window = new aura::Window(&delegate_);
     window->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_SYSTEM);
     window->SetType(ui::wm::WINDOW_TYPE_NORMAL);
-    window->Init(aura::WINDOW_LAYER_TEXTURED);
+    window->Init(ui::LAYER_TEXTURED);
     window->Show();
 
     if (bounds.IsEmpty()) {
@@ -509,7 +507,7 @@ TEST_P(DockedWindowResizerTest, AttachMinimizeRestore) {
   window_state->Restore();
   RunAllPendingInMessageLoop();
   EXPECT_TRUE(window->IsVisible());
-  EXPECT_TRUE(window_state->IsNormalStateType());
+  EXPECT_TRUE(window_state->IsDocked());
 }
 
 // Maximize a docked window and check that it is maximized and no longer docked.

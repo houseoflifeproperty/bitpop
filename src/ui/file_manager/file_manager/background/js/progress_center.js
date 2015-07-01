@@ -2,16 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * Progress center at the background page.
  * @constructor
+ * @struct
  */
 var ProgressCenter = function() {
   /**
    * Current items managed by the progress center.
-   * @type {Array.<ProgressItem>}
+   * @type {Array.<!ProgressCenterItem>}
    * @private
    */
   this.items_ = [];
@@ -30,8 +29,6 @@ var ProgressCenter = function() {
    * @private
    */
   this.panels_ = [];
-
-  Object.seal(this);
 };
 
 /**
@@ -39,6 +36,7 @@ var ProgressCenter = function() {
  * @param {function(string)} cancelCallback Callback to notify the progress
  *     center of cancel operation.
  * @constructor
+ * @struct
  * @private
  */
 ProgressCenter.Notifications_ = function(cancelCallback) {
@@ -66,8 +64,6 @@ ProgressCenter.Notifications_ = function(cancelCallback) {
   chrome.notifications.onButtonClicked.addListener(
       this.onButtonClicked_.bind(this));
   chrome.notifications.onClosed.addListener(this.onClosed_.bind(this));
-
-  Object.seal(this);
 };
 
 /**
@@ -76,10 +72,10 @@ ProgressCenter.Notifications_ = function(cancelCallback) {
  * @const
  * @private
  */
-ProgressCenter.Notifications_.NotificationState_ = Object.freeze({
+ProgressCenter.Notifications_.NotificationState_ = {
   VISIBLE: 'visible',
   DISMISSED: 'dismissed'
-});
+};
 
 /**
  * Updates the notification according to the item.

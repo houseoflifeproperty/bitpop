@@ -26,31 +26,33 @@
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGGraphicsElement.h"
 #include "core/svg/SVGUnitTypes.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
-class RenderObject;
+class LayoutObject;
 
-class SVGClipPathElement FINAL : public SVGGraphicsElement {
+class SVGClipPathElement final : public SVGGraphicsElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGClipPathElement);
     SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>* clipPathUnits() { return m_clipPathUnits.get(); }
 
-    virtual bool supportsFocus() const OVERRIDE { return false; }
+    virtual bool supportsFocus() const override { return false; }
+
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit SVGClipPathElement(Document&);
 
-    virtual bool needsPendingResourceHandling() const OVERRIDE { return false; }
+    virtual bool needsPendingResourceHandling() const override { return false; }
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
-    virtual void childrenChanged(const ChildrenChange&) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual void childrenChanged(const ChildrenChange&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
-    RefPtr<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType> > m_clipPathUnits;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>> m_clipPathUnits;
 };
 
 } // namespace blink

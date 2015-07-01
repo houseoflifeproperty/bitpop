@@ -26,39 +26,34 @@ class ShillProfileClientImpl : public ShillProfileClient {
  public:
   ShillProfileClientImpl();
 
-  virtual void AddPropertyChangedObserver(
+  void AddPropertyChangedObserver(
       const dbus::ObjectPath& profile_path,
-      ShillPropertyChangedObserver* observer) OVERRIDE {
+      ShillPropertyChangedObserver* observer) override {
     GetHelper(profile_path)->AddPropertyChangedObserver(observer);
   }
 
-  virtual void RemovePropertyChangedObserver(
+  void RemovePropertyChangedObserver(
       const dbus::ObjectPath& profile_path,
-      ShillPropertyChangedObserver* observer) OVERRIDE {
+      ShillPropertyChangedObserver* observer) override {
     GetHelper(profile_path)->RemovePropertyChangedObserver(observer);
   }
 
-  virtual void GetProperties(
-      const dbus::ObjectPath& profile_path,
-      const DictionaryValueCallbackWithoutStatus& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void GetEntry(const dbus::ObjectPath& profile_path,
-                        const std::string& entry_path,
-                        const DictionaryValueCallbackWithoutStatus& callback,
-                        const ErrorCallback& error_callback) OVERRIDE;
-  virtual void DeleteEntry(const dbus::ObjectPath& profile_path,
-                           const std::string& entry_path,
-                           const base::Closure& callback,
-                           const ErrorCallback& error_callback) OVERRIDE;
+  void GetProperties(const dbus::ObjectPath& profile_path,
+                     const DictionaryValueCallbackWithoutStatus& callback,
+                     const ErrorCallback& error_callback) override;
+  void GetEntry(const dbus::ObjectPath& profile_path,
+                const std::string& entry_path,
+                const DictionaryValueCallbackWithoutStatus& callback,
+                const ErrorCallback& error_callback) override;
+  void DeleteEntry(const dbus::ObjectPath& profile_path,
+                   const std::string& entry_path,
+                   const base::Closure& callback,
+                   const ErrorCallback& error_callback) override;
 
-  virtual TestInterface* GetTestInterface() OVERRIDE {
-    return NULL;
-  }
+  TestInterface* GetTestInterface() override { return NULL; }
 
  protected:
-  virtual void Init(dbus::Bus* bus) OVERRIDE {
-    bus_ = bus;
-  }
+  void Init(dbus::Bus* bus) override { bus_ = bus; }
 
  private:
   typedef std::map<std::string, ShillClientHelper*> HelperMap;

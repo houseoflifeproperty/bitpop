@@ -65,6 +65,8 @@ if __name__ == '__main__':
   parser = optparse.OptionParser(
       description='Runs a server to preview the extension documentation.',
       usage='usage: %prog [option]...')
+  parser.add_option('-a', '--address', default='127.0.0.1',
+      help='the local interface address to bind the server to')
   parser.add_option('-p', '--port', default='8000',
       help='port to run the server on')
   parser.add_option('-r', '--render', default='',
@@ -72,6 +74,9 @@ if __name__ == '__main__':
            'the server, e.g. apps/storage.html. The path may optionally end '
            'with #n where n is the number of times to render the page before '
            'printing it, e.g. apps/storage.html#50, to use for profiling.')
+  parser.add_option('-s', '--stat',
+      help='Print profile stats at the end of the run using the given '
+           'profiling option (like "tottime"). -t is ignored if this is set.')
   parser.add_option('-t', '--time', action='store_true',
       help='Print the time taken rendering rather than the result.')
 
@@ -85,7 +90,11 @@ if __name__ == '__main__':
       path = opts.render
       extra_iterations = 0
 
-    if opts.time:
+    if opts.stat:
+      import cProfile, pstats, StringIO
+      pr = cProfile.Profile()
+      pr.enable()
+    elif opts.time:
       start_time = time.time()
 
     response = LocalRenderer.Render(path)
@@ -96,7 +105,12 @@ if __name__ == '__main__':
     for _ in range(extra_iterations):
       LocalRenderer.Render(path)
 
-    if opts.time:
+    if opts.stat:
+      pr.disable()
+      s = StringIO.StringIO()
+      pstats.Stats(pr, stream=s).sort_stats(opts.stat).print_stats()
+      print(s.getvalue())
+    elif opts.time:
       print('Took %s seconds' % (time.time() - start_time))
     else:
       print(response.content.ToString())
@@ -114,7 +128,7 @@ if __name__ == '__main__':
   print('')
 
   logging.getLogger().setLevel(logging.INFO)
-  server = HTTPServer(('', int(opts.port)), _RequestHandler)
+  server = HTTPServer((opts.address, int(opts.port)), _RequestHandler)
   try:
     server.serve_forever()
   finally:

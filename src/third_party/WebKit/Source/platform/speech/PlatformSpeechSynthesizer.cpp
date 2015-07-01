@@ -47,7 +47,7 @@ PlatformSpeechSynthesizer::PlatformSpeechSynthesizer(PlatformSpeechSynthesizerCl
     : m_speechSynthesizerClient(client)
 {
     m_webSpeechSynthesizerClient = new WebSpeechSynthesizerClientImpl(this, client);
-    m_webSpeechSynthesizer = adoptPtr(blink::Platform::current()->createSpeechSynthesizer(m_webSpeechSynthesizerClient));
+    m_webSpeechSynthesizer = adoptPtr(Platform::current()->createSpeechSynthesizer(m_webSpeechSynthesizerClient));
 }
 
 PlatformSpeechSynthesizer::~PlatformSpeechSynthesizer()
@@ -56,10 +56,8 @@ PlatformSpeechSynthesizer::~PlatformSpeechSynthesizer()
 
 void PlatformSpeechSynthesizer::speak(PlatformSpeechSynthesisUtterance* utterance)
 {
-    if (!m_webSpeechSynthesizer || !m_webSpeechSynthesizerClient)
-        return;
-
-    m_webSpeechSynthesizer->speak(blink::WebSpeechSynthesisUtterance(utterance));
+    if (m_webSpeechSynthesizer && m_webSpeechSynthesizerClient)
+        m_webSpeechSynthesizer->speak(WebSpeechSynthesisUtterance(utterance));
 }
 
 void PlatformSpeechSynthesizer::pause()
@@ -80,7 +78,7 @@ void PlatformSpeechSynthesizer::cancel()
         m_webSpeechSynthesizer->cancel();
 }
 
-void PlatformSpeechSynthesizer::setVoiceList(HeapVector<Member<PlatformSpeechSynthesisVoice> >& voices)
+void PlatformSpeechSynthesizer::setVoiceList(HeapVector<Member<PlatformSpeechSynthesisVoice>>& voices)
 {
     m_voiceList = voices;
 }
@@ -91,7 +89,7 @@ void PlatformSpeechSynthesizer::initializeVoiceList()
         m_webSpeechSynthesizer->updateVoiceList();
 }
 
-void PlatformSpeechSynthesizer::trace(Visitor* visitor)
+DEFINE_TRACE(PlatformSpeechSynthesizer)
 {
     visitor->trace(m_speechSynthesizerClient);
     visitor->trace(m_voiceList);

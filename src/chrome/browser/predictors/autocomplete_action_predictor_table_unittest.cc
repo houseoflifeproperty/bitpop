@@ -26,10 +26,10 @@ namespace predictors {
 class AutocompleteActionPredictorTableTest : public testing::Test {
  public:
   AutocompleteActionPredictorTableTest();
-  virtual ~AutocompleteActionPredictorTableTest();
+  ~AutocompleteActionPredictorTableTest() override;
 
-  virtual void SetUp();
-  virtual void TearDown();
+  void SetUp() override;
+  void TearDown() override;
 
   size_t CountRecords() const;
 
@@ -52,16 +52,16 @@ class AutocompleteActionPredictorTableTest : public testing::Test {
   AutocompleteActionPredictorTable::Rows test_db_;
 
  private:
+  base::MessageLoop loop_;
   TestingProfile profile_;
   scoped_ptr<PredictorDatabase> db_;
-  base::MessageLoop loop_;
   content::TestBrowserThread db_thread_;
 };
 
 class AutocompleteActionPredictorTableReopenTest
     : public AutocompleteActionPredictorTableTest {
  public:
-  virtual void SetUp() {
+  void SetUp() override {
     // By calling SetUp twice, we make sure that the table already exists for
     // this fixture.
     AutocompleteActionPredictorTableTest::SetUp();

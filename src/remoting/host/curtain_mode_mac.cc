@@ -84,7 +84,7 @@ SessionWatcher::SessionWatcher(
     : caller_task_runner_(caller_task_runner),
       ui_task_runner_(ui_task_runner),
       client_session_control_(client_session_control),
-      event_handler_(NULL) {
+      event_handler_(nullptr) {
 }
 
 void SessionWatcher::Start() {
@@ -137,14 +137,17 @@ void SessionWatcher::ActivateCurtain() {
   base::ScopedCFTypeRef<CFDictionaryRef> session(
       CGSessionCopyCurrentDictionary());
 
-  // CGSessionCopyCurrentDictionary has been observed to return NULL in some
+  // CGSessionCopyCurrentDictionary has been observed to return nullptr in some
   // cases. Once the system is in this state, curtain mode will fail as the
   // CGSession command thinks the session is not attached to the console. The
   // only known remedy is logout or reboot. Since we're not sure what causes
   // this, or how common it is, a crash report is useful in this case (note
   // that the connection would have to be refused in any case, so this is no
   // loss of functionality).
-  CHECK(session != NULL);
+  CHECK(session != nullptr)
+      << "Error activating curtain-mode: "
+      << "CGSessionCopyCurrentDictionary() returned NULL. "
+      << "Logging out and back in should resolve this error.";
 
   const void* on_console = CFDictionaryGetValue(session,
                                                 kCGSessionOnConsoleKey);
@@ -152,7 +155,7 @@ void SessionWatcher::ActivateCurtain() {
   if (logged_in == kCFBooleanTrue && on_console == kCFBooleanTrue) {
     pid_t child = fork();
     if (child == 0) {
-      execl(kCGSessionPath, kCGSessionPath, "-suspend", NULL);
+      execl(kCGSessionPath, kCGSessionPath, "-suspend", nullptr);
       _exit(1);
     } else if (child > 0) {
       int status = 0;
@@ -181,7 +184,7 @@ bool SessionWatcher::InstallEventHandler() {
       NewEventHandlerUPP(SessionActivateHandler), 1, &event, this,
       &event_handler_);
   if (result != noErr) {
-    event_handler_ = NULL;
+    event_handler_ = nullptr;
     DisconnectSession();
     return false;
   }
@@ -194,7 +197,7 @@ void SessionWatcher::RemoveEventHandler() {
 
   if (event_handler_) {
     ::RemoveEventHandler(event_handler_);
-    event_handler_ = NULL;
+    event_handler_ = nullptr;
   }
 }
 
@@ -226,10 +229,10 @@ class CurtainModeMac : public CurtainMode {
       scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
       base::WeakPtr<ClientSessionControl> client_session_control);
-  virtual ~CurtainModeMac();
+  ~CurtainModeMac() override;
 
   // Overriden from CurtainMode.
-  virtual bool Activate() OVERRIDE;
+  bool Activate() override;
 
  private:
   scoped_refptr<SessionWatcher> session_watcher_;
@@ -260,9 +263,8 @@ scoped_ptr<CurtainMode> CurtainMode::Create(
     scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
     base::WeakPtr<ClientSessionControl> client_session_control) {
-  return scoped_ptr<CurtainMode>(new CurtainModeMac(caller_task_runner,
-                                                    ui_task_runner,
-                                                    client_session_control));
+  return make_scoped_ptr(new CurtainModeMac(
+      caller_task_runner, ui_task_runner, client_session_control));
 }
 
 }  // namespace remoting

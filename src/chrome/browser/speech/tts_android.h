@@ -12,18 +12,17 @@
 class TtsPlatformImplAndroid : public TtsPlatformImpl {
  public:
   // TtsPlatformImpl implementation.
-  virtual bool PlatformImplAvailable() OVERRIDE;
-  virtual bool Speak(
-      int utterance_id,
-      const std::string& utterance,
-      const std::string& lang,
-      const VoiceData& voice,
-      const UtteranceContinuousParameters& params) OVERRIDE;
-  virtual bool StopSpeaking() OVERRIDE;
-  virtual void Pause() OVERRIDE;
-  virtual void Resume() OVERRIDE;
-  virtual bool IsSpeaking() OVERRIDE;
-  virtual void GetVoices(std::vector<VoiceData>* out_voices) OVERRIDE;
+  bool PlatformImplAvailable() override;
+  bool Speak(int utterance_id,
+             const std::string& utterance,
+             const std::string& lang,
+             const VoiceData& voice,
+             const UtteranceContinuousParameters& params) override;
+  bool StopSpeaking() override;
+  void Pause() override;
+  void Resume() override;
+  bool IsSpeaking() override;
+  void GetVoices(std::vector<VoiceData>* out_voices) override;
 
   // Methods called from Java via JNI.
   void VoicesChanged(JNIEnv* env, jobject obj);
@@ -39,7 +38,7 @@ class TtsPlatformImplAndroid : public TtsPlatformImpl {
   friend struct DefaultSingletonTraits<TtsPlatformImplAndroid>;
 
   TtsPlatformImplAndroid();
-  virtual ~TtsPlatformImplAndroid();
+  ~TtsPlatformImplAndroid() override;
 
   void SendFinalTtsEvent(
       int utterance_id, TtsEventType event_type, int char_index);

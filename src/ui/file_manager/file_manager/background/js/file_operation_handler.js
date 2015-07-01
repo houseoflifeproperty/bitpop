@@ -2,17 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * An event handler of the background page for file operations.
- * @param {Background} background Background page.
+ * @param {FileBrowserBackground} background Background page.
  * @constructor
+ * @struct
  */
 var FileOperationHandler = function(background) {
   /**
    * Background page.
-   * @type {Background}
+   * @type {FileBrowserBackground}
    * @private
    */
   this.background_ = background;
@@ -26,7 +25,7 @@ var FileOperationHandler = function(background) {
 
   /**
    * Progress center.
-   * @type {progressCenter}
+   * @type {ProgressCenter}
    * @private
    */
   this.progressCenter_ = background.progressCenter;
@@ -51,9 +50,6 @@ var FileOperationHandler = function(background) {
   this.fileOperationManager_.addEventListener(
       'delete',
       this.onDeleteProgress_.bind(this));
-
-  // Seal the object.
-  Object.seal(this);
 };
 
 /**
@@ -67,12 +63,12 @@ FileOperationHandler.PENDING_TIME_MS_ = 500;
 
 /**
  * Generate a progress message from the event.
- * @param {Event} event Progress event.
+ * @param {FileOperationProgressEvent} event Progress event.
  * @return {string} message.
  * @private
  */
 FileOperationHandler.getMessage_ = function(event) {
-  if (event.reason === 'ERROR') {
+  if (event.reason === fileOperationUtil.EventRouter.EventType.ERROR) {
     switch (event.error.code) {
       case util.FileOperationErrorType.TARGET_EXISTS:
         var name = event.error.data.name;
@@ -128,7 +124,8 @@ FileOperationHandler.getMessage_ = function(event) {
  * @private
  */
 FileOperationHandler.getDeleteMessage_ = function(event) {
-  if (event.reason === 'ERROR') {
+  event = /** @type {FileOperationProgressEvent} */ (event);
+  if (event.reason === fileOperationUtil.EventRouter.EventType.ERROR) {
     return str('DELETE_ERROR');
   } else if (event.entries.length == 1) {
     var fileName = event.entries[0].name;
@@ -164,15 +161,14 @@ FileOperationHandler.getType_ = function(operationType) {
  * @private
  */
 FileOperationHandler.prototype.onCopyProgress_ = function(event) {
-  // If the copy is finished, may be we can close the background page.
-  if (event.reason !== 'BEGIN' && event.reason !== 'PROGRESS')
-    this.background_.tryClose();
+  var EventType = fileOperationUtil.EventRouter.EventType;
+  event = /** @type {FileOperationProgressEvent} */ (event);
 
   // Update progress center.
   var progressCenter = this.progressCenter_;
   var item;
   switch (event.reason) {
-    case 'BEGIN':
+    case EventType.BEGIN:
       item = new ProgressCenterItem();
       item.id = event.taskId;
       item.type = FileOperationHandler.getType_(event.status.operationType);
@@ -185,7 +181,7 @@ FileOperationHandler.prototype.onCopyProgress_ = function(event) {
       progressCenter.updateItem(item);
       break;
 
-    case 'PROGRESS':
+    case EventType.PROGRESS:
       item = progressCenter.getItemById(event.taskId);
       if (!item) {
         console.error('Cannot find copying item.');
@@ -197,9 +193,9 @@ FileOperationHandler.prototype.onCopyProgress_ = function(event) {
       progressCenter.updateItem(item);
       break;
 
-    case 'SUCCESS':
-    case 'CANCELED':
-    case 'ERROR':
+    case EventType.SUCCESS:
+    case EventType.CANCELED:
+    case EventType.ERROR:
       item = progressCenter.getItemById(event.taskId);
       if (!item) {
         // ERROR events can be dispatched before BEGIN events.
@@ -208,11 +204,11 @@ FileOperationHandler.prototype.onCopyProgress_ = function(event) {
         item.id = event.taskId;
         item.progressMax = 1;
       }
-      if (event.reason === 'SUCCESS') {
+      if (event.reason === EventType.SUCCESS) {
         item.message = '';
         item.state = ProgressItemState.COMPLETED;
         item.progressValue = item.progressMax;
-      } else if (event.reason === 'CANCELED') {
+      } else if (event.reason === EventType.CANCELED) {
         item.message = '';
         item.state = ProgressItemState.CANCELED;
       } else {
@@ -230,16 +226,15 @@ FileOperationHandler.prototype.onCopyProgress_ = function(event) {
  * @private
  */
 FileOperationHandler.prototype.onDeleteProgress_ = function(event) {
-  // If the copy is finished, may be we can close the background page.
-  if (event.reason !== 'BEGIN' && event.reason !== 'PROGRESS')
-    this.background_.tryClose();
+  var EventType = fileOperationUtil.EventRouter.EventType;
+  event = /** @type {FileOperationProgressEvent} */ (event);
 
   // Update progress center.
   var progressCenter = this.progressCenter_;
   var item;
   var pending;
   switch (event.reason) {
-    case 'BEGIN':
+    case EventType.BEGIN:
       item = new ProgressCenterItem();
       item.id = event.taskId;
       item.type = ProgressItemType.DELETE;
@@ -254,7 +249,7 @@ FileOperationHandler.prototype.onDeleteProgress_ = function(event) {
                  FileOperationHandler.PENDING_TIME_MS_);
       break;
 
-    case 'PROGRESS':
+    case EventType.PROGRESS:
       pending = event.taskId in this.pendingItems_;
       item = this.pendingItems_[event.taskId] ||
           progressCenter.getItemById(event.taskId);
@@ -269,9 +264,9 @@ FileOperationHandler.prototype.onDeleteProgress_ = function(event) {
         progressCenter.updateItem(item);
       break;
 
-    case 'SUCCESS':
-    case 'CANCELED':
-    case 'ERROR':
+    case EventType.SUCCESS:
+    case EventType.CANCELED:
+    case EventType.ERROR:
       // Obtain working variable.
       pending = event.taskId in this.pendingItems_;
       item = this.pendingItems_[event.taskId] ||
@@ -283,17 +278,17 @@ FileOperationHandler.prototype.onDeleteProgress_ = function(event) {
 
       // Update the item.
       item.message = FileOperationHandler.getDeleteMessage_(event);
-      if (event.reason === 'SUCCESS') {
+      if (event.reason === EventType.SUCCESS) {
         item.state = ProgressItemState.COMPLETED;
         item.progressValue = item.progressMax;
-      } else if (event.reason === 'CANCELED') {
+      } else if (event.reason === EventType.CANCELED) {
         item.state = ProgressItemState.CANCELED;
       } else {
         item.state = ProgressItemState.ERROR;
       }
 
       // Apply the change.
-      if (!pending || event.reason === 'ERROR')
+      if (!pending || event.reason === EventType.ERROR)
         progressCenter.updateItem(item);
       if (pending)
         delete this.pendingItems_[event.taskId];

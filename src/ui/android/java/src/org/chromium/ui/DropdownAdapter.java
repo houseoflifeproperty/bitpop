@@ -13,9 +13,9 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AbsListView.LayoutParams;
 import android.widget.ArrayAdapter;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
-
-import org.chromium.base.ApiCompatibilityUtils;
 
 import java.util.List;
 import java.util.Set;
@@ -59,19 +59,7 @@ public class DropdownAdapter extends ArrayAdapter<DropdownItem> {
             LayoutInflater inflater =
                     (LayoutInflater) mContext.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
             layout = inflater.inflate(R.layout.dropdown_item, null);
-            ApiCompatibilityUtils.setBackgroundForView(layout, new DropdownDividerDrawable());
-        }
-
-        DropdownItem item = getItem(position);
-
-        TextView labelView = (TextView) layout.findViewById(R.id.dropdown_label);
-        labelView.setText(item.getLabel());
-
-        labelView.setEnabled(item.isEnabled());
-        if (item.isGroupHeader()) {
-            labelView.setTypeface(null, Typeface.BOLD);
-        } else {
-            labelView.setTypeface(null, Typeface.NORMAL);
+            layout.setBackground(new DropdownDividerDrawable());
         }
 
         DropdownDividerDrawable divider = (DropdownDividerDrawable) layout.getBackground();
@@ -85,13 +73,32 @@ public class DropdownAdapter extends ArrayAdapter<DropdownItem> {
             divider.setHeight(dividerHeight);
             if (mSeparators != null && mSeparators.contains(position)) {
                 divider.setColor(mContext.getResources().getColor(
-                                 R.color.dropdown_dark_divider_color));
+                        R.color.dropdown_dark_divider_color));
             } else {
                 divider.setColor(mContext.getResources().getColor(
-                                 R.color.dropdown_divider_color));
+                        R.color.dropdown_divider_color));
             }
         }
-        layout.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, height));
+
+        // Note: trying to set the height of the root LinearLayout breaks accessibility,
+        // so we have to adjust the height of this LinearLayout that wraps the TextViews instead.
+        // If you need to modify this layout, don't forget to test it with TalkBack and make sure
+        // it doesn't regress.
+        // http://crbug.com/429364
+        View wrapper = layout.findViewById(R.id.dropdown_label_wrapper);
+        wrapper.setLayoutParams(
+                new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, height, 1));
+
+        DropdownItem item = getItem(position);
+        TextView labelView = (TextView) layout.findViewById(R.id.dropdown_label);
+        labelView.setText(item.getLabel());
+
+        labelView.setEnabled(item.isEnabled());
+        if (item.isGroupHeader()) {
+            labelView.setTypeface(null, Typeface.BOLD);
+        } else {
+            labelView.setTypeface(null, Typeface.NORMAL);
+        }
 
         TextView sublabelView = (TextView) layout.findViewById(R.id.dropdown_sublabel);
         CharSequence sublabel = item.getSublabel();
@@ -100,6 +107,14 @@ public class DropdownAdapter extends ArrayAdapter<DropdownItem> {
         } else {
             sublabelView.setText(sublabel);
             sublabelView.setVisibility(View.VISIBLE);
+        }
+
+        ImageView iconView = (ImageView) layout.findViewById(R.id.dropdown_icon);
+        if (item.getIconId() == DropdownItem.NO_ICON) {
+            iconView.setVisibility(View.GONE);
+        } else {
+            iconView.setImageResource(item.getIconId());
+            iconView.setVisibility(View.VISIBLE);
         }
 
         return layout;

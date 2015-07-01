@@ -26,8 +26,7 @@ namespace {
 scoped_ptr<InvalidationInterface> BuildInvalidation(
     int64 version,
     const std::string& payload) {
-  return MockInvalidation::Build(version, payload)
-      .PassAs<InvalidationInterface>();
+  return MockInvalidation::Build(version, payload);
 }
 
 }  // namespace
@@ -41,7 +40,7 @@ class GetUpdatesProcessorTest : public ::testing::Test {
     kTestStartTime(base::TimeTicks::Now()),
     update_handler_deleter_(&update_handler_map_) {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     AddUpdateHandler(AUTOFILL);
     AddUpdateHandler(BOOKMARKS);
     AddUpdateHandler(PREFERENCES);
@@ -387,9 +386,9 @@ TEST_F(GetUpdatesProcessorTest, NormalResponseTest) {
 class GetUpdatesProcessorApplyUpdatesTest : public GetUpdatesProcessorTest {
  public:
   GetUpdatesProcessorApplyUpdatesTest() {}
-  virtual ~GetUpdatesProcessorApplyUpdatesTest() {}
+  ~GetUpdatesProcessorApplyUpdatesTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     bookmarks_handler_ = AddUpdateHandler(BOOKMARKS);
     autofill_handler_ = AddUpdateHandler(AUTOFILL);
   }
@@ -476,7 +475,7 @@ TEST_F(GetUpdatesProcessorApplyUpdatesTest, Poll) {
 class DownloadUpdatesDebugInfoTest : public ::testing::Test {
  public:
   DownloadUpdatesDebugInfoTest() {}
-  virtual ~DownloadUpdatesDebugInfoTest() {}
+  ~DownloadUpdatesDebugInfoTest() override {}
 
   sessions::StatusController* status() {
     return &status_;

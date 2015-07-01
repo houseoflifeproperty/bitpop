@@ -2,64 +2,72 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CHROME_RENDERER_GUEST_VIEW_GUEST_VIEW_CONTAINER_H_
-#define CHROME_RENDERER_GUEST_VIEW_GUEST_VIEW_CONTAINER_H_
+#ifndef EXTENSIONS_RENDERER_GUEST_VIEW_GUEST_VIEW_CONTAINER_H_
+#define EXTENSIONS_RENDERER_GUEST_VIEW_GUEST_VIEW_CONTAINER_H_
 
+#include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/values.h"
 #include "content/public/renderer/browser_plugin_delegate.h"
-#include "content/public/renderer/render_frame_observer.h"
-#include "extensions/renderer/scoped_persistent.h"
+#include "ipc/ipc_message.h"
 
 namespace extensions {
 
-class GuestViewContainer : public content::BrowserPluginDelegate,
-                           public content::RenderFrameObserver {
+class GuestViewRequest;
+
+class GuestViewContainer : public content::BrowserPluginDelegate {
  public:
-  GuestViewContainer(content::RenderFrame* render_frame,
-                     const std::string& mime_type);
-  virtual ~GuestViewContainer();
+  explicit GuestViewContainer(content::RenderFrame* render_frame);
+  ~GuestViewContainer() override;
 
-  static GuestViewContainer* FromID(int render_view_routing_id,
-                                    int element_instance_id);
+  static GuestViewContainer* FromID(int element_instance_id);
 
-  void AttachGuest(int element_instance_id,
-                   int guest_instance_id,
-                   scoped_ptr<base::DictionaryValue> params,
-                   v8::Handle<v8::Function> callback,
-                   v8::Isolate* isolate);
+  // IssueRequest queues up a |request| until the container is ready and
+  // the browser process has responded to the last request if it's still
+  // pending.
+  void IssueRequest(linked_ptr<GuestViewRequest> request);
 
-  // BrowserPluginDelegate implementation.
-  virtual void SetElementInstanceID(int element_instance_id) OVERRIDE;
-  virtual void DidFinishLoading() OVERRIDE;
-  virtual void DidReceiveData(const char* data, int data_length) OVERRIDE;
+  int element_instance_id() const { return element_instance_id_; }
+  content::RenderFrame* render_frame() const { return render_frame_; }
 
-  // RenderFrameObserver override.
-  virtual void OnDestruct() OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  // Called when the embedding RenderFrame is destroyed.
+  virtual void OnRenderFrameDestroyed() {}
+
+  // Called to respond to IPCs from the browser process that have not been
+  // handled by GuestViewContainer.
+  virtual bool OnMessage(const IPC::Message& message);
+
+  // Called to perform actions when a GuestViewContainer gets a geometry.
+  virtual void OnReady() {}
 
  private:
-  void OnCreateMimeHandlerViewGuestACK(int element_instance_id);
-  void OnGuestAttached(int element_instance_id, int guest_routing_id);
+  class RenderFrameLifetimeObserver;
+  friend class RenderFrameLifetimeObserver;
 
-  static bool ShouldHandleMessage(const IPC::Message& mesage);
+  void RenderFrameDestroyed();
 
-  const std::string mime_type_;
+  void EnqueueRequest(linked_ptr<GuestViewRequest> request);
+  void PerformPendingRequest();
+  void HandlePendingResponseCallback(const IPC::Message& message);
+
+  void OnHandleCallback(const IPC::Message& message);
+
+  // BrowserPluginDelegate implementation.
+  bool OnMessageReceived(const IPC::Message& message) final;
+  void Ready() final;
+  void SetElementInstanceID(int element_instance_id) final;
+
   int element_instance_id_;
-  std::string html_string_;
-  // Save the RenderView RoutingID here so that we can use it during
-  // destruction.
-  int render_view_routing_id_;
+  content::RenderFrame* render_frame_;
+  scoped_ptr<RenderFrameLifetimeObserver> render_frame_lifetime_observer_;
 
-  bool attached_;
-  bool attach_pending_;
+  bool ready_;
 
-  ScopedPersistent<v8::Function> callback_;
-  v8::Isolate* isolate_;
+  std::deque<linked_ptr<GuestViewRequest> > pending_requests_;
+  linked_ptr<GuestViewRequest> pending_response_;
 
   DISALLOW_COPY_AND_ASSIGN(GuestViewContainer);
 };
 
 }  // namespace extensions
 
-#endif  // CHROME_RENDERER_GUEST_VIEW_GUEST_VIEW_CONTAINER_H_
+#endif  // EXTENSIONS_RENDERER_GUEST_VIEW_GUEST_VIEW_CONTAINER_H_

@@ -53,8 +53,8 @@
 #include "vpx/vp8cx.h"
 #include "vpx/vpx_encoder.h"
 
-#include "./tools_common.h"
-#include "./video_writer.h"
+#include "../tools_common.h"
+#include "../video_writer.h"
 
 static const char *exec_name;
 
@@ -178,7 +178,7 @@ int main(int argc, char **argv) {
   }
 
   // Flush encoder.
-  while (encode_frame(&codec, NULL, -1, writer)) {};
+  while (encode_frame(&codec, NULL, -1, writer)) {}
 
   printf("\n");
   fclose(infile);

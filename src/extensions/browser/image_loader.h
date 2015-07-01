@@ -14,7 +14,7 @@
 #include "extensions/common/extension_resource.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/layout.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace content {
 class BrowserContext;
@@ -73,7 +73,7 @@ class ImageLoader : public KeyedService {
   static ImageLoader* Get(content::BrowserContext* context);
 
   ImageLoader();
-  virtual ~ImageLoader();
+  ~ImageLoader() override;
 
   // Specify image resource to load. If the loaded image is larger than
   // |max_size| it will be resized to those dimensions. IMPORTANT NOTE: this

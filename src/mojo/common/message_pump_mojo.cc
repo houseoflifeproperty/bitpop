@@ -97,6 +97,14 @@ void MessagePumpMojo::RemoveHandler(const Handle& handle) {
   handlers_.erase(handle);
 }
 
+void MessagePumpMojo::AddObserver(Observer* observer) {
+  observers_.AddObserver(observer);
+}
+
+void MessagePumpMojo::RemoveObserver(Observer* observer) {
+  observers_.RemoveObserver(observer);
+}
+
 void MessagePumpMojo::Run(Delegate* delegate) {
   RunState run_state;
   // TODO: better deal with error handling.
@@ -139,11 +147,7 @@ void MessagePumpMojo::DoRunLoop(RunState* run_state, Delegate* delegate) {
   bool more_work_is_plausible = true;
   for (;;) {
     const bool block = !more_work_is_plausible;
-    DoInternalWork(*run_state, block);
-
-    // There isn't a good way to know if there are more handles ready, we assume
-    // not.
-    more_work_is_plausible = false;
+    more_work_is_plausible = DoInternalWork(*run_state, block);
 
     if (run_state->should_quit)
       break;
@@ -166,28 +170,35 @@ void MessagePumpMojo::DoRunLoop(RunState* run_state, Delegate* delegate) {
   }
 }
 
-void MessagePumpMojo::DoInternalWork(const RunState& run_state, bool block) {
+bool MessagePumpMojo::DoInternalWork(const RunState& run_state, bool block) {
   const MojoDeadline deadline = block ? GetDeadlineForWait(run_state) : 0;
   const WaitState wait_state = GetWaitState(run_state);
-  const MojoResult result =
-      WaitMany(wait_state.handles, wait_state.wait_signals, deadline);
-  if (result == 0) {
-    // Control pipe was written to.
-    uint32_t num_bytes = 0;
-    ReadMessageRaw(run_state.read_handle.get(), NULL, &num_bytes, NULL, NULL,
-                   MOJO_READ_MESSAGE_FLAG_MAY_DISCARD);
-  } else if (result > 0) {
-    const size_t index = static_cast<size_t>(result);
-    DCHECK(handlers_.find(wait_state.handles[index]) != handlers_.end());
-    handlers_[wait_state.handles[index]].handler->OnHandleReady(
-        wait_state.handles[index]);
+
+  const WaitManyResult wait_many_result =
+      WaitMany(wait_state.handles, wait_state.wait_signals, deadline, nullptr);
+  const MojoResult result = wait_many_result.result;
+  bool did_work = true;
+  if (result == MOJO_RESULT_OK) {
+    if (wait_many_result.index == 0) {
+      // Control pipe was written to.
+      ReadMessageRaw(run_state.read_handle.get(), NULL, NULL, NULL, NULL,
+                     MOJO_READ_MESSAGE_FLAG_MAY_DISCARD);
+    } else {
+      DCHECK(handlers_.find(wait_state.handles[wait_many_result.index]) !=
+             handlers_.end());
+      WillSignalHandler();
+      handlers_[wait_state.handles[wait_many_result.index]]
+          .handler->OnHandleReady(wait_state.handles[wait_many_result.index]);
+      DidSignalHandler();
+    }
   } else {
     switch (result) {
       case MOJO_RESULT_CANCELLED:
       case MOJO_RESULT_FAILED_PRECONDITION:
-        RemoveFirstInvalidHandle(wait_state);
+        RemoveInvalidHandle(wait_state, result, wait_many_result.index);
         break;
       case MOJO_RESULT_DEADLINE_EXCEEDED:
+        did_work = false;
         break;
       default:
         base::debug::Alias(&result);
@@ -207,35 +218,33 @@ void MessagePumpMojo::DoInternalWork(const RunState& run_state, bool block) {
     if (!i->second.deadline.is_null() && i->second.deadline < now &&
         handlers_.find(i->first) != handlers_.end() &&
         handlers_[i->first].id == i->second.id) {
+      WillSignalHandler();
       i->second.handler->OnHandleError(i->first, MOJO_RESULT_DEADLINE_EXCEEDED);
+      DidSignalHandler();
+      handlers_.erase(i->first);
+      did_work = true;
     }
   }
+  return did_work;
 }
 
-void MessagePumpMojo::RemoveFirstInvalidHandle(const WaitState& wait_state) {
+void MessagePumpMojo::RemoveInvalidHandle(const WaitState& wait_state,
+                                          MojoResult result,
+                                          uint32_t index) {
   // TODO(sky): deal with control pipe going bad.
-  for (size_t i = 0; i < wait_state.handles.size(); ++i) {
-    const MojoResult result =
-        Wait(wait_state.handles[i], wait_state.wait_signals[i], 0);
-    if (result == MOJO_RESULT_INVALID_ARGUMENT) {
-      // We should never have an invalid argument. If we do it indicates
-      // RemoveHandler() was not invoked and is likely to cause problems else
-      // where in the stack if we ignore it.
-      CHECK(false);
-    } else if (result == MOJO_RESULT_FAILED_PRECONDITION ||
-               result == MOJO_RESULT_CANCELLED) {
-      CHECK_NE(i, 0u);  // Indicates the control pipe went bad.
+  CHECK(result == MOJO_RESULT_FAILED_PRECONDITION ||
+        result == MOJO_RESULT_CANCELLED);
+  CHECK_NE(index, 0u);  // Indicates the control pipe went bad.
 
-      // Remove the handle first, this way if OnHandleError() tries to remove
-      // the handle our iterator isn't invalidated.
-      CHECK(handlers_.find(wait_state.handles[i]) != handlers_.end());
-      MessagePumpMojoHandler* handler =
-          handlers_[wait_state.handles[i]].handler;
-      handlers_.erase(wait_state.handles[i]);
-      handler->OnHandleError(wait_state.handles[i], result);
-      return;
-    }
-  }
+  // Remove the handle first, this way if OnHandleError() tries to remove the
+  // handle our iterator isn't invalidated.
+  CHECK(handlers_.find(wait_state.handles[index]) != handlers_.end());
+  MessagePumpMojoHandler* handler =
+      handlers_[wait_state.handles[index]].handler;
+  handlers_.erase(wait_state.handles[index]);
+  WillSignalHandler();
+  handler->OnHandleError(wait_state.handles[index], result);
+  DidSignalHandler();
 }
 
 void MessagePumpMojo::SignalControlPipe(const RunState& run_state) {
@@ -272,6 +281,14 @@ MojoDeadline MessagePumpMojo::GetDeadlineForWait(
         TimeTicksToMojoDeadline(i->second.deadline, now), deadline);
   }
   return deadline;
+}
+
+void MessagePumpMojo::WillSignalHandler() {
+  FOR_EACH_OBSERVER(Observer, observers_, WillSignalHandler());
+}
+
+void MessagePumpMojo::DidSignalHandler() {
+  FOR_EACH_OBSERVER(Observer, observers_, DidSignalHandler());
 }
 
 }  // namespace common

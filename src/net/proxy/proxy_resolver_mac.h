@@ -6,39 +6,26 @@
 #define NET_PROXY_PROXY_RESOLVER_MAC_H_
 
 #include "base/compiler_specific.h"
-#include "net/base/net_errors.h"
 #include "net/base/net_export.h"
-#include "net/proxy/proxy_resolver.h"
+#include "net/proxy/proxy_resolver_factory.h"
 #include "url/gurl.h"
 
 namespace net {
 
-// Implementation of ProxyResolver that uses the Mac CFProxySupport to implement
-// proxies.
-class NET_EXPORT ProxyResolverMac : public ProxyResolver {
+// Implementation of ProxyResolverFactory that uses the Mac CFProxySupport to
+// implement proxies.
+class NET_EXPORT ProxyResolverFactoryMac : public ProxyResolverFactory {
  public:
-  ProxyResolverMac();
-  virtual ~ProxyResolverMac();
+  ProxyResolverFactoryMac();
 
-  // ProxyResolver methods:
-  virtual int GetProxyForURL(const GURL& url,
-                             ProxyInfo* results,
-                             const net::CompletionCallback& callback,
-                             RequestHandle* request,
-                             const BoundNetLog& net_log) OVERRIDE;
-
-  virtual void CancelRequest(RequestHandle request) OVERRIDE;
-
-  virtual LoadState GetLoadState(RequestHandle request) const OVERRIDE;
-
-  virtual void CancelSetPacScript() OVERRIDE;
-
-  virtual int SetPacScript(
-      const scoped_refptr<ProxyResolverScriptData>& script_data,
-      const net::CompletionCallback& /*callback*/) OVERRIDE;
+  int CreateProxyResolver(
+      const scoped_refptr<ProxyResolverScriptData>& pac_script,
+      scoped_ptr<ProxyResolver>* resolver,
+      const CompletionCallback& callback,
+      scoped_ptr<Request>* request) override;
 
  private:
-  scoped_refptr<ProxyResolverScriptData> script_data_;
+  DISALLOW_COPY_AND_ASSIGN(ProxyResolverFactoryMac);
 };
 
 }  // namespace net

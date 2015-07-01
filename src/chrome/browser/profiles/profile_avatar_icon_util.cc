@@ -10,6 +10,9 @@
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/profiles/profile_info_cache.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_paths.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/image_operations.h"
@@ -17,11 +20,12 @@
 #include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/core/SkScalar.h"
 #include "third_party/skia/include/core/SkXfermode.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/canvas_image_source.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia_operations.h"
-#include "ui/gfx/rect.h"
 #include "ui/gfx/skia_util.h"
 
 // Helper methods for transforming and drawing avatar icons.
@@ -57,10 +61,10 @@ class AvatarImageSource : public gfx::CanvasImageSource {
                     int width,
                     AvatarPosition position,
                     AvatarBorder border);
-  virtual ~AvatarImageSource();
+  ~AvatarImageSource() override;
 
   // CanvasImageSource override:
-  virtual void Draw(gfx::Canvas* canvas) OVERRIDE;
+  void Draw(gfx::Canvas* canvas) override;
 
  private:
   gfx::ImageSkia avatar_;
@@ -190,6 +194,9 @@ const SkColor kAvatarTutorialBackgroundColor = SkColorSetRGB(0x42, 0x85, 0xf4);
 const SkColor kAvatarTutorialContentTextColor = SkColorSetRGB(0xc6, 0xda, 0xfc);
 const SkColor kAvatarBubbleAccountsBackgroundColor =
     SkColorSetRGB(0xf3, 0xf3, 0xf3);
+const SkColor kAvatarBubbleGaiaBackgroundColor =
+    SkColorSetRGB(0xf5, 0xf5, 0xf5);
+const SkColor kUserManagerBackgroundColor = SkColorSetRGB(0xee, 0xee, 0xee);
 
 const char kDefaultUrlPrefix[] = "chrome://theme/IDR_PROFILE_AVATAR_";
 const char kGAIAPictureFileName[] = "Google Profile Picture.png";
@@ -298,7 +305,7 @@ int GetPlaceholderAvatarIndex() {
 }
 
 int GetPlaceholderAvatarIconResourceID() {
-  return IDR_PROFILE_AVATAR_26;
+  return IDR_PROFILE_AVATAR_PLACEHOLDER_LARGE;
 }
 
 const IconResourceInfo* GetDefaultAvatarIconResourceInfo(size_t index) {

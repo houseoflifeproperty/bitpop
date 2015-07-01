@@ -76,7 +76,7 @@ String TextCodecUTF16::decode(const char* bytes, size_t length, FlushBehavior fl
         if (!reallyFlush || !m_haveBufferedByte)
             return String();
         sawError = true;
-        return String(&Unicode::replacementCharacter, 1);
+        return String(&replacementCharacter, 1);
     }
 
     // FIXME: This should generate an error if there is an unpaired surrogate.
@@ -120,7 +120,7 @@ String TextCodecUTF16::decode(const char* bytes, size_t length, FlushBehavior fl
 
         if (reallyFlush) {
             sawError = true;
-            *q++ = Unicode::replacementCharacter;
+            *q++ = replacementCharacter;
         } else {
             m_haveBufferedByte = true;
             m_bufferedByte = p[0];
@@ -150,14 +150,14 @@ CString TextCodecUTF16::encode(const UChar* characters, size_t length, Unencodab
     if (m_littleEndian) {
         for (size_t i = 0; i < length; ++i) {
             UChar c = characters[i];
-            bytes[i * 2] = c;
+            bytes[i * 2] = static_cast<char>(c);
             bytes[i * 2 + 1] = c >> 8;
         }
     } else {
         for (size_t i = 0; i < length; ++i) {
             UChar c = characters[i];
             bytes[i * 2] = c >> 8;
-            bytes[i * 2 + 1] = c;
+            bytes[i * 2 + 1] = static_cast<char>(c);
         }
     }
 

@@ -66,6 +66,8 @@ bool HasKeysConfigured();
 // e.g. URL-escaped if you use it in a URL.
 std::string GetAPIKey();
 
+std::string GetSafeSitesAPIKey();
+
 // Represents the different sets of client IDs and secrets in use.
 enum OAuth2Client {
   CLIENT_MAIN,         // Several different features use this.
@@ -89,6 +91,9 @@ std::string GetOAuth2ClientID(OAuth2Client client);
 // Note that the secret should be escaped for the context you use it
 // in, e.g. URL-escaped if you use it in a URL.
 std::string GetOAuth2ClientSecret(OAuth2Client client);
+
+// Returns the auth token for the data reduction proxy.
+std::string GetSpdyProxyAuthValue();
 
 // Returns if the API key using in the current build is the one for official
 // Google Chrome.

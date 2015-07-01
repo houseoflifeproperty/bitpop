@@ -9,7 +9,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "net/base/request_priority.h"
@@ -98,6 +98,6 @@ SSLClientCertificateSelectorTestBase::MakeURLRequest(
     net::URLRequestContextGetter* context_getter) {
   scoped_ptr<net::URLRequest> request =
       context_getter->GetURLRequestContext()->CreateRequest(
-          GURL("https://example"), net::DEFAULT_PRIORITY, NULL, NULL);
+          GURL("https://example"), net::DEFAULT_PRIORITY, NULL);
   return request.Pass();
 }

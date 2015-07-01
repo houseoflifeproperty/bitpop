@@ -6,8 +6,6 @@
 
 #include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "content/public/browser/web_contents.h"
 
 using content::WebContents;
@@ -36,7 +34,8 @@ WebstoreInstallWithPrompt::WebstoreInstallWithPrompt(
       dummy_web_contents_(
           WebContents::Create(WebContents::CreateParams(profile))),
       parent_window_(parent_window) {
-  DCHECK(parent_window);
+  if (parent_window_)
+    parent_window_tracker_ = NativeWindowTracker::Create(parent_window);
   set_install_source(WebstoreInstaller::INSTALL_SOURCE_OTHER);
 }
 
@@ -44,8 +43,11 @@ WebstoreInstallWithPrompt::~WebstoreInstallWithPrompt() {
 }
 
 bool WebstoreInstallWithPrompt::CheckRequestorAlive() const {
-  // Assume the requestor is always alive.
-  return true;
+  if (!parent_window_) {
+    // Assume the requestor is always alive if |parent_window_| is null.
+    return true;
+  }
+  return !parent_window_tracker_->WasNativeWindowClosed();
 }
 
 const GURL& WebstoreInstallWithPrompt::GetRequestorURL() const {
@@ -62,8 +64,7 @@ scoped_ptr<ExtensionInstallPrompt>
 WebstoreInstallWithPrompt::CreateInstallUI() {
   // Create an ExtensionInstallPrompt. If the parent window is NULL, the dialog
   // will be placed in the middle of the screen.
-  return make_scoped_ptr(
-      new ExtensionInstallPrompt(profile(), parent_window_, this));
+  return make_scoped_ptr(new ExtensionInstallPrompt(profile(), parent_window_));
 }
 
 bool WebstoreInstallWithPrompt::ShouldShowPostInstallUI() const {
@@ -92,13 +93,6 @@ bool WebstoreInstallWithPrompt::CheckRequestorPermitted(
   // Assume the requestor is trusted.
   *error = std::string();
   return true;
-}
-
-content::WebContents* WebstoreInstallWithPrompt::OpenURL(
-    const content::OpenURLParams& params) {
-  chrome::ScopedTabbedBrowserDisplayer displayer(profile(),
-                                                 chrome::GetActiveDesktop());
-  return displayer.browser()->OpenURL(params);
 }
 
 }  // namespace extensions

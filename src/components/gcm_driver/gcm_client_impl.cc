@@ -9,11 +9,14 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/sequenced_task_runner.h"
+#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/default_clock.h"
+#include "base/timer/timer.h"
+#include "components/gcm_driver/gcm_account_mapper.h"
 #include "components/gcm_driver/gcm_backoff_policy.h"
 #include "google_apis/gcm/base/encryptor.h"
 #include "google_apis/gcm/base/mcs_message.h"
@@ -53,6 +56,15 @@ enum OutgoingMessageTTLCategory {
   // immediately above this line. Make sure to update the corresponding
   // histogram enum accordingly.
   TTL_CATEGORY_COUNT
+};
+
+enum ResetStoreError {
+  DESTROYING_STORE_FAILED,
+  INFINITE_STORE_RESET,
+  // NOTE: always keep this entry at the end. Add new value only immediately
+  // above this line. Make sure to update the corresponding histogram enum
+  // accordingly.
+  RESET_STORE_ERROR_COUNT
 };
 
 const int kMaxRegistrationRetries = 5;
@@ -176,6 +188,10 @@ void RecordOutgoingMessageToUMA(
                             TTL_CATEGORY_COUNT);
 }
 
+void RecordResetStoreErrorToUMA(ResetStoreError error) {
+  UMA_HISTOGRAM_ENUMERATION("GCM.ResetStore", error, RESET_STORE_ERROR_COUNT);
+}
+
 }  // namespace
 
 GCMInternalsBuilder::GCMInternalsBuilder() {}
@@ -191,12 +207,8 @@ scoped_ptr<MCSClient> GCMInternalsBuilder::BuildMCSClient(
     ConnectionFactory* connection_factory,
     GCMStore* gcm_store,
     GCMStatsRecorder* recorder) {
-  return make_scoped_ptr<MCSClient>(
-      new MCSClient(version,
-                    clock,
-                    connection_factory,
-                    gcm_store,
-                    recorder));
+  return scoped_ptr<MCSClient>(new MCSClient(
+      version, clock, connection_factory, gcm_store, recorder));
 }
 
 scoped_ptr<ConnectionFactory> GCMInternalsBuilder::BuildConnectionFactory(
@@ -244,7 +256,9 @@ GCMClientImpl::GCMClientImpl(scoped_ptr<GCMInternalsBuilder> internals_builder)
     : internals_builder_(internals_builder.Pass()),
       state_(UNINITIALIZED),
       delegate_(NULL),
+      start_mode_(DELAYED_START),
       clock_(internals_builder_->BuildClock()),
+      gcm_store_reset_(false),
       url_request_context_getter_(NULL),
       pending_registration_requests_deleter_(&pending_registration_requests_),
       pending_unregistration_requests_deleter_(
@@ -287,8 +301,24 @@ void GCMClientImpl::Initialize(
   state_ = INITIALIZED;
 }
 
-void GCMClientImpl::Start() {
-  DCHECK_EQ(INITIALIZED, state_);
+void GCMClientImpl::Start(StartMode start_mode) {
+  DCHECK_NE(UNINITIALIZED, state_);
+
+  if (state_ == LOADED) {
+    // Start the GCM if not yet.
+    if (start_mode == IMMEDIATE_START)
+      StartGCM();
+    return;
+  }
+
+  // The delay start behavior will be abandoned when Start has been called
+  // once with IMMEDIATE_START behavior.
+  if (start_mode == IMMEDIATE_START)
+    start_mode_ = IMMEDIATE_START;
+
+  // Bail out if the loading is not started or completed.
+  if (state_ != INITIALIZED)
+    return;
 
   // Once the loading is completed, the check-in will be initiated.
   gcm_store_->Load(base::Bind(&GCMClientImpl::OnLoadCompleted,
@@ -300,9 +330,10 @@ void GCMClientImpl::OnLoadCompleted(scoped_ptr<GCMStore::LoadResult> result) {
   DCHECK_EQ(LOADING, state_);
 
   if (!result->success) {
-    ResetState();
+    ResetStore();
     return;
   }
+  gcm_store_reset_ = false;
 
   registrations_ = result->registrations;
   device_checkin_info_.android_id = result->device_android_id;
@@ -317,16 +348,30 @@ void GCMClientImpl::OnLoadCompleted(scoped_ptr<GCMStore::LoadResult> result) {
     device_checkin_info_.accounts_set = true;
   last_checkin_time_ = result->last_checkin_time;
   gservices_settings_.UpdateFromLoadResult(*result);
+  instance_id_data_ = result->instance_id_data;
+  load_result_ = result.Pass();
+  state_ = LOADED;
+
+  // Don't initiate the GCM connection when GCM is in delayed start mode and
+  // not any standalone app has registered GCM yet.
+  if (start_mode_ == DELAYED_START && !HasStandaloneRegisteredApp())
+    return;
+
+  StartGCM();
+}
+
+void GCMClientImpl::StartGCM() {
   // Taking over the value of account_mappings before passing the ownership of
   // load result to InitializeMCSClient.
   std::vector<AccountMapping> account_mappings;
-  account_mappings.swap(result->account_mappings);
+  account_mappings.swap(load_result_->account_mappings);
+  base::Time last_token_fetch_time = load_result_->last_token_fetch_time;
 
-  InitializeMCSClient(result.Pass());
+  InitializeMCSClient();
 
   if (device_checkin_info_.IsValid()) {
     SchedulePeriodicCheckin();
-    OnReady(account_mappings);
+    OnReady(account_mappings, last_token_fetch_time);
     return;
   }
 
@@ -335,8 +380,7 @@ void GCMClientImpl::OnLoadCompleted(scoped_ptr<GCMStore::LoadResult> result) {
   StartCheckin();
 }
 
-void GCMClientImpl::InitializeMCSClient(
-    scoped_ptr<GCMStore::LoadResult> result) {
+void GCMClientImpl::InitializeMCSClient() {
   std::vector<GURL> endpoints;
   endpoints.push_back(gservices_settings_.GetMCSMainEndpoint());
   endpoints.push_back(gservices_settings_.GetMCSFallbackEndpoint());
@@ -363,7 +407,7 @@ void GCMClientImpl::InitializeMCSClient(
                  weak_ptr_factory_.GetWeakPtr()),
       base::Bind(&GCMClientImpl::OnMessageSentToMCS,
                  weak_ptr_factory_.GetWeakPtr()),
-      result.Pass());
+      load_result_.Pass());
 }
 
 void GCMClientImpl::OnFirstTimeDeviceCheckinCompleted(
@@ -380,15 +424,15 @@ void GCMClientImpl::OnFirstTimeDeviceCheckinCompleted(
       base::Bind(&GCMClientImpl::SetDeviceCredentialsCallback,
                  weak_ptr_factory_.GetWeakPtr()));
 
-  OnReady(std::vector<AccountMapping>());
+  OnReady(std::vector<AccountMapping>(), base::Time());
 }
 
-void GCMClientImpl::OnReady(
-    const std::vector<AccountMapping>& account_mappings) {
+void GCMClientImpl::OnReady(const std::vector<AccountMapping>& account_mappings,
+                            const base::Time& last_token_fetch_time) {
   state_ = READY;
   StartMCSLogin();
 
-  delegate_->OnGCMReady(account_mappings);
+  delegate_->OnGCMReady(account_mappings, last_token_fetch_time);
 }
 
 void GCMClientImpl::StartMCSLogin() {
@@ -398,15 +442,34 @@ void GCMClientImpl::StartMCSLogin() {
                      device_checkin_info_.secret);
 }
 
-void GCMClientImpl::ResetState() {
-  state_ = UNINITIALIZED;
-  // TODO(fgorski): reset all of the necessart objects and start over.
+void GCMClientImpl::ResetStore() {
+  DCHECK_EQ(LOADING, state_);
+
+  // If already being reset, don't do it again. We want to prevent from
+  // resetting and loading from the store again and again.
+  if (gcm_store_reset_) {
+    RecordResetStoreErrorToUMA(INFINITE_STORE_RESET);
+    state_ = UNINITIALIZED;
+    return;
+  }
+  gcm_store_reset_ = true;
+
+  // Destroy the GCM store to start over.
+  gcm_store_->Destroy(base::Bind(&GCMClientImpl::ResetStoreCallback,
+                      weak_ptr_factory_.GetWeakPtr()));
 }
 
-void GCMClientImpl::SetAccountsForCheckin(
-    const std::map<std::string, std::string>& account_tokens) {
+void GCMClientImpl::SetAccountTokens(
+    const std::vector<AccountTokenInfo>& account_tokens) {
+  device_checkin_info_.account_tokens.clear();
+  for (std::vector<AccountTokenInfo>::const_iterator iter =
+           account_tokens.begin();
+       iter != account_tokens.end();
+       ++iter) {
+    device_checkin_info_.account_tokens[iter->email] = iter->access_token;
+  }
+
   bool accounts_set_before = device_checkin_info_.accounts_set;
-  device_checkin_info_.account_tokens = account_tokens;
   device_checkin_info_.accounts_set = true;
 
   DVLOG(1) << "Set account called with: " << account_tokens.size()
@@ -420,8 +483,10 @@ void GCMClientImpl::SetAccountsForCheckin(
            device_checkin_info_.last_checkin_accounts.begin();
        iter != device_checkin_info_.last_checkin_accounts.end();
        ++iter) {
-    if (account_tokens.find(*iter) == account_tokens.end())
+    if (device_checkin_info_.account_tokens.find(*iter) ==
+            device_checkin_info_.account_tokens.end()) {
       account_removed = true;
+    }
   }
 
   // Checkin will be forced when any of the accounts was removed during the
@@ -452,6 +517,54 @@ void GCMClientImpl::RemoveAccountMapping(const std::string& account_id) {
       account_id,
       base::Bind(&GCMClientImpl::DefaultStoreCallback,
                  weak_ptr_factory_.GetWeakPtr()));
+}
+
+void GCMClientImpl::SetLastTokenFetchTime(const base::Time& time) {
+  gcm_store_->SetLastTokenFetchTime(
+      time,
+      base::Bind(&GCMClientImpl::IgnoreWriteResultCallback,
+                 weak_ptr_factory_.GetWeakPtr()));
+}
+
+void GCMClientImpl::UpdateHeartbeatTimer(scoped_ptr<base::Timer> timer) {
+  DCHECK(mcs_client_);
+  mcs_client_->UpdateHeartbeatTimer(timer.Pass());
+}
+
+void GCMClientImpl::AddInstanceIDData(const std::string& app_id,
+                                      const std::string& instance_id_data) {
+  instance_id_data_[app_id] = instance_id_data;
+  gcm_store_->AddInstanceIDData(
+      app_id,
+      instance_id_data,
+      base::Bind(&GCMClientImpl::IgnoreWriteResultCallback,
+                 weak_ptr_factory_.GetWeakPtr()));
+}
+
+void GCMClientImpl::RemoveInstanceIDData(const std::string& app_id) {
+  instance_id_data_.erase(app_id);
+  gcm_store_->RemoveInstanceIDData(
+      app_id,
+      base::Bind(&GCMClientImpl::IgnoreWriteResultCallback,
+                 weak_ptr_factory_.GetWeakPtr()));
+}
+
+std::string GCMClientImpl::GetInstanceIDData(const std::string& app_id) {
+  auto iter = instance_id_data_.find(app_id);
+  if (iter == instance_id_data_.end())
+    return std::string();
+  return iter->second;
+}
+
+void GCMClientImpl::AddHeartbeatInterval(const std::string& scope,
+                                         int interval_ms) {
+  DCHECK(mcs_client_);
+  mcs_client_->AddHeartbeatInterval(scope, interval_ms);
+}
+
+void GCMClientImpl::RemoveHeartbeatInterval(const std::string& scope) {
+  DCHECK(mcs_client_);
+  mcs_client_->RemoveHeartbeatInterval(scope);
 }
 
 void GCMClientImpl::StartCheckin() {
@@ -573,22 +686,39 @@ void GCMClientImpl::DefaultStoreCallback(bool success) {
   DCHECK(success);
 }
 
+void GCMClientImpl::IgnoreWriteResultCallback(bool success) {
+  // TODO(fgorski): Ignoring the write result for now to make sure
+  // sync_intergration_tests are not broken.
+}
+
+void GCMClientImpl::ResetStoreCallback(bool success) {
+  if (!success) {
+    LOG(ERROR) << "Failed to reset GCM store";
+    RecordResetStoreErrorToUMA(DESTROYING_STORE_FAILED);
+    state_ = UNINITIALIZED;
+    return;
+  }
+
+  state_ = INITIALIZED;
+  Start(start_mode_);
+}
+
 void GCMClientImpl::Stop() {
+  // TODO(fgorski): Perhaps we should make a distinction between a Stop and a
+  // Shutdown.
+  DVLOG(1) << "Stopping the GCM Client";
   weak_ptr_factory_.InvalidateWeakPtrs();
+  periodic_checkin_ptr_factory_.InvalidateWeakPtrs();
   device_checkin_info_.Reset();
   connection_factory_.reset();
   delegate_->OnDisconnected();
   mcs_client_.reset();
   checkin_request_.reset();
-  pending_registration_requests_.clear();
+  // Delete all of the pending registration and unregistration requests.
+  STLDeleteValues(&pending_registration_requests_);
+  STLDeleteValues(&pending_unregistration_requests_);
   state_ = INITIALIZED;
   gcm_store_->Close();
-}
-
-void GCMClientImpl::CheckOut() {
-  Stop();
-  gcm_store_->Destroy(base::Bind(&GCMClientImpl::OnGCMStoreDestroyed,
-                                 weak_ptr_factory_.GetWeakPtr()));
 }
 
 void GCMClientImpl::Register(const std::string& app_id,
@@ -761,6 +891,8 @@ std::string GCMClientImpl::GetStateString() const {
       return "UNINITIALIZED";
     case GCMClientImpl::LOADING:
       return "LOADING";
+    case GCMClientImpl::LOADED:
+      return "LOADED";
     case GCMClientImpl::INITIAL_DEVICE_CHECKIN:
       return "INITIAL_DEVICE_CHECKIN";
     case GCMClientImpl::READY:
@@ -959,6 +1091,15 @@ void GCMClientImpl::HandleIncomingSendError(
       data_message_stanza.id());
   delegate_->OnMessageSendError(data_message_stanza.category(),
                                 send_error_details);
+}
+
+bool GCMClientImpl::HasStandaloneRegisteredApp() const {
+  if (registrations_.empty())
+    return false;
+  // Note that account mapper is not counted as a standalone app since it is
+  // automatically started when other app uses GCM.
+  return registrations_.size() > 1 ||
+         !registrations_.count(kGCMAccountMapperAppId);
 }
 
 }  // namespace gcm

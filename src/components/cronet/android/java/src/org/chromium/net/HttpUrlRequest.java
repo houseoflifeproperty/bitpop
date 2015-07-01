@@ -83,6 +83,11 @@ public interface HttpUrlRequest {
     void setHttpMethod(String method);
 
     /**
+     * Disables redirect for this request.
+     */
+    void disableRedirects();
+
+    /**
      * Start executing the request.
      * <p>
      * If this is a streaming upload request using a ReadableByteChannel, the
@@ -107,6 +112,11 @@ public interface HttpUrlRequest {
      * onResponseStarted but before request is recycled.
      */
     String getNegotiatedProtocol();
+
+    /**
+     * Returns whether the response is serviced from the cache.
+     */
+    boolean wasCached();
 
     /**
      * Returns the entire response as a ByteBuffer.
@@ -136,6 +146,13 @@ public interface HttpUrlRequest {
      * method returns 200.
      */
     int getHttpStatusCode();
+
+    /**
+     * Returns the HTTP status text of the status line. For example, if the
+     * request has a "HTTP/1.1 200 OK" response, this method returns "OK". It
+     * returns null if the request has not started.
+     */
+    String getHttpStatusText();
 
     /**
      * Returns the response header value for the given name or {@code null} if

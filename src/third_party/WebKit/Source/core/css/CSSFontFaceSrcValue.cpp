@@ -26,52 +26,29 @@
 #include "config.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 
-#include "core/FetchInitiatorTypeNames.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/FontResource.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/svg/SVGFontFaceElement.h"
+#include "core/loader/MixedContentChecker.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontCustomPlatformData.h"
+#include "platform/weborigin/SecurityPolicy.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace blink {
-
-#if ENABLE(SVG_FONTS)
-bool CSSFontFaceSrcValue::isSVGFontFaceSrc() const
-{
-    return equalIgnoringCase(m_format, "svg");
-}
-#endif
 
 bool CSSFontFaceSrcValue::isSupportedFormat() const
 {
     // Normally we would just check the format, but in order to avoid conflicts with the old WinIE style of font-face,
     // we will also check to see if the URL ends with .eot.  If so, we'll go ahead and assume that we shouldn't load it.
-    if (m_format.isEmpty()) {
-        // Check for .eot.
-        if (!m_resource.startsWith("data:", false) && m_resource.endsWith(".eot", false))
-            return false;
-        return true;
-    }
+    if (m_format.isEmpty())
+        return m_resource.startsWith("data:", TextCaseInsensitive) || !m_resource.endsWith(".eot", TextCaseInsensitive);
 
-    if (FontCustomPlatformData::supportsFormat(m_format))
-        return true;
-
-    // We have removed SVG font support on non-gdi platforms. For details, see:
-    // https://groups.google.com/a/chromium.org/d/msg/blink-dev/pYbbUcYvlYY/LQvFvM8KZZEJ
-#if ENABLE(SVG_FONTS)
-    if (RuntimeEnabledFeatures::svgFontsOnNonGDIPlatformsEnabled()
-#if OS(WIN)
-        || !FontCache::useDirectWrite()
-#endif
-        )
-        return isSVGFontFaceSrc();
-#endif
-    return false;
+    return FontCustomPlatformData::supportsFormat(m_format);
 }
 
 String CSSFontFaceSrcValue::customCSSText() const
@@ -93,9 +70,7 @@ String CSSFontFaceSrcValue::customCSSText() const
 
 bool CSSFontFaceSrcValue::hasFailedOrCanceledSubresources() const
 {
-    if (!m_fetched)
-        return false;
-    return m_fetched->loadFailedOrCanceled();
+    return m_fetched && m_fetched->loadFailedOrCanceled();
 }
 
 bool CSSFontFaceSrcValue::shouldSetCrossOriginAccessControl(const KURL& resource, SecurityOrigin* securityOrigin)
@@ -109,11 +84,12 @@ FontResource* CSSFontFaceSrcValue::fetch(Document* document)
 {
     if (!m_fetched) {
         FetchRequest request(ResourceRequest(document->completeURL(m_resource)), FetchInitiatorTypeNames::css);
+        request.setContentSecurityCheck(m_shouldCheckContentSecurityPolicy);
         SecurityOrigin* securityOrigin = document->securityOrigin();
         if (shouldSetCrossOriginAccessControl(request.url(), securityOrigin)) {
             request.setCrossOriginAccessControl(securityOrigin, DoNotAllowStoredCredentials);
         }
-        request.mutableResourceRequest().setHTTPReferrer(m_referrer);
+        request.mutableResourceRequest().setHTTPReferrer(SecurityPolicy::generateReferrer(m_referrer.referrerPolicy, request.url(), m_referrer.referrer));
         m_fetched = document->fetcher()->fetchFont(request);
     } else {
         // FIXME: CSSFontFaceSrcValue::fetch is invoked when @font-face rule
@@ -133,6 +109,9 @@ void CSSFontFaceSrcValue::restoreCachedResourceIfNeeded(Document* document)
         return;
 
     FetchRequest request(ResourceRequest(resourceURL), FetchInitiatorTypeNames::css);
+    request.setContentSecurityCheck(m_shouldCheckContentSecurityPolicy);
+    MixedContentChecker::shouldBlockFetch(document->frame(), m_fetched->lastResourceRequest(),
+        m_fetched->lastResourceRequest().url(), MixedContentChecker::SendReport);
     document->fetcher()->requestLoadStarted(m_fetched.get(), request, ResourceFetcher::ResourceLoadingFromCache);
 }
 

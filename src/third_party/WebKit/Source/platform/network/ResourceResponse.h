@@ -34,6 +34,7 @@
 #include "platform/network/ResourceLoadInfo.h"
 #include "platform/network/ResourceLoadTiming.h"
 #include "platform/weborigin/KURL.h"
+#include "public/platform/WebServiceWorkerResponseType.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/CString.h"
@@ -43,7 +44,7 @@ namespace blink {
 struct CrossThreadResourceResponseData;
 
 class PLATFORM_EXPORT ResourceResponse {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(ResourceResponse);
 public:
     enum HTTPVersion { Unknown, HTTP_0_9, HTTP_1_0, HTTP_1_1 };
 
@@ -109,6 +110,7 @@ public:
     bool cacheControlContainsMustRevalidate();
     bool hasCacheValidatorFields() const;
     double cacheControlMaxAge();
+    double cacheControlStaleWhileRevalidate();
     double date() const;
     double age() const;
     double expires() const;
@@ -162,11 +164,20 @@ public:
     bool wasFetchedViaServiceWorker() const { return m_wasFetchedViaServiceWorker; }
     void setWasFetchedViaServiceWorker(bool value) { m_wasFetchedViaServiceWorker = value; }
 
+    bool wasFallbackRequiredByServiceWorker() const { return m_wasFallbackRequiredByServiceWorker; }
+    void setWasFallbackRequiredByServiceWorker(bool value) { m_wasFallbackRequiredByServiceWorker = value; }
+
+    WebServiceWorkerResponseType serviceWorkerResponseType() const { return m_serviceWorkerResponseType; }
+    void setServiceWorkerResponseType(WebServiceWorkerResponseType value) { m_serviceWorkerResponseType = value; }
+
+    const KURL& originalURLViaServiceWorker() const { return m_originalURLViaServiceWorker; }
+    void setOriginalURLViaServiceWorker(const KURL& url) { m_originalURLViaServiceWorker = url; };
+
     bool isMultipartPayload() const { return m_isMultipartPayload; }
     void setIsMultipartPayload(bool value) { m_isMultipartPayload = value; }
 
-    double responseTime() const { return m_responseTime; }
-    void setResponseTime(double responseTime) { m_responseTime = responseTime; }
+    int64 responseTime() const { return m_responseTime; }
+    void setResponseTime(int64 responseTime) { m_responseTime = responseTime; }
 
     const AtomicString& remoteIPAddress() const { return m_remoteIPAddress; }
     void setRemoteIPAddress(const AtomicString& value) { m_remoteIPAddress = value; }
@@ -258,9 +269,19 @@ private:
     // Was the resource fetched over a ServiceWorker.
     bool m_wasFetchedViaServiceWorker;
 
+    // Was the fallback request with skip service worker flag required.
+    bool m_wasFallbackRequiredByServiceWorker;
+
+    // The type of the response which was fetched by the ServiceWorker.
+    WebServiceWorkerResponseType m_serviceWorkerResponseType;
+
+    // The original URL of the response which was fetched by the ServiceWorker.
+    // This may be empty if the response was created inside the ServiceWorker.
+    KURL m_originalURLViaServiceWorker;
+
     // The time at which the response headers were received.  For cached
     // responses, this time could be "far" in the past.
-    double m_responseTime;
+    int64 m_responseTime;
 
     // Remote IP address of the socket which fetched this resource.
     AtomicString m_remoteIPAddress;
@@ -283,7 +304,7 @@ inline bool operator==(const ResourceResponse& a, const ResourceResponse& b) { r
 inline bool operator!=(const ResourceResponse& a, const ResourceResponse& b) { return !(a == b); }
 
 struct CrossThreadResourceResponseData {
-    WTF_MAKE_NONCOPYABLE(CrossThreadResourceResponseData); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(CrossThreadResourceResponseData); WTF_MAKE_FAST_ALLOCATED(CrossThreadResourceResponseData);
 public:
     CrossThreadResourceResponseData() { }
     KURL m_url;
@@ -306,7 +327,10 @@ public:
     bool m_wasAlternateProtocolAvailable;
     bool m_wasFetchedViaProxy;
     bool m_wasFetchedViaServiceWorker;
-    double m_responseTime;
+    bool m_wasFallbackRequiredByServiceWorker;
+    WebServiceWorkerResponseType m_serviceWorkerResponseType;
+    KURL m_originalURLViaServiceWorker;
+    int64 m_responseTime;
     String m_remoteIPAddress;
     unsigned short m_remotePort;
     String m_downloadedFilePath;

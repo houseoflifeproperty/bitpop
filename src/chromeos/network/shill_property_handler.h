@@ -99,7 +99,7 @@ class CHROMEOS_EXPORT ShillPropertyHandler
   };
 
   explicit ShillPropertyHandler(Listener* listener);
-  virtual ~ShillPropertyHandler();
+  ~ShillPropertyHandler() override;
 
   // Sets up the observer and calls UpdateManagerProperties().
   void Init();
@@ -125,19 +125,20 @@ class CHROMEOS_EXPORT ShillPropertyHandler
   // Sets the list of devices on which portal check is enabled.
   void SetCheckPortalList(const std::string& check_portal_list);
 
+  // Sets the Manager.WakeOnLan property. Note: we do not track this state, we
+  // only set it.
+  void SetWakeOnLanEnabled(bool enabled);
+
   // Requests an immediate network scan.
   void RequestScan() const;
-
-  // Calls Manager.ConnectToBestServices().
-  void ConnectToBestServices() const;
 
   // Requests all properties for the service or device (called for new items).
   void RequestProperties(ManagedState::ManagedType type,
                          const std::string& path);
 
   // ShillPropertyChangedObserver overrides
-  virtual void OnPropertyChanged(const std::string& key,
-                                 const base::Value& value) OVERRIDE;
+  void OnPropertyChanged(const std::string& key,
+                         const base::Value& value) override;
 
  private:
   typedef std::map<ManagedState::ManagedType, std::set<std::string> >

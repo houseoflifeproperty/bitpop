@@ -27,6 +27,7 @@
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/granted_file_entry.h"
 #include "extensions/browser/lazy_background_task_queue.h"
@@ -71,8 +72,11 @@ bool DoMakePathAbsolute(const base::FilePath& current_directory,
     return true;
 
   if (current_directory.empty()) {
-    *file_path = base::MakeAbsoluteFilePath(*file_path);
-    return !file_path->empty();
+    base::FilePath absolute_path = base::MakeAbsoluteFilePath(*file_path);
+    if (absolute_path.empty())
+      return false;
+    *file_path = absolute_path;
+    return true;
   }
 
   if (!current_directory.IsAbsolute())
@@ -80,14 +84,6 @@ bool DoMakePathAbsolute(const base::FilePath& current_directory,
 
   *file_path = current_directory.Append(*file_path);
   return true;
-}
-
-// Helper method to launch the platform app |extension| with no data. This
-// should be called in the fallback case, where it has been impossible to
-// load or obtain file launch data.
-void LaunchPlatformAppWithNoData(Profile* profile, const Extension* extension) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  AppRuntimeEventRouter::DispatchOnLaunchedEvent(profile, extension);
 }
 
 // Class to handle launching of platform apps to open specific paths.
@@ -102,22 +98,27 @@ class PlatformAppPathLauncher
                           const Extension* extension,
                           const std::vector<base::FilePath>& file_paths)
       : profile_(profile),
-        extension_(extension),
+        extension_id(extension->id()),
         file_paths_(file_paths),
         collector_(profile) {}
 
   PlatformAppPathLauncher(Profile* profile,
                           const Extension* extension,
                           const base::FilePath& file_path)
-      : profile_(profile), extension_(extension), collector_(profile) {
+      : profile_(profile), extension_id(extension->id()), collector_(profile) {
     if (!file_path.empty())
       file_paths_.push_back(file_path);
   }
 
   void Launch() {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+    const Extension* extension = GetExtension();
+    if (!extension)
+      return;
+
     if (file_paths_.empty()) {
-      LaunchPlatformAppWithNoData(profile_, extension_);
+      LaunchWithNoLaunchData();
       return;
     }
 
@@ -125,7 +126,7 @@ class PlatformAppPathLauncher
       DCHECK(file_paths_[i].IsAbsolute());
     }
 
-    if (HasFileSystemWritePermission(extension_)) {
+    if (HasFileSystemWritePermission(extension)) {
       PrepareFilesForWritableApp(
           file_paths_,
           profile_,
@@ -190,11 +191,22 @@ class PlatformAppPathLauncher
 
   void LaunchWithNoLaunchData() {
     // This method is required as an entry point on the UI thread.
-    LaunchPlatformAppWithNoData(profile_, extension_);
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+    const Extension* extension = GetExtension();
+    if (!extension)
+      return;
+
+    AppRuntimeEventRouter::DispatchOnLaunchedEvent(
+        profile_, extension, extensions::SOURCE_FILE_HANDLER);
   }
 
   void OnMimeTypesCollected(scoped_ptr<std::vector<std::string> > mime_types) {
     DCHECK(file_paths_.size() == mime_types->size());
+
+    const Extension* extension = GetExtension();
+    if (!extension)
+      return;
 
     // If fetching a mime type failed, then use a fallback one.
     for (size_t i = 0; i < mime_types->size(); ++i) {
@@ -206,7 +218,7 @@ class PlatformAppPathLauncher
     // Find file handler from the platform app for the file being opened.
     const extensions::FileHandlerInfo* handler = NULL;
     if (!handler_id_.empty()) {
-      handler = FileHandlerForId(*extension_, handler_id_);
+      handler = FileHandlerForId(*extension, handler_id_);
       if (handler) {
         for (size_t i = 0; i < file_paths_.size(); ++i) {
           if (!FileHandlerCanHandleFile(
@@ -227,7 +239,7 @@ class PlatformAppPathLauncher
       }
       const std::vector<const extensions::FileHandlerInfo*>& handlers =
           extensions::app_file_handler_util::FindFileHandlersForFiles(
-              *extension_, path_and_file_type_set);
+              *extension, path_and_file_type_set);
       if (!handlers.empty())
         handler = handlers[0];
     }
@@ -250,51 +262,55 @@ class PlatformAppPathLauncher
     // call back to us.
     extensions::LazyBackgroundTaskQueue* const queue =
         ExtensionSystem::Get(profile_)->lazy_background_task_queue();
-    if (queue->ShouldEnqueueTask(profile_, extension_)) {
+    if (queue->ShouldEnqueueTask(profile_, extension)) {
       queue->AddPendingTask(
-          profile_,
-          extension_->id(),
+          profile_, extension_id,
           base::Bind(&PlatformAppPathLauncher::GrantAccessToFilesAndLaunch,
                      this));
       return;
     }
 
     extensions::ProcessManager* const process_manager =
-        ExtensionSystem::Get(profile_)->process_manager();
+        extensions::ProcessManager::Get(profile_);
     ExtensionHost* const host =
-        process_manager->GetBackgroundHostForExtension(extension_->id());
+        process_manager->GetBackgroundHostForExtension(extension_id);
     DCHECK(host);
     GrantAccessToFilesAndLaunch(host);
   }
 
   void GrantAccessToFilesAndLaunch(ExtensionHost* host) {
+    const Extension* extension = GetExtension();
+    if (!extension)
+      return;
+
     // If there was an error loading the app page, |host| will be NULL.
     if (!host) {
-      LOG(ERROR) << "Could not load app page for " << extension_->id();
+      LOG(ERROR) << "Could not load app page for " << extension_id;
       return;
     }
 
     std::vector<GrantedFileEntry> file_entries;
     for (size_t i = 0; i < file_paths_.size(); ++i) {
-      file_entries.push_back(
-          CreateFileEntry(profile_,
-                          extension_,
-                          host->render_process_host()->GetID(),
-                          file_paths_[i],
-                          false));
+      file_entries.push_back(CreateFileEntry(
+          profile_, extension, host->render_process_host()->GetID(),
+          file_paths_[i], false));
     }
 
     AppRuntimeEventRouter::DispatchOnLaunchedEventWithFileEntries(
-        profile_, extension_, handler_id_, mime_types_, file_entries);
+        profile_, extension, handler_id_, mime_types_, file_entries);
+  }
+
+  const Extension* GetExtension() const {
+    return extensions::ExtensionRegistry::Get(profile_)->GetExtensionById(
+        extension_id, extensions::ExtensionRegistry::EVERYTHING);
   }
 
   // The profile the app should be run in.
   Profile* profile_;
-  // The extension providing the app.
-  // TODO(benwells): Hold onto the extension ID instead of a pointer as it
-  // is possible the extension will be unloaded while we're doing our thing.
-  // See http://crbug.com/372270 for details.
-  const Extension* extension_;
+  // The id of the extension providing the app. A pointer to the extension is
+  // not kept as the extension may be unloaded and deleted during the course of
+  // the launch.
+  const std::string extension_id;
   // The path to be passed through to the app.
   std::vector<base::FilePath> file_paths_;
   std::vector<std::string> mime_types_;
@@ -309,8 +325,9 @@ class PlatformAppPathLauncher
 
 void LaunchPlatformAppWithCommandLine(Profile* profile,
                                       const Extension* extension,
-                                      const CommandLine& command_line,
-                                      const base::FilePath& current_directory) {
+                                      const base::CommandLine& command_line,
+                                      const base::FilePath& current_directory,
+                                      extensions::AppLaunchSource source) {
   // An app with "kiosk_only" should not be installed and launched
   // outside of ChromeOS kiosk mode in the first place. This is a defensive
   // check in case this scenario does occur.
@@ -330,18 +347,18 @@ void LaunchPlatformAppWithCommandLine(Profile* profile,
 
 #if defined(OS_WIN)
   base::CommandLine::StringType about_blank_url(
-      base::ASCIIToWide(url::kAboutBlankURL));
+      base::ASCIIToUTF16(url::kAboutBlankURL));
 #else
   base::CommandLine::StringType about_blank_url(url::kAboutBlankURL);
 #endif
-  CommandLine::StringVector args = command_line.GetArgs();
+  base::CommandLine::StringVector args = command_line.GetArgs();
   // Browser tests will add about:blank to the command line. This should
   // never be interpreted as a file to open, as doing so with an app that
   // has write access will result in a file 'about' being created, which
   // causes problems on the bots.
   if (args.empty() || (command_line.HasSwitch(switches::kTestType) &&
                        args[0] == about_blank_url)) {
-    LaunchPlatformAppWithNoData(profile, extension);
+    AppRuntimeEventRouter::DispatchOnLaunchedEvent(profile, extension, source);
     return;
   }
 
@@ -359,11 +376,15 @@ void LaunchPlatformAppWithPath(Profile* profile,
   launcher->Launch();
 }
 
-void LaunchPlatformApp(Profile* profile, const Extension* extension) {
-  LaunchPlatformAppWithCommandLine(profile,
-                                   extension,
-                                   CommandLine(CommandLine::NO_PROGRAM),
-                                   base::FilePath());
+void LaunchPlatformApp(Profile* profile,
+                       const Extension* extension,
+                       extensions::AppLaunchSource source) {
+  LaunchPlatformAppWithCommandLine(
+      profile,
+      extension,
+      base::CommandLine(base::CommandLine::NO_PROGRAM),
+      base::FilePath(),
+      source);
 }
 
 void LaunchPlatformAppWithFileHandler(
@@ -395,8 +416,10 @@ void RestartPlatformApp(Profile* profile, const Extension* extension) {
       ExtensionHasEventListener(extension->id(),
                                 app_runtime::OnLaunched::kEventName);
 
-  if (listening_to_launch && had_windows)
-    LaunchPlatformAppWithNoData(profile, extension);
+  if (listening_to_launch && had_windows) {
+    AppRuntimeEventRouter::DispatchOnLaunchedEvent(
+        profile, extension, extensions::SOURCE_RESTART);
+  }
 }
 
 void LaunchPlatformAppWithUrl(Profile* profile,

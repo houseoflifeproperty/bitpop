@@ -23,9 +23,8 @@
 #ifndef FEComposite_h
 #define FEComposite_h
 
-#include "platform/graphics/filters/Filter.h"
+#include "SkXfermode.h"
 #include "platform/graphics/filters/FilterEffect.h"
-#include "wtf/text/WTFString.h"
 
 namespace blink {
 
@@ -36,12 +35,13 @@ enum CompositeOperationType {
     FECOMPOSITE_OPERATOR_OUT        = 3,
     FECOMPOSITE_OPERATOR_ATOP       = 4,
     FECOMPOSITE_OPERATOR_XOR        = 5,
-    FECOMPOSITE_OPERATOR_ARITHMETIC = 6
+    FECOMPOSITE_OPERATOR_ARITHMETIC = 6,
+    FECOMPOSITE_OPERATOR_LIGHTER    = 7
 };
 
 class PLATFORM_EXPORT FEComposite : public FilterEffect {
 public:
-    static PassRefPtr<FEComposite> create(Filter*, const CompositeOperationType&, float, float, float, float);
+    static PassRefPtrWillBeRawPtr<FEComposite> create(Filter*, const CompositeOperationType&, float, float, float, float);
 
     CompositeOperationType operation() const;
     bool setOperation(CompositeOperationType);
@@ -58,31 +58,20 @@ public:
     float k4() const;
     bool setK4(float);
 
-    virtual void correctFilterResultIfNeeded() OVERRIDE;
+    virtual FloatRect determineAbsolutePaintRect(const FloatRect& requestedRect) override;
 
-    virtual FloatRect determineAbsolutePaintRect(const FloatRect& requestedRect) OVERRIDE;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const override;
 
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
-
-    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
-    virtual PassRefPtr<SkImageFilter> createImageFilterWithoutValidation(SkiaImageFilterBuilder*) OVERRIDE;
+    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
+    virtual PassRefPtr<SkImageFilter> createImageFilterWithoutValidation(SkiaImageFilterBuilder*) override;
 
 protected:
-    virtual bool mayProduceInvalidPreMultipliedPixels() OVERRIDE { return m_type == FECOMPOSITE_OPERATOR_ARITHMETIC; }
+    virtual bool mayProduceInvalidPreMultipliedPixels() override { return m_type == FECOMPOSITE_OPERATOR_ARITHMETIC; }
 
 private:
     FEComposite(Filter*, const CompositeOperationType&, float, float, float, float);
 
-    virtual void applySoftware() OVERRIDE;
     PassRefPtr<SkImageFilter> createImageFilterInternal(SkiaImageFilterBuilder*, bool requiresPMColorValidation);
-
-    inline void platformArithmeticSoftware(Uint8ClampedArray* source, Uint8ClampedArray* destination,
-        float k1, float k2, float k3, float k4);
-    template <int b1, int b4>
-    static inline void computeArithmeticPixelsNeon(unsigned char* source, unsigned  char* destination,
-        unsigned pixelArrayLength, float k1, float k2, float k3, float k4);
-    static inline void platformArithmeticNeon(unsigned char* source, unsigned  char* destination,
-        unsigned pixelArrayLength, float k1, float k2, float k3, float k4);
 
     CompositeOperationType m_type;
     float m_k1;

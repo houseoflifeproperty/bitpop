@@ -22,6 +22,7 @@
 #include "ui/base/ui_base_switches.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/gesture_detection/gesture_configuration.h"
 #include "ui/events/gestures/gesture_types.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/events/test/events_test_utils.h"
@@ -71,12 +72,11 @@ class DragTestView : public views::View {
 
  private:
   // View overrides:
-  virtual int GetDragOperations(const gfx::Point& press_pt) OVERRIDE {
+  int GetDragOperations(const gfx::Point& press_pt) override {
     return ui::DragDropTypes::DRAG_COPY;
   }
 
-  virtual void WriteDragData(const gfx::Point& p,
-                             OSExchangeData* data) OVERRIDE {
+  void WriteDragData(const gfx::Point& p, OSExchangeData* data) override {
     data->SetString(base::UTF8ToUTF16("I am being dragged"));
     gfx::ImageSkiaRep image_rep(gfx::Size(10, 20), 1.0f);
     gfx::ImageSkia image_skia(image_rep);
@@ -84,48 +84,40 @@ class DragTestView : public views::View {
     drag_utils::SetDragImageOnDataObject(image_skia, gfx::Vector2d(), data);
   }
 
-  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE {
-    return true;
-  }
+  bool OnMousePressed(const ui::MouseEvent& event) override { return true; }
 
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
+  void OnGestureEvent(ui::GestureEvent* event) override {
     if (event->type() == ui::ET_GESTURE_LONG_TAP)
       long_tap_received_ = true;
     return;
   }
 
-  virtual bool GetDropFormats(
+  bool GetDropFormats(
       int* formats,
-      std::set<OSExchangeData::CustomFormat>* custom_formats) OVERRIDE {
+      std::set<OSExchangeData::CustomFormat>* custom_formats) override {
     *formats = ui::OSExchangeData::STRING;
     return true;
   }
 
-  virtual bool CanDrop(const OSExchangeData& data) OVERRIDE {
-    return true;
-  }
+  bool CanDrop(const OSExchangeData& data) override { return true; }
 
-  virtual void OnDragEntered(const ui::DropTargetEvent& event) OVERRIDE {
+  void OnDragEntered(const ui::DropTargetEvent& event) override {
     num_drag_enters_++;
   }
 
-  virtual int OnDragUpdated(const ui::DropTargetEvent& event) OVERRIDE {
+  int OnDragUpdated(const ui::DropTargetEvent& event) override {
     num_drag_updates_++;
     return ui::DragDropTypes::DRAG_COPY;
   }
 
-  virtual void OnDragExited() OVERRIDE {
-    num_drag_exits_++;
-  }
+  void OnDragExited() override { num_drag_exits_++; }
 
-  virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE {
+  int OnPerformDrop(const ui::DropTargetEvent& event) override {
     num_drops_++;
     return ui::DragDropTypes::DRAG_COPY;
   }
 
-  virtual void OnDragDone() OVERRIDE {
-    drag_done_received_ = true;
-  }
+  void OnDragDone() override { drag_done_received_ = true; }
 
   DISALLOW_COPY_AND_ASSIGN(DragTestView);
 };
@@ -159,44 +151,42 @@ class TestDragDropController : public DragDropController {
     drag_string_.clear();
   }
 
-  virtual int StartDragAndDrop(
-      const ui::OSExchangeData& data,
-      aura::Window* root_window,
-      aura::Window* source_window,
-      const gfx::Point& location,
-      int operation,
-      ui::DragDropTypes::DragEventSource source) OVERRIDE {
+  int StartDragAndDrop(const ui::OSExchangeData& data,
+                       aura::Window* root_window,
+                       aura::Window* source_window,
+                       const gfx::Point& location,
+                       int operation,
+                       ui::DragDropTypes::DragEventSource source) override {
     drag_start_received_ = true;
     data.GetString(&drag_string_);
     return DragDropController::StartDragAndDrop(
         data, root_window, source_window, location, operation, source);
   }
 
-  virtual void DragUpdate(aura::Window* target,
-                          const ui::LocatedEvent& event) OVERRIDE {
+  void DragUpdate(aura::Window* target,
+                  const ui::LocatedEvent& event) override {
     DragDropController::DragUpdate(target, event);
     num_drag_updates_++;
   }
 
-  virtual void Drop(aura::Window* target,
-                    const ui::LocatedEvent& event) OVERRIDE {
+  void Drop(aura::Window* target, const ui::LocatedEvent& event) override {
     DragDropController::Drop(target, event);
     drop_received_ = true;
   }
 
-  virtual void DragCancel() OVERRIDE {
+  void DragCancel() override {
     DragDropController::DragCancel();
     drag_canceled_ = true;
   }
 
-  virtual gfx::LinearAnimation* CreateCancelAnimation(
+  gfx::LinearAnimation* CreateCancelAnimation(
       int duration,
       int frame_rate,
-      gfx::AnimationDelegate* delegate) OVERRIDE {
+      gfx::AnimationDelegate* delegate) override {
     return new CompletableLinearAnimation(duration, frame_rate, delegate);
   }
 
-  virtual void DoDragCancel(int animation_duration_ms) OVERRIDE {
+  void DoDragCancel(int animation_duration_ms) override {
     DragDropController::DoDragCancel(animation_duration_ms);
     drag_canceled_ = true;
   }
@@ -222,7 +212,7 @@ class TestNativeWidgetAura : public views::NativeWidgetAura {
     check_if_capture_lost_ = value;
   }
 
-  virtual void OnCaptureLost() OVERRIDE {
+  void OnCaptureLost() override {
     DCHECK(!check_if_capture_lost_);
     views::NativeWidgetAura::OnCaptureLost();
   }
@@ -290,9 +280,9 @@ void DispatchGesture(ui::EventType gesture_type, gfx::Point location) {
 class DragDropControllerTest : public AshTestBase {
  public:
   DragDropControllerTest() : AshTestBase() {}
-  virtual ~DragDropControllerTest() {}
+  ~DragDropControllerTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     AshTestBase::SetUp();
     drag_drop_controller_.reset(new TestDragDropController);
     drag_drop_controller_->set_should_block_during_drag_drop(false);
@@ -300,7 +290,7 @@ class DragDropControllerTest : public AshTestBase {
                                     drag_drop_controller_.get());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     aura::client::SetDragDropClient(Shell::GetPrimaryRootWindow(), NULL);
     drag_drop_controller_.reset();
     AshTestBase::TearDown();
@@ -732,7 +722,7 @@ TEST_F(DragDropControllerTest, SyntheticEventsDuringDragDrop) {
     // The DragDropController should simply ignore these events.
     gfx::Point mouse_move_location = drag_view->bounds().CenterPoint();
     ui::MouseEvent mouse_move(ui::ET_MOUSE_MOVED, mouse_move_location,
-                              mouse_move_location, 0, 0);
+                              mouse_move_location, ui::EventTimeForNow(), 0, 0);
     ui::EventDispatchDetails details = Shell::GetPrimaryRootWindow()->
         GetHost()->event_processor()->OnEventFromSource(&mouse_move);
     ASSERT_FALSE(details.dispatcher_destroyed);
@@ -830,7 +820,7 @@ TEST_F(DragDropControllerTest, MAYBE_CaptureLostCancelsDragDrop) {
   }
   // Make sure the capture window won't handle mouse events.
   aura::Window* capture_window = drag_drop_tracker()->capture_window();
-  ASSERT_TRUE(!!capture_window);
+  ASSERT_TRUE(capture_window);
   EXPECT_EQ("0x0", capture_window->bounds().size().ToString());
   EXPECT_EQ(NULL,
             capture_window->GetEventHandlerForPoint(gfx::Point()));
@@ -857,7 +847,7 @@ TEST_F(DragDropControllerTest, MAYBE_CaptureLostCancelsDragDrop) {
 }
 
 TEST_F(DragDropControllerTest, TouchDragDropInMultipleWindows) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableTouchDragDrop);
   scoped_ptr<views::Widget> widget1(CreateNewWidget());
   DragTestView* drag_view1 = new DragTestView;
@@ -918,7 +908,7 @@ TEST_F(DragDropControllerTest, TouchDragDropInMultipleWindows) {
 }
 
 TEST_F(DragDropControllerTest, TouchDragDropCancelsOnLongTap) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableTouchDragDrop);
   scoped_ptr<views::Widget> widget(CreateNewWidget());
   DragTestView* drag_view = new DragTestView;
@@ -944,7 +934,7 @@ TEST_F(DragDropControllerTest, TouchDragDropCancelsOnLongTap) {
 }
 
 TEST_F(DragDropControllerTest, TouchDragDropLongTapGestureIsForwarded) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableTouchDragDrop);
   scoped_ptr<views::Widget> widget(CreateNewWidget());
   DragTestView* drag_view = new DragTestView;
@@ -970,7 +960,7 @@ namespace {
 
 class DragImageWindowObserver : public aura::WindowObserver {
  public:
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {
+  void OnWindowDestroying(aura::Window* window) override {
     window_location_on_destroying_ = window->GetBoundsInScreen().origin();
   }
 
@@ -982,7 +972,7 @@ class DragImageWindowObserver : public aura::WindowObserver {
   gfx::Point window_location_on_destroying_;
 };
 
-}
+}  // namespace
 
 // Verifies the drag image moves back to the position where drag is started
 // across displays when drag is cancelled.
@@ -1016,18 +1006,14 @@ TEST_F(DragDropControllerTest, DragCancelAcrossDisplays) {
     GetDragImageWindow()->AddObserver(&observer);
 
     {
-      ui::MouseEvent e(ui::ET_MOUSE_DRAGGED,
-                       gfx::Point(200, 0),
-                       gfx::Point(200, 0),
-                       ui::EF_NONE,
+      ui::MouseEvent e(ui::ET_MOUSE_DRAGGED, gfx::Point(200, 0),
+                       gfx::Point(200, 0), ui::EventTimeForNow(), ui::EF_NONE,
                        ui::EF_NONE);
       drag_drop_controller_->DragUpdate(window, e);
     }
     {
-      ui::MouseEvent e(ui::ET_MOUSE_DRAGGED,
-                       gfx::Point(600, 0),
-                       gfx::Point(600, 0),
-                       ui::EF_NONE,
+      ui::MouseEvent e(ui::ET_MOUSE_DRAGGED, gfx::Point(600, 0),
+                       gfx::Point(600, 0), ui::EventTimeForNow(), ui::EF_NONE,
                        ui::EF_NONE);
       drag_drop_controller_->DragUpdate(window, e);
     }
@@ -1053,18 +1039,14 @@ TEST_F(DragDropControllerTest, DragCancelAcrossDisplays) {
     GetDragImageWindow()->AddObserver(&observer);
 
     {
-      ui::MouseEvent e(ui::ET_MOUSE_DRAGGED,
-                       gfx::Point(600, 0),
-                       gfx::Point(600, 0),
-                       ui::EF_NONE,
+      ui::MouseEvent e(ui::ET_MOUSE_DRAGGED, gfx::Point(600, 0),
+                       gfx::Point(600, 0), ui::EventTimeForNow(), ui::EF_NONE,
                        ui::EF_NONE);
       drag_drop_controller_->DragUpdate(window, e);
     }
     {
-      ui::MouseEvent e(ui::ET_MOUSE_DRAGGED,
-                       gfx::Point(200, 0),
-                       gfx::Point(200, 0),
-                       ui::EF_NONE,
+      ui::MouseEvent e(ui::ET_MOUSE_DRAGGED, gfx::Point(200, 0),
+                       gfx::Point(200, 0), ui::EventTimeForNow(), ui::EF_NONE,
                        ui::EF_NONE);
       drag_drop_controller_->DragUpdate(window, e);
     }
@@ -1080,5 +1062,52 @@ TEST_F(DragDropControllerTest, DragCancelAcrossDisplays) {
   }
 }
 
+TEST_F(DragDropControllerTest, TouchDragDropCompletesOnFling) {
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableTouchDragDrop);
+  ui::GestureConfiguration::GetInstance()
+      ->set_max_touch_move_in_pixels_for_click(1);
+  scoped_ptr<views::Widget> widget(CreateNewWidget());
+  DragTestView* drag_view = new DragTestView;
+  AddViewToWidgetAndResize(widget.get(), drag_view);
+  ui::OSExchangeData data;
+  data.SetString(base::UTF8ToUTF16("I am being dragged"));
+  ui::test::EventGenerator generator(Shell::GetPrimaryRootWindow(),
+                                     widget->GetNativeView());
+
+  gfx::Point start = gfx::Rect(drag_view->bounds()).CenterPoint();
+  gfx::Point mid = start + gfx::Vector2d(drag_view->bounds().width() / 6, 0);
+  gfx::Point end = start + gfx::Vector2d(drag_view->bounds().width() / 3, 0);
+
+  base::TimeDelta timestamp = ui::EventTimeForNow();
+  ui::TouchEvent press(ui::ET_TOUCH_PRESSED, start, 0, timestamp);
+  generator.Dispatch(&press);
+
+  DispatchGesture(ui::ET_GESTURE_LONG_PRESS, start);
+  UpdateDragData(&data);
+  timestamp += base::TimeDelta::FromMilliseconds(10);
+  ui::TouchEvent move1(ui::ET_TOUCH_MOVED, mid, 0, timestamp);
+  generator.Dispatch(&move1);
+  // Doing two moves instead of one will guarantee to generate a fling at the
+  // end.
+  timestamp += base::TimeDelta::FromMilliseconds(10);
+  ui::TouchEvent move2(ui::ET_TOUCH_MOVED, end, 0, timestamp);
+  generator.Dispatch(&move2);
+  ui::TouchEvent release(ui::ET_TOUCH_RELEASED, end, 0, timestamp);
+  generator.Dispatch(&release);
+
+  EXPECT_TRUE(drag_drop_controller_->drag_start_received_);
+  EXPECT_FALSE(drag_drop_controller_->drag_canceled_);
+  EXPECT_EQ(2, drag_drop_controller_->num_drag_updates_);
+  EXPECT_TRUE(drag_drop_controller_->drop_received_);
+  EXPECT_EQ(base::UTF8ToUTF16("I am being dragged"),
+            drag_drop_controller_->drag_string_);
+  EXPECT_EQ(1, drag_view->num_drag_enters_);
+  EXPECT_EQ(2, drag_view->num_drag_updates_);
+  EXPECT_EQ(1, drag_view->num_drops_);
+  EXPECT_EQ(0, drag_view->num_drag_exits_);
+  EXPECT_TRUE(drag_view->drag_done_received_);
+}
+
 }  // namespace test
-}  // namespace aura
+}  // namespace ash

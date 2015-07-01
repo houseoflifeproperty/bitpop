@@ -37,42 +37,40 @@ static const int kWaitInterval = 2000;
 
 class TimerExpiredTask : public win::ObjectWatcher::Delegate {
  public:
-  explicit TimerExpiredTask(ProcessHandle process);
-  ~TimerExpiredTask();
+  explicit TimerExpiredTask(Process process);
+  ~TimerExpiredTask() override;
 
   void TimedOut();
 
   // MessageLoop::Watcher -----------------------------------------------------
-  virtual void OnObjectSignaled(HANDLE object);
+  void OnObjectSignaled(HANDLE object) override;
 
  private:
   void KillProcess();
 
   // The process that we are watching.
-  ProcessHandle process_;
+  Process process_;
 
   win::ObjectWatcher watcher_;
 
   DISALLOW_COPY_AND_ASSIGN(TimerExpiredTask);
 };
 
-TimerExpiredTask::TimerExpiredTask(ProcessHandle process) : process_(process) {
-  watcher_.StartWatching(process_, this);
+TimerExpiredTask::TimerExpiredTask(Process process) : process_(process.Pass()) {
+  watcher_.StartWatching(process_.Handle(), this);
 }
 
 TimerExpiredTask::~TimerExpiredTask() {
   TimedOut();
-  DCHECK(!process_) << "Make sure to close the handle.";
 }
 
 void TimerExpiredTask::TimedOut() {
-  if (process_)
+  if (process_.IsValid())
     KillProcess();
 }
 
 void TimerExpiredTask::OnObjectSignaled(HANDLE object) {
-  CloseHandle(process_);
-  process_ = NULL;
+  process_.Close();
 }
 
 void TimerExpiredTask::KillProcess() {
@@ -83,41 +81,13 @@ void TimerExpiredTask::KillProcess() {
   // terminates.  We just care that it eventually terminates, and that's what
   // TerminateProcess should do for us. Don't check for the result code since
   // it fails quite often. This should be investigated eventually.
-  base::KillProcess(process_, kProcessKilledExitCode, false);
+  process_.Terminate(kProcessKilledExitCode, false);
 
   // Now, just cleanup as if the process exited normally.
-  OnObjectSignaled(process_);
+  OnObjectSignaled(process_.Handle());
 }
 
 }  // namespace
-
-bool KillProcess(ProcessHandle process, int exit_code, bool wait) {
-  bool result = (TerminateProcess(process, exit_code) != FALSE);
-  if (result && wait) {
-    // The process may not end immediately due to pending I/O
-    if (WAIT_OBJECT_0 != WaitForSingleObject(process, 60 * 1000))
-      DPLOG(ERROR) << "Error waiting for process exit";
-  } else if (!result) {
-    DPLOG(ERROR) << "Unable to terminate process";
-  }
-  return result;
-}
-
-// Attempts to kill the process identified by the given process
-// entry structure, giving it the specified exit code.
-// Returns true if this is successful, false otherwise.
-bool KillProcessById(ProcessId process_id, int exit_code, bool wait) {
-  HANDLE process = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE,
-                               FALSE,  // Don't inherit handle
-                               process_id);
-  if (!process) {
-    DPLOG(ERROR) << "Unable to open process " << process_id;
-    return false;
-  }
-  bool ret = KillProcess(process, exit_code, wait);
-  CloseHandle(process);
-  return ret;
-}
 
 TerminationStatus GetTerminationStatus(ProcessHandle handle, int* exit_code) {
   DWORD tmp_exit_code = 0;
@@ -177,28 +147,8 @@ TerminationStatus GetTerminationStatus(ProcessHandle handle, int* exit_code) {
   }
 }
 
-bool WaitForExitCode(ProcessHandle handle, int* exit_code) {
-  bool success = WaitForExitCodeWithTimeout(
-      handle, exit_code, base::TimeDelta::FromMilliseconds(INFINITE));
-  CloseProcessHandle(handle);
-  return success;
-}
-
-bool WaitForExitCodeWithTimeout(ProcessHandle handle,
-                                int* exit_code,
-                                base::TimeDelta timeout) {
-  if (::WaitForSingleObject(handle, timeout.InMilliseconds()) != WAIT_OBJECT_0)
-    return false;
-  DWORD temp_code;  // Don't clobber out-parameters in case of failure.
-  if (!::GetExitCodeProcess(handle, &temp_code))
-    return false;
-
-  *exit_code = temp_code;
-  return true;
-}
-
 bool WaitForProcessesToExit(const FilePath::StringType& executable_name,
-                            base::TimeDelta wait,
+                            TimeDelta wait,
                             const ProcessFilter* filter) {
   bool result = true;
   DWORD start_time = GetTickCount();
@@ -206,8 +156,9 @@ bool WaitForProcessesToExit(const FilePath::StringType& executable_name,
   NamedProcessIterator iter(executable_name, filter);
   for (const ProcessEntry* entry = iter.NextProcessEntry(); entry;
        entry = iter.NextProcessEntry()) {
-    DWORD remaining_wait = std::max<int64>(
-        0, wait.InMilliseconds() - (GetTickCount() - start_time));
+    DWORD remaining_wait = static_cast<DWORD>(std::max(
+        static_cast<int64>(0),
+        wait.InMilliseconds() - (GetTickCount() - start_time)));
     HANDLE process = OpenProcess(SYNCHRONIZE,
                                  FALSE,
                                  entry->th32ProcessID);
@@ -219,13 +170,8 @@ bool WaitForProcessesToExit(const FilePath::StringType& executable_name,
   return result;
 }
 
-bool WaitForSingleProcess(ProcessHandle handle, base::TimeDelta wait) {
-  int exit_code;
-  return WaitForExitCodeWithTimeout(handle, &exit_code, wait) && exit_code == 0;
-}
-
 bool CleanupProcesses(const FilePath::StringType& executable_name,
-                      base::TimeDelta wait,
+                      TimeDelta wait,
                       int exit_code,
                       const ProcessFilter* filter) {
   if (WaitForProcessesToExit(executable_name, wait, filter))
@@ -234,20 +180,19 @@ bool CleanupProcesses(const FilePath::StringType& executable_name,
   return false;
 }
 
-void EnsureProcessTerminated(ProcessHandle process) {
-  DCHECK(process != GetCurrentProcess());
+void EnsureProcessTerminated(Process process) {
+  DCHECK(!process.is_current());
 
   // If already signaled, then we are done!
-  if (WaitForSingleObject(process, 0) == WAIT_OBJECT_0) {
-    CloseHandle(process);
+  if (WaitForSingleObject(process.Handle(), 0) == WAIT_OBJECT_0) {
     return;
   }
 
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&TimerExpiredTask::TimedOut,
-                 base::Owned(new TimerExpiredTask(process))),
-      base::TimeDelta::FromMilliseconds(kWaitInterval));
+      Bind(&TimerExpiredTask::TimedOut,
+           Owned(new TimerExpiredTask(process.Pass()))),
+      TimeDelta::FromMilliseconds(kWaitInterval));
 }
 
 }  // namespace base

@@ -20,7 +20,7 @@ scoped_ptr<google::protobuf::MessageLite> BuildLoginResponse(bool fail_login) {
   login_response->set_id("id");
   if (fail_login)
     login_response->mutable_error()->set_code(1);
-  return login_response.PassAs<google::protobuf::MessageLite>();
+  return login_response.Pass();
 }
 
 }  // namespace
@@ -32,7 +32,8 @@ FakeConnectionHandler::FakeConnectionHandler(
       write_callback_(write_callback),
       fail_login_(false),
       fail_send_(false),
-      initialized_(false) {
+      initialized_(false),
+      had_error_(false) {
 }
 
 FakeConnectionHandler::~FakeConnectionHandler() {
@@ -51,10 +52,11 @@ void FakeConnectionHandler::Init(const mcs_proto::LoginRequest& login_request,
 
 void FakeConnectionHandler::Reset() {
   initialized_ = false;
+  had_error_ = false;
 }
 
 bool FakeConnectionHandler::CanSendMessage() const {
-  return initialized_;
+  return initialized_ && !had_error_;
 }
 
 void FakeConnectionHandler::SendMessage(

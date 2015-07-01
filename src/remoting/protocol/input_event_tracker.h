@@ -21,7 +21,7 @@ namespace protocol {
 class InputEventTracker : public InputStub {
  public:
   explicit InputEventTracker(protocol::InputStub* input_stub);
-  virtual ~InputEventTracker();
+  ~InputEventTracker() override;
 
   // Returns true if the key with the specified USB code is currently pressed.
   bool IsKeyPressed(uint32 usb_keycode) const;
@@ -29,14 +29,21 @@ class InputEventTracker : public InputStub {
   // Returns the count of keys currently pressed.
   int PressedKeyCount() const;
 
-  // Dispatch release events for all currently-pressed keys and mouse buttons
-  // to the InputStub.
+  // Dispatch release events for all currently-pressed keys, mouse buttons, and
+  // touch points to the InputStub.
   void ReleaseAll();
 
+  // Similar to ReleaseAll, but conditional on a modifier key tracked by this
+  // class being pressed without the corresponding parameter indicating that it
+  // should be.
+  void ReleaseAllIfModifiersStuck(bool alt_expected, bool ctrl_expected,
+                                  bool meta_expected, bool shift_expected);
+
   // InputStub interface.
-  virtual void InjectKeyEvent(const KeyEvent& event) OVERRIDE;
-  virtual void InjectTextEvent(const TextEvent& event) OVERRIDE;
-  virtual void InjectMouseEvent(const MouseEvent& event) OVERRIDE;
+  void InjectKeyEvent(const KeyEvent& event) override;
+  void InjectTextEvent(const TextEvent& event) override;
+  void InjectMouseEvent(const MouseEvent& event) override;
+  void InjectTouchEvent(const TouchEvent& event) override;
 
  private:
   protocol::InputStub* input_stub_;
@@ -45,6 +52,8 @@ class InputEventTracker : public InputStub {
 
   webrtc::DesktopVector mouse_pos_;
   uint32 mouse_button_state_;
+
+  std::set<uint32> touch_point_ids_;
 
   DISALLOW_COPY_AND_ASSIGN(InputEventTracker);
 };

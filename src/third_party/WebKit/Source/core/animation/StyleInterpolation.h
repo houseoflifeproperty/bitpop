@@ -6,13 +6,26 @@
 #define StyleInterpolation_h
 
 #include "core/CSSPropertyNames.h"
+#include "core/CoreExport.h"
 #include "core/animation/Interpolation.h"
+#include "core/animation/PropertyHandle.h"
 
 namespace blink {
 
 class StyleResolverState;
 
-class StyleInterpolation : public Interpolation {
+enum InterpolationRange {
+    RangeAll,
+    RangeFloor,
+    RangeGreaterThanOrEqualToOne,
+    RangeNonNegative,
+    RangeRound,
+    RangeRoundGreaterThanOrEqualToOne,
+    RangeOpacityFIXME,
+    RangeZeroToOne
+};
+
+class CORE_EXPORT StyleInterpolation : public Interpolation {
 public:
     // 1) convert m_cachedValue into an X
     // 2) shove X into StyleResolverState
@@ -22,11 +35,17 @@ public:
     // (3) a custom value that is inserted directly into the StyleResolverState.
     virtual void apply(StyleResolverState&) const = 0;
 
-    virtual bool isStyleInterpolation() const OVERRIDE FINAL { return true; }
+    virtual bool isStyleInterpolation() const override final { return true; }
+    virtual bool isDeferredLegacyStyleInterpolation() const { return false; }
 
     CSSPropertyID id() const { return m_id; }
 
-    virtual void trace(Visitor* visitor) OVERRIDE
+    virtual PropertyHandle property() const override final
+    {
+        return PropertyHandle(id());
+    }
+
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         Interpolation::trace(visitor);
     }

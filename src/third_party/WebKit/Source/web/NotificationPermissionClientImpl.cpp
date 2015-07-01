@@ -9,7 +9,7 @@
 #include "core/dom/ExecutionContext.h"
 #include "modules/notifications/Notification.h"
 #include "public/web/WebFrameClient.h"
-#include "public/web/WebNotificationPermissionCallback.h"
+#include "public/web/modules/notifications/WebNotificationPermissionCallback.h"
 #include "web/WebLocalFrameImpl.h"
 
 namespace blink {
@@ -25,10 +25,10 @@ public:
 
     virtual ~WebNotificationPermissionCallbackImpl() { }
 
-    virtual void permissionRequestComplete(WebNotificationPermission permission) OVERRIDE
+    virtual void permissionRequestComplete(WebNotificationPermission permission) override
     {
         if (m_callback)
-            m_callback->handleEvent(Notification::permissionString(static_cast<NotificationClient::Permission>(permission)));
+            m_callback->handleEvent(Notification::permissionString(permission));
     }
 
 private:

@@ -11,6 +11,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
+#include <stdint.h>
 
 namespace blink {
 
@@ -19,7 +20,7 @@ namespace blink {
 // needs to be on Oilpan's heap whereas WebSocketImpl cannot be on Oilpan's
 // heap. Thus we need to introduce a proxy class to decouple WebSocketImpl
 // from WebSocketChannelClient.
-class WebSocketChannelClientProxy FINAL : public GarbageCollectedFinalized<WebSocketChannelClientProxy>, public WebSocketChannelClient {
+class WebSocketChannelClientProxy final : public GarbageCollectedFinalized<WebSocketChannelClientProxy>, public WebSocketChannelClient {
     USING_GARBAGE_COLLECTED_MIXIN(WebSocketChannelClientProxy)
 public:
     static WebSocketChannelClientProxy* create(WebSocketImpl* impl)
@@ -27,35 +28,40 @@ public:
         return new WebSocketChannelClientProxy(impl);
     }
 
-    virtual void didConnect(const String& subprotocol, const String& extensions) OVERRIDE
+    virtual void didConnect(const String& subprotocol, const String& extensions) override
     {
         m_impl->didConnect(subprotocol, extensions);
     }
-    virtual void didReceiveMessage(const String& message) OVERRIDE
+    virtual void didReceiveTextMessage(const String& payload) override
     {
-        m_impl->didReceiveMessage(message);
+        m_impl->didReceiveTextMessage(payload);
     }
-    virtual void didReceiveBinaryData(PassOwnPtr<Vector<char> > binaryData) OVERRIDE
+    virtual void didReceiveBinaryMessage(PassOwnPtr<Vector<char>> payload) override
     {
-        m_impl->didReceiveBinaryData(binaryData);
+        m_impl->didReceiveBinaryMessage(payload);
     }
-    virtual void didReceiveMessageError() OVERRIDE
+    virtual void didError() override
     {
-        m_impl->didReceiveMessageError();
+        m_impl->didError();
     }
-    virtual void didConsumeBufferedAmount(unsigned long consumed) OVERRIDE
+    virtual void didConsumeBufferedAmount(uint64_t consumed) override
     {
         m_impl->didConsumeBufferedAmount(consumed);
     }
-    virtual void didStartClosingHandshake() OVERRIDE
+    virtual void didStartClosingHandshake() override
     {
         m_impl->didStartClosingHandshake();
     }
-    virtual void didClose(ClosingHandshakeCompletionStatus status, unsigned short code, const String& reason) OVERRIDE
+    virtual void didClose(ClosingHandshakeCompletionStatus status, unsigned short code, const String& reason) override
     {
         WebSocketImpl* impl = m_impl;
         m_impl = nullptr;
         impl->didClose(status, code, reason);
+    }
+
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        WebSocketChannelClient::trace(visitor);
     }
 
 private:

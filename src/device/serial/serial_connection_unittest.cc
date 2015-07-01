@@ -15,16 +15,16 @@
 #include "device/serial/serial_connection.h"
 #include "device/serial/serial_service_impl.h"
 #include "device/serial/test_serial_io_handler.h"
-#include "mojo/public/cpp/bindings/error_handler.h"
-#include "mojo/public/cpp/bindings/interface_ptr.h"
-#include "mojo/public/cpp/bindings/interface_request.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/error_handler.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_ptr.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_request.h"
 
 namespace device {
 namespace {
 
 class FakeSerialDeviceEnumerator : public SerialDeviceEnumerator {
-  virtual mojo::Array<serial::DeviceInfoPtr> GetDevices() OVERRIDE {
+  mojo::Array<serial::DeviceInfoPtr> GetDevices() override {
     mojo::Array<serial::DeviceInfoPtr> devices(1);
     devices[0] = serial::DeviceInfo::New();
     devices[0]->path = "device";
@@ -62,7 +62,7 @@ class SerialConnectionTest : public testing::Test, public mojo::ErrorHandler {
         receive_error_(serial::RECEIVE_ERROR_NONE),
         expected_event_(EVENT_NONE) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     message_loop_.reset(new base::MessageLoop);
     mojo::InterfacePtr<serial::SerialService> service;
     mojo::BindToProxy(
@@ -70,21 +70,23 @@ class SerialConnectionTest : public testing::Test, public mojo::ErrorHandler {
             new SerialConnectionFactory(
                 base::Bind(&SerialConnectionTest::CreateIoHandler,
                            base::Unretained(this)),
-                base::MessageLoopProxy::current()),
+                base::ThreadTaskRunnerHandle::Get()),
             scoped_ptr<SerialDeviceEnumerator>(new FakeSerialDeviceEnumerator)),
         &service);
     service.set_error_handler(this);
-    mojo::InterfacePtr<serial::DataSink> consumer;
-    mojo::InterfacePtr<serial::DataSource> producer;
-    service->Connect("device",
-                     serial::ConnectionOptions::New(),
-                     mojo::Get(&connection_),
-                     mojo::Get(&consumer),
-                     mojo::Get(&producer));
-    sender_.reset(new DataSender(
-        consumer.Pass(), kBufferSize, serial::SEND_ERROR_DISCONNECTED));
-    receiver_ = new DataReceiver(
-        producer.Pass(), kBufferSize, serial::RECEIVE_ERROR_DISCONNECTED);
+    mojo::InterfacePtr<serial::DataSink> sink;
+    mojo::InterfacePtr<serial::DataSource> source;
+    mojo::InterfacePtr<serial::DataSourceClient> source_client;
+    mojo::InterfaceRequest<serial::DataSourceClient> source_client_request =
+        mojo::GetProxy(&source_client);
+    service->Connect("device", serial::ConnectionOptions::New(),
+                     mojo::GetProxy(&connection_), mojo::GetProxy(&sink),
+                     mojo::GetProxy(&source), source_client.Pass());
+    sender_.reset(new DataSender(sink.Pass(), kBufferSize,
+                                 serial::SEND_ERROR_DISCONNECTED));
+    receiver_ =
+        new DataReceiver(source.Pass(), source_client_request.Pass(),
+                         kBufferSize, serial::RECEIVE_ERROR_DISCONNECTED);
     connection_.set_error_handler(this);
     connection_->GetInfo(
         base::Bind(&SerialConnectionTest::StoreInfo, base::Unretained(this)));
@@ -168,7 +170,7 @@ class SerialConnectionTest : public testing::Test, public mojo::ErrorHandler {
     EventReceived(EVENT_RECEIVE_ERROR);
   }
 
-  virtual void OnConnectionError() OVERRIDE {
+  void OnConnectionError() override {
     EventReceived(EVENT_ERROR);
     FAIL() << "Connection error";
   }
@@ -269,13 +271,18 @@ TEST_F(SerialConnectionTest, Flush) {
   EXPECT_EQ(1, io_handler_->flushes());
 }
 
-TEST_F(SerialConnectionTest, Disconnect) {
+TEST_F(SerialConnectionTest, DisconnectWithSend) {
   connection_.reset();
   io_handler_->set_send_callback(base::Bind(base::DoNothing));
   ASSERT_NO_FATAL_FAILURE(Send("data"));
   WaitForEvent(EVENT_SEND_ERROR);
   EXPECT_EQ(serial::SEND_ERROR_DISCONNECTED, send_error_);
   EXPECT_EQ(0, bytes_sent_);
+  EXPECT_TRUE(io_handler_->HasOneRef());
+}
+
+TEST_F(SerialConnectionTest, DisconnectWithReceive) {
+  connection_.reset();
   ASSERT_NO_FATAL_FAILURE(Receive());
   WaitForEvent(EVENT_RECEIVE_ERROR);
   EXPECT_EQ(serial::RECEIVE_ERROR_DISCONNECTED, receive_error_);

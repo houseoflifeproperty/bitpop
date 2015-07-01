@@ -8,6 +8,7 @@
 #include <pthread.h>
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -94,12 +95,17 @@ class KernelObject {
   std::string GetCWD();
   Error SetCWD(const std::string& path);
 
+  mode_t GetUmask();
+  // Also returns current umask (like POSIX's umask(2))
+  mode_t SetUmask(mode_t);
+
   // Returns parts of the absolute path for the given relative path
   Path GetAbsParts(const std::string& path);
 
  private:
   std::string cwd_;
-  std::vector<int> free_fds_;
+  mode_t umask_;
+  std::set<int> free_fds_;
   HandleMap_t handle_map_;
   FsMap_t filesystems_;
 
@@ -111,6 +117,8 @@ class KernelObject {
 
   // Lock to protect cwd_.
   sdk_util::SimpleLock cwd_lock_;
+  // Lock to protect umask_.
+  sdk_util::SimpleLock umask_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(KernelObject);
 };

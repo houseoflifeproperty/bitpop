@@ -18,7 +18,7 @@
 #include "media/base/video_decoder.h"
 #include "media/base/video_decoder_config.h"
 #include "media/base/video_frame.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 using base::ResetAndReturn;
 
@@ -28,23 +28,28 @@ class SingleThreadTaskRunner;
 
 namespace media {
 
+typedef base::Callback<void(int)> BytesDecodedCB;
+
 class FakeVideoDecoder : public VideoDecoder {
  public:
   // Constructs an object with a decoding delay of |decoding_delay| frames.
+  // |bytes_decoded_cb| is called after each decode. The sum of the byte
+  // count over all calls will be equal to total_bytes_decoded().
   FakeVideoDecoder(int decoding_delay,
-                   int max_parallel_decoding_requests);
-  virtual ~FakeVideoDecoder();
+                   int max_parallel_decoding_requests,
+                   const BytesDecodedCB& bytes_decoded_cb);
+  ~FakeVideoDecoder() override;
 
   // VideoDecoder implementation.
-  virtual std::string GetDisplayName() const OVERRIDE;
-  virtual void Initialize(const VideoDecoderConfig& config,
-                          bool low_delay,
-                          const PipelineStatusCB& status_cb,
-                          const OutputCB& output_cb) OVERRIDE;
-  virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
-                      const DecodeCB& decode_cb) OVERRIDE;
-  virtual void Reset(const base::Closure& closure) OVERRIDE;
-  virtual int GetMaxDecodeRequests() const OVERRIDE;
+  std::string GetDisplayName() const override;
+  void Initialize(const VideoDecoderConfig& config,
+                  bool low_delay,
+                  const PipelineStatusCB& status_cb,
+                  const OutputCB& output_cb) override;
+  void Decode(const scoped_refptr<DecoderBuffer>& buffer,
+              const DecodeCB& decode_cb) override;
+  void Reset(const base::Closure& closure) override;
+  int GetMaxDecodeRequests() const override;
 
   // Holds the next init/decode/reset callback from firing.
   void HoldNextInit();
@@ -61,6 +66,8 @@ class FakeVideoDecoder : public VideoDecoder {
   void SatisfySingleDecode();
 
   void SimulateError();
+  // Fail with status DECODER_ERROR_NOT_SUPPORTED when Initialize() is called.
+  void SimulateFailureToInit();
 
   int total_bytes_decoded() const { return total_bytes_decoded_; }
 
@@ -90,6 +97,7 @@ class FakeVideoDecoder : public VideoDecoder {
 
   const size_t decoding_delay_;
   const int max_parallel_decoding_requests_;
+  BytesDecodedCB bytes_decoded_cb_;
 
   State state_;
 
@@ -106,6 +114,8 @@ class FakeVideoDecoder : public VideoDecoder {
   std::list<scoped_refptr<VideoFrame> > decoded_frames_;
 
   int total_bytes_decoded_;
+
+  bool fail_to_initialize_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<FakeVideoDecoder> weak_factory_;

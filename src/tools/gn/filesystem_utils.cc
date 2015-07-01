@@ -132,7 +132,8 @@ std::vector<base::FilePath::StringType> GetPathComponents(
   // don't want the slash in there. This doesn't support input like "C:foo"
   // which means foo relative to the current directory of the C drive but
   // that's basically legacy DOS behavior we don't need to support.
-  if (result.size() >= 2 && result[1].size() == 1 && IsSlash(result[1][0]))
+  if (result.size() >= 2 && result[1].size() == 1 &&
+      IsSlash(static_cast<char>(result[1][0])))
     result.erase(result.begin() + 1);
 #endif
 
@@ -420,29 +421,8 @@ bool MakeAbsolutePathRelativeIfPossible(const base::StringPiece& source_root,
 #endif
 }
 
-std::string InvertDir(const SourceDir& path) {
-  const std::string value = path.value();
-  if (value.empty())
-    return std::string();
-
-  DCHECK(value[0] == '/');
-  size_t begin_index = 1;
-
-  // If the input begins with two slashes, skip over both (this is a
-  // source-relative dir). These must be forward slashes only.
-  if (value.size() > 1 && value[1] == '/')
-    begin_index = 2;
-
-  std::string ret;
-  for (size_t i = begin_index; i < value.size(); i++) {
-    if (IsSlash(value[i]))
-      ret.append("../");
-  }
-  return ret;
-}
-
 void NormalizePath(std::string* path) {
-  char* pathbuf = path->empty() ? NULL : &(*path)[0];
+  char* pathbuf = path->empty() ? nullptr : &(*path)[0];
 
   // top_index is the first character we can modify in the path. Anything
   // before this indicates where the path is relative to.
@@ -538,18 +518,29 @@ void ConvertPathToSystem(std::string* path) {
 #endif
 }
 
-std::string RebaseSourceAbsolutePath(const std::string& input,
-                                     const SourceDir& dest_dir) {
-  CHECK(input.size() >= 2 && input[0] == '/' && input[1] == '/')
-      << "Input to rebase isn't source-absolute: " << input;
-  CHECK(dest_dir.is_source_absolute())
-      << "Dir to rebase to isn't source-absolute: " << dest_dir.value();
+std::string MakeRelativePath(const std::string& input,
+                             const std::string& dest) {
+#if defined(OS_WIN)
+  // Make sure that absolute |input| path starts with a slash if |dest| path
+  // does. Otherwise skipping common prefixes won't work properly. Ensure the
+  // same for |dest| path too.
+  if (IsPathAbsolute(input) && !IsSlash(input[0]) && IsSlash(dest[0])) {
+    std::string corrected_input(1, dest[0]);
+    corrected_input.append(input);
+    return MakeRelativePath(corrected_input, dest);
+  }
+  if (IsPathAbsolute(dest) && !IsSlash(dest[0]) && IsSlash(input[0])) {
+    std::string corrected_dest(1, input[0]);
+    corrected_dest.append(dest);
+    return MakeRelativePath(input, corrected_dest);
+  }
+#endif
 
-  const std::string& dest = dest_dir.value();
+  std::string ret;
 
   // Skip the common prefixes of the source and dest as long as they end in
   // a [back]slash.
-  size_t common_prefix_len = 2;  // The beginning two "//" are always the same.
+  size_t common_prefix_len = 0;
   size_t max_common_length = std::min(input.size(), dest.size());
   for (size_t i = common_prefix_len; i < max_common_length; i++) {
     if (IsSlash(input[i]) && IsSlash(dest[i]))
@@ -559,7 +550,6 @@ std::string RebaseSourceAbsolutePath(const std::string& input,
   }
 
   // Invert the dest dir starting from the end of the common prefix.
-  std::string ret;
   for (size_t i = common_prefix_len; i < dest.size(); i++) {
     if (IsSlash(dest[i]))
       ret.append("../");
@@ -572,6 +562,58 @@ std::string RebaseSourceAbsolutePath(const std::string& input,
   if (ret.empty())
     ret.push_back('.');
 
+  return ret;
+}
+
+std::string RebasePath(const std::string& input,
+                       const SourceDir& dest_dir,
+                       const base::StringPiece& source_root) {
+  std::string ret;
+  DCHECK(source_root.empty() || !source_root.ends_with("/"));
+
+  bool input_is_source_path = (input.size() >= 2 &&
+                               input[0] == '/' && input[1] == '/');
+
+  if (!source_root.empty() &&
+      (!input_is_source_path || !dest_dir.is_source_absolute())) {
+    std::string input_full;
+    std::string dest_full;
+    if (input_is_source_path) {
+      source_root.AppendToString(&input_full);
+      input_full.push_back('/');
+      input_full.append(input, 2, std::string::npos);
+    } else {
+      input_full.append(input);
+    }
+    if (dest_dir.is_source_absolute()) {
+      source_root.AppendToString(&dest_full);
+      dest_full.push_back('/');
+      dest_full.append(dest_dir.value(), 2, std::string::npos);
+    } else {
+#if defined(OS_WIN)
+      // On Windows, SourceDir system-absolute paths start
+      // with /, e.g. "/C:/foo/bar".
+      const std::string& value = dest_dir.value();
+      if (value.size() > 2 && value[2] == ':')
+        dest_full.append(dest_dir.value().substr(1));
+      else
+        dest_full.append(dest_dir.value());
+#else
+      dest_full.append(dest_dir.value());
+#endif
+    }
+    bool remove_slash = false;
+    if (!EndsWithSlash(input_full)) {
+      input_full.push_back('/');
+      remove_slash = true;
+    }
+    ret = MakeRelativePath(input_full, dest_full);
+    if (remove_slash && ret.size() > 1)
+      ret.resize(ret.size() - 1);
+    return ret;
+  }
+
+  ret = MakeRelativePath(input, dest_dir.value());
   return ret;
 }
 
@@ -601,7 +643,7 @@ SourceDir SourceDirForPath(const base::FilePath& source_root,
   // See if path is inside the source root by looking for each of source root's
   // components at the beginning of path.
   bool is_inside_source;
-  if (path_comp.size() < source_comp.size()) {
+  if (path_comp.size() < source_comp.size() || source_root.empty()) {
     // Too small to fit.
     is_inside_source = false;
   } else {
@@ -697,6 +739,29 @@ OutputFile GetOutputDirForSourceDirAsOutputFile(const Settings* settings,
     // slashes to append to the toolchain object directory.
     result.value().append(&source_dir.value()[2],
                           source_dir.value().size() - 2);
+  } else {
+    // system-absolute
+    const std::string& build_dir =
+        settings->build_settings()->build_dir().value();
+
+    if (StartsWithASCII(source_dir.value(), build_dir, true)) {
+      size_t build_dir_size = build_dir.size();
+      result.value().append(&source_dir.value()[build_dir_size],
+                            source_dir.value().size() - build_dir_size);
+    } else {
+      result.value().append("ABS_PATH");
+#if defined(OS_WIN)
+      // Windows absolute path contains ':' after drive letter. Remove it to
+      // avoid inserting ':' in the middle of path (eg. "ABS_PATH/C:/").
+      std::string src_dir_value = source_dir.value();
+      const auto colon_pos = src_dir_value.find(':');
+      if (colon_pos != std::string::npos)
+        src_dir_value.erase(src_dir_value.begin() + colon_pos);
+#else
+      const std::string& src_dir_value = source_dir.value();
+#endif
+      result.value().append(src_dir_value);
+    }
   }
   return result;
 }

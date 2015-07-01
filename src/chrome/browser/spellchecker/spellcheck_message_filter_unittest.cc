@@ -19,12 +19,12 @@ class TestingSpellCheckMessageFilter : public SpellCheckMessageFilter {
       : SpellCheckMessageFilter(0),
         spellcheck_(new SpellcheckService(&profile_)) {}
 
-  virtual bool Send(IPC::Message* message) OVERRIDE {
+  bool Send(IPC::Message* message) override {
     sent_messages.push_back(message);
     return true;
   }
 
-  virtual SpellcheckService* GetSpellcheckService() const OVERRIDE {
+  SpellcheckService* GetSpellcheckService() const override {
     return spellcheck_.get();
   }
 
@@ -43,7 +43,7 @@ class TestingSpellCheckMessageFilter : public SpellCheckMessageFilter {
   ScopedVector<IPC::Message> sent_messages;
 
  private:
-  virtual ~TestingSpellCheckMessageFilter() {}
+  ~TestingSpellCheckMessageFilter() override {}
 
   content::TestBrowserThreadBundle thread_bundle_;
   TestingProfile profile_;
@@ -103,11 +103,11 @@ TEST(SpellCheckMessageFilterTest, OnTextCheckCompleteTestCustomDictionary) {
 
   SpellCheckMsg_RespondSpellingService::Param params;
   bool ok = SpellCheckMsg_RespondSpellingService::Read(
-      filter->sent_messages[0], & params);
-  int sent_identifier = params.a;
-  bool sent_success = params.b;
-  base::string16 sent_text = params.c;
-  std::vector<SpellCheckResult> sent_results = params.d;
+      filter->sent_messages[0], &params);
+  int sent_identifier = get<0>(params);
+  bool sent_success = get<1>(params);
+  base::string16 sent_text = get<2>(params);
+  std::vector<SpellCheckResult> sent_results = get<3>(params);
   EXPECT_TRUE(ok);
   EXPECT_EQ(kCallbackId, sent_identifier);
   EXPECT_EQ(kSuccess, sent_success);
@@ -135,8 +135,8 @@ TEST(SpellCheckMessageFilterTest, OnTextCheckCompleteTest) {
   SpellCheckMsg_RespondSpellingService::Param params;
   bool ok = SpellCheckMsg_RespondSpellingService::Read(
       filter->sent_messages[0], & params);
-  base::string16 sent_text = params.c;
-  std::vector<SpellCheckResult> sent_results = params.d;
+  base::string16 sent_text = get<2>(params);
+  std::vector<SpellCheckResult> sent_results = get<3>(params);
   EXPECT_TRUE(ok);
   EXPECT_EQ(static_cast<size_t>(2), sent_results.size());
 }

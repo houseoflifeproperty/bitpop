@@ -47,10 +47,12 @@ class GPU_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
     virtual void DetachFromFramebuffer(Framebuffer* framebuffer) const = 0;
     virtual bool ValidForAttachmentType(
         GLenum attachment_type, uint32 max_color_attachments) = 0;
+    virtual size_t GetSignatureSize(TextureManager* texture_manager) const = 0;
     virtual void AddToSignature(
         TextureManager* texture_manager, std::string* signature) const = 0;
     virtual void OnWillRenderTo() const = 0;
     virtual void OnDidRenderTo() const = 0;
+    virtual bool FormsFeedbackLoop(TextureRef* texture, GLint level) const = 0;
 
    protected:
     friend class base::RefCounted<Attachment>;
@@ -71,6 +73,11 @@ class GPU_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
     TextureManager* texture_manager,
     GLenum attachment,
     bool cleared);
+
+  // Unbinds all attachments from this framebuffer for workaround
+  // 'unbind_attachments_on_bound_render_fbo_delete'.  The Framebuffer must be
+  // bound when calling this.
+  void DoUnbindGLAttachmentsForWorkaround(GLenum target);
 
   // Attaches a renderbuffer to a particlar attachment.
   // Pass null to detach.

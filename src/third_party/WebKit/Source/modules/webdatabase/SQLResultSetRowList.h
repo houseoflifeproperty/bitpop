@@ -33,15 +33,17 @@
 #include "modules/webdatabase/sqlite/SQLValue.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
-#include "wtf/RefCounted.h"
 
 namespace blink {
+class ScriptValue;
+class ScriptState;
+class ExceptionState;
 
-class SQLResultSetRowList : public RefCountedWillBeGarbageCollectedFinalized<SQLResultSetRowList>, public ScriptWrappable {
+class SQLResultSetRowList : public GarbageCollectedFinalized<SQLResultSetRowList>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<SQLResultSetRowList> create() { return adoptRefWillBeNoop(new SQLResultSetRowList); }
-    void trace(Visitor*) { }
+    static SQLResultSetRowList* create() { return new SQLResultSetRowList; }
+    DEFINE_INLINE_TRACE() { }
 
     const Vector<String>& columnNames() const { return m_columns; }
     const Vector<SQLValue>& values() const { return m_result; }
@@ -50,6 +52,7 @@ public:
     void addResult(const SQLValue& result) { m_result.append(result); }
 
     unsigned length() const;
+    ScriptValue item(ScriptState*, unsigned index, ExceptionState&);
 
 private:
     SQLResultSetRowList() { }

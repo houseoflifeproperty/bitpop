@@ -40,7 +40,7 @@ namespace wm {
 class WM_EXPORT CompoundEventFilter : public ui::EventHandler {
  public:
   CompoundEventFilter();
-  virtual ~CompoundEventFilter();
+  ~CompoundEventFilter() override;
 
   // Returns the cursor for the specified component.
   static gfx::NativeCursor CursorForWindowComponent(int window_component);
@@ -73,17 +73,14 @@ class WM_EXPORT CompoundEventFilter : public ui::EventHandler {
                                         bool enable);
 
   // Overridden from ui::EventHandler:
-  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
-  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
-  virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
-  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  void OnKeyEvent(ui::KeyEvent* event) override;
+  void OnMouseEvent(ui::MouseEvent* event) override;
+  void OnScrollEvent(ui::ScrollEvent* event) override;
+  void OnTouchEvent(ui::TouchEvent* event) override;
+  void OnGestureEvent(ui::GestureEvent* event) override;
 
   // Additional pre-target event handlers.
   ObserverList<ui::EventHandler, true> handlers_;
-
-  // True if the cursur was hidden by the filter.
-  bool cursor_hidden_by_filter_;
 
   DISALLOW_COPY_AND_ASSIGN(CompoundEventFilter);
 };

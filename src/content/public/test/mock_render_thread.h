@@ -8,6 +8,7 @@
 #include "base/memory/shared_memory.h"
 #include "base/observer_list.h"
 #include "base/strings/string16.h"
+#include "cc/test/test_shared_bitmap_manager.h"
 #include "content/public/renderer/render_thread.h"
 #include "ipc/ipc_test_sink.h"
 #include "ipc/message_filter.h"
@@ -22,6 +23,8 @@ class MessageReplyDeserializer;
 
 namespace content {
 
+enum class SandboxFlags;
+
 // This class is a very simple mock of RenderThread. It simulates an IPC channel
 // which supports only three messages:
 // ViewHostMsg_CreateWidget : sync message sent by the Widget.
@@ -30,48 +33,48 @@ namespace content {
 class MockRenderThread : public RenderThread {
  public:
   MockRenderThread();
-  virtual ~MockRenderThread();
+  ~MockRenderThread() override;
 
   // Provides access to the messages that have been received by this thread.
   IPC::TestSink& sink() { return sink_; }
 
   // RenderThread implementation:
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
-  virtual base::MessageLoop* GetMessageLoop() OVERRIDE;
-  virtual IPC::SyncChannel* GetChannel() OVERRIDE;
-  virtual std::string GetLocale() OVERRIDE;
-  virtual IPC::SyncMessageFilter* GetSyncMessageFilter() OVERRIDE;
-  virtual scoped_refptr<base::MessageLoopProxy> GetIOMessageLoopProxy()
-      OVERRIDE;
-  virtual void AddRoute(int32 routing_id, IPC::Listener* listener) OVERRIDE;
-  virtual void RemoveRoute(int32 routing_id) OVERRIDE;
-  virtual int GenerateRoutingID() OVERRIDE;
-  virtual void AddFilter(IPC::MessageFilter* filter) OVERRIDE;
-  virtual void RemoveFilter(IPC::MessageFilter* filter) OVERRIDE;
-  virtual void AddObserver(RenderProcessObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(RenderProcessObserver* observer) OVERRIDE;
-  virtual void SetResourceDispatcherDelegate(
-      ResourceDispatcherDelegate* delegate) OVERRIDE;
-  virtual void EnsureWebKitInitialized() OVERRIDE;
-  virtual void RecordAction(const base::UserMetricsAction& action) OVERRIDE;
-  virtual void RecordComputedAction(const std::string& action) OVERRIDE;
-  virtual scoped_ptr<base::SharedMemory> HostAllocateSharedMemoryBuffer(
-      size_t buffer_size) OVERRIDE;
-  virtual void RegisterExtension(v8::Extension* extension) OVERRIDE;
-  virtual void ScheduleIdleHandler(int64 initial_delay_ms) OVERRIDE;
-  virtual void IdleHandler() OVERRIDE;
-  virtual int64 GetIdleNotificationDelayInMs() const OVERRIDE;
-  virtual void SetIdleNotificationDelayInMs(
-      int64 idle_notification_delay_in_ms) OVERRIDE;
-  virtual void UpdateHistograms(int sequence_number) OVERRIDE;
-  virtual int PostTaskToAllWebWorkers(const base::Closure& closure) OVERRIDE;
-  virtual bool ResolveProxy(const GURL& url, std::string* proxy_list) OVERRIDE;
-  virtual base::WaitableEvent* GetShutdownEvent() OVERRIDE;
+  bool Send(IPC::Message* msg) override;
+  scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() override;
+  IPC::SyncChannel* GetChannel() override;
+  std::string GetLocale() override;
+  IPC::SyncMessageFilter* GetSyncMessageFilter() override;
+  scoped_refptr<base::MessageLoopProxy> GetIOMessageLoopProxy() override;
+  void AddRoute(int32 routing_id, IPC::Listener* listener) override;
+  void RemoveRoute(int32 routing_id) override;
+  int GenerateRoutingID() override;
+  void AddFilter(IPC::MessageFilter* filter) override;
+  void RemoveFilter(IPC::MessageFilter* filter) override;
+  void AddObserver(RenderProcessObserver* observer) override;
+  void RemoveObserver(RenderProcessObserver* observer) override;
+  void SetResourceDispatcherDelegate(
+      ResourceDispatcherDelegate* delegate) override;
+  void EnsureWebKitInitialized() override;
+  void RecordAction(const base::UserMetricsAction& action) override;
+  void RecordComputedAction(const std::string& action) override;
+  scoped_ptr<base::SharedMemory> HostAllocateSharedMemoryBuffer(
+      size_t buffer_size) override;
+  cc::SharedBitmapManager* GetSharedBitmapManager() override;
+  void RegisterExtension(v8::Extension* extension) override;
+  void ScheduleIdleHandler(int64 initial_delay_ms) override;
+  void IdleHandler() override;
+  int64 GetIdleNotificationDelayInMs() const override;
+  void SetIdleNotificationDelayInMs(
+      int64 idle_notification_delay_in_ms) override;
+  void UpdateHistograms(int sequence_number) override;
+  int PostTaskToAllWebWorkers(const base::Closure& closure) override;
+  bool ResolveProxy(const GURL& url, std::string* proxy_list) override;
+  base::WaitableEvent* GetShutdownEvent() override;
 #if defined(OS_WIN)
-  virtual void PreCacheFont(const LOGFONT& log_font) OVERRIDE;
-  virtual void ReleaseCachedFonts() OVERRIDE;
+  void PreCacheFont(const LOGFONT& log_font) override;
+  void ReleaseCachedFonts() override;
 #endif
-  virtual ServiceRegistry* GetServiceRegistry() OVERRIDE;
+  ServiceRegistry* GetServiceRegistry() override;
 
   //////////////////////////////////////////////////////////////////////////
   // The following functions are called by the test itself.
@@ -132,6 +135,7 @@ class MockRenderThread : public RenderThread {
   // The Frame expects to be returned a valid route_id different from its own.
   void OnCreateChildFrame(int new_frame_routing_id,
                           const std::string& frame_name,
+                          SandboxFlags sandbox_flags,
                           int* new_render_frame_id);
 
 #if defined(OS_WIN)
@@ -163,6 +167,8 @@ class MockRenderThread : public RenderThread {
 
   // Observers to notify.
   ObserverList<RenderProcessObserver> observers_;
+
+  cc::TestSharedBitmapManager shared_bitmap_manager_;
 };
 
 }  // namespace content

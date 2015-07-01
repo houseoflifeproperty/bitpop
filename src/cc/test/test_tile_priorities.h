@@ -5,7 +5,7 @@
 #ifndef CC_TEST_TEST_TILE_PRIORITIES_H_
 #define CC_TEST_TEST_TILE_PRIORITIES_H_
 
-#include "cc/resources/tile_priority.h"
+#include "cc/tiles/tile_priority.h"
 
 namespace cc {
 
@@ -22,11 +22,6 @@ class TilePriorityForEventualBin : public TilePriority {
 class TilePriorityForNowBin : public TilePriority {
  public:
   TilePriorityForNowBin();
-};
-
-class TilePriorityRequiredForActivation : public TilePriority {
- public:
-  TilePriorityRequiredForActivation();
 };
 
 class TilePriorityLowRes : public TilePriority {

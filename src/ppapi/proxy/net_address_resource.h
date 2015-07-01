@@ -28,19 +28,17 @@ class PPAPI_PROXY_EXPORT NetAddressResource : public PluginResource,
                      PP_Instance instance,
                      const PP_NetAddress_Private& private_addr);
 
-  virtual ~NetAddressResource();
+  ~NetAddressResource() override;
 
   // PluginResource implementation.
-  virtual thunk::PPB_NetAddress_API* AsPPB_NetAddress_API() OVERRIDE;
+  thunk::PPB_NetAddress_API* AsPPB_NetAddress_API() override;
 
   // PPB_NetAddress_API implementation.
-  virtual PP_NetAddress_Family GetFamily() OVERRIDE;
-  virtual PP_Var DescribeAsString(PP_Bool include_port) OVERRIDE;
-  virtual PP_Bool DescribeAsIPv4Address(
-      PP_NetAddress_IPv4* ipv4_addr) OVERRIDE;
-  virtual PP_Bool DescribeAsIPv6Address(
-      PP_NetAddress_IPv6* ipv6_addr) OVERRIDE;
-  virtual const PP_NetAddress_Private& GetNetAddressPrivate() OVERRIDE;
+  PP_NetAddress_Family GetFamily() override;
+  PP_Var DescribeAsString(PP_Bool include_port) override;
+  PP_Bool DescribeAsIPv4Address(PP_NetAddress_IPv4* ipv4_addr) override;
+  PP_Bool DescribeAsIPv6Address(PP_NetAddress_IPv6* ipv6_addr) override;
+  const PP_NetAddress_Private& GetNetAddressPrivate() override;
 
  private:
   // TODO(yzshen): Refactor the code so that PPB_NetAddress resource doesn't

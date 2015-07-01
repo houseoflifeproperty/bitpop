@@ -28,7 +28,7 @@ namespace {
 
 const base::Time kTestLastUsedTime =
     base::Time::UnixEpoch() + base::TimeDelta::FromDays(20);
-const int kTestEntrySize = 789;
+const uint64 kTestEntrySize = 789;
 
 }  // namespace
 
@@ -57,19 +57,19 @@ class MockSimpleIndexFile : public SimpleIndexFile,
         load_index_entries_calls_(0),
         disk_writes_(0) {}
 
-  virtual void LoadIndexEntries(
-      base::Time cache_last_modified,
-      const base::Closure& callback,
-      SimpleIndexLoadResult* out_load_result) OVERRIDE {
+  void LoadIndexEntries(base::Time cache_last_modified,
+                        const base::Closure& callback,
+                        SimpleIndexLoadResult* out_load_result) override {
     load_callback_ = callback;
     load_result_ = out_load_result;
     ++load_index_entries_calls_;
   }
 
-  virtual void WriteToDisk(const SimpleIndex::EntrySet& entry_set,
-                           uint64 cache_size,
-                           const base::TimeTicks& start,
-                           bool app_on_background) OVERRIDE {
+  void WriteToDisk(const SimpleIndex::EntrySet& entry_set,
+                   uint64 cache_size,
+                   const base::TimeTicks& start,
+                   bool app_on_background,
+                   const base::Closure& callback) override {
     disk_writes_++;
     disk_write_entry_set_ = entry_set;
   }
@@ -102,11 +102,11 @@ class SimpleIndexTest  : public testing::Test, public SimpleIndexDelegate {
         base::StringPrintf("key%d", static_cast<int>(hash_index)));
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     scoped_ptr<MockSimpleIndexFile> index_file(new MockSimpleIndexFile());
     index_file_ = index_file->AsWeakPtr();
-    index_.reset(new SimpleIndex(NULL, this, net::DISK_CACHE,
-                                 index_file.PassAs<SimpleIndexFile>()));
+    index_.reset(
+        new SimpleIndex(NULL, this, net::DISK_CACHE, index_file.Pass()));
 
     index_->Initialize(base::Time());
   }
@@ -120,8 +120,8 @@ class SimpleIndexTest  : public testing::Test, public SimpleIndexDelegate {
   }
 
   // From SimpleIndexDelegate:
-  virtual void DoomEntries(std::vector<uint64>* entry_hashes,
-                           const net::CompletionCallback& callback) OVERRIDE {
+  void DoomEntries(std::vector<uint64>* entry_hashes,
+                   const net::CompletionCallback& callback) override {
     std::for_each(entry_hashes->begin(), entry_hashes->end(),
                   std::bind1st(std::mem_fun(&SimpleIndex::Remove),
                                index_.get()));
@@ -171,7 +171,7 @@ class SimpleIndexTest  : public testing::Test, public SimpleIndexDelegate {
 TEST_F(EntryMetadataTest, Basics) {
   EntryMetadata entry_metadata;
   EXPECT_EQ(base::Time(), entry_metadata.GetLastUsedTime());
-  EXPECT_EQ(0, entry_metadata.GetEntrySize());
+  EXPECT_EQ(0U, entry_metadata.GetEntrySize());
 
   entry_metadata = NewEntryMetadataWithValues();
   CheckEntryMetadataValues(entry_metadata);
@@ -231,7 +231,7 @@ TEST_F(SimpleIndexTest, BasicInsertRemove) {
   // Confirm blank state.
   EntryMetadata metadata;
   EXPECT_EQ(base::Time(), metadata.GetLastUsedTime());
-  EXPECT_EQ(0, metadata.GetEntrySize());
+  EXPECT_EQ(0U, metadata.GetEntrySize());
 
   // Confirm state after insert.
   index()->Insert(hashes_.at<1>());
@@ -239,14 +239,14 @@ TEST_F(SimpleIndexTest, BasicInsertRemove) {
   base::Time now(base::Time::Now());
   EXPECT_LT(now - base::TimeDelta::FromMinutes(1), metadata.GetLastUsedTime());
   EXPECT_GT(now + base::TimeDelta::FromMinutes(1), metadata.GetLastUsedTime());
-  EXPECT_EQ(0, metadata.GetEntrySize());
+  EXPECT_EQ(0U, metadata.GetEntrySize());
 
   // Confirm state after remove.
   metadata = EntryMetadata();
   index()->Remove(hashes_.at<1>());
   EXPECT_FALSE(GetEntryForTesting(hashes_.at<1>(), &metadata));
   EXPECT_EQ(base::Time(), metadata.GetLastUsedTime());
-  EXPECT_EQ(0, metadata.GetEntrySize());
+  EXPECT_EQ(0U, metadata.GetEntrySize());
 }
 
 TEST_F(SimpleIndexTest, Has) {
@@ -330,11 +330,11 @@ TEST_F(SimpleIndexTest, UpdateEntrySize) {
   EXPECT_GT(
       now - base::TimeDelta::FromDays(2) + base::TimeDelta::FromSeconds(1),
       metadata.GetLastUsedTime());
-  EXPECT_EQ(475, metadata.GetEntrySize());
+  EXPECT_EQ(475U, metadata.GetEntrySize());
 
   index()->UpdateEntrySize(kHash1, 600u);
   EXPECT_TRUE(GetEntryForTesting(kHash1, &metadata));
-  EXPECT_EQ(600, metadata.GetEntrySize());
+  EXPECT_EQ(600U, metadata.GetEntrySize());
   EXPECT_EQ(1, index()->GetEntryCount());
 }
 
@@ -383,7 +383,7 @@ TEST_F(SimpleIndexTest, BasicInit) {
   EXPECT_GT(
       now - base::TimeDelta::FromDays(2) + base::TimeDelta::FromSeconds(1),
       metadata.GetLastUsedTime());
-  EXPECT_EQ(10, metadata.GetEntrySize());
+  EXPECT_EQ(10U, metadata.GetEntrySize());
   EXPECT_TRUE(GetEntryForTesting(hashes_.at<2>(), &metadata));
   EXPECT_LT(
       now - base::TimeDelta::FromDays(3) - base::TimeDelta::FromSeconds(1),
@@ -391,7 +391,7 @@ TEST_F(SimpleIndexTest, BasicInit) {
   EXPECT_GT(
       now - base::TimeDelta::FromDays(3) + base::TimeDelta::FromSeconds(1),
       metadata.GetLastUsedTime());
-  EXPECT_EQ(100, metadata.GetEntrySize());
+  EXPECT_EQ(100U, metadata.GetEntrySize());
 }
 
 // Remove something that's going to come in from the loaded index.
@@ -423,7 +423,7 @@ TEST_F(SimpleIndexTest, InsertBeforeInit) {
   base::Time now(base::Time::Now());
   EXPECT_LT(now - base::TimeDelta::FromMinutes(1), metadata.GetLastUsedTime());
   EXPECT_GT(now + base::TimeDelta::FromMinutes(1), metadata.GetLastUsedTime());
-  EXPECT_EQ(0, metadata.GetEntrySize());
+  EXPECT_EQ(0U, metadata.GetEntrySize());
 }
 
 // Insert and Remove something that's going to come in from the loaded index.
@@ -456,7 +456,7 @@ TEST_F(SimpleIndexTest, RemoveInsertBeforeInit) {
   base::Time now(base::Time::Now());
   EXPECT_LT(now - base::TimeDelta::FromMinutes(1), metadata.GetLastUsedTime());
   EXPECT_GT(now + base::TimeDelta::FromMinutes(1), metadata.GetLastUsedTime());
-  EXPECT_EQ(0, metadata.GetEntrySize());
+  EXPECT_EQ(0U, metadata.GetEntrySize());
 }
 
 // Do all above tests at once + a non-conflict to test for cross-key
@@ -494,14 +494,14 @@ TEST_F(SimpleIndexTest, AllInitConflicts) {
   EXPECT_TRUE(GetEntryForTesting(hashes_.at<2>(), &metadata));
   EXPECT_LT(now - base::TimeDelta::FromMinutes(1), metadata.GetLastUsedTime());
   EXPECT_GT(now + base::TimeDelta::FromMinutes(1), metadata.GetLastUsedTime());
-  EXPECT_EQ(0, metadata.GetEntrySize());
+  EXPECT_EQ(0U, metadata.GetEntrySize());
 
   EXPECT_FALSE(index()->Has(hashes_.at<3>()));
 
   EXPECT_TRUE(GetEntryForTesting(hashes_.at<4>(), &metadata));
   EXPECT_LT(now - base::TimeDelta::FromMinutes(1), metadata.GetLastUsedTime());
   EXPECT_GT(now + base::TimeDelta::FromMinutes(1), metadata.GetLastUsedTime());
-  EXPECT_EQ(0, metadata.GetEntrySize());
+  EXPECT_EQ(0U, metadata.GetEntrySize());
 
   EXPECT_TRUE(GetEntryForTesting(hashes_.at<5>(), &metadata));
 
@@ -512,7 +512,7 @@ TEST_F(SimpleIndexTest, AllInitConflicts) {
       now - base::TimeDelta::FromDays(6) - base::TimeDelta::FromSeconds(1),
       metadata.GetLastUsedTime());
 
-  EXPECT_EQ(100000, metadata.GetEntrySize());
+  EXPECT_EQ(100000U, metadata.GetEntrySize());
 }
 
 TEST_F(SimpleIndexTest, BasicEviction) {
@@ -601,7 +601,7 @@ TEST_F(SimpleIndexTest, DiskWriteExecuted) {
   const EntryMetadata& entry1(entry_set.begin()->second);
   EXPECT_LT(now - base::TimeDelta::FromMinutes(1), entry1.GetLastUsedTime());
   EXPECT_GT(now + base::TimeDelta::FromMinutes(1), entry1.GetLastUsedTime());
-  EXPECT_EQ(20, entry1.GetEntrySize());
+  EXPECT_EQ(20U, entry1.GetEntrySize());
 }
 
 TEST_F(SimpleIndexTest, DiskWritePostponed) {

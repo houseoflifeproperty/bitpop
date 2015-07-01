@@ -1,26 +1,38 @@
 <div id="audio-history-container" hidden>
   <div class="container">
+    <span class="close" tabindex="0" role="button"
+        i18n-values="aria-label:close"></span>
     <div class="header">
-      <span class="close"></span>
-      <div class="header-text">
-        <h1>Enable Audio History</h1>
-      </div>
+      <h1 i18n-content="audioHistoryTitle" aria-live="polite"></h1>
     </div>
     <div class="content">
-      <div class="col-3">
-        <h4>To make this happen, you agree that</h4>
-        When you use voice activation commands, such as "Ok Google" or
-        touching a microphone icon, a recording of the next thing you say,
-        plus a few seconds before, may be used and stored by Google and
-        associated with your Google Account to help recognize your voice and
-        improve speech recognition.
-        <br>
-        <a href="#" class="link-button">LEARN MORE</a>
-      </div>
+      <div i18n-content="audioHistoryDescription1"></div>
+      <div class="v-spacing"></div>
+      <div i18n-values=".innerHTML:audioHistoryDescription2"></div>
+      <div class="v-spacing"></div>
+      <div i18n-values=".innerHTML:audioHistoryDescription3"></div>
     </div>
     <div class="buttonbar">
-      <button id="ah-agree-button" class="primary">I AGREE</button>
-      <button id="ah-cancel-button" >NO THANKS</button>
+      <div class="right">
+        <div>
+          <button id="audio-history-agree" i18n-content="audioHistoryAgree"
+              class="primary">
+          </button>
+          <button id="audio-history-cancel" i18n-content="cancel"
+              class="finish-button">
+          </button>
+        </div>
+      </div>
+      <div class="left">
+        <div id="audio-history-wait" class="message wait" hidden>
+          <span class="icon"></span>
+          <span i18n-content="audioHistoryWait" class="text"></span>
+        </div>
+        <div id="audio-history-error" class="message error" role="alert" hidden>
+          <span class="icon"></span>
+          <span i18n-content="error" class="text"></span>
+        </div>
+      </div>
     </div>
   </div>
 </div>

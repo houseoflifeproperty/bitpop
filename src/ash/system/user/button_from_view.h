@@ -6,7 +6,7 @@
 #define ASH_SYSTEM_USER_BUTTON_FROM_VIEW_H_
 
 #include "base/macros.h"
-#include "ui/gfx/insets.h"
+#include "ui/gfx/geometry/insets.h"
 #include "ui/views/controls/button/custom_button.h"
 
 namespace ash {
@@ -21,21 +21,23 @@ class ButtonFromView : public views::CustomButton {
   // highlighted upon hover and show the accessibility caret.
   // The |tab_frame_inset| will be used to inset the blue tab frame inside the
   // button.
+  // An accessible label gets computed based upon descendant views of this view.
   ButtonFromView(views::View* content,
                  views::ButtonListener* listener,
                  bool highlight_on_hover,
                  const gfx::Insets& tab_frame_inset);
-  virtual ~ButtonFromView();
+  ~ButtonFromView() override;
 
   // Called when the border should remain even in the non highlighted state.
   void ForceBorderVisible(bool show);
 
   // Overridden from views::View
-  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual void OnFocus() OVERRIDE;
-  virtual void OnBlur() OVERRIDE;
+  void OnMouseEntered(const ui::MouseEvent& event) override;
+  void OnMouseExited(const ui::MouseEvent& event) override;
+  void OnPaint(gfx::Canvas* canvas) override;
+  void OnFocus() override;
+  void OnBlur() override;
+  void GetAccessibleState(ui::AXViewState* state) override;
 
   // Check if the item is hovered.
   bool is_hovered_for_test() { return button_hovered_; }

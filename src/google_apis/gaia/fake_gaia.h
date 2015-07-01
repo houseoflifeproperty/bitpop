@@ -86,6 +86,11 @@ class FakeGaia {
   // Sets the initial value of tokens and cookies.
   void SetMergeSessionParams(const MergeSessionParams& params);
 
+  // Sets the specified |gaia_id| as corresponding to the given |email|
+  // address when setting GAIA response headers.  If no mapping is given for
+  // an email address, a default GAIA Id is used.
+  void MapEmailToGaiaId(const std::string& email, const std::string& gaia_id);
+
   // Initializes HTTP request handlers. Should be called after switches
   // for tweaking GaiaUrls are in place.
   void Initialize();
@@ -108,6 +113,10 @@ class FakeGaia {
   // to the associated redirect endpoint.
   void RegisterSamlUser(const std::string& account_id, const GURL& saml_idp);
 
+  void set_issue_oauth_code_cookie(bool value) {
+    issue_oauth_code_cookie_ = value;
+  }
+
   // Extracts the parameter named |key| from |query| and places it in |value|.
   // Returns false if no parameter is found.
   static bool GetQueryParameter(const std::string& query,
@@ -121,7 +130,17 @@ class FakeGaia {
 
  private:
   typedef std::multimap<std::string, AccessTokenInfo> AccessTokenInfoMap;
+  typedef std::map<std::string, std::string> EmailToGaiaIdMap;
   typedef std::map<std::string, GURL> SamlAccountIdpMap;
+
+  std::string GetGaiaIdOfEmail(const std::string& email) const;
+
+  void AddGoogleAccountsSigninHeader(
+      net::test_server::BasicHttpResponse* http_response,
+      const std::string& email) const;
+
+  void SetOAuthCodeCookie(
+      net::test_server::BasicHttpResponse* http_response) const;
 
   // Formats a JSON response with the data in |response_dict|.
   void FormatJSONResponse(const base::DictionaryValue& response_dict,
@@ -139,9 +158,18 @@ class FakeGaia {
       net::test_server::BasicHttpResponse* http_response);
   void HandleServiceLogin(const net::test_server::HttpRequest& request,
                           net::test_server::BasicHttpResponse* http_response);
+  void HandleEmbeddedSetupChromeos(
+      const net::test_server::HttpRequest& request,
+      net::test_server::BasicHttpResponse* http_response);
   void HandleOAuthLogin(const net::test_server::HttpRequest& request,
                         net::test_server::BasicHttpResponse* http_response);
   void HandleServiceLoginAuth(
+      const net::test_server::HttpRequest& request,
+      net::test_server::BasicHttpResponse* http_response);
+  void HandleEmbeddedLookupAccountLookup(
+      const net::test_server::HttpRequest& request,
+      net::test_server::BasicHttpResponse* http_response);
+  void HandleEmbeddedSigninChallenge(
       const net::test_server::HttpRequest& request,
       net::test_server::BasicHttpResponse* http_response);
   void HandleSSO(const net::test_server::HttpRequest& request,
@@ -158,21 +186,30 @@ class FakeGaia {
                        net::test_server::BasicHttpResponse* http_response);
   void HandleGetUserInfo(const net::test_server::HttpRequest& request,
                          net::test_server::BasicHttpResponse* http_response);
+  void HandleOAuthUserInfo(const net::test_server::HttpRequest& request,
+                           net::test_server::BasicHttpResponse* http_response);
 
   // Returns the access token associated with |auth_token| that matches the
   // given |client_id| and |scope_string|. If |scope_string| is empty, the first
   // token satisfying the other criteria is returned. Returns NULL if no token
   // matches.
-  const AccessTokenInfo* FindAccessTokenInfo(const std::string& auth_token,
-                                             const std::string& client_id,
-                                             const std::string& scope_string)
-      const;
+  const AccessTokenInfo* FindAccessTokenInfo(
+      const std::string& auth_token,
+      const std::string& client_id,
+      const std::string& scope_string) const;
+
+  // Returns the access token identified by |access_token| or NULL if not found.
+  const AccessTokenInfo* GetAccessTokenInfo(
+      const std::string& access_token) const;
 
   MergeSessionParams merge_session_params_;
+  EmailToGaiaIdMap email_to_gaia_id_map_;
   AccessTokenInfoMap access_token_info_map_;
   RequestHandlerMap request_handlers_;
   std::string service_login_response_;
+  std::string embedded_setup_chromeos_response_;
   SamlAccountIdpMap saml_account_idp_map_;
+  bool issue_oauth_code_cookie_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeGaia);
 };

@@ -26,7 +26,6 @@
 #include "platform/graphics/Image.h"
 
 #include "platform/graphics/GraphicsLayer.h"
-#include "platform/graphics/skia/NativeImageSkia.h"
 #include "wtf/PassOwnPtr.h"
 
 #include <gtest/gtest.h>
@@ -37,9 +36,8 @@ namespace {
 
 class MockGraphicsLayerClient : public GraphicsLayerClient {
 public:
-    virtual void notifyAnimationStarted(const GraphicsLayer*, double monotonicTime) OVERRIDE { }
-    virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) OVERRIDE { }
-    virtual String debugName(const GraphicsLayer*) OVERRIDE { return String(); }
+    virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) override { }
+    virtual String debugName(const GraphicsLayer*) override { return String(); }
 };
 
 class TestImage : public Image {
@@ -54,40 +52,40 @@ public:
         : Image(0)
         , m_size(size)
     {
-        SkBitmap bitmap;
-        bitmap.allocN32Pixels(size.width(), size.height(), isOpaque);
-        m_nativeImage = NativeImageSkia::create(bitmap);
+        m_bitmap.allocN32Pixels(size.width(), size.height(), isOpaque);
+        m_bitmap.eraseColor(SK_ColorTRANSPARENT);
     }
 
-    virtual bool isBitmapImage() const OVERRIDE
+    virtual bool isBitmapImage() const override
     {
         return true;
     }
 
-    virtual bool currentFrameKnownToBeOpaque() OVERRIDE
+    virtual bool currentFrameKnownToBeOpaque() override
     {
-        return m_nativeImage->bitmap().isOpaque();
+        return m_bitmap.isOpaque();
     }
 
-    virtual IntSize size() const OVERRIDE
+    virtual IntSize size() const override
     {
         return m_size;
     }
 
-    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() OVERRIDE
+    virtual bool bitmapForCurrentFrame(SkBitmap* bitmap) override
     {
         if (m_size.isZero())
-            return nullptr;
+            return false;
 
-        return m_nativeImage;
+        *bitmap = m_bitmap;
+        return true;
     }
 
     // Stub implementations of pure virtual Image functions.
-    virtual void destroyDecodedData(bool) OVERRIDE
+    virtual void destroyDecodedData(bool) override
     {
     }
 
-    virtual void draw(GraphicsContext*, const FloatRect&, const FloatRect&, CompositeOperator, WebBlendMode) OVERRIDE
+    void draw(GraphicsContext*, const FloatRect&, const FloatRect&, SkXfermode::Mode, RespectImageOrientationEnum) override
     {
     }
 
@@ -95,7 +93,7 @@ private:
 
     IntSize m_size;
 
-    RefPtr<NativeImageSkia> m_nativeImage;
+    SkBitmap m_bitmap;
 };
 
 class GraphicsLayerForTesting : public GraphicsLayer {

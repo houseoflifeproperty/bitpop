@@ -20,7 +20,7 @@
 #include "ui/app_list/views/search_box_view.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/events/event.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/view_model.h"
@@ -71,6 +71,10 @@ AppListFolderView::AppListFolderView(AppsContainerView* container_view,
 
 AppListFolderView::~AppListFolderView() {
   model_->RemoveObserver(this);
+
+  // This prevents the AppsGridView's destructor from calling the now-deleted
+  // AppListFolderView's methods if a drag is in progress at the time.
+  items_grid_view_->set_folder_delegate(nullptr);
 }
 
 void AppListFolderView::SetAppListFolderItem(AppListFolderItem* folder) {
@@ -123,6 +127,23 @@ void AppListFolderView::Layout() {
 }
 
 bool AppListFolderView::OnKeyPressed(const ui::KeyEvent& event) {
+  // Process TAB if focus should go to header; otherwise, AppsGridView will do
+  // the right thing.
+  if (event.key_code() == ui::VKEY_TAB) {
+    if (items_grid_view_->has_selected_view() == event.IsShiftDown() &&
+        !folder_header_view_->HasTextFocus()) {
+      folder_header_view_->SetTextFocus();
+      items_grid_view_->ClearAnySelectedView();
+      return true;
+    } else {
+      GiveBackFocusToSearchBox();
+    }
+  }
+
+  // This will select an app in the list, so we need to relinquish focus.
+  if (event.key_code() == ui::VKEY_DOWN)
+    GiveBackFocusToSearchBox();
+
   return items_grid_view_->OnKeyPressed(event);
 }
 
@@ -178,7 +199,8 @@ void AppListFolderView::CalculateIdealBounds() {
 
 void AppListFolderView::StartSetupDragInRootLevelAppsGridView(
     AppListItemView* original_drag_view,
-    const gfx::Point& drag_point_in_root_grid) {
+    const gfx::Point& drag_point_in_root_grid,
+    bool has_native_drag) {
   // Converts the original_drag_view's bounds to the coordinate system of
   // root level grid view.
   gfx::RectF rect_f(original_drag_view->bounds());
@@ -187,9 +209,11 @@ void AppListFolderView::StartSetupDragInRootLevelAppsGridView(
                                    &rect_f);
   gfx::Rect rect_in_root_grid_view = gfx::ToEnclosingRect(rect_f);
 
-  container_view_->apps_grid_view()->
-      InitiateDragFromReparentItemInRootLevelGridView(
-          original_drag_view, rect_in_root_grid_view, drag_point_in_root_grid);
+  container_view_->apps_grid_view()
+      ->InitiateDragFromReparentItemInRootLevelGridView(original_drag_view,
+                                                        rect_in_root_grid_view,
+                                                        drag_point_in_root_grid,
+                                                        has_native_drag);
 }
 
 gfx::Rect AppListFolderView::GetItemIconBoundsAt(int index) {
@@ -248,13 +272,15 @@ bool AppListFolderView::IsPointOutsideOfFolderBoundary(
 // the top level grid view, until the drag ends.
 void AppListFolderView::ReparentItem(
     AppListItemView* original_drag_view,
-    const gfx::Point& drag_point_in_folder_grid) {
+    const gfx::Point& drag_point_in_folder_grid,
+    bool has_native_drag) {
   // Convert the drag point relative to the root level AppsGridView.
   gfx::Point to_root_level_grid = drag_point_in_folder_grid;
   ConvertPointToTarget(items_grid_view_,
                        container_view_->apps_grid_view(),
                        &to_root_level_grid);
-  StartSetupDragInRootLevelAppsGridView(original_drag_view, to_root_level_grid);
+  StartSetupDragInRootLevelAppsGridView(
+      original_drag_view, to_root_level_grid, has_native_drag);
   container_view_->ReparentFolderItemTransit(folder_item_);
 }
 

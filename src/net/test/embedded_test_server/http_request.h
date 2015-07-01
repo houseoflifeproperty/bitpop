@@ -13,6 +13,9 @@
 #include "base/strings/string_piece.h"
 
 namespace net {
+
+class HttpChunkedDecoder;
+
 namespace test_server {
 
 // Methods of HTTP requests supported by the test HTTP server.
@@ -35,6 +38,8 @@ struct HttpRequest {
 
   std::string relative_url;  // Starts with '/'. Example: "/test?query=foo"
   HttpMethod method;
+  std::string method_string;
+  std::string all_headers;
   std::map<std::string, std::string> headers;
   std::string content;
   bool has_content;
@@ -91,7 +96,7 @@ class HttpRequestParser {
   ParseResult ParseHeaders();
 
   // Parses request's content data and returns ACCEPTED if all of it have been
-  // processed. Chunked Transfer Encoding *is not* supported.
+  // processed. Chunked Transfer Encoding is supported.
   ParseResult ParseContent();
 
   // Fetches the next line from the buffer. Result does not contain \r\n.
@@ -105,6 +110,8 @@ class HttpRequestParser {
   State state_;
   // Content length of the request currently being parsed.
   size_t declared_content_length_;
+
+  scoped_ptr<HttpChunkedDecoder> chunked_decoder_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpRequestParser);
 };

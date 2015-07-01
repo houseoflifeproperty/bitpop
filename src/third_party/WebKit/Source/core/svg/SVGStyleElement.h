@@ -23,11 +23,15 @@
 
 #include "core/SVGNames.h"
 #include "core/dom/StyleElement.h"
+#include "core/events/EventSender.h"
 #include "core/svg/SVGElement.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
-class SVGStyleElement FINAL : public SVGElement
+typedef EventSender<SVGStyleElement> SVGStyleEventSender;
+
+class SVGStyleElement final : public SVGElement
                             , public StyleElement {
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SVGStyleElement);
@@ -40,33 +44,35 @@ public:
     bool disabled() const;
     void setDisabled(bool);
 
-    virtual const AtomicString& type() const OVERRIDE;
+    virtual const AtomicString& type() const override;
     void setType(const AtomicString&);
 
-    virtual const AtomicString& media() const OVERRIDE;
+    virtual const AtomicString& media() const override;
     void setMedia(const AtomicString&);
 
-    virtual String title() const OVERRIDE;
+    virtual String title() const override;
     void setTitle(const AtomicString&);
 
-    virtual void trace(Visitor*) OVERRIDE;
+    void dispatchPendingEvent(SVGStyleEventSender*);
+
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     SVGStyleElement(Document&, bool createdByParser);
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void didNotifySubtreeInsertionsToDocument() OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual void childrenChanged(const ChildrenChange&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void didNotifySubtreeInsertionsToDocument() override;
+    virtual void removedFrom(ContainerNode*) override;
+    virtual void childrenChanged(const ChildrenChange&) override;
 
-    virtual void finishParsingChildren() OVERRIDE;
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
+    virtual void finishParsingChildren() override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override { return false; }
 
-    virtual bool sheetLoaded() OVERRIDE { return StyleElement::sheetLoaded(document()); }
-    virtual void startLoadingDynamicSheet() OVERRIDE { StyleElement::startLoadingDynamicSheet(document()); }
-    virtual Timer<SVGElement>* svgLoadEventTimer() OVERRIDE { return &m_svgLoadEventTimer; }
+    virtual bool sheetLoaded() override { return StyleElement::sheetLoaded(document()); }
+    virtual void startLoadingDynamicSheet() override { StyleElement::startLoadingDynamicSheet(document()); }
+    virtual Timer<SVGElement>* svgLoadEventTimer() override { return &m_svgLoadEventTimer; }
+    void sendSVGErrorEventAsynchronously();
 
     Timer<SVGElement> m_svgLoadEventTimer;
 };

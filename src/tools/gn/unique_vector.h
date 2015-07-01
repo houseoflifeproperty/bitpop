@@ -26,23 +26,23 @@ template<typename T>
 class UniquifyRef {
  public:
   UniquifyRef()
-      : value_(NULL),
-        vect_(NULL),
+      : value_(nullptr),
+        vect_(nullptr),
         index_(static_cast<size_t>(-1)),
         hash_val_(0) {
   }
 
   // Initialize with a pointer to a value.
-  UniquifyRef(const T* v)
+  explicit UniquifyRef(const T* v)
       : value_(v),
-        vect_(NULL),
+        vect_(nullptr),
         index_(static_cast<size_t>(-1)) {
     FillHashValue();
   }
 
   // Initialize with an array + index.
   UniquifyRef(const std::vector<T>* v, size_t i)
-      : value_(NULL),
+      : value_(nullptr),
         vect_(v),
         index_(i) {
     FillHashValue();
@@ -51,7 +51,7 @@ class UniquifyRef {
   // Initialize with an array + index and a known hash value to prevent
   // re-hashing.
   UniquifyRef(const std::vector<T>* v, size_t i, size_t hash_value)
-      : value_(NULL),
+      : value_(nullptr),
         vect_(v),
         index_(i),
         hash_val_(hash_value) {
@@ -63,14 +63,8 @@ class UniquifyRef {
 
  private:
   void FillHashValue() {
-#if defined(COMPILER_GCC)
     BASE_HASH_NAMESPACE::hash<T> h;
     hash_val_ = h(value());
-#elif defined(COMPILER_MSVC)
-    hash_val_ = BASE_HASH_NAMESPACE::hash_value(value());
-#else
-    #error write me
-#endif  // COMPILER...
   }
 
   // When non-null, points to the object.
@@ -97,18 +91,11 @@ template<typename T> inline bool operator<(const UniquifyRef<T>& a,
 
 namespace BASE_HASH_NAMESPACE {
 
-#if defined(COMPILER_GCC)
 template<typename T> struct hash< internal::UniquifyRef<T> > {
   std::size_t operator()(const internal::UniquifyRef<T>& v) const {
     return v.hash_val();
   }
 };
-#elif defined(COMPILER_MSVC)
-template<typename T>
-inline size_t hash_value(const internal::UniquifyRef<T>& v) {
-  return v.hash_val();
-}
-#endif  // COMPILER...
 
 }  // namespace BASE_HASH_NAMESPACE
 

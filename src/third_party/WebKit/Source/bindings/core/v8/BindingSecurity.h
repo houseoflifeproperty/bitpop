@@ -32,13 +32,12 @@
 #define BindingSecurity_h
 
 // FIXME: The LocalFrame include should not be necessary, clients should be including it where they use it.
+#include "core/CoreExport.h"
 #include "core/frame/LocalFrame.h"
-#include "wtf/text/WTFString.h"
 #include <v8.h>
 
 namespace blink {
 
-class LocalDOMWindow;
 class ExceptionState;
 class Node;
 
@@ -51,7 +50,7 @@ class BindingSecurity {
 public:
     static bool shouldAllowAccessToNode(v8::Isolate*, Node*, ExceptionState&);
     static bool shouldAllowAccessToFrame(v8::Isolate*, Frame*, SecurityReportingOption = ReportSecurityError);
-    static bool shouldAllowAccessToFrame(v8::Isolate*, Frame*, ExceptionState&);
+    CORE_EXPORT static bool shouldAllowAccessToFrame(v8::Isolate*, Frame*, ExceptionState&);
 };
 
 }

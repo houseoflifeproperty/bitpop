@@ -13,7 +13,6 @@
 #include "url/gurl.h"
 
 namespace net {
-class HttpResponseHeaders;
 class IOBuffer;
 }
 
@@ -69,6 +68,9 @@ class CONTENT_EXPORT Stream : public base::RefCountedThreadSafe<Stream> {
   // of the data, and then passes it to |writer_|.
   void AddData(const char* data, size_t size);
 
+  // Flushes contents buffered in the stream to the corresponding reader.
+  void Flush();
+
   // Notifies this stream that it will not be receiving any more data.
   void Finalize();
 
@@ -78,10 +80,7 @@ class CONTENT_EXPORT Stream : public base::RefCountedThreadSafe<Stream> {
   // and STREAM_COMPLETE if the stream is finalized and all data has been read.
   StreamState ReadRawData(net::IOBuffer* buf, int buf_size, int* bytes_read);
 
-  scoped_ptr<StreamHandle> CreateHandle(
-      const GURL& original_url,
-      const std::string& mime_type,
-      scoped_refptr<net::HttpResponseHeaders> response_headers);
+  scoped_ptr<StreamHandle> CreateHandle();
   void CloseHandle();
 
   // Indicates whether there is space in the buffer to add more data.

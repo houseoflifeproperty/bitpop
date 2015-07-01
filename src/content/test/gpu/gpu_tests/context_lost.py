@@ -72,7 +72,7 @@ class _ContextLostValidator(page_test.PageTest):
         util.WaitFor(lambda: tab.EvaluateJavaScript(
             'window.domAutomationController._finished'), wait_timeout)
         return True
-      except util.TimeoutException:
+      except exceptions.TimeoutException:
         return False
 
     if page.kill_gpu_process:
@@ -102,7 +102,7 @@ class _ContextLostValidator(page_test.PageTest):
         # The try/except is a workaround for crbug.com/368107.
         try:
           gpucrash_tab.Navigate('chrome://gpucrash')
-        except (exceptions.TabCrashException, Exception):
+        except Exception:
           print 'Tab crashed while navigating to chrome://gpucrash'
         # Activate the original tab and wait for completion.
         tab.Activate()
@@ -149,7 +149,7 @@ class _ContextLostValidator(page_test.PageTest):
         # The try/except is a workaround for crbug.com/368107.
         try:
           gpucrash_tab.Close()
-        except (exceptions.TabCrashException, Exception):
+        except Exception:
           print 'Tab crashed while closing chrome://gpucrash'
         if not completed:
           raise page_test.Failure(
@@ -215,7 +215,7 @@ class GPUProcessCrashesExactlyOnce(page.Page):
     self.hide_tab_and_lose_context = False
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.NavigateToPage(self)
+    super(GPUProcessCrashesExactlyOnce, self).RunNavigateSteps(action_runner)
     action_runner.WaitForJavaScriptCondition(
         'window.domAutomationController._loaded')
 
@@ -234,7 +234,8 @@ class WebGLContextLostFromGPUProcessExitPage(page.Page):
     self.hide_tab_and_lose_context = False
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.NavigateToPage(self)
+    super(WebGLContextLostFromGPUProcessExitPage, self).RunNavigateSteps(
+        action_runner)
     action_runner.WaitForJavaScriptCondition(
         'window.domAutomationController._loaded')
 
@@ -253,7 +254,8 @@ class WebGLContextLostFromLoseContextExtensionPage(page.Page):
     self.hide_tab_and_lose_context = False
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.NavigateToPage(self)
+    super(WebGLContextLostFromLoseContextExtensionPage, self).RunNavigateSteps(
+        action_runner)
     action_runner.WaitForJavaScriptCondition(
         'window.domAutomationController._finished')
 
@@ -272,7 +274,7 @@ class WebGLContextLostInHiddenTabPage(page.Page):
     self.hide_tab_and_lose_context = True
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.NavigateToPage(self)
+    super(WebGLContextLostInHiddenTabPage, self).RunNavigateSteps(action_runner)
     action_runner.WaitForJavaScriptCondition(
         'window.domAutomationController._loaded')
 
@@ -291,7 +293,8 @@ class WebGLContextLostFromQuantityPage(page.Page):
     self.hide_tab_and_lose_context = False
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.NavigateToPage(self)
+    super(WebGLContextLostFromQuantityPage, self).RunNavigateSteps(
+        action_runner)
     action_runner.WaitForJavaScriptCondition(
         'window.domAutomationController._loaded')
 
@@ -309,7 +312,8 @@ class WebGLContextLostFromSelectElementPage(page.Page):
     self.hide_tab_and_lose_context = False
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.NavigateToPage(self)
+    super(WebGLContextLostFromSelectElementPage, self).RunNavigateSteps(
+        action_runner)
     action_runner.WaitForJavaScriptCondition(
         'window.domAutomationController._loaded')
 
@@ -317,7 +321,12 @@ class ContextLost(benchmark_module.Benchmark):
   enabled = True
   test = _ContextLostValidator
 
-  def CreateExpectations(self, page_set):
+
+  @classmethod
+  def Name(cls):
+    return 'context_lost'
+
+  def CreateExpectations(self):
     return context_lost_expectations.ContextLostExpectations()
 
   # For the record, this would have been another way to get the pages
@@ -328,10 +337,11 @@ class ContextLost(benchmark_module.Benchmark):
       file_path=data_path,
       user_agent_type='desktop',
       serving_dirs=set(['']))
-    ps.AddPage(GPUProcessCrashesExactlyOnce(ps, ps.base_dir))
-    ps.AddPage(WebGLContextLostFromGPUProcessExitPage(ps, ps.base_dir))
-    ps.AddPage(WebGLContextLostFromLoseContextExtensionPage(ps, ps.base_dir))
-    ps.AddPage(WebGLContextLostFromQuantityPage(ps, ps.base_dir))
-    ps.AddPage(WebGLContextLostFromSelectElementPage(ps, ps.base_dir))
-    ps.AddPage(WebGLContextLostInHiddenTabPage(ps, ps.base_dir))
+    ps.AddUserStory(GPUProcessCrashesExactlyOnce(ps, ps.base_dir))
+    ps.AddUserStory(WebGLContextLostFromGPUProcessExitPage(ps, ps.base_dir))
+    ps.AddUserStory(
+        WebGLContextLostFromLoseContextExtensionPage(ps, ps.base_dir))
+    ps.AddUserStory(WebGLContextLostFromQuantityPage(ps, ps.base_dir))
+    ps.AddUserStory(WebGLContextLostFromSelectElementPage(ps, ps.base_dir))
+    ps.AddUserStory(WebGLContextLostInHiddenTabPage(ps, ps.base_dir))
     return ps

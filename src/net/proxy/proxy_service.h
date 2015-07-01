@@ -16,8 +16,8 @@
 #include "net/base/completion_callback.h"
 #include "net/base/load_states.h"
 #include "net/base/net_export.h"
-#include "net/base/net_log.h"
 #include "net/base/network_change_notifier.h"
+#include "net/log/net_log.h"
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_info.h"
 #include "net/proxy/proxy_server.h"
@@ -35,6 +35,7 @@ class DhcpProxyScriptFetcher;
 class HostResolver;
 class NetworkDelegate;
 class ProxyResolver;
+class ProxyResolverFactory;
 class ProxyResolverScriptData;
 class ProxyScriptDecider;
 class ProxyScriptFetcher;
@@ -90,14 +91,14 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
                               base::TimeDelta* next_delay) const = 0;
   };
 
-  // The instance takes ownership of |config_service| and |resolver|.
+  // The instance takes ownership of |config_service| and |resolver_factory|.
   // |net_log| is a possibly NULL destination to send log events to. It must
   // remain alive for the lifetime of this ProxyService.
   ProxyService(ProxyConfigService* config_service,
-               ProxyResolver* resolver,
+               scoped_ptr<ProxyResolverFactory> resolver_factory,
                NetLog* net_log);
 
-  virtual ~ProxyService();
+  ~ProxyService() override;
 
   // Used internally to handle PAC queries.
   // TODO(eroman): consider naming this simply "Request".
@@ -125,10 +126,18 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   int ResolveProxy(const GURL& url,
                    int load_flags,
                    ProxyInfo* results,
-                   const net::CompletionCallback& callback,
+                   const CompletionCallback& callback,
                    PacRequest** pac_request,
                    NetworkDelegate* network_delegate,
                    const BoundNetLog& net_log);
+
+  // Returns true if the proxy information could be determined without spawning
+  // an asynchronous task.  Otherwise, |result| is unmodified.
+  bool TryResolveProxySynchronously(const GURL& raw_url,
+                                    int load_flags,
+                                    ProxyInfo* result,
+                                    NetworkDelegate* network_delegate,
+                                    const BoundNetLog& net_log);
 
   // This method is called after a failure to connect or resolve a host name.
   // It gives the proxy service an opportunity to reconsider the proxy to use.
@@ -155,18 +164,19 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
 
   // Explicitly trigger proxy fallback for the given |results| by updating our
   // list of bad proxies to include the first entry of |results|, and,
-  // optionally, another bad proxy. Will retry after |retry_delay| if positive,
-  // and will use the default proxy retry duration otherwise. Proxies marked as
-  // bad will not be retried until |retry_delay| has passed. Returns true if
-  // there will be at least one proxy remaining in the list after fallback and
-  // false otherwise. This method should be used to add proxies to the bad
-  // proxy list only for reasons other than a network error. If a proxy needs
-  // to be added to the bad proxy list because a network error was encountered
-  // when trying to connect to it, use |ReconsiderProxyAfterError|.
-  bool MarkProxiesAsBadUntil(const ProxyInfo& results,
-                             base::TimeDelta retry_delay,
-                             const ProxyServer& another_bad_proxy,
-                             const BoundNetLog& net_log);
+  // additional bad proxies (can be none). Will retry after |retry_delay| if
+  // positive, and will use the default proxy retry duration otherwise. Proxies
+  // marked as bad will not be retried until |retry_delay| has passed. Returns
+  // true if there will be at least one proxy remaining in the list after
+  // fallback and false otherwise. This method should be used to add proxies to
+  // the bad proxy list only for reasons other than a network error. If a proxy
+  // needs to be added to the bad proxy list because a network error was
+  // encountered when trying to connect to it, use |ReconsiderProxyAfterError|.
+  bool MarkProxiesAsBadUntil(
+      const ProxyInfo& results,
+      base::TimeDelta retry_delay,
+      const std::vector<ProxyServer>& additional_bad_proxies,
+      const BoundNetLog& net_log);
 
   // Called to report that the last proxy connection succeeded.  If |proxy_info|
   // has a non empty proxy_retry_info map, the proxies that have been tried (and
@@ -202,7 +212,7 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   }
 
   // Returns the current configuration being used by ProxyConfigService.
-  const ProxyConfig& config() {
+  const ProxyConfig& config() const {
     return config_;
   }
 
@@ -321,6 +331,17 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
                                  NetworkDelegate* network_delegate,
                                  ProxyInfo* result);
 
+  // Identical to ResolveProxy, except that |callback| is permitted to be null.
+  // if |callback.is_null()|, this function becomes a thin wrapper around
+  // |TryToCompleteSynchronously|.
+  int ResolveProxyHelper(const GURL& url,
+                         int load_flags,
+                         ProxyInfo* results,
+                         const CompletionCallback& callback,
+                         PacRequest** pac_request,
+                         NetworkDelegate* network_delegate,
+                         const BoundNetLog& net_log);
+
   // Cancels all of the requests sent to the ProxyResolver. These will be
   // restarted when calling SetReady().
   void SuspendAllPendingRequests();
@@ -343,7 +364,9 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
                               NetworkDelegate* network_delegate,
                               ProxyInfo* result,
                               int result_code,
-                              const BoundNetLog& net_log);
+                              const BoundNetLog& net_log,
+                              base::TimeTicks start_time,
+                              bool script_executed);
 
   // Start initialization using |fetched_config_|.
   void InitializeUsingLastFetchedConfig();
@@ -356,18 +379,19 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
 
   // NetworkChangeNotifier::IPAddressObserver
   // When this is called, we re-fetch PAC scripts and re-run WPAD.
-  virtual void OnIPAddressChanged() OVERRIDE;
+  void OnIPAddressChanged() override;
 
   // NetworkChangeNotifier::DNSObserver
   // We respond as above.
-  virtual void OnDNSChanged() OVERRIDE;
+  void OnDNSChanged() override;
 
   // ProxyConfigService::Observer
-  virtual void OnProxyConfigChanged(
+  void OnProxyConfigChanged(
       const ProxyConfig& config,
-      ProxyConfigService::ConfigAvailability availability) OVERRIDE;
+      ProxyConfigService::ConfigAvailability availability) override;
 
   scoped_ptr<ProxyConfigService> config_service_;
+  scoped_ptr<ProxyResolverFactory> resolver_factory_;
   scoped_ptr<ProxyResolver> resolver_;
 
   // We store the proxy configuration that was last fetched from the

@@ -9,6 +9,7 @@
 #include "ash/system/tray/view_click_listener.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/ui_base_switches_util.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font_list.h"
 #include "ui/resources/grit/ui_resources.h"
@@ -21,6 +22,11 @@
 namespace {
 
 const int kCheckLabelPadding = 4;
+
+const gfx::FontList& GetFontList(bool highlight) {
+  return ui::ResourceBundle::GetSharedInstance().GetFontList(
+      highlight ? ui::ResourceBundle::BoldFont : ui::ResourceBundle::BaseFont);
+}
 
 }  // namespace
 
@@ -45,9 +51,24 @@ HoverHighlightView::~HoverHighlightView() {
 
 void HoverHighlightView::AddIconAndLabel(const gfx::ImageSkia& image,
                                          const base::string16& text,
-                                         gfx::Font::FontStyle style) {
+                                         bool highlight) {
   SetLayoutManager(new views::BoxLayout(
       views::BoxLayout::kHorizontal, 0, 3, kTrayPopupPaddingBetweenItems));
+  DoAddIconAndLabel(image, text, highlight);
+}
+
+void HoverHighlightView::AddIndentedIconAndLabel(const gfx::ImageSkia& image,
+                                                 const base::string16& text,
+                                                 bool highlight) {
+  SetLayoutManager(new views::BoxLayout(views::BoxLayout::kHorizontal,
+                                        kTrayPopupPaddingHorizontal, 0,
+                                        kTrayPopupPaddingBetweenItems));
+  DoAddIconAndLabel(image, text, highlight);
+}
+
+void HoverHighlightView::DoAddIconAndLabel(const gfx::ImageSkia& image,
+                                           const base::string16& text,
+                                           bool highlight) {
   views::ImageView* image_view =
       new FixedSizedImageView(kTrayPopupDetailsIconWidth, 0);
   image_view->SetImage(image);
@@ -55,7 +76,7 @@ void HoverHighlightView::AddIconAndLabel(const gfx::ImageSkia& image,
 
   text_label_ = new views::Label(text);
   text_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  text_label_->SetFontList(text_label_->font_list().DeriveWithStyle(style));
+  text_label_->SetFontList(GetFontList(highlight));
   if (text_default_color_)
     text_label_->SetEnabledColor(text_default_color_);
   AddChildView(text_label_);
@@ -65,7 +86,7 @@ void HoverHighlightView::AddIconAndLabel(const gfx::ImageSkia& image,
 
 views::Label* HoverHighlightView::AddLabel(const base::string16& text,
                                            gfx::HorizontalAlignment alignment,
-                                           gfx::Font::FontStyle style) {
+                                           bool highlight) {
   SetLayoutManager(new views::FillLayout());
   text_label_ = new views::Label(text);
   int left_margin = kTrayPopupPaddingHorizontal;
@@ -79,7 +100,7 @@ views::Label* HoverHighlightView::AddLabel(const base::string16& text,
   text_label_->SetBorder(
       views::Border::CreateEmptyBorder(5, left_margin, 5, right_margin));
   text_label_->SetHorizontalAlignment(alignment);
-  text_label_->SetFontList(text_label_->font_list().DeriveWithStyle(style));
+  text_label_->SetFontList(GetFontList(highlight));
   // Do not set alpha value in disable color. It will have issue with elide
   // blending filter in disabled state for rendering label text color.
   text_label_->SetDisabledColor(SkColorSetARGB(255, 127, 127, 127));
@@ -92,7 +113,7 @@ views::Label* HoverHighlightView::AddLabel(const base::string16& text,
 }
 
 views::Label* HoverHighlightView::AddCheckableLabel(const base::string16& text,
-                                                    gfx::Font::FontStyle style,
+                                                    bool highlight,
                                                     bool checked) {
   checkable_ = true;
   checked_ = checked;
@@ -111,7 +132,7 @@ views::Label* HoverHighlightView::AddCheckableLabel(const base::string16& text,
 
     text_label_ = new views::Label(text);
     text_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-    text_label_->SetFontList(text_label_->font_list().DeriveWithStyle(style));
+    text_label_->SetFontList(GetFontList(highlight));
     text_label_->SetDisabledColor(SkColorSetARGB(127, 0, 0, 0));
     if (text_default_color_)
       text_label_->SetEnabledColor(text_default_color_);
@@ -120,7 +141,7 @@ views::Label* HoverHighlightView::AddCheckableLabel(const base::string16& text,
     SetAccessibleName(text);
     return text_label_;
   }
-  return AddLabel(text, gfx::ALIGN_LEFT, style);
+  return AddLabel(text, gfx::ALIGN_LEFT, highlight);
 }
 
 void HoverHighlightView::SetExpandable(bool expandable) {
@@ -128,6 +149,19 @@ void HoverHighlightView::SetExpandable(bool expandable) {
     expandable_ = expandable;
     InvalidateLayout();
   }
+}
+
+void HoverHighlightView::SetHoverHighlight(bool hover) {
+  if (hover_ == hover)
+    return;
+  hover_ = hover;
+  if (!text_label_)
+    return;
+  if (hover_ && text_highlight_color_)
+    text_label_->SetEnabledColor(text_highlight_color_);
+  if (!hover_ && text_default_color_)
+    text_label_->SetEnabledColor(text_default_color_);
+  SchedulePaint();
 }
 
 bool HoverHighlightView::PerformAction(const ui::Event& event) {
@@ -159,17 +193,27 @@ int HoverHighlightView::GetHeightForWidth(int width) const {
 }
 
 void HoverHighlightView::OnMouseEntered(const ui::MouseEvent& event) {
-  hover_ = true;
-  if (text_highlight_color_ && text_label_)
-    text_label_->SetEnabledColor(text_highlight_color_);
-  SchedulePaint();
+  SetHoverHighlight(true);
 }
 
 void HoverHighlightView::OnMouseExited(const ui::MouseEvent& event) {
-  hover_ = false;
-  if (text_default_color_ && text_label_)
-    text_label_->SetEnabledColor(text_default_color_);
-  SchedulePaint();
+  SetHoverHighlight(false);
+}
+
+void HoverHighlightView::OnGestureEvent(ui::GestureEvent* event) {
+  if (switches::IsTouchFeedbackEnabled()) {
+    if (event->type() == ui::ET_GESTURE_TAP_DOWN) {
+      SetHoverHighlight(true);
+    } else if (event->type() == ui::ET_GESTURE_TAP_CANCEL ||
+               event->type() == ui::ET_GESTURE_TAP) {
+      SetHoverHighlight(false);
+    }
+  }
+  ActionableView::OnGestureEvent(event);
+}
+
+void HoverHighlightView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
+  SetHoverHighlight(IsMouseHovered());
 }
 
 void HoverHighlightView::OnEnabledChanged() {

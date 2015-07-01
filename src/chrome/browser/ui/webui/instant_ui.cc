@@ -51,10 +51,10 @@ class InstantUIMessageHandler
       public base::SupportsWeakPtr<InstantUIMessageHandler> {
  public:
   InstantUIMessageHandler();
-  virtual ~InstantUIMessageHandler();
+  ~InstantUIMessageHandler() override;
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
  private:
   void GetPreferenceValue(const base::ListValue* args);
@@ -172,8 +172,6 @@ InstantUI::InstantUI(content::WebUI* web_ui) : WebUIController(web_ui) {
 // static
 void InstantUI::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
-  registry->RegisterStringPref(
-      prefs::kInstantUIZeroSuggestUrlPrefix,
-      std::string(),
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kInstantUIZeroSuggestUrlPrefix,
+                               std::string());
 }

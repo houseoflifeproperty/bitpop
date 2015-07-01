@@ -24,7 +24,7 @@ NativeViewHost::NativeViewHost()
     : native_view_(NULL),
       fast_resize_(false),
       fast_resize_at_last_layout_(false),
-      focus_view_(NULL) {
+      resize_background_color_(SK_ColorWHITE) {
 }
 
 NativeViewHost::~NativeViewHost() {
@@ -34,10 +34,6 @@ void NativeViewHost::Attach(gfx::NativeView native_view) {
   DCHECK(native_view);
   DCHECK(!native_view_);
   native_view_ = native_view;
-  // If set_focus_view() has not been invoked, this view is the one that should
-  // be seen as focused when the native view receives focus.
-  if (!focus_view_)
-    focus_view_ = this;
   native_wrapper_->AttachNativeView();
   Layout();
 
@@ -124,7 +120,7 @@ void NativeViewHost::OnPaint(gfx::Canvas* canvas) {
   // It would be nice if this used some approximation of the page's
   // current background color.
   if (native_wrapper_->HasInstalledClip())
-    canvas->FillRect(GetLocalBounds(), SK_ColorWHITE);
+    canvas->FillRect(GetLocalBounds(), resize_background_color_);
 }
 
 void NativeViewHost::VisibilityChanged(View* starting_from, bool is_visible) {

@@ -9,10 +9,11 @@ import android.os.Handler;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
+import org.chromium.chrome.browser.ResourceId;
+import org.chromium.ui.DropdownItem;
 import org.chromium.ui.autofill.AutofillPopup;
 import org.chromium.ui.autofill.AutofillPopup.AutofillPopupDelegate;
 import org.chromium.ui.autofill.AutofillSuggestion;
-import org.chromium.ui.base.ViewAndroid;
 import org.chromium.ui.base.ViewAndroidDelegate;
 import org.chromium.ui.base.WindowAndroid;
 
@@ -45,9 +46,9 @@ public class AutofillPopupBridge implements AutofillPopupDelegate{
 
     @CalledByNative
     private static AutofillPopupBridge create(long nativeAutofillPopupViewAndroid,
-            WindowAndroid windowAndroid, ViewAndroid viewAndroid) {
-        return new AutofillPopupBridge(nativeAutofillPopupViewAndroid, windowAndroid,
-                viewAndroid.getViewAndroidDelegate());
+            WindowAndroid windowAndroid, ViewAndroidDelegate viewAndroidDelegate) {
+        return new AutofillPopupBridge(
+                nativeAutofillPopupViewAndroid, windowAndroid, viewAndroidDelegate);
     }
 
     @Override
@@ -64,8 +65,8 @@ public class AutofillPopupBridge implements AutofillPopupDelegate{
      * Hides the Autofill Popup and removes its anchor from the ContainerView.
      */
     @CalledByNative
-    private void hide() {
-        if (mAutofillPopup != null) mAutofillPopup.hide();
+    private void dismiss() {
+        if (mAutofillPopup != null) mAutofillPopup.dismiss();
     }
 
     /**
@@ -101,12 +102,14 @@ public class AutofillPopupBridge implements AutofillPopupDelegate{
      * @param index Index in the array where to place a new suggestion.
      * @param label First line of the suggestion.
      * @param sublabel Second line of the suggestion.
-     * @param uniqueId Unique suggestion id.
+     * @param iconId The resource ID for the icon associated with the suggestion, or 0 for no icon.
+     * @param suggestionId Identifier for the suggestion type.
      */
     @CalledByNative
     private static void addToAutofillSuggestionArray(AutofillSuggestion[] array, int index,
-            String label, String sublabel, int uniqueId) {
-        array[index] = new AutofillSuggestion(label, sublabel, uniqueId);
+            String label, String sublabel, int iconId, int suggestionId) {
+        int drawableId = iconId == 0 ? DropdownItem.NO_ICON : ResourceId.mapToDrawableId(iconId);
+        array[index] = new AutofillSuggestion(label, sublabel, drawableId, suggestionId);
     }
 
     private native void nativePopupDismissed(long nativeAutofillPopupViewAndroid);

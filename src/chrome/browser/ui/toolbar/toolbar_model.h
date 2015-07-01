@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/strings/string16.h"
+#include "chrome/browser/ssl/connection_security_helper.h"
 #include "url/gurl.h"
 
 namespace net {
@@ -20,23 +21,13 @@ class X509Certificate;
 // from the navigation controller returned by GetNavigationController().
 class ToolbarModel {
  public:
-  // TODO(wtc): unify ToolbarModel::SecurityLevel with SecurityStyle.  We
-  // don't need two sets of security UI levels.  SECURITY_STYLE_AUTHENTICATED
-  // needs to be refined into three levels: warning, standard, and EV.
-  enum SecurityLevel {
-#define DEFINE_TOOLBAR_MODEL_SECURITY_LEVEL(name,value)  name = value,
-#include "chrome/browser/ui/toolbar/toolbar_model_security_level_list.h"
-#undef DEFINE_TOOLBAR_MODEL_SECURITY_LEVEL
-  };
-
   virtual ~ToolbarModel();
 
   // Returns the text to be displayed in the toolbar for the current page.
-  // The text is formatted in various ways:
+  // This will have been formatted for display to the user.
   //   - If the current page's URL is a search URL for the user's default search
   //     engine, the query will be extracted and returned for display instead
   //     of the URL.
-  //   - If the origin chip is enabled and visible, the text will be empty.
   //   - Otherwise, the text will contain the URL returned by GetFormattedURL().
   virtual base::string16 GetText() const = 0;
 
@@ -65,15 +56,15 @@ class ToolbarModel {
   virtual bool WouldPerformSearchTermReplacement(bool ignore_editing) const = 0;
 
   // Returns true if a call to GetText() would return something other than the
-  // URL because of either search term replacement or URL omission in favor of
-  // the origin chip.
+  // URL because of search term replacement.
   bool WouldReplaceURL() const;
 
   // Returns the security level that the toolbar should display.  If
   // |ignore_editing| is true, the result reflects the underlying state of the
   // page without regard to any user edits that may be in progress in the
   // omnibox.
-  virtual SecurityLevel GetSecurityLevel(bool ignore_editing) const = 0;
+  virtual ConnectionSecurityHelper::SecurityLevel GetSecurityLevel(
+      bool ignore_editing) const = 0;
 
   // Returns the resource_id of the icon to show to the left of the address,
   // based on the current URL.  When search term replacement is active, this
@@ -83,7 +74,8 @@ class ToolbarModel {
 
   // As |GetIcon()|, but returns the icon only taking into account the security
   // |level| given, ignoring search term replacement state.
-  virtual int GetIconForSecurityLevel(SecurityLevel level) const = 0;
+  virtual int GetIconForSecurityLevel(
+      ConnectionSecurityHelper::SecurityLevel level) const = 0;
 
   // Returns the name of the EV cert holder.  This returns an empty string if
   // the security level is not EV_SECURE.
@@ -93,29 +85,11 @@ class ToolbarModel {
   // in the location bar.
   virtual bool ShouldDisplayURL() const = 0;
 
-  // Returns true if a call to GetText() would return an empty string instead of
-  // the URL that would have otherwise been displayed because the host/origin is
-  // instead being displayed in the origin chip.  This returns false when we
-  // wouldn't have displayed a URL to begin with (e.g. for the NTP).
-  virtual bool WouldOmitURLDueToOriginChip() const = 0;
-
-  // Returns true if the origin should be shown based on the current state of
-  // the ToolbarModel.
-  bool ShouldShowOriginChip() const;
-
   // Whether the text in the omnibox is currently being edited.
   void set_input_in_progress(bool input_in_progress) {
     input_in_progress_ = input_in_progress;
   }
   bool input_in_progress() const { return input_in_progress_; }
-
-  // Whether the origin chip should be enabled.
-  void set_origin_chip_enabled(bool enabled) {
-    origin_chip_enabled_ = enabled;
-  }
-  bool origin_chip_enabled() const {
-    return origin_chip_enabled_;
-  }
 
   // Whether URL replacement should be enabled.
   void set_url_replacement_enabled(bool enabled) {
@@ -130,7 +104,6 @@ class ToolbarModel {
 
  private:
   bool input_in_progress_;
-  bool origin_chip_enabled_;
   bool url_replacement_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(ToolbarModel);

@@ -24,7 +24,6 @@
 
 namespace file_manager {
 namespace util {
-
 namespace {
 
 // Helper function used to implement GetNonNativeLocalPathMimeType. It extracts
@@ -107,6 +106,18 @@ void PrepareFileOnIOThread(
 
 }  // namespace
 
+bool IsNonNativeFileSystemType(storage::FileSystemType type) {
+  switch (type) {
+    case storage::kFileSystemTypeNativeLocal:
+    case storage::kFileSystemTypeRestrictedNativeLocal:
+      return false;
+    default:
+      // The path indeed corresponds to a mount point not associated with a
+      // native local path.
+      return true;
+  }
+}
+
 bool IsUnderNonNativeLocalPath(Profile* profile,
                         const base::FilePath& path) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -123,15 +134,7 @@ bool IsUnderNonNativeLocalPath(Profile* profile,
   if (!filesystem_url.is_valid())
     return false;
 
-  switch (filesystem_url.type()) {
-    case storage::kFileSystemTypeNativeLocal:
-    case storage::kFileSystemTypeRestrictedNativeLocal:
-      return false;
-    default:
-      // The path indeed corresponds to a mount point not associated with a
-      // native local path.
-      return true;
-  }
+  return IsNonNativeFileSystemType(filesystem_url.type());
 }
 
 void GetNonNativeLocalPathMimeType(
@@ -194,20 +197,8 @@ void IsNonNativeLocalPathDirectory(
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(IsUnderNonNativeLocalPath(profile, path));
 
-  GURL url;
-  if (!util::ConvertAbsoluteFilePathToFileSystemUrl(
-           profile, path, kFileManagerAppId, &url)) {
-    // Posting to the current thread, so that we always call back asynchronously
-    // independent from whether or not the operation succeeds.
-    content::BrowserThread::PostTask(content::BrowserThread::UI,
-                                     FROM_HERE,
-                                     base::Bind(callback, false));
-    return;
-  }
-
   util::CheckIfDirectoryExists(
-      GetFileSystemContextForExtensionId(profile, kFileManagerAppId),
-      url,
+      GetFileSystemContextForExtensionId(profile, kFileManagerAppId), path,
       base::Bind(&BoolCallbackAsFileErrorCallback, callback));
 }
 
@@ -229,20 +220,18 @@ void PrepareNonNativeLocalFileForWritableApp(
     return;
   }
 
-  storage::FileSystemContext* const context =
+  scoped_refptr<storage::FileSystemContext> const file_system_context =
       GetFileSystemContextForExtensionId(profile, kFileManagerAppId);
-  DCHECK(context);
-
-  // Check the existence of a file using file system API implementation on
-  // behalf of the file manager app. We need to grant access beforehand.
-  context->external_backend()->GrantFullAccessToExtension(kFileManagerAppId);
+  DCHECK(file_system_context);
+  storage::ExternalFileSystemBackend* const backend =
+      file_system_context->external_backend();
+  DCHECK(backend);
+  const storage::FileSystemURL internal_url =
+      backend->CreateInternalURL(file_system_context.get(), path);
 
   content::BrowserThread::PostTask(
-      content::BrowserThread::IO,
-      FROM_HERE,
-      base::Bind(&PrepareFileOnIOThread,
-                 make_scoped_refptr(context),
-                 context->CrackURL(url),
+      content::BrowserThread::IO, FROM_HERE,
+      base::Bind(&PrepareFileOnIOThread, file_system_context, internal_url,
                  google_apis::CreateRelayCallback(callback)));
 }
 

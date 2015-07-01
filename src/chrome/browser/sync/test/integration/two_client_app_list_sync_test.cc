@@ -12,12 +12,14 @@
 #include "chrome/browser/sync/test/integration/sync_app_list_helper.h"
 #include "chrome/browser/sync/test/integration/sync_integration_test_util.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
+#include "chrome/browser/ui/app_list/app_list_prefs.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
+#include "ui/app_list/app_list_item.h"
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_switches.h"
 
@@ -48,21 +50,46 @@ const app_list::AppListSyncableService::SyncItem* GetSyncItem(
   return service->GetSyncItem(app_id);
 }
 
+// Checks that the synced changes are mirrored in AppListPrefs.
+void CheckAppInfoInPrefs(Profile* profile,
+                         const std::vector<std::string>& expected_ids) {
+  app_list::AppListSyncableService* service =
+      app_list::AppListSyncableServiceFactory::GetForProfile(profile);
+
+  app_list::AppListPrefs::AppListInfoMap infos;
+
+  app_list::AppListPrefs::Get(profile)->GetAllAppListInfos(&infos);
+  EXPECT_EQ(expected_ids.size(), infos.size());
+
+  for (auto id : expected_ids) {
+    app_list::AppListItem* item =
+        service->GetModel()->top_level_item_list()->FindItem(id);
+    ASSERT_TRUE(item);
+    // Ensure local prefs matches the model data.
+    scoped_ptr<app_list::AppListPrefs::AppListInfo> info =
+        app_list::AppListPrefs::Get(profile)->GetAppListInfo(id);
+    ASSERT_TRUE(info);
+    EXPECT_EQ(item->name(), info->name);
+    EXPECT_TRUE(item->position().Equals(info->position));
+    EXPECT_EQ(item->folder_id(), info->parent_id);
+  }
+}
+
 }  // namespace
 
 class TwoClientAppListSyncTest : public SyncTest {
  public:
   TwoClientAppListSyncTest() : SyncTest(TWO_CLIENT_LEGACY) {}
 
-  virtual ~TwoClientAppListSyncTest() {}
+  ~TwoClientAppListSyncTest() override {}
 
   // SyncTest
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     SyncTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(app_list::switches::kEnableSyncAppList);
   }
 
-  virtual bool SetupClients() OVERRIDE {
+  bool SetupClients() override {
     if (!SyncTest::SetupClients())
       return false;
 
@@ -72,7 +99,7 @@ class TwoClientAppListSyncTest : public SyncTest {
     return true;
   }
 
-  virtual bool SetupSync() OVERRIDE {
+  bool SetupSync() override {
     if (!SyncTest::SetupSync())
       return false;
     WaitForExtensionServicesToLoad();
@@ -126,7 +153,9 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppListSyncTest, StartWithSameApps) {
 // Install some apps on both clients, some on only one client, some on only the
 // other, and sync.  Both clients should end up with all apps, and the app and
 // page ordinals should be identical.
-IN_PROC_BROWSER_TEST_F(TwoClientAppListSyncTest, StartWithDifferentApps) {
+// Disabled, see http://crbug.com/434438 for details.
+IN_PROC_BROWSER_TEST_F(TwoClientAppListSyncTest,
+                       DISABLED_StartWithDifferentApps) {
   ASSERT_TRUE(SetupClients());
 
   int i = 0;
@@ -393,14 +422,22 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppListSyncTest, Move) {
   ASSERT_TRUE(SetupSync());
   ASSERT_TRUE(AllProfilesHaveSameAppListAsVerifier());
 
+  std::vector<std::string> app_ids;
+  // AppListPrefs should be empty since it only begins observing the model after
+  // sync starts.
+  CheckAppInfoInPrefs(GetProfile(1), app_ids);
+
   const int kNumApps = 5;
   for (int i = 0; i < kNumApps; ++i) {
-    InstallApp(GetProfile(0), i);
+    app_ids.push_back(InstallApp(GetProfile(0), i));
     InstallApp(GetProfile(1), i);
     InstallApp(verifier(), i);
   }
   ASSERT_TRUE(AwaitQuiescence());
   ASSERT_TRUE(AllProfilesHaveSameAppListAsVerifier());
+
+  // AppListPrefs should contain the newly installed apps.
+  CheckAppInfoInPrefs(GetProfile(1), app_ids);
 
   size_t first = kNumDefaultApps;
   SyncAppListHelper::GetInstance()->MoveApp(
@@ -410,6 +447,9 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppListSyncTest, Move) {
 
   ASSERT_TRUE(AwaitQuiescence());
   ASSERT_TRUE(AllProfilesHaveSameAppListAsVerifier());
+
+  // AppListPrefs should reflect the apps being moved in the model.
+  CheckAppInfoInPrefs(GetProfile(1), app_ids);
 }
 
 // Install a Default App on both clients, then sync. Remove the app on one
@@ -480,17 +520,17 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppListSyncTest, RemoveDefault) {
 class TwoClientAppListSyncFolderTest : public TwoClientAppListSyncTest {
  public:
   TwoClientAppListSyncFolderTest() {}
-  virtual ~TwoClientAppListSyncFolderTest() {}
+  ~TwoClientAppListSyncFolderTest() override {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     TwoClientAppListSyncTest::SetUpCommandLine(command_line);
   }
 
-  virtual bool SetupClients() OVERRIDE {
+  bool SetupClients() override {
     bool res = TwoClientAppListSyncTest::SetupClients();
     app_list::AppListSyncableService* verifier_service =
         app_list::AppListSyncableServiceFactory::GetForProfile(verifier());
-    verifier_service->model()->SetFoldersEnabled(true);
+    verifier_service->GetModel()->SetFoldersEnabled(true);
     return res;
   }
 

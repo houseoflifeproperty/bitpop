@@ -7,6 +7,7 @@
 
 #include <X11/extensions/shape.h>
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 
 #include "base/basictypes.h"
 #include "base/cancelable_callback.h"
@@ -16,9 +17,9 @@
 #include "ui/base/cursor/cursor_loader_x11.h"
 #include "ui/events/event_source.h"
 #include "ui/events/platform/platform_event_dispatcher.h"
-#include "ui/gfx/insets.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/insets.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/x/x11_atom_cache.h"
 #include "ui/views/views_export.h"
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host.h"
@@ -48,7 +49,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   DesktopWindowTreeHostX11(
       internal::NativeWidgetDelegate* native_widget_delegate,
       DesktopNativeWidgetAura* desktop_native_widget_aura);
-  virtual ~DesktopWindowTreeHostX11();
+  ~DesktopWindowTreeHostX11() override;
 
   // A way of converting an X11 |xid| host window into a |content_window_|.
   static aura::Window* GetContentWindowForXID(XID xid);
@@ -87,86 +88,85 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
 
  protected:
   // Overridden from DesktopWindowTreeHost:
-  virtual void Init(aura::Window* content_window,
-                    const Widget::InitParams& params) OVERRIDE;
-  virtual void OnNativeWidgetCreated(const Widget::InitParams& params) OVERRIDE;
-  virtual scoped_ptr<corewm::Tooltip> CreateTooltip() OVERRIDE;
-  virtual scoped_ptr<aura::client::DragDropClient>
-      CreateDragDropClient(DesktopNativeCursorManager* cursor_manager) OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual void CloseNow() OVERRIDE;
-  virtual aura::WindowTreeHost* AsWindowTreeHost() OVERRIDE;
-  virtual void ShowWindowWithState(ui::WindowShowState show_state) OVERRIDE;
-  virtual void ShowMaximizedWithBounds(
-      const gfx::Rect& restored_bounds) OVERRIDE;
-  virtual bool IsVisible() const OVERRIDE;
-  virtual void SetSize(const gfx::Size& requested_size) OVERRIDE;
-  virtual void StackAtTop() OVERRIDE;
-  virtual void CenterWindow(const gfx::Size& size) OVERRIDE;
-  virtual void GetWindowPlacement(
-      gfx::Rect* bounds,
-      ui::WindowShowState* show_state) const OVERRIDE;
-  virtual gfx::Rect GetWindowBoundsInScreen() const OVERRIDE;
-  virtual gfx::Rect GetClientAreaBoundsInScreen() const OVERRIDE;
-  virtual gfx::Rect GetRestoredBounds() const OVERRIDE;
-  virtual gfx::Rect GetWorkAreaBoundsInScreen() const OVERRIDE;
-  virtual void SetShape(gfx::NativeRegion native_region) OVERRIDE;
-  virtual void Activate() OVERRIDE;
-  virtual void Deactivate() OVERRIDE;
-  virtual bool IsActive() const OVERRIDE;
-  virtual void Maximize() OVERRIDE;
-  virtual void Minimize() OVERRIDE;
-  virtual void Restore() OVERRIDE;
-  virtual bool IsMaximized() const OVERRIDE;
-  virtual bool IsMinimized() const OVERRIDE;
-  virtual bool HasCapture() const OVERRIDE;
-  virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
-  virtual bool IsAlwaysOnTop() const OVERRIDE;
-  virtual void SetVisibleOnAllWorkspaces(bool always_visible) OVERRIDE;
-  virtual bool SetWindowTitle(const base::string16& title) OVERRIDE;
-  virtual void ClearNativeFocus() OVERRIDE;
-  virtual Widget::MoveLoopResult RunMoveLoop(
+  void Init(aura::Window* content_window,
+            const Widget::InitParams& params) override;
+  void OnNativeWidgetCreated(const Widget::InitParams& params) override;
+  scoped_ptr<corewm::Tooltip> CreateTooltip() override;
+  scoped_ptr<aura::client::DragDropClient> CreateDragDropClient(
+      DesktopNativeCursorManager* cursor_manager) override;
+  void Close() override;
+  void CloseNow() override;
+  aura::WindowTreeHost* AsWindowTreeHost() override;
+  void ShowWindowWithState(ui::WindowShowState show_state) override;
+  void ShowMaximizedWithBounds(const gfx::Rect& restored_bounds) override;
+  bool IsVisible() const override;
+  void SetSize(const gfx::Size& requested_size) override;
+  void StackAtTop() override;
+  void CenterWindow(const gfx::Size& size) override;
+  void GetWindowPlacement(gfx::Rect* bounds,
+                          ui::WindowShowState* show_state) const override;
+  gfx::Rect GetWindowBoundsInScreen() const override;
+  gfx::Rect GetClientAreaBoundsInScreen() const override;
+  gfx::Rect GetRestoredBounds() const override;
+  gfx::Rect GetWorkAreaBoundsInScreen() const override;
+  void SetShape(gfx::NativeRegion native_region) override;
+  void Activate() override;
+  void Deactivate() override;
+  bool IsActive() const override;
+  void Maximize() override;
+  void Minimize() override;
+  void Restore() override;
+  bool IsMaximized() const override;
+  bool IsMinimized() const override;
+  bool HasCapture() const override;
+  void SetAlwaysOnTop(bool always_on_top) override;
+  bool IsAlwaysOnTop() const override;
+  void SetVisibleOnAllWorkspaces(bool always_visible) override;
+  bool SetWindowTitle(const base::string16& title) override;
+  void ClearNativeFocus() override;
+  Widget::MoveLoopResult RunMoveLoop(
       const gfx::Vector2d& drag_offset,
       Widget::MoveLoopSource source,
-      Widget::MoveLoopEscapeBehavior escape_behavior) OVERRIDE;
-  virtual void EndMoveLoop() OVERRIDE;
-  virtual void SetVisibilityChangedAnimationsEnabled(bool value) OVERRIDE;
-  virtual bool ShouldUseNativeFrame() const OVERRIDE;
-  virtual bool ShouldWindowContentsBeTransparent() const OVERRIDE;
-  virtual void FrameTypeChanged() OVERRIDE;
-  virtual void SetFullscreen(bool fullscreen) OVERRIDE;
-  virtual bool IsFullscreen() const OVERRIDE;
-  virtual void SetOpacity(unsigned char opacity) OVERRIDE;
-  virtual void SetWindowIcons(const gfx::ImageSkia& window_icon,
-                              const gfx::ImageSkia& app_icon) OVERRIDE;
-  virtual void InitModalType(ui::ModalType modal_type) OVERRIDE;
-  virtual void FlashFrame(bool flash_frame) OVERRIDE;
-  virtual void OnRootViewLayout() OVERRIDE;
-  virtual void OnNativeWidgetFocus() OVERRIDE;
-  virtual void OnNativeWidgetBlur() OVERRIDE;
-  virtual bool IsAnimatingClosed() const OVERRIDE;
-  virtual bool IsTranslucentWindowOpacitySupported() const OVERRIDE;
-  virtual void SizeConstraintsChanged() OVERRIDE;
+      Widget::MoveLoopEscapeBehavior escape_behavior) override;
+  void EndMoveLoop() override;
+  void SetVisibilityChangedAnimationsEnabled(bool value) override;
+  bool ShouldUseNativeFrame() const override;
+  bool ShouldWindowContentsBeTransparent() const override;
+  void FrameTypeChanged() override;
+  void SetFullscreen(bool fullscreen) override;
+  bool IsFullscreen() const override;
+  void SetOpacity(unsigned char opacity) override;
+  void SetWindowIcons(const gfx::ImageSkia& window_icon,
+                      const gfx::ImageSkia& app_icon) override;
+  void InitModalType(ui::ModalType modal_type) override;
+  void FlashFrame(bool flash_frame) override;
+  void OnRootViewLayout() override;
+  void OnNativeWidgetFocus() override;
+  void OnNativeWidgetBlur() override;
+  bool IsAnimatingClosed() const override;
+  bool IsTranslucentWindowOpacitySupported() const override;
+  void SizeConstraintsChanged() override;
 
   // Overridden from aura::WindowTreeHost:
-  virtual ui::EventSource* GetEventSource() OVERRIDE;
-  virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
-  virtual void Show() OVERRIDE;
-  virtual void Hide() OVERRIDE;
-  virtual gfx::Rect GetBounds() const OVERRIDE;
-  virtual void SetBounds(const gfx::Rect& requested_bounds) OVERRIDE;
-  virtual gfx::Point GetLocationOnNativeScreen() const OVERRIDE;
-  virtual void SetCapture() OVERRIDE;
-  virtual void ReleaseCapture() OVERRIDE;
-  virtual void PostNativeEvent(const base::NativeEvent& native_event) OVERRIDE;
-  virtual void SetCursorNative(gfx::NativeCursor cursor) OVERRIDE;
-  virtual void MoveCursorToNative(const gfx::Point& location) OVERRIDE;
-  virtual void OnCursorVisibilityChangedNative(bool show) OVERRIDE;
+  gfx::Transform GetRootTransform() const override;
+  ui::EventSource* GetEventSource() override;
+  gfx::AcceleratedWidget GetAcceleratedWidget() override;
+  void Show() override;
+  void Hide() override;
+  gfx::Rect GetBounds() const override;
+  void SetBounds(const gfx::Rect& requested_bounds_in_pixels) override;
+  gfx::Point GetLocationOnNativeScreen() const override;
+  void SetCapture() override;
+  void ReleaseCapture() override;
+  void SetCursorNative(gfx::NativeCursor cursor) override;
+  void MoveCursorToNative(const gfx::Point& location) override;
+  void OnCursorVisibilityChangedNative(bool show) override;
 
   // Overridden frm ui::EventSource
-  virtual ui::EventProcessor* GetEventProcessor() OVERRIDE;
+  ui::EventProcessor* GetEventProcessor() override;
 
  private:
+  friend class DesktopWindowTreeHostX11HighDPITest;
   // Initializes our X11 surface to draw on. This method performs all
   // initialization related to talking to the X11 server.
   void InitX11Window(const Widget::InitParams& params);
@@ -212,6 +212,11 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   // and dispatched to that host instead.
   void DispatchTouchEvent(ui::TouchEvent* event);
 
+  // Updates the location of |located_event| to be in |host|'s coordinate system
+  // so that it can be dispatched to |host|.
+  void ConvertEventToDifferentHost(ui::LocatedEvent* located_event,
+                                   DesktopWindowTreeHostX11* host);
+
   // Resets the window region for the current widget bounds if necessary.
   void ResetWindowRegion();
 
@@ -235,10 +240,14 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   void Relayout();
 
   // ui::PlatformEventDispatcher:
-  virtual bool CanDispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
-  virtual uint32_t DispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
+  bool CanDispatchEvent(const ui::PlatformEvent& event) override;
+  uint32_t DispatchEvent(const ui::PlatformEvent& event) override;
 
-  void DelayedResize(const gfx::Size& size);
+  void DelayedResize(const gfx::Size& size_in_pixels);
+
+  gfx::Rect GetWorkAreaBoundsInPixels() const;
+  gfx::Rect ToDIPRect(const gfx::Rect& rect_in_pixels) const;
+  gfx::Rect ToPixelRect(const gfx::Rect& rect_in_dip) const;
 
   // X11 things
   // The display and the native X window hosting the root window.
@@ -254,24 +263,25 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   bool window_mapped_;
 
   // The bounds of |xwindow_|.
-  gfx::Rect bounds_;
+  gfx::Rect bounds_in_pixels_;
 
   // Whenever the bounds are set, we keep the previous set of bounds around so
-  // we can have a better chance of getting the real |restored_bounds_|. Window
-  // managers tend to send a Configure message with the maximized bounds, and
-  // then set the window maximized property. (We don't rely on this for when we
-  // request that the window be maximized, only when we detect that some other
-  // process has requested that we become the maximized window.)
-  gfx::Rect previous_bounds_;
+  // we can have a better chance of getting the real
+  // |restored_bounds_in_pixels_|. Window managers tend to send a Configure
+  // message with the maximized bounds, and then set the window maximized
+  // property. (We don't rely on this for when we request that the window be
+  // maximized, only when we detect that some other process has requested that
+  // we become the maximized window.)
+  gfx::Rect previous_bounds_in_pixels_;
 
   // The bounds of our window before we were maximized.
-  gfx::Rect restored_bounds_;
+  gfx::Rect restored_bounds_in_pixels_;
 
   // |xwindow_|'s minimum size.
-  gfx::Size min_size_;
+  gfx::Size min_size_in_pixels_;
 
   // |xwindow_|'s maximum size.
-  gfx::Size max_size_;
+  gfx::Size max_size_in_pixels_;
 
   // The window manager state bits.
   std::set< ::Atom> window_properties_;
@@ -312,13 +322,14 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   ObserverList<DesktopWindowTreeHostObserverX11> observer_list_;
 
   // The window shape if the window is non-rectangular.
-  ::Region window_shape_;
+  gfx::XScopedPtr<_XRegion, gfx::XObjectDeleter<_XRegion, int, XDestroyRegion>>
+      window_shape_;
 
   // Whether |window_shape_| was set via SetShape().
   bool custom_window_shape_;
 
   // The size of the window manager provided borders (if any).
-  gfx::Insets native_window_frame_borders_;
+  gfx::Insets native_window_frame_borders_in_pixels_;
 
   // The current DesktopWindowTreeHostX11 which has capture. Set synchronously
   // when capture is requested via SetCapture().

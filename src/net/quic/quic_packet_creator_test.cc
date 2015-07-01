@@ -33,55 +33,64 @@ namespace {
 // Run tests with combinations of {QuicVersion, ToggleVersionSerialization}.
 struct TestParams {
   TestParams(QuicVersion version,
-             bool version_serialization)
+             bool version_serialization,
+             QuicConnectionIdLength length)
       : version(version),
+        connection_id_length(length),
         version_serialization(version_serialization) {
   }
 
   friend ostream& operator<<(ostream& os, const TestParams& p) {
     os << "{ client_version: " << QuicVersionToString(p.version)
+       << " connection id length: " << p.connection_id_length
        << " include version: " << p.version_serialization << " }";
     return os;
   }
 
   QuicVersion version;
+  QuicConnectionIdLength connection_id_length;
   bool version_serialization;
 };
 
 // Constructs various test permutations.
 vector<TestParams> GetTestParams() {
   vector<TestParams> params;
+  QuicConnectionIdLength max = PACKET_8BYTE_CONNECTION_ID;
   QuicVersionVector all_supported_versions = QuicSupportedVersions();
   for (size_t i = 0; i < all_supported_versions.size(); ++i) {
-    params.push_back(TestParams(all_supported_versions[i], true));
-    params.push_back(TestParams(all_supported_versions[i], false));
+    params.push_back(TestParams(all_supported_versions[i], true, max));
+    params.push_back(TestParams(all_supported_versions[i], false, max));
   }
+  params.push_back(TestParams(
+      all_supported_versions[0], true, PACKET_0BYTE_CONNECTION_ID));
+  params.push_back(TestParams(
+      all_supported_versions[0], true, PACKET_1BYTE_CONNECTION_ID));
+  params.push_back(TestParams(
+      all_supported_versions[0], true, PACKET_4BYTE_CONNECTION_ID));
   return params;
 }
 
 class QuicPacketCreatorTest : public ::testing::TestWithParam<TestParams> {
  protected:
   QuicPacketCreatorTest()
-      : server_framer_(SupportedVersions(GetParam().version), QuicTime::Zero(),
-                       true),
-        client_framer_(SupportedVersions(GetParam().version), QuicTime::Zero(),
-                       false),
-        sequence_number_(0),
+      : server_framer_(SupportedVersions(GetParam().version),
+                       QuicTime::Zero(),
+                       Perspective::IS_SERVER),
+        client_framer_(SupportedVersions(GetParam().version),
+                       QuicTime::Zero(),
+                       Perspective::IS_CLIENT),
         connection_id_(2),
         data_("foo"),
         creator_(connection_id_, &client_framer_, &mock_random_) {
+    creator_.set_connection_id_length(GetParam().connection_id_length);
     client_framer_.set_visitor(&framer_visitor_);
     client_framer_.set_received_entropy_calculator(&entropy_calculator_);
     server_framer_.set_visitor(&framer_visitor_);
   }
 
-  virtual ~QuicPacketCreatorTest() OVERRIDE {
-  }
+  ~QuicPacketCreatorTest() override {}
 
-  void ProcessPacket(QuicPacket* packet) {
-    scoped_ptr<QuicEncryptedPacket> encrypted(
-        server_framer_.EncryptPacket(ENCRYPTION_NONE, sequence_number_,
-                                     *packet));
+  void ProcessPacket(QuicEncryptedPacket* encrypted) {
     server_framer_.ProcessPacket(*encrypted);
   }
 
@@ -102,10 +111,10 @@ class QuicPacketCreatorTest : public ::testing::TestWithParam<TestParams> {
   // Returns the number of bytes consumed by the header of packet, including
   // the version.
   size_t GetPacketHeaderOverhead(InFecGroup is_in_fec_group) {
-    return GetPacketHeaderSize(creator_.connection_id_length(),
-                               kIncludeVersion,
-                               creator_.next_sequence_number_length(),
-                               is_in_fec_group);
+    return GetPacketHeaderSize(
+        creator_.connection_id_length(), kIncludeVersion,
+        QuicPacketCreatorPeer::NextSequenceNumberLength(&creator_),
+        is_in_fec_group);
   }
 
   // Returns the number of bytes of overhead that will be added to a packet
@@ -135,7 +144,6 @@ class QuicPacketCreatorTest : public ::testing::TestWithParam<TestParams> {
   QuicFramer server_framer_;
   QuicFramer client_framer_;
   testing::StrictMock<MockFramerVisitor> framer_visitor_;
-  QuicPacketSequenceNumber sequence_number_;
   QuicConnectionId connection_id_;
   string data_;
   MockRandom mock_random_;
@@ -144,7 +152,8 @@ class QuicPacketCreatorTest : public ::testing::TestWithParam<TestParams> {
 };
 
 // Run all packet creator tests with all supported versions of QUIC, and with
-// and without version in the packet header.
+// and without version in the packet header, as well as doing a run for each
+// length of truncated connection id.
 INSTANTIATE_TEST_CASE_P(QuicPacketCreatorTests,
                         QuicPacketCreatorTest,
                         ::testing::ValuesIn(GetTestParams()));
@@ -153,7 +162,9 @@ TEST_P(QuicPacketCreatorTest, SerializeFrames) {
   frames_.push_back(QuicFrame(new QuicAckFrame(MakeAckFrame(0u))));
   frames_.push_back(QuicFrame(new QuicStreamFrame(0u, false, 0u, IOVector())));
   frames_.push_back(QuicFrame(new QuicStreamFrame(0u, true, 0u, IOVector())));
-  SerializedPacket serialized = creator_.SerializeAllFrames(frames_);
+  char buffer[kMaxPacketSize];
+  SerializedPacket serialized =
+      creator_.SerializeAllFrames(frames_, buffer, kMaxPacketSize);
   delete frames_[0].ack_frame;
   delete frames_[1].stream_frame;
   delete frames_[2].stream_frame;
@@ -182,7 +193,9 @@ TEST_P(QuicPacketCreatorTest, SerializeWithFEC) {
   ASSERT_FALSE(creator_.ShouldSendFec(/*force_close=*/false));
 
   frames_.push_back(QuicFrame(new QuicStreamFrame(0u, false, 0u, IOVector())));
-  SerializedPacket serialized = creator_.SerializeAllFrames(frames_);
+  char buffer[kMaxPacketSize];
+  SerializedPacket serialized =
+      creator_.SerializeAllFrames(frames_, buffer, kMaxPacketSize);
   delete frames_[0].stream_frame;
 
   {
@@ -205,7 +218,7 @@ TEST_P(QuicPacketCreatorTest, SerializeWithFEC) {
   // Should return true since there are packets in the FEC group.
   ASSERT_TRUE(creator_.ShouldSendFec(/*force_close=*/true));
 
-  serialized = creator_.SerializeFec();
+  serialized = creator_.SerializeFec(buffer, kMaxPacketSize);
   ASSERT_EQ(2u, serialized.sequence_number);
   {
     InSequence s;
@@ -224,8 +237,11 @@ TEST_P(QuicPacketCreatorTest, SerializeWithFEC) {
 TEST_P(QuicPacketCreatorTest, SerializeChangingSequenceNumberLength) {
   frames_.push_back(QuicFrame(new QuicAckFrame(MakeAckFrame(0u))));
   creator_.AddSavedFrame(frames_[0]);
-  creator_.set_next_sequence_number_length(PACKET_4BYTE_SEQUENCE_NUMBER);
-  SerializedPacket serialized = creator_.SerializePacket();
+  QuicPacketCreatorPeer::SetNextSequenceNumberLength(
+      &creator_, PACKET_4BYTE_SEQUENCE_NUMBER);
+  char buffer[kMaxPacketSize];
+  SerializedPacket serialized =
+      creator_.SerializePacket(buffer, kMaxPacketSize);
   // The sequence number length will not change mid-packet.
   EXPECT_EQ(PACKET_1BYTE_SEQUENCE_NUMBER, serialized.sequence_number_length);
 
@@ -243,7 +259,7 @@ TEST_P(QuicPacketCreatorTest, SerializeChangingSequenceNumberLength) {
   delete serialized.packet;
 
   creator_.AddSavedFrame(frames_[0]);
-  serialized = creator_.SerializePacket();
+  serialized = creator_.SerializePacket(buffer, kMaxPacketSize);
   // Now the actual sequence number length should have changed.
   EXPECT_EQ(PACKET_4BYTE_SEQUENCE_NUMBER, serialized.sequence_number_length);
   delete frames_[0].ack_frame;
@@ -274,7 +290,8 @@ TEST_P(QuicPacketCreatorTest, ChangeSequenceNumberLengthMidPacket) {
   creator_.AddSavedFrame(ack_frame);
 
   // Now change sequence number length.
-  creator_.set_next_sequence_number_length(PACKET_4BYTE_SEQUENCE_NUMBER);
+  QuicPacketCreatorPeer::SetNextSequenceNumberLength(
+      &creator_, PACKET_4BYTE_SEQUENCE_NUMBER);
 
   // Add a STOP_WAITING frame since it contains a packet sequence number,
   // whose length should be 1.
@@ -283,7 +300,9 @@ TEST_P(QuicPacketCreatorTest, ChangeSequenceNumberLengthMidPacket) {
   EXPECT_TRUE(creator_.HasPendingFrames());
 
   // Ensure the packet is successfully created.
-  SerializedPacket serialized = creator_.SerializePacket();
+  char buffer[kMaxPacketSize];
+  SerializedPacket serialized =
+      creator_.SerializePacket(buffer, kMaxPacketSize);
   ASSERT_TRUE(serialized.packet);
   EXPECT_EQ(PACKET_1BYTE_SEQUENCE_NUMBER, serialized.sequence_number_length);
 
@@ -314,7 +333,7 @@ TEST_P(QuicPacketCreatorTest, ChangeSequenceNumberLengthMidPacket) {
   EXPECT_TRUE(creator_.HasPendingFrames());
 
   // Ensure the packet is successfully created.
-  serialized = creator_.SerializePacket();
+  serialized = creator_.SerializePacket(buffer, kMaxPacketSize);
   ASSERT_TRUE(serialized.packet);
   EXPECT_EQ(PACKET_4BYTE_SEQUENCE_NUMBER, serialized.sequence_number_length);
 
@@ -354,8 +373,11 @@ TEST_P(QuicPacketCreatorTest, SerializeWithFECChangingSequenceNumberLength) {
   // Generate Packet 1.
   creator_.AddSavedFrame(frames_[0]);
   // Change the sequence number length mid-FEC group and it should not change.
-  creator_.set_next_sequence_number_length(PACKET_4BYTE_SEQUENCE_NUMBER);
-  SerializedPacket serialized = creator_.SerializePacket();
+  QuicPacketCreatorPeer::SetNextSequenceNumberLength(
+      &creator_, PACKET_4BYTE_SEQUENCE_NUMBER);
+  char buffer[kMaxPacketSize];
+  SerializedPacket serialized =
+      creator_.SerializePacket(buffer, kMaxPacketSize);
   EXPECT_EQ(PACKET_1BYTE_SEQUENCE_NUMBER, serialized.sequence_number_length);
 
   {
@@ -374,7 +396,7 @@ TEST_P(QuicPacketCreatorTest, SerializeWithFECChangingSequenceNumberLength) {
 
   // Generate Packet 2.
   creator_.AddSavedFrame(frames_[0]);
-  serialized = creator_.SerializePacket();
+  serialized = creator_.SerializePacket(buffer, kMaxPacketSize);
   EXPECT_EQ(PACKET_1BYTE_SEQUENCE_NUMBER, serialized.sequence_number_length);
 
   {
@@ -398,7 +420,7 @@ TEST_P(QuicPacketCreatorTest, SerializeWithFECChangingSequenceNumberLength) {
   ASSERT_TRUE(creator_.ShouldSendFec(/*force_close=*/true));
 
   // Force generation of FEC packet.
-  serialized = creator_.SerializeFec();
+  serialized = creator_.SerializeFec(buffer, kMaxPacketSize);
   EXPECT_EQ(PACKET_1BYTE_SEQUENCE_NUMBER, serialized.sequence_number_length);
   ASSERT_EQ(3u, serialized.sequence_number);
 
@@ -416,7 +438,7 @@ TEST_P(QuicPacketCreatorTest, SerializeWithFECChangingSequenceNumberLength) {
   delete serialized.packet;
 
   // Ensure the next FEC group starts using the new sequence number length.
-  serialized = creator_.SerializeAllFrames(frames_);
+  serialized = creator_.SerializeAllFrames(frames_, buffer, kMaxPacketSize);
   EXPECT_EQ(PACKET_4BYTE_SEQUENCE_NUMBER, serialized.sequence_number_length);
   delete frames_[0].ack_frame;
   delete serialized.packet;
@@ -426,18 +448,22 @@ TEST_P(QuicPacketCreatorTest, ReserializeFramesWithSequenceNumberLength) {
   // If the original packet sequence number length, the current sequence number
   // length, and the configured send sequence number length are different, the
   // retransmit must sent with the original length and the others do not change.
-  creator_.set_next_sequence_number_length(PACKET_4BYTE_SEQUENCE_NUMBER);
+  QuicPacketCreatorPeer::SetNextSequenceNumberLength(
+      &creator_, PACKET_4BYTE_SEQUENCE_NUMBER);
   QuicPacketCreatorPeer::SetSequenceNumberLength(&creator_,
                                                  PACKET_2BYTE_SEQUENCE_NUMBER);
-  frames_.push_back(QuicFrame(new QuicStreamFrame(0u, false, 0u, IOVector())));
-  SerializedPacket serialized =
-      creator_.ReserializeAllFrames(frames_, PACKET_1BYTE_SEQUENCE_NUMBER);
+  QuicStreamFrame* stream_frame =
+      new QuicStreamFrame(kCryptoStreamId, /*fin=*/false, 0u, IOVector());
+  RetransmittableFrames frames(ENCRYPTION_NONE);
+  frames.AddStreamFrame(stream_frame);
+  char buffer[kMaxPacketSize];
+  SerializedPacket serialized = creator_.ReserializeAllFrames(
+      frames, PACKET_1BYTE_SEQUENCE_NUMBER, buffer, kMaxPacketSize);
   EXPECT_EQ(PACKET_4BYTE_SEQUENCE_NUMBER,
-            creator_.next_sequence_number_length());
+            QuicPacketCreatorPeer::NextSequenceNumberLength(&creator_));
   EXPECT_EQ(PACKET_2BYTE_SEQUENCE_NUMBER,
             QuicPacketCreatorPeer::GetSequenceNumberLength(&creator_));
   EXPECT_EQ(PACKET_1BYTE_SEQUENCE_NUMBER, serialized.sequence_number_length);
-  delete frames_[0].stream_frame;
 
   {
     InSequence s;
@@ -453,12 +479,62 @@ TEST_P(QuicPacketCreatorTest, ReserializeFramesWithSequenceNumberLength) {
   delete serialized.packet;
 }
 
+TEST_P(QuicPacketCreatorTest, ReserializeFramesWithPadding) {
+  QuicStreamFrame* stream_frame =
+      new QuicStreamFrame(kCryptoStreamId, /*fin=*/false, /*offset=*/0,
+                          MakeIOVector("fake handshake message data"));
+  RetransmittableFrames frames(ENCRYPTION_NONE);
+  frames.AddStreamFrame(stream_frame);
+  char buffer[kMaxPacketSize];
+  SerializedPacket serialized = creator_.ReserializeAllFrames(
+      frames, QuicPacketCreatorPeer::NextSequenceNumberLength(&creator_),
+      buffer, kMaxPacketSize);
+  EXPECT_EQ(kDefaultMaxPacketSize, serialized.packet->length());
+  delete serialized.packet;
+}
+
+TEST_P(QuicPacketCreatorTest, ReserializeFramesWithFullPacketAndPadding) {
+  const size_t overhead = GetPacketHeaderOverhead(NOT_IN_FEC_GROUP)
+      + GetEncryptionOverhead() + GetStreamFrameOverhead(NOT_IN_FEC_GROUP);
+  size_t capacity = kDefaultMaxPacketSize - overhead;
+  for (int delta = -5; delta <= 0; ++delta) {
+    string data(capacity + delta, 'A');
+    size_t bytes_free = 0 - delta;
+
+    QuicStreamFrame* stream_frame = new QuicStreamFrame(
+        kCryptoStreamId, /*fin=*/false, kOffset, MakeIOVector(data));
+    RetransmittableFrames frames(ENCRYPTION_NONE);
+    frames.AddStreamFrame(stream_frame);
+    char buffer[kMaxPacketSize];
+    SerializedPacket serialized = creator_.ReserializeAllFrames(
+        frames, QuicPacketCreatorPeer::NextSequenceNumberLength(&creator_),
+        buffer, kMaxPacketSize);
+
+    // If there is not enough space in the packet to fit a padding frame
+    // (1 byte) and to expand the stream frame (another 2 bytes) the packet
+    // will not be padded.
+    if (bytes_free < 3) {
+      EXPECT_EQ(kDefaultMaxPacketSize - bytes_free,
+                serialized.packet->length());
+    } else {
+      EXPECT_EQ(kDefaultMaxPacketSize, serialized.packet->length());
+    }
+
+    delete serialized.packet;
+    frames_.clear();
+  }
+}
+
 TEST_P(QuicPacketCreatorTest, SerializeConnectionClose) {
   QuicConnectionCloseFrame frame;
   frame.error_code = QUIC_NO_ERROR;
   frame.error_details = "error";
 
-  SerializedPacket serialized = creator_.SerializeConnectionClose(&frame);
+  QuicFrames frames;
+  frames.push_back(QuicFrame(&frame));
+  char buffer[kMaxPacketSize];
+  SerializedPacket serialized =
+      creator_.SerializeAllFrames(frames, buffer, kMaxPacketSize);
   ASSERT_EQ(1u, serialized.sequence_number);
   ASSERT_EQ(1u, creator_.sequence_number());
 
@@ -496,7 +572,9 @@ TEST_P(QuicPacketCreatorTest, SwitchFecOnOffWithGroupInProgress) {
   // Enable FEC protection, and send FEC packet every 6 packets.
   EXPECT_TRUE(SwitchFecProtectionOn(6));
   frames_.push_back(QuicFrame(new QuicStreamFrame(0u, false, 0u, IOVector())));
-  SerializedPacket serialized = creator_.SerializeAllFrames(frames_);
+  char buffer[kMaxPacketSize];
+  SerializedPacket serialized =
+      creator_.SerializeAllFrames(frames_, buffer, kMaxPacketSize);
   delete frames_[0].stream_frame;
   delete serialized.packet;
 
@@ -514,7 +592,7 @@ TEST_P(QuicPacketCreatorTest, SwitchFecOnOffWithGroupInProgress) {
   // Confirm that FEC packet is still under construction.
   EXPECT_TRUE(creator_.ShouldSendFec(/*force_close=*/true));
 
-  serialized = creator_.SerializeFec();
+  serialized = creator_.SerializeFec(buffer, kMaxPacketSize);
   delete serialized.packet;
 
   // Switching FEC on/off should work now.
@@ -542,7 +620,9 @@ TEST_P(QuicPacketCreatorTest, SwitchFecOnWithStreamFrameQueued) {
   EXPECT_FALSE(creator_.IsFecProtected());
 
   // Serialize packet for transmission.
-  SerializedPacket serialized = creator_.SerializePacket();
+  char buffer[kMaxPacketSize];
+  SerializedPacket serialized =
+      creator_.SerializePacket(buffer, kMaxPacketSize);
   delete serialized.packet;
   delete serialized.retransmittable_frames;
   EXPECT_FALSE(creator_.HasPendingFrames());
@@ -583,7 +663,7 @@ TEST_P(QuicPacketCreatorTest, CreateAllFreeBytesForStreamFrames) {
   const size_t overhead = GetPacketHeaderOverhead(NOT_IN_FEC_GROUP)
                           + GetEncryptionOverhead();
   for (size_t i = overhead; i < overhead + 100; ++i) {
-    creator_.set_max_packet_length(i);
+    creator_.SetMaxPacketLength(i);
     const bool should_have_room = i > overhead + GetStreamFrameOverhead(
         NOT_IN_FEC_GROUP);
     ASSERT_EQ(should_have_room, creator_.HasRoomForStreamFrame(
@@ -595,7 +675,9 @@ TEST_P(QuicPacketCreatorTest, CreateAllFreeBytesForStreamFrames) {
           &frame);
       EXPECT_LT(0u, bytes_consumed);
       ASSERT_TRUE(creator_.AddSavedFrame(frame));
-      SerializedPacket serialized_packet = creator_.SerializePacket();
+      char buffer[kMaxPacketSize];
+      SerializedPacket serialized_packet =
+          creator_.SerializePacket(buffer, kMaxPacketSize);
       ASSERT_TRUE(serialized_packet.packet);
       delete serialized_packet.packet;
       delete serialized_packet.retransmittable_frames;
@@ -623,7 +705,9 @@ TEST_P(QuicPacketCreatorTest, StreamFrameConsumption) {
     EXPECT_EQ(2u, creator_.ExpansionOnNewFrame());
     size_t expected_bytes_free = bytes_free < 3 ? 0 : bytes_free - 2;
     EXPECT_EQ(expected_bytes_free, creator_.BytesFree()) << "delta: " << delta;
-    SerializedPacket serialized_packet = creator_.SerializePacket();
+    char buffer[kMaxPacketSize];
+    SerializedPacket serialized_packet =
+        creator_.SerializePacket(buffer, kMaxPacketSize);
     ASSERT_TRUE(serialized_packet.packet);
     delete serialized_packet.packet;
     delete serialized_packet.retransmittable_frames;
@@ -653,7 +737,9 @@ TEST_P(QuicPacketCreatorTest, StreamFrameConsumptionWithFec) {
     EXPECT_EQ(0u, creator_.ExpansionOnNewFrame());
     size_t expected_bytes_free = bytes_free > 0 ? bytes_free : 0;
     EXPECT_EQ(expected_bytes_free, creator_.BytesFree()) << "delta: " << delta;
-    SerializedPacket serialized_packet = creator_.SerializePacket();
+    char buffer[kMaxPacketSize];
+    SerializedPacket serialized_packet =
+        creator_.SerializePacket(buffer, kMaxPacketSize);
     ASSERT_TRUE(serialized_packet.packet);
     delete serialized_packet.packet;
     delete serialized_packet.retransmittable_frames;
@@ -676,17 +762,18 @@ TEST_P(QuicPacketCreatorTest, CryptoStreamFramePacketPadding) {
         kCryptoStreamId, MakeIOVector(data), kOffset, false, &frame);
     EXPECT_LT(0u, bytes_consumed);
     ASSERT_TRUE(creator_.AddSavedFrame(frame));
-    SerializedPacket serialized_packet = creator_.SerializePacket();
+    char buffer[kMaxPacketSize];
+    SerializedPacket serialized_packet =
+        creator_.SerializePacket(buffer, kMaxPacketSize);
     ASSERT_TRUE(serialized_packet.packet);
     // If there is not enough space in the packet to fit a padding frame
     // (1 byte) and to expand the stream frame (another 2 bytes) the packet
     // will not be padded.
     if (bytes_free < 3) {
-      EXPECT_EQ(client_framer_.GetMaxPlaintextSize(kDefaultMaxPacketSize)
-                - bytes_free, serialized_packet.packet->length());
-    } else {
-      EXPECT_EQ(client_framer_.GetMaxPlaintextSize(kDefaultMaxPacketSize),
+      EXPECT_EQ(kDefaultMaxPacketSize - bytes_free,
                 serialized_packet.packet->length());
+    } else {
+      EXPECT_EQ(kDefaultMaxPacketSize, serialized_packet.packet->length());
     }
     delete serialized_packet.packet;
     delete serialized_packet.retransmittable_frames;
@@ -709,14 +796,15 @@ TEST_P(QuicPacketCreatorTest, NonCryptoStreamFramePacketNonPadding) {
         kClientDataStreamId1, MakeIOVector(data), kOffset, false, &frame);
     EXPECT_LT(0u, bytes_consumed);
     ASSERT_TRUE(creator_.AddSavedFrame(frame));
-    SerializedPacket serialized_packet = creator_.SerializePacket();
+    char buffer[kMaxPacketSize];
+    SerializedPacket serialized_packet =
+        creator_.SerializePacket(buffer, kMaxPacketSize);
     ASSERT_TRUE(serialized_packet.packet);
     if (bytes_free > 0) {
-      EXPECT_EQ(client_framer_.GetMaxPlaintextSize(kDefaultMaxPacketSize)
-                - bytes_free, serialized_packet.packet->length());
-    } else {
-      EXPECT_EQ(client_framer_.GetMaxPlaintextSize(kDefaultMaxPacketSize),
+      EXPECT_EQ(kDefaultMaxPacketSize - bytes_free,
                 serialized_packet.packet->length());
+    } else {
+      EXPECT_EQ(kDefaultMaxPacketSize, serialized_packet.packet->length());
     }
     delete serialized_packet.packet;
     delete serialized_packet.retransmittable_frames;
@@ -724,7 +812,7 @@ TEST_P(QuicPacketCreatorTest, NonCryptoStreamFramePacketNonPadding) {
 }
 
 TEST_P(QuicPacketCreatorTest, SerializeVersionNegotiationPacket) {
-  QuicFramerPeer::SetIsServer(&client_framer_, true);
+  QuicFramerPeer::SetPerspective(&client_framer_, Perspective::IS_SERVER);
   QuicVersionVector versions;
   versions.push_back(test::QuicVersionMax());
   scoped_ptr<QuicEncryptedPacket> encrypted(
@@ -736,74 +824,63 @@ TEST_P(QuicPacketCreatorTest, SerializeVersionNegotiationPacket) {
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedPublicHeader(_));
     EXPECT_CALL(framer_visitor_, OnVersionNegotiationPacket(_));
   }
-  QuicFramerPeer::SetIsServer(&client_framer_, false);
+  QuicFramerPeer::SetPerspective(&client_framer_, Perspective::IS_CLIENT);
   client_framer_.ProcessPacket(*encrypted);
 }
 
 TEST_P(QuicPacketCreatorTest, UpdatePacketSequenceNumberLengthLeastAwaiting) {
   EXPECT_EQ(PACKET_1BYTE_SEQUENCE_NUMBER,
-            creator_.next_sequence_number_length());
+            QuicPacketCreatorPeer::NextSequenceNumberLength(&creator_));
 
   size_t max_packets_per_fec_group = 10;
   creator_.set_max_packets_per_fec_group(max_packets_per_fec_group);
-  creator_.set_sequence_number(64 - max_packets_per_fec_group);
-  creator_.UpdateSequenceNumberLength(2, 10000);
+  QuicPacketCreatorPeer::SetSequenceNumber(&creator_,
+                                           64 - max_packets_per_fec_group);
+  creator_.UpdateSequenceNumberLength(2, 10000 / kDefaultMaxPacketSize);
   EXPECT_EQ(PACKET_1BYTE_SEQUENCE_NUMBER,
-            creator_.next_sequence_number_length());
+            QuicPacketCreatorPeer::NextSequenceNumberLength(&creator_));
 
-  creator_.set_sequence_number(64 * 256 - max_packets_per_fec_group);
-  creator_.UpdateSequenceNumberLength(2, 10000);
+  QuicPacketCreatorPeer::SetSequenceNumber(
+      &creator_, 64 * 256 - max_packets_per_fec_group);
+  creator_.UpdateSequenceNumberLength(2, 10000 / kDefaultMaxPacketSize);
   EXPECT_EQ(PACKET_2BYTE_SEQUENCE_NUMBER,
-            creator_.next_sequence_number_length());
+            QuicPacketCreatorPeer::NextSequenceNumberLength(&creator_));
 
-  creator_.set_sequence_number(64 * 256 * 256 - max_packets_per_fec_group);
-  creator_.UpdateSequenceNumberLength(2, 10000);
+  QuicPacketCreatorPeer::SetSequenceNumber(
+      &creator_, 64 * 256 * 256 - max_packets_per_fec_group);
+  creator_.UpdateSequenceNumberLength(2, 10000 / kDefaultMaxPacketSize);
   EXPECT_EQ(PACKET_4BYTE_SEQUENCE_NUMBER,
-            creator_.next_sequence_number_length());
+            QuicPacketCreatorPeer::NextSequenceNumberLength(&creator_));
 
-  creator_.set_sequence_number(
+  QuicPacketCreatorPeer::SetSequenceNumber(
+      &creator_,
       GG_UINT64_C(64) * 256 * 256 * 256 * 256 - max_packets_per_fec_group);
-  creator_.UpdateSequenceNumberLength(2, 10000);
+  creator_.UpdateSequenceNumberLength(2, 10000 / kDefaultMaxPacketSize);
   EXPECT_EQ(PACKET_6BYTE_SEQUENCE_NUMBER,
-            creator_.next_sequence_number_length());
+            QuicPacketCreatorPeer::NextSequenceNumberLength(&creator_));
 }
 
 TEST_P(QuicPacketCreatorTest, UpdatePacketSequenceNumberLengthBandwidth) {
   EXPECT_EQ(PACKET_1BYTE_SEQUENCE_NUMBER,
-            creator_.next_sequence_number_length());
+            QuicPacketCreatorPeer::NextSequenceNumberLength(&creator_));
 
-  creator_.UpdateSequenceNumberLength(1, 10000);
+  creator_.UpdateSequenceNumberLength(1, 10000 / kDefaultMaxPacketSize);
   EXPECT_EQ(PACKET_1BYTE_SEQUENCE_NUMBER,
-            creator_.next_sequence_number_length());
+            QuicPacketCreatorPeer::NextSequenceNumberLength(&creator_));
 
-  creator_.UpdateSequenceNumberLength(1, 10000 * 256);
+  creator_.UpdateSequenceNumberLength(1, 10000 * 256 / kDefaultMaxPacketSize);
   EXPECT_EQ(PACKET_2BYTE_SEQUENCE_NUMBER,
-            creator_.next_sequence_number_length());
-
-  creator_.UpdateSequenceNumberLength(1, 10000 * 256 * 256);
-  EXPECT_EQ(PACKET_4BYTE_SEQUENCE_NUMBER,
-            creator_.next_sequence_number_length());
+            QuicPacketCreatorPeer::NextSequenceNumberLength(&creator_));
 
   creator_.UpdateSequenceNumberLength(
-      1, GG_UINT64_C(1000) * 256 * 256 * 256 * 256);
-  EXPECT_EQ(PACKET_6BYTE_SEQUENCE_NUMBER,
-            creator_.next_sequence_number_length());
-}
+      1, 10000 * 256 * 256 / kDefaultMaxPacketSize);
+  EXPECT_EQ(PACKET_4BYTE_SEQUENCE_NUMBER,
+            QuicPacketCreatorPeer::NextSequenceNumberLength(&creator_));
 
-TEST_P(QuicPacketCreatorTest, CreateStreamFrameWithNotifier) {
-  // Ensure that if CreateStreamFrame does not consume any data (e.g. a FIN only
-  // frame) then any QuicAckNotifier that is passed in still gets attached to
-  // the frame.
-  scoped_refptr<MockAckNotifierDelegate> delegate(new MockAckNotifierDelegate);
-  QuicAckNotifier notifier(delegate.get());
-  QuicFrame frame;
-  IOVector empty_iovector;
-  bool fin = true;
-  size_t consumed_bytes = creator_.CreateStreamFrameWithNotifier(
-      1u, empty_iovector, 0u, fin, &notifier, &frame);
-  EXPECT_EQ(0u, consumed_bytes);
-  EXPECT_EQ(&notifier, frame.stream_frame->notifier);
-  delete frame.stream_frame;
+  creator_.UpdateSequenceNumberLength(
+      1, GG_UINT64_C(1000) * 256 * 256 * 256 * 256 / kDefaultMaxPacketSize);
+  EXPECT_EQ(PACKET_6BYTE_SEQUENCE_NUMBER,
+            QuicPacketCreatorPeer::NextSequenceNumberLength(&creator_));
 }
 
 TEST_P(QuicPacketCreatorTest, SerializeFrame) {
@@ -811,7 +888,9 @@ TEST_P(QuicPacketCreatorTest, SerializeFrame) {
     creator_.StopSendingVersion();
   }
   frames_.push_back(QuicFrame(new QuicStreamFrame(0u, false, 0u, IOVector())));
-  SerializedPacket serialized = creator_.SerializeAllFrames(frames_);
+  char buffer[kMaxPacketSize];
+  SerializedPacket serialized =
+      creator_.SerializeAllFrames(frames_, buffer, kMaxPacketSize);
   delete frames_[0].stream_frame;
 
   QuicPacketHeader header;
@@ -838,9 +917,10 @@ TEST_P(QuicPacketCreatorTest, CreateStreamFrameTooLarge) {
   }
   // A string larger than fits into a frame.
   size_t payload_length;
-  creator_.set_max_packet_length(GetPacketLengthForOneStream(
+  creator_.SetMaxPacketLength(GetPacketLengthForOneStream(
       client_framer_.version(),
       QuicPacketCreatorPeer::SendVersionInPacket(&creator_),
+      creator_.connection_id_length(),
       PACKET_1BYTE_SEQUENCE_NUMBER, NOT_IN_FEC_GROUP, &payload_length));
   QuicFrame frame;
   const string too_long_payload(payload_length * 2, 'a');
@@ -871,12 +951,6 @@ TEST_P(QuicPacketCreatorTest, AddFrameAndSerialize) {
   EXPECT_TRUE(creator_.AddSavedFrame(QuicFrame(&ack_frame)));
   EXPECT_TRUE(creator_.HasPendingFrames());
 
-  QuicCongestionFeedbackFrame congestion_feedback;
-  congestion_feedback.type = kTCP;
-  congestion_feedback.tcp.receive_window = 0x4030;
-  EXPECT_TRUE(creator_.AddSavedFrame(QuicFrame(&congestion_feedback)));
-  EXPECT_TRUE(creator_.HasPendingFrames());
-
   QuicFrame frame;
   size_t consumed = creator_.CreateStreamFrame(
       1u, MakeIOVector("test"), 0u, false, &frame);
@@ -893,7 +967,9 @@ TEST_P(QuicPacketCreatorTest, AddFrameAndSerialize) {
   EXPECT_FALSE(creator_.AddSavedFrame(QuicFrame(&ack_frame)));
 
   // Ensure the packet is successfully created.
-  SerializedPacket serialized = creator_.SerializePacket();
+  char buffer[kMaxPacketSize];
+  SerializedPacket serialized =
+      creator_.SerializePacket(buffer, kMaxPacketSize);
   ASSERT_TRUE(serialized.packet);
   delete serialized.packet;
   ASSERT_TRUE(serialized.retransmittable_frames);
@@ -917,9 +993,7 @@ TEST_P(QuicPacketCreatorTest, SerializeTruncatedAckFrameWithLargePacketSize) {
   if (!GetParam().version_serialization) {
     creator_.StopSendingVersion();
   }
-  creator_.set_max_packet_length(kMaxPacketSize);
-  const size_t max_plaintext_size =
-      client_framer_.GetMaxPlaintextSize(creator_.max_packet_length());
+  creator_.SetMaxPacketLength(kMaxPacketSize);
 
   // Serialized length of ack frame with 2000 nack ranges should be limited by
   // the number of nack ranges that can be fit in an ack frame.
@@ -928,12 +1002,12 @@ TEST_P(QuicPacketCreatorTest, SerializeTruncatedAckFrameWithLargePacketSize) {
       QuicFrame(&ack_frame), creator_.BytesFree(), true, true,
       NOT_IN_FEC_GROUP, PACKET_1BYTE_SEQUENCE_NUMBER);
   EXPECT_GT(creator_.BytesFree(), frame_len);
-  EXPECT_GT(max_plaintext_size, creator_.PacketSize());
+  EXPECT_GT(creator_.max_packet_length(), creator_.PacketSize());
 
   // Add ack frame to creator.
   EXPECT_TRUE(creator_.AddSavedFrame(QuicFrame(&ack_frame)));
   EXPECT_TRUE(creator_.HasPendingFrames());
-  EXPECT_GT(max_plaintext_size, creator_.PacketSize());
+  EXPECT_GT(creator_.max_packet_length(), creator_.PacketSize());
   EXPECT_LT(0u, creator_.BytesFree());
 
   // Make sure that an additional stream frame can be added to the packet.
@@ -950,9 +1024,12 @@ TEST_P(QuicPacketCreatorTest, SerializeTruncatedAckFrameWithLargePacketSize) {
   EXPECT_CALL(entropy_calculator_,
              EntropyHash(_)).WillOnce(testing::Return(0));
   size_t est_packet_size = creator_.PacketSize();
-  SerializedPacket serialized = creator_.SerializePacket();
+  char buffer[kMaxPacketSize];
+  SerializedPacket serialized =
+      creator_.SerializePacket(buffer, kMaxPacketSize);
   ASSERT_TRUE(serialized.packet);
-  EXPECT_EQ(est_packet_size, serialized.packet->length());
+  EXPECT_EQ(est_packet_size,
+            client_framer_.GetMaxPlaintextSize(serialized.packet->length()));
   delete serialized.retransmittable_frames;
   delete serialized.packet;
 }
@@ -961,7 +1038,7 @@ TEST_P(QuicPacketCreatorTest, SerializeTruncatedAckFrameWithSmallPacketSize) {
   if (!GetParam().version_serialization) {
     creator_.StopSendingVersion();
   }
-  creator_.set_max_packet_length(500u);
+  creator_.SetMaxPacketLength(500u);
 
   const size_t max_plaintext_size =
       client_framer_.GetMaxPlaintextSize(creator_.max_packet_length());
@@ -978,7 +1055,8 @@ TEST_P(QuicPacketCreatorTest, SerializeTruncatedAckFrameWithSmallPacketSize) {
   // Add ack frame to creator.
   EXPECT_TRUE(creator_.AddSavedFrame(QuicFrame(&ack_frame)));
   EXPECT_TRUE(creator_.HasPendingFrames());
-  EXPECT_EQ(max_plaintext_size, creator_.PacketSize());
+  EXPECT_EQ(client_framer_.GetMaxPlaintextSize(creator_.max_packet_length()),
+            creator_.PacketSize());
   EXPECT_EQ(0u, creator_.BytesFree());
 
   // Ensure the packet is successfully created, and the packet size estimate
@@ -986,9 +1064,12 @@ TEST_P(QuicPacketCreatorTest, SerializeTruncatedAckFrameWithSmallPacketSize) {
   EXPECT_CALL(entropy_calculator_,
              EntropyHash(_)).WillOnce(Return(0));
   size_t est_packet_size = creator_.PacketSize();
-  SerializedPacket serialized = creator_.SerializePacket();
+  char buffer[kMaxPacketSize];
+  SerializedPacket serialized =
+      creator_.SerializePacket(buffer, kMaxPacketSize);
   ASSERT_TRUE(serialized.packet);
-  EXPECT_GE(est_packet_size, serialized.packet->length());
+  EXPECT_GE(est_packet_size,
+            client_framer_.GetMaxPlaintextSize(serialized.packet->length()));
   delete serialized.packet;
 }
 
@@ -996,9 +1077,11 @@ TEST_P(QuicPacketCreatorTest, SerializeTruncatedAckFrameWithSmallPacketSize) {
 TEST_P(QuicPacketCreatorTest, EntropyFlag) {
   frames_.push_back(QuicFrame(new QuicStreamFrame(0u, false, 0u, IOVector())));
 
+  char buffer[kMaxPacketSize];
   for (int i = 0; i < 2; ++i) {
     for (int j = 0; j < 64; ++j) {
-      SerializedPacket serialized = creator_.SerializeAllFrames(frames_);
+      SerializedPacket serialized =
+          creator_.SerializeAllFrames(frames_, buffer, kMaxPacketSize);
       // Verify both BoolSource and hash algorithm.
       bool expected_rand_bool =
           (mock_random_.RandUint64() & (GG_UINT64_C(1) << j)) != 0;

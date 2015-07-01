@@ -4,7 +4,7 @@
 
 #include "content/public/browser/resource_dispatcher_host_delegate.h"
 
-#include "content/public/browser/stream_handle.h"
+#include "content/public/browser/stream_info.h"
 
 namespace content {
 
@@ -39,12 +39,16 @@ ResourceDispatcherHostLoginDelegate*
     ResourceDispatcherHostDelegate::CreateLoginDelegate(
         net::AuthChallengeInfo* auth_info,
         net::URLRequest* request) {
-  return NULL;
+  return nullptr;
 }
 
-bool ResourceDispatcherHostDelegate::HandleExternalProtocol(const GURL& url,
-                                                            int child_id,
-                                                            int route_id) {
+bool ResourceDispatcherHostDelegate::HandleExternalProtocol(
+    const GURL& url,
+    int child_id,
+    int route_id,
+    bool is_main_frame,
+    ui::PageTransition page_transition,
+    bool has_user_gesture) {
   return true;
 }
 
@@ -64,7 +68,7 @@ bool ResourceDispatcherHostDelegate::ShouldInterceptResourceAsStream(
 
 void ResourceDispatcherHostDelegate::OnStreamCreated(
     net::URLRequest* request,
-    scoped_ptr<content::StreamHandle> stream) {
+    scoped_ptr<content::StreamInfo> stream) {
 }
 
 void ResourceDispatcherHostDelegate::OnResponseStarted(

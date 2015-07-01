@@ -4,8 +4,8 @@
 // found in the LICENSE file.
 //
 
-#ifndef _SHHANDLE_INCLUDED_
-#define _SHHANDLE_INCLUDED_
+#ifndef COMPILER_TRANSLATOR_COMPILER_H_
+#define COMPILER_TRANSLATOR_COMPILER_H_
 
 //
 // Machine independent part of the compiler private objects
@@ -15,22 +15,31 @@
 //
 
 #include "compiler/translator/BuiltInFunctionEmulator.h"
+#include "compiler/translator/CallDAG.h"
 #include "compiler/translator/ExtensionBehavior.h"
 #include "compiler/translator/HashNames.h"
 #include "compiler/translator/InfoSink.h"
+#include "compiler/translator/Pragma.h"
 #include "compiler/translator/SymbolTable.h"
 #include "compiler/translator/VariableInfo.h"
 #include "third_party/compiler/ArrayBoundsClamper.h"
 
 class TCompiler;
 class TDependencyGraph;
+#ifdef ANGLE_ENABLE_HLSL
 class TranslatorHLSL;
+#endif // ANGLE_ENABLE_HLSL
 
 //
 // Helper function to identify specs that are based on the WebGL spec,
 // like the CSS Shaders spec.
 //
 bool IsWebGLBasedSpec(ShShaderSpec spec);
+
+//
+// Helper function to check if the shader type is GLSL.
+//
+bool IsGLSL130OrNewer(ShShaderOutput output);
 
 //
 // The base class used to back handles returned to the driver.
@@ -40,7 +49,9 @@ public:
     TShHandleBase();
     virtual ~TShHandleBase();
     virtual TCompiler* getAsCompiler() { return 0; }
+#ifdef ANGLE_ENABLE_HLSL
     virtual TranslatorHLSL* getAsTranslatorHLSL() { return 0; }
+#endif // ANGLE_ENABLE_HLSL
 
 protected:
     // Memory allocator. Allocates and tracks memory required by the compiler.
@@ -60,9 +71,15 @@ class TCompiler : public TShHandleBase
     virtual TCompiler* getAsCompiler() { return this; }
 
     bool Init(const ShBuiltInResources& resources);
+
+    // compileTreeForTesting should be used only when tests require access to
+    // the AST. Users of this function need to manually manage the global pool
+    // allocator. Returns NULL whenever there are compilation errors.
+    TIntermNode *compileTreeForTesting(const char* const shaderStrings[],
+        size_t numStrings, int compileOptions);
+
     bool compile(const char* const shaderStrings[],
-                 size_t numStrings,
-                 int compileOptions);
+        size_t numStrings, int compileOptions);
 
     // Get results of the last compilation.
     int getShaderVersion() const { return shaderVersion; }
@@ -71,9 +88,7 @@ class TCompiler : public TShHandleBase
     const std::vector<sh::Attribute> &getAttributes() const { return attributes; }
     const std::vector<sh::Attribute> &getOutputVariables() const { return outputVariables; }
     const std::vector<sh::Uniform> &getUniforms() const { return uniforms; }
-    const std::vector<sh::ShaderVariable> &getExpandedUniforms() const { return expandedUniforms; }
     const std::vector<sh::Varying> &getVaryings() const { return varyings; }
-    const std::vector<sh::ShaderVariable> &getExpandedVaryings() const { return expandedVaryings; }
     const std::vector<sh::InterfaceBlock> &getInterfaceBlocks() const { return interfaceBlocks; }
 
     ShHashFunction64 getHashFunction() const { return hashFunction; }
@@ -81,7 +96,7 @@ class TCompiler : public TShHandleBase
     TSymbolTable& getSymbolTable() { return symbolTable; }
     ShShaderSpec getShaderSpec() const { return shaderSpec; }
     ShShaderOutput getOutputType() const { return outputType; }
-    std::string getBuiltInResourcesString() const { return builtInResourcesString; }
+    const std::string &getBuiltInResourcesString() const { return builtInResourcesString; }
 
     // Get the resources set by InitBuiltInSymbolTable
     const ShBuiltInResources& getResources() const;
@@ -94,8 +109,8 @@ class TCompiler : public TShHandleBase
     void setResourceString();
     // Clears the results from the previous compilation.
     void clearResults();
-    // Return true if function recursion is detected or call depth exceeded.
-    bool detectCallDepth(TIntermNode* root, TInfoSink& infoSink, bool limitCallStackDepth);
+    // Return false if the call depth is exceeded.
+    bool checkCallDepth();
     // Returns true if a program has no conflicting or missing fragment outputs
     bool validateOutputs(TIntermNode* root);
     // Rewrites a shader's intermediate tree according to the CSS Shaders spec.
@@ -105,8 +120,10 @@ class TCompiler : public TShHandleBase
     bool validateLimitations(TIntermNode* root);
     // Collect info for all attribs, uniforms, varyings.
     void collectVariables(TIntermNode* root);
+    // Add emulated functions to the built-in function emulator.
+    virtual void initBuiltInFunctionEmulator(BuiltInFunctionEmulator *emu, int compileOptions) {};
     // Translate to object code.
-    virtual void translate(TIntermNode* root) = 0;
+    virtual void translate(TIntermNode *root, int compileOptions) = 0;
     // Returns true if, after applying the packing rules in the GLSL 1.017 spec
     // Appendix A, section 7, the shader does not use too many uniforms.
     bool enforcePackingRestrictions();
@@ -131,6 +148,9 @@ class TCompiler : public TShHandleBase
     bool limitExpressionComplexity(TIntermNode* root);
     // Get built-in extensions with default behavior.
     const TExtensionBehavior& getExtensionBehavior() const;
+    const char *getSourcePath() const;
+    const TPragma& getPragma() const { return mPragma; }
+    void writePragma();
 
     const ArrayBoundsClamper& getArrayBoundsClamper() const;
     ShArrayIndexClampingStrategy getArrayIndexClampingStrategy() const;
@@ -141,13 +161,37 @@ class TCompiler : public TShHandleBase
     std::vector<sh::Uniform> uniforms;
     std::vector<sh::ShaderVariable> expandedUniforms;
     std::vector<sh::Varying> varyings;
-    std::vector<sh::ShaderVariable> expandedVaryings;
     std::vector<sh::InterfaceBlock> interfaceBlocks;
 
   private:
+    // Creates the function call DAG for further analysis, returning false if there is a recursion
+    bool initCallDag(TIntermNode *root);
+    // Return false if "main" doesn't exist
+    bool tagUsedFunctions();
+    void internalTagUsedFunction(size_t index);
+
+    // Removes unused function declarations and prototypes from the AST
+    class UnusedPredicate;
+    bool pruneUnusedFunctions(TIntermNode *root);
+
+    TIntermNode *compileTreeImpl(const char* const shaderStrings[],
+        size_t numStrings, int compileOptions);
+
     sh::GLenum shaderType;
     ShShaderSpec shaderSpec;
     ShShaderOutput outputType;
+
+    struct FunctionMetadata
+    {
+        FunctionMetadata()
+            : used(false)
+        {
+        }
+        bool used;
+    };
+
+    CallDAG mCallDag;
+    std::vector<FunctionMetadata> functionMetadata;
 
     int maxUniformVectors;
     int maxExpressionComplexity;
@@ -170,10 +214,13 @@ class TCompiler : public TShHandleBase
     // Results of compilation.
     int shaderVersion;
     TInfoSink infoSink;  // Output sink.
+    const char *mSourcePath; // Path of source file or NULL
 
     // name hashing.
     ShHashFunction64 hashFunction;
     NameMap nameMap;
+
+    TPragma mPragma;
 };
 
 //
@@ -189,4 +236,4 @@ TCompiler* ConstructCompiler(
     sh::GLenum type, ShShaderSpec spec, ShShaderOutput output);
 void DeleteCompiler(TCompiler*);
 
-#endif // _SHHANDLE_INCLUDED_
+#endif // COMPILER_TRANSLATOR_COMPILER_H_

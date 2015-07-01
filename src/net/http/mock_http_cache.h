@@ -11,9 +11,12 @@
 #define NET_HTTP_MOCK_HTTP_CACHE_H_
 
 #include "base/containers/hash_tables.h"
+#include "base/strings/string_split.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_transaction_test_util.h"
+
+namespace net {
 
 //-----------------------------------------------------------------------------
 // Mock disk cache (a very basic memory cache implementation).
@@ -25,29 +28,38 @@ class MockDiskEntry : public disk_cache::Entry,
 
   bool is_doomed() const { return doomed_; }
 
-  virtual void Doom() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual std::string GetKey() const OVERRIDE;
-  virtual base::Time GetLastUsed() const OVERRIDE;
-  virtual base::Time GetLastModified() const OVERRIDE;
-  virtual int32 GetDataSize(int index) const OVERRIDE;
-  virtual int ReadData(int index, int offset, net::IOBuffer* buf, int buf_len,
-                       const net::CompletionCallback& callback) OVERRIDE;
-  virtual int WriteData(int index, int offset, net::IOBuffer* buf, int buf_len,
-                        const net::CompletionCallback& callback,
-                        bool truncate) OVERRIDE;
-  virtual int ReadSparseData(int64 offset, net::IOBuffer* buf, int buf_len,
-                             const net::CompletionCallback& callback) OVERRIDE;
-  virtual int WriteSparseData(
-      int64 offset, net::IOBuffer* buf, int buf_len,
-      const net::CompletionCallback& callback) OVERRIDE;
-  virtual int GetAvailableRange(
-      int64 offset, int len, int64* start,
-      const net::CompletionCallback& callback) OVERRIDE;
-  virtual bool CouldBeSparse() const OVERRIDE;
-  virtual void CancelSparseIO() OVERRIDE;
-  virtual int ReadyForSparseIO(
-      const net::CompletionCallback& completion_callback) OVERRIDE;
+  void Doom() override;
+  void Close() override;
+  std::string GetKey() const override;
+  base::Time GetLastUsed() const override;
+  base::Time GetLastModified() const override;
+  int32 GetDataSize(int index) const override;
+  int ReadData(int index,
+               int offset,
+               IOBuffer* buf,
+               int buf_len,
+               const CompletionCallback& callback) override;
+  int WriteData(int index,
+                int offset,
+                IOBuffer* buf,
+                int buf_len,
+                const CompletionCallback& callback,
+                bool truncate) override;
+  int ReadSparseData(int64 offset,
+                     IOBuffer* buf,
+                     int buf_len,
+                     const CompletionCallback& callback) override;
+  int WriteSparseData(int64 offset,
+                      IOBuffer* buf,
+                      int buf_len,
+                      const CompletionCallback& callback) override;
+  int GetAvailableRange(int64 offset,
+                        int len,
+                        int64* start,
+                        const CompletionCallback& callback) override;
+  bool CouldBeSparse() const override;
+  void CancelSparseIO() override;
+  int ReadyForSparseIO(const CompletionCallback& completion_callback) override;
 
   // Fail most subsequent requests.
   void set_fail_requests() { fail_requests_ = true; }
@@ -63,19 +75,20 @@ class MockDiskEntry : public disk_cache::Entry,
   friend class base::RefCounted<MockDiskEntry>;
   struct CallbackInfo;
 
-  virtual ~MockDiskEntry();
+  ~MockDiskEntry() override;
 
   // Unlike the callbacks for MockHttpTransaction, we want this one to run even
   // if the consumer called Close on the MockDiskEntry.  We achieve that by
   // leveraging the fact that this class is reference counted.
-  void CallbackLater(const net::CompletionCallback& callback, int result);
+  void CallbackLater(const CompletionCallback& callback, int result);
 
-  void RunCallback(const net::CompletionCallback& callback, int result);
+  void RunCallback(const CompletionCallback& callback, int result);
 
   // When |store| is true, stores the callback to be delivered later; otherwise
   // delivers any callback previously stored.
-  static void StoreAndDeliverCallbacks(bool store, MockDiskEntry* entry,
-                                       const net::CompletionCallback& callback,
+  static void StoreAndDeliverCallbacks(bool store,
+                                       MockDiskEntry* entry,
+                                       const CompletionCallback& callback,
                                        int result);
 
   static const int kNumCacheEntryDataIndices = 3;
@@ -96,28 +109,27 @@ class MockDiskEntry : public disk_cache::Entry,
 class MockDiskCache : public disk_cache::Backend {
  public:
   MockDiskCache();
-  virtual ~MockDiskCache();
+  ~MockDiskCache() override;
 
-  virtual net::CacheType GetCacheType() const OVERRIDE;
-  virtual int32 GetEntryCount() const OVERRIDE;
-  virtual int OpenEntry(const std::string& key, disk_cache::Entry** entry,
-                        const net::CompletionCallback& callback) OVERRIDE;
-  virtual int CreateEntry(const std::string& key, disk_cache::Entry** entry,
-                          const net::CompletionCallback& callback) OVERRIDE;
-  virtual int DoomEntry(const std::string& key,
-                        const net::CompletionCallback& callback) OVERRIDE;
-  virtual int DoomAllEntries(const net::CompletionCallback& callback) OVERRIDE;
-  virtual int DoomEntriesBetween(
-      base::Time initial_time,
-      base::Time end_time,
-      const net::CompletionCallback& callback) OVERRIDE;
-  virtual int DoomEntriesSince(
-      base::Time initial_time,
-      const net::CompletionCallback& callback) OVERRIDE;
-  virtual scoped_ptr<Iterator> CreateIterator() OVERRIDE;
-  virtual void GetStats(
-      std::vector<std::pair<std::string, std::string> >* stats) OVERRIDE;
-  virtual void OnExternalCacheHit(const std::string& key) OVERRIDE;
+  CacheType GetCacheType() const override;
+  int32 GetEntryCount() const override;
+  int OpenEntry(const std::string& key,
+                disk_cache::Entry** entry,
+                const CompletionCallback& callback) override;
+  int CreateEntry(const std::string& key,
+                  disk_cache::Entry** entry,
+                  const CompletionCallback& callback) override;
+  int DoomEntry(const std::string& key,
+                const CompletionCallback& callback) override;
+  int DoomAllEntries(const CompletionCallback& callback) override;
+  int DoomEntriesBetween(base::Time initial_time,
+                         base::Time end_time,
+                         const CompletionCallback& callback) override;
+  int DoomEntriesSince(base::Time initial_time,
+                       const CompletionCallback& callback) override;
+  scoped_ptr<Iterator> CreateIterator() override;
+  void GetStats(base::StringPairs* stats) override;
+  void OnExternalCacheHit(const std::string& key) override;
 
   // Returns number of times a cache entry was successfully opened.
   int open_count() const { return open_count_; }
@@ -143,7 +155,7 @@ class MockDiskCache : public disk_cache::Backend {
   typedef base::hash_map<std::string, MockDiskEntry*> EntryMap;
   class NotImplementedIterator;
 
-  void CallbackLater(const net::CompletionCallback& callback, int result);
+  void CallbackLater(const CompletionCallback& callback, int result);
 
   EntryMap entries_;
   int open_count_;
@@ -154,39 +166,43 @@ class MockDiskCache : public disk_cache::Backend {
   bool fail_sparse_requests_;
 };
 
-class MockBackendFactory : public net::HttpCache::BackendFactory {
+class MockBackendFactory : public HttpCache::BackendFactory {
  public:
-  virtual int CreateBackend(net::NetLog* net_log,
-                            scoped_ptr<disk_cache::Backend>* backend,
-                            const net::CompletionCallback& callback) OVERRIDE;
+  int CreateBackend(NetLog* net_log,
+                    scoped_ptr<disk_cache::Backend>* backend,
+                    const CompletionCallback& callback) override;
 };
 
 class MockHttpCache {
  public:
   MockHttpCache();
-  explicit MockHttpCache(net::HttpCache::BackendFactory* disk_cache_factory);
+  explicit MockHttpCache(HttpCache::BackendFactory* disk_cache_factory);
 
-  net::HttpCache* http_cache() { return &http_cache_; }
+  HttpCache* http_cache() { return &http_cache_; }
 
   MockNetworkLayer* network_layer() {
     return static_cast<MockNetworkLayer*>(http_cache_.network_layer());
   }
+  disk_cache::Backend* backend();
   MockDiskCache* disk_cache();
 
-  // Wrapper around http_cache()->CreateTransaction(net::DEFAULT_PRIORITY...)
-  int CreateTransaction(scoped_ptr<net::HttpTransaction>* trans);
+  // Wrapper around http_cache()->CreateTransaction(DEFAULT_PRIORITY...)
+  int CreateTransaction(scoped_ptr<HttpTransaction>* trans);
 
   // Wrapper to bypass the cache lock for new transactions.
   void BypassCacheLock();
 
+  // Wrapper to fail request conditionalization for new transactions.
+  void FailConditionalizations();
+
   // Helper function for reading response info from the disk cache.
   static bool ReadResponseInfo(disk_cache::Entry* disk_entry,
-                               net::HttpResponseInfo* response_info,
+                               HttpResponseInfo* response_info,
                                bool* response_truncated);
 
   // Helper function for writing response info into the disk cache.
   static bool WriteResponseInfo(disk_cache::Entry* disk_entry,
-                                const net::HttpResponseInfo* response_info,
+                                const HttpResponseInfo* response_info,
                                 bool skip_transient_headers,
                                 bool response_truncated);
 
@@ -194,8 +210,9 @@ class MockHttpCache {
   bool OpenBackendEntry(const std::string& key, disk_cache::Entry** entry);
 
   // Helper function to synchronously create a backend entry.
-  bool CreateBackendEntry(const std::string& key, disk_cache::Entry** entry,
-                          net::NetLog* net_log);
+  bool CreateBackendEntry(const std::string& key,
+                          disk_cache::Entry** entry,
+                          NetLog* net_log);
 
   // Returns the test mode after considering the global override.
   static int GetTestMode(int test_mode);
@@ -205,31 +222,32 @@ class MockHttpCache {
   static void SetTestMode(int test_mode);
 
  private:
-  net::HttpCache http_cache_;
+  HttpCache http_cache_;
 };
 
 // This version of the disk cache doesn't invoke CreateEntry callbacks.
 class MockDiskCacheNoCB : public MockDiskCache {
-  virtual int CreateEntry(const std::string& key, disk_cache::Entry** entry,
-                          const net::CompletionCallback& callback) OVERRIDE;
+  int CreateEntry(const std::string& key,
+                  disk_cache::Entry** entry,
+                  const CompletionCallback& callback) override;
 };
 
-class MockBackendNoCbFactory : public net::HttpCache::BackendFactory {
+class MockBackendNoCbFactory : public HttpCache::BackendFactory {
  public:
-  virtual int CreateBackend(net::NetLog* net_log,
-                            scoped_ptr<disk_cache::Backend>* backend,
-                            const net::CompletionCallback& callback) OVERRIDE;
+  int CreateBackend(NetLog* net_log,
+                    scoped_ptr<disk_cache::Backend>* backend,
+                    const CompletionCallback& callback) override;
 };
 
 // This backend factory allows us to control the backend instantiation.
-class MockBlockingBackendFactory : public net::HttpCache::BackendFactory {
+class MockBlockingBackendFactory : public HttpCache::BackendFactory {
  public:
   MockBlockingBackendFactory();
-  virtual ~MockBlockingBackendFactory();
+  ~MockBlockingBackendFactory() override;
 
-  virtual int CreateBackend(net::NetLog* net_log,
-                            scoped_ptr<disk_cache::Backend>* backend,
-                            const net::CompletionCallback& callback) OVERRIDE;
+  int CreateBackend(NetLog* net_log,
+                    scoped_ptr<disk_cache::Backend>* backend,
+                    const CompletionCallback& callback) override;
 
   // Completes the backend creation. Any blocked call will be notified via the
   // provided callback.
@@ -238,15 +256,17 @@ class MockBlockingBackendFactory : public net::HttpCache::BackendFactory {
   scoped_ptr<disk_cache::Backend>* backend() { return backend_; }
   void set_fail(bool fail) { fail_ = fail; }
 
-  const net::CompletionCallback& callback() { return callback_; }
+  const CompletionCallback& callback() { return callback_; }
 
  private:
-  int Result() { return fail_ ? net::ERR_FAILED : net::OK; }
+  int Result() { return fail_ ? ERR_FAILED : OK; }
 
   scoped_ptr<disk_cache::Backend>* backend_;
-  net::CompletionCallback callback_;
+  CompletionCallback callback_;
   bool block_;
   bool fail_;
 };
+
+}  // namespace net
 
 #endif  // NET_HTTP_MOCK_HTTP_CACHE_H_

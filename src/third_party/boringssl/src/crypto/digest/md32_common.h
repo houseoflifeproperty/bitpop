@@ -72,8 +72,7 @@ extern "C" {
  * HASH_CBLOCK
  *	size of a unit chunk HASH_BLOCK operates on.
  * HASH_LONG
- *	has to be at lest 32 bit wide, if it's wider, then
- *	HASH_LONG_LOG2 *has to* be defined along
+ *	has to be at least 32 bit wide.
  * HASH_CTX
  *	context structure that at least contains following
  *	members:
@@ -100,19 +99,6 @@ extern "C" {
  *	message in original (data) byte order, implemented externally.
  * HASH_MAKE_STRING
  *	macro convering context variables to an ASCII hash string.
- *
- * MD5 example:
- *
- *	#define DATA_ORDER_IS_LITTLE_ENDIAN
- *
- *	#define HASH_LONG		MD5_LONG
- *	#define HASH_LONG_LOG2		MD5_LONG_LOG2
- *	#define HASH_CTX		MD5_CTX
- *	#define HASH_CBLOCK		MD5_CBLOCK
- *	#define HASH_UPDATE		MD5_Update
- *	#define HASH_TRANSFORM		MD5_Transform
- *	#define HASH_FINAL		MD5_Final
- *	#define HASH_BLOCK_DATA_ORDER	md5_block_data_order
  *
  *					<appro@fy.chalmers.se>
  */
@@ -207,7 +193,7 @@ extern "C" {
 					:"r"((unsigned int)(l)));\
 				   *((unsigned int *)(c))=r; (c)+=4; r;	})
 #    elif defined(__ORDER_BIG_ENDIAN__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
-#     define HOST_c2l(c,l)	((l)=*((const unsigned int *)(c)), (c)+=4, (l))
+#     define HOST_c2l(c,l)	(void)((l)=*((const unsigned int *)(c)), (c)+=4)
 #     define HOST_l2c(l,c)	(*((unsigned int *)(c))=(l), (c)+=4, (l))
 #    endif
 #   endif
@@ -216,11 +202,10 @@ extern "C" {
 #endif
 
 #ifndef HOST_c2l
-#define HOST_c2l(c,l)	(l =(((unsigned long)(*((c)++)))<<24),		\
+#define HOST_c2l(c,l)	(void)(l =(((unsigned long)(*((c)++)))<<24),	\
 			 l|=(((unsigned long)(*((c)++)))<<16),		\
 			 l|=(((unsigned long)(*((c)++)))<< 8),		\
-			 l|=(((unsigned long)(*((c)++)))    ),		\
-			 l)
+			 l|=(((unsigned long)(*((c)++)))    ))
 #endif
 #ifndef HOST_l2c
 #define HOST_l2c(l,c)	(*((c)++)=(unsigned char)(((l)>>24)&0xff),	\
@@ -234,16 +219,15 @@ extern "C" {
 
 #if defined(OPENSSL_X86) || defined(OPENSSL_X86_64)
    /* See comment in DATA_ORDER_IS_BIG_ENDIAN section. */
-#  define HOST_c2l(c,l)	((l)=*((const unsigned int *)(c)), (c)+=4, l)
+#  define HOST_c2l(c,l)	(void)((l)=*((const unsigned int *)(c)), (c)+=4)
 #  define HOST_l2c(l,c)	(*((unsigned int *)(c))=(l), (c)+=4, l)
 #endif
 
 #ifndef HOST_c2l
-#define HOST_c2l(c,l)	(l =(((unsigned long)(*((c)++)))    ),		\
+#define HOST_c2l(c,l)	(void)(l =(((unsigned long)(*((c)++)))    ),	\
 			 l|=(((unsigned long)(*((c)++)))<< 8),		\
 			 l|=(((unsigned long)(*((c)++)))<<16),		\
-			 l|=(((unsigned long)(*((c)++)))<<24),		\
-			 l)
+			 l|=(((unsigned long)(*((c)++)))<<24))
 #endif
 #ifndef HOST_l2c
 #define HOST_l2c(l,c)	(*((c)++)=(unsigned char)(((l)    )&0xff),	\

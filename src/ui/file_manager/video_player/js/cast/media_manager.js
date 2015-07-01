@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * Media manager class.
  * This class supports the information for the media file.
@@ -44,6 +42,9 @@ MediaManager.prototype.isAvailableForCast = function() {
  * @return {Promise} Promise which is resolved with the token. Reject if failed.
  */
 MediaManager.prototype.getToken = function(refresh) {
+  if (chrome.test)
+    return Promise.resolve('DUMMY_ACCESS_TOKEN');
+
   if (this.cachedToken_ && !refresh)
     return Promise.resolve(this.cachedToken_);
 
@@ -73,6 +74,9 @@ MediaManager.prototype.getToken = function(refresh) {
  * @return {Promise} Promise which is resolved with the url. Reject if failed.
  */
 MediaManager.prototype.getUrl = function() {
+  if (chrome.test)
+    return Promise.resolve('http://example.com/dummy_url.mp4');
+
   if (this.cachedUrl_)
     return Promise.resolve(this.cachedUrl_);
 
@@ -106,7 +110,7 @@ MediaManager.prototype.getMime = function() {
 
   return new Promise(function(fulfill, reject) {
     chrome.fileManagerPrivate.getEntryProperties(
-        [this.entry_.toURL()], fulfill);
+        [this.entry_.toURL()], ['contentMimeType', 'thumbnailUrl'], fulfill);
   }.bind(this)).then(function(props) {
     if (!props || !props[0]) {
       return Promise.reject('Mime fetch failed.');
@@ -132,7 +136,9 @@ MediaManager.prototype.getThumbnail = function() {
 
   return new Promise(function(fulfill, reject) {
     chrome.fileManagerPrivate.getEntryProperties(
-        [this.entry_.toURL()], fulfill);
+        [this.entry_.toURL()],
+        ['contentMimeType', 'thumbnailUrl'],
+        fulfill);
   }.bind(this)).then(function(props) {
     if (!props || !props[0]) {
       return Promise.reject('Thumbnail fetch failed.');

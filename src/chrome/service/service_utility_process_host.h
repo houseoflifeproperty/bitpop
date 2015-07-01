@@ -49,7 +49,7 @@ class ServiceUtilityProcessHost : public content::ChildProcessHostDelegate {
     virtual void OnChildDied() {}
 
     virtual void OnRenderPDFPagesToMetafilePageDone(
-        double scale_factor,
+        float scale_factor,
         const printing::MetafilePlayer& emf) {}
 
     // Called when at all pages in the PDF has been rendered.
@@ -78,14 +78,14 @@ class ServiceUtilityProcessHost : public content::ChildProcessHostDelegate {
 
     // Invoked when a metafile file is ready.
     // Returns true if metafile successfully loaded from |file|.
-    bool MetafileAvailable(double scale_factor, base::File file);
+    bool MetafileAvailable(float scale_factor, base::File file);
 
     DISALLOW_COPY_AND_ASSIGN(Client);
   };
 
   ServiceUtilityProcessHost(Client* client,
                             base::MessageLoopProxy* client_message_loop_proxy);
-  virtual ~ServiceUtilityProcessHost();
+  ~ServiceUtilityProcessHost() override;
 
   // Starts a process to render the specified pages in the given PDF file into
   // a metafile. Currently only implemented for Windows. If the PDF has fewer
@@ -113,9 +113,9 @@ class ServiceUtilityProcessHost : public content::ChildProcessHostDelegate {
   virtual base::FilePath GetUtilityProcessCmd();
 
   // ChildProcessHostDelegate implementation:
-  virtual void OnChildDisconnected() OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual base::ProcessHandle GetHandle() const OVERRIDE;
+  void OnChildDisconnected() override;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  const base::Process& GetProcess() const override;
 
  private:
   // Starts a process.  Returns true iff it succeeded.
@@ -124,14 +124,14 @@ class ServiceUtilityProcessHost : public content::ChildProcessHostDelegate {
   // Launch the child process synchronously.
   bool Launch(base::CommandLine* cmd_line, bool no_sandbox);
 
-  base::ProcessHandle handle() const { return handle_; }
+  base::ProcessHandle handle() const { return process_.Handle(); }
 
   void OnMetafileSpooled(bool success);
   void OnPDFToEmfFinished(bool success);
 
   // Messages handlers:
   void OnRenderPDFPagesToMetafilesPageCount(int page_count);
-  void OnRenderPDFPagesToMetafilesPageDone(bool success, double scale_factor);
+  void OnRenderPDFPagesToMetafilesPageDone(bool success, float scale_factor);
   void OnGetPrinterCapsAndDefaultsSucceeded(
       const std::string& printer_name,
       const printing::PrinterCapsAndDefaults& caps_and_defaults);
@@ -143,7 +143,7 @@ class ServiceUtilityProcessHost : public content::ChildProcessHostDelegate {
       const std::string& printer_name);
 
   scoped_ptr<content::ChildProcessHost> child_process_host_;
-  base::ProcessHandle handle_;
+  base::Process process_;
   // A pointer to our client interface, who will be informed of progress.
   scoped_refptr<Client> client_;
   scoped_refptr<base::MessageLoopProxy> client_message_loop_proxy_;

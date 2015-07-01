@@ -57,16 +57,17 @@ scoped_refptr<const Extension> AddExtensionWithIdAndPermissions(
     const std::set<std::string>& permissions);
 
 // A MockExtensionSystem to serve an EventRouter.
+// NOTE: New code should prefer using MockExtensionSystem directly.
 class MockExtensionSystemWithEventRouter : public MockExtensionSystem {
  public:
   explicit MockExtensionSystemWithEventRouter(content::BrowserContext* context);
-  virtual ~MockExtensionSystemWithEventRouter();
+  ~MockExtensionSystemWithEventRouter() override;
 
   // Factory method for SetTestingFactoryAndUse.
   static KeyedService* Build(content::BrowserContext* context);
 
   // MockExtensionSystem overrides:
-  virtual EventRouter* event_router() OVERRIDE;
+  EventRouter* event_router() override;
 
  private:
   scoped_ptr<EventRouter> event_router_;
@@ -86,15 +87,14 @@ class ScopedSettingsStorageFactory : public SettingsStorageFactory {
   void Reset(const scoped_refptr<SettingsStorageFactory>& delegate);
 
   // SettingsStorageFactory implementation.
-  virtual ValueStore* Create(const base::FilePath& base_path,
-                             const std::string& extension_id) OVERRIDE;
-  virtual void DeleteDatabaseIfExists(
-      const base::FilePath& base_path,
-      const std::string& extension_id) OVERRIDE;
+  ValueStore* Create(const base::FilePath& base_path,
+                     const std::string& extension_id) override;
+  void DeleteDatabaseIfExists(const base::FilePath& base_path,
+                              const std::string& extension_id) override;
 
  private:
   // SettingsStorageFactory is refcounted.
-  virtual ~ScopedSettingsStorageFactory();
+  ~ScopedSettingsStorageFactory() override;
 
   scoped_refptr<SettingsStorageFactory> delegate_;
 };

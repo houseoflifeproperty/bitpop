@@ -13,7 +13,7 @@ const int kSampleRate = 8000;  // 8 k samples per second for AMR encoding.
 // At 8 sample per second a 20 ms frame is 160 samples, which corrsponds
 // to the AMR codec.
 const int kFrameSize = kSampleRate / kFrameRate;  // 160 samples.
-COMPILE_ASSERT(kFrameSize == 160, invalid_frame_size);
+static_assert(kFrameSize == 160, "invalid frame size");
 }
 
 namespace content {
@@ -73,9 +73,7 @@ class EnergyEndpointerFrameProcessor : public FrameProcessor {
   explicit EnergyEndpointerFrameProcessor(EnergyEndpointer* endpointer)
       : endpointer_(endpointer) {}
 
-  virtual EpStatus ProcessFrame(int64 time,
-                                int16* samples,
-                                int frame_size) OVERRIDE {
+  EpStatus ProcessFrame(int64 time, int16* samples, int frame_size) override {
     endpointer_->ProcessAudioFrame(time, samples, kFrameSize, NULL);
     int64 ep_time;
     return endpointer_->Status(&ep_time);
@@ -118,9 +116,7 @@ class EndpointerFrameProcessor : public FrameProcessor {
   explicit EndpointerFrameProcessor(Endpointer* endpointer)
       : endpointer_(endpointer) {}
 
-  virtual EpStatus ProcessFrame(int64 time,
-                                int16* samples,
-                                int frame_size) OVERRIDE {
+  EpStatus ProcessFrame(int64 time, int16* samples, int frame_size) override {
     scoped_refptr<AudioChunk> frame(
         new AudioChunk(reinterpret_cast<uint8*>(samples), kFrameSize * 2, 2));
     endpointer_->ProcessAudio(*frame.get(), NULL);

@@ -38,18 +38,19 @@ namespace {
 class NewWindowDelegateImpl : public NewWindowDelegate {
  public:
   NewWindowDelegateImpl() {}
-  virtual ~NewWindowDelegateImpl() {}
+  ~NewWindowDelegateImpl() override {}
 
  private:
   // NewWindowDelegate:
-  virtual void NewTab() OVERRIDE {}
-  virtual void NewWindow(bool incognito) OVERRIDE {}
-  virtual void OpenFileManager() OVERRIDE {}
-  virtual void OpenCrosh() OVERRIDE {}
-  virtual void RestoreTab() OVERRIDE {}
-  virtual void ShowKeyboardOverlay() OVERRIDE {}
-  virtual void ShowTaskManager() OVERRIDE {}
-  virtual void OpenFeedbackPage() OVERRIDE {}
+  void NewTab() override {}
+  void NewWindow(bool incognito) override {}
+  void OpenFileManager() override {}
+  void OpenCrosh() override {}
+  void OpenGetHelp() override {}
+  void RestoreTab() override {}
+  void ShowKeyboardOverlay() override {}
+  void ShowTaskManager() override {}
+  void OpenFeedbackPage() override {}
 
   DISALLOW_COPY_AND_ASSIGN(NewWindowDelegateImpl);
 };
@@ -57,17 +58,17 @@ class NewWindowDelegateImpl : public NewWindowDelegate {
 class MediaDelegateImpl : public MediaDelegate {
  public:
   MediaDelegateImpl() : state_(MEDIA_CAPTURE_NONE) {}
-  virtual ~MediaDelegateImpl() {}
+  ~MediaDelegateImpl() override {}
 
   void set_media_capture_state(MediaCaptureState state) { state_ = state; }
 
  private:
   // MediaDelegate:
-  virtual void HandleMediaNextTrack() OVERRIDE {}
-  virtual void HandleMediaPlayPause() OVERRIDE {}
-  virtual void HandleMediaPrevTrack() OVERRIDE {}
-  virtual MediaCaptureState GetMediaCaptureState(
-      content::BrowserContext* context) OVERRIDE {
+  void HandleMediaNextTrack() override {}
+  void HandleMediaPlayPause() override {}
+  void HandleMediaPrevTrack() override {}
+  MediaCaptureState GetMediaCaptureState(
+      content::BrowserContext* context) override {
     return state_;
   }
 
@@ -81,6 +82,7 @@ class MediaDelegateImpl : public MediaDelegate {
 TestShellDelegate::TestShellDelegate()
     : num_exit_requests_(0),
       multi_profiles_enabled_(false),
+      force_maximize_on_first_run_(false),
       test_session_state_delegate_(NULL) {
 }
 
@@ -105,6 +107,10 @@ bool TestShellDelegate::IsRunningInForcedAppMode() const {
 
 bool TestShellDelegate::IsMultiAccountEnabled() const {
   return false;
+}
+
+bool TestShellDelegate::IsForceMaximizeOnFirstRun() const {
+  return force_maximize_on_first_run_;
 }
 
 void TestShellDelegate::PreInit() {
@@ -161,10 +167,8 @@ UserWallpaperDelegate* TestShellDelegate::CreateUserWallpaperDelegate() {
   return new TestUserWallpaperDelegate();
 }
 
-SessionStateDelegate* TestShellDelegate::CreateSessionStateDelegate() {
-  DCHECK(!test_session_state_delegate_);
-  test_session_state_delegate_ = new TestSessionStateDelegate();
-  return test_session_state_delegate_;
+TestSessionStateDelegate* TestShellDelegate::CreateSessionStateDelegate() {
+  return new TestSessionStateDelegate();
 }
 
 AccessibilityDelegate* TestShellDelegate::CreateAccessibilityDelegate() {

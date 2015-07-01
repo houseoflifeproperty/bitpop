@@ -13,19 +13,20 @@ namespace gpu {
 
 class AsyncPixelTransferManagerIdle : public AsyncPixelTransferManager {
  public:
-  AsyncPixelTransferManagerIdle();
-  virtual ~AsyncPixelTransferManagerIdle();
+  explicit AsyncPixelTransferManagerIdle(
+      bool use_teximage2d_over_texsubimage2d);
+  ~AsyncPixelTransferManagerIdle() override;
 
   // AsyncPixelTransferManager implementation:
-  virtual void BindCompletedAsyncTransfers() OVERRIDE;
-  virtual void AsyncNotifyCompletion(
+  void BindCompletedAsyncTransfers() override;
+  void AsyncNotifyCompletion(
       const AsyncMemoryParams& mem_params,
-      AsyncPixelTransferCompletionObserver* observer) OVERRIDE;
-  virtual uint32 GetTextureUploadCount() OVERRIDE;
-  virtual base::TimeDelta GetTotalTextureUploadTime() OVERRIDE;
-  virtual void ProcessMorePendingTransfers() OVERRIDE;
-  virtual bool NeedsProcessMorePendingTransfers() OVERRIDE;
-  virtual void WaitAllAsyncTexImage2D() OVERRIDE;
+      AsyncPixelTransferCompletionObserver* observer) override;
+  uint32 GetTextureUploadCount() override;
+  base::TimeDelta GetTotalTextureUploadTime() override;
+  void ProcessMorePendingTransfers() override;
+  bool NeedsProcessMorePendingTransfers() override;
+  void WaitAllAsyncTexImage2D() override;
 
   struct Task {
     Task(uint64 transfer_id,
@@ -43,10 +44,11 @@ class AsyncPixelTransferManagerIdle : public AsyncPixelTransferManager {
 
   // State shared between Managers and Delegates.
   struct SharedState {
-    SharedState();
+    explicit SharedState(bool use_teximage2d_over_texsubimage2d);
     ~SharedState();
     void ProcessNotificationTasks();
 
+    const bool use_teximage2d_over_texsubimage2d;
     int texture_upload_count;
     base::TimeDelta total_texture_upload_time;
     std::list<Task> tasks;
@@ -54,9 +56,9 @@ class AsyncPixelTransferManagerIdle : public AsyncPixelTransferManager {
 
  private:
   // AsyncPixelTransferManager implementation:
-  virtual AsyncPixelTransferDelegate* CreatePixelTransferDelegateImpl(
+  AsyncPixelTransferDelegate* CreatePixelTransferDelegateImpl(
       gles2::TextureRef* ref,
-      const AsyncTexImage2DParams& define_params) OVERRIDE;
+      const AsyncTexImage2DParams& define_params) override;
 
   SharedState shared_state_;
 

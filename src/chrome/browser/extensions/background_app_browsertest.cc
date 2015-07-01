@@ -6,19 +6,18 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/test/base/ui_test_utils.h"
 
 class TestBackgroundModeManager : public BackgroundModeManager {
  public:
-  TestBackgroundModeManager(CommandLine* command_line,
+  TestBackgroundModeManager(const base::CommandLine& command_line,
                             ProfileInfoCache* profile_cache)
       : BackgroundModeManager(command_line, profile_cache),
         showed_background_app_installed_notification_for_test_(false) {}
 
-  virtual ~TestBackgroundModeManager() {}
+  ~TestBackgroundModeManager() override {}
 
-  virtual void DisplayAppInstalledNotification(
-      const extensions::Extension* extension) OVERRIDE {
+  void DisplayAppInstalledNotification(
+      const extensions::Extension* extension) override {
     showed_background_app_installed_notification_for_test_ = true;
   }
 
@@ -51,7 +50,7 @@ IN_PROC_BROWSER_TEST_F(BackgroundAppBrowserTest, ReloadBackgroundApp) {
   // Pass this in to the browser test.
   scoped_ptr<BackgroundModeManager> test_background_mode_manager(
       new TestBackgroundModeManager(
-          CommandLine::ForCurrentProcess(),
+          *base::CommandLine::ForCurrentProcess(),
           &(g_browser_process->profile_manager()->GetProfileInfoCache())));
   g_browser_process->set_background_mode_manager_for_test(
       test_background_mode_manager.Pass());

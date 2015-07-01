@@ -26,15 +26,14 @@
 #ifndef WebGLProgram_h
 #define WebGLProgram_h
 
-#include "bindings/core/v8/ScriptWrappable.h"
-#include "core/html/canvas/WebGLSharedObject.h"
 #include "core/html/canvas/WebGLShader.h"
+#include "core/html/canvas/WebGLSharedPlatform3DObject.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
 
 namespace blink {
 
-class WebGLProgram FINAL : public WebGLSharedObject, public ScriptWrappable {
+class WebGLProgram final : public WebGLSharedPlatform3DObject {
     DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~WebGLProgram();
@@ -60,17 +59,17 @@ public:
     bool attachShader(WebGLShader*);
     bool detachShader(WebGLShader*);
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     explicit WebGLProgram(WebGLRenderingContextBase*);
 
-    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) OVERRIDE;
+    void deleteObjectImpl(WebGraphicsContext3D*) override;
 
 private:
-    virtual bool isProgram() const OVERRIDE { return true; }
+    bool isProgram() const override { return true; }
 
-    void cacheActiveAttribLocations(blink::WebGraphicsContext3D*);
+    void cacheActiveAttribLocations(WebGraphicsContext3D*);
     void cacheInfoIfNeeded();
 
     Vector<GLint> m_activeAttribLocations;

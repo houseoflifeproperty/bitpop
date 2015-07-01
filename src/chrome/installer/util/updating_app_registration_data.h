@@ -14,11 +14,11 @@
 class UpdatingAppRegistrationData : public AppRegistrationData {
  public:
   explicit UpdatingAppRegistrationData(const base::string16& app_guid);
-  virtual ~UpdatingAppRegistrationData();
-  virtual base::string16 GetAppGuid() const OVERRIDE;
-  virtual base::string16 GetStateKey() const OVERRIDE;
-  virtual base::string16 GetStateMediumKey() const OVERRIDE;
-  virtual base::string16 GetVersionKey() const OVERRIDE;
+  ~UpdatingAppRegistrationData() override;
+  base::string16 GetAppGuid() const override;
+  base::string16 GetStateKey() const override;
+  base::string16 GetStateMediumKey() const override;
+  base::string16 GetVersionKey() const override;
 
  private:
   const base::string16 app_guid_;

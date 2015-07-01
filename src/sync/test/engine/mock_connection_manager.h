@@ -35,14 +35,13 @@ class MockConnectionManager : public ServerConnectionManager {
 
   MockConnectionManager(syncable::Directory*,
                         CancelationSignal* signal);
-  virtual ~MockConnectionManager();
+  ~MockConnectionManager() override;
 
   // Overridden ServerConnectionManager functions.
-  virtual bool PostBufferToPath(
-      PostBufferParams*,
-      const std::string& path,
-      const std::string& auth_token,
-      ScopedServerStatusWatcher* watcher) OVERRIDE;
+  bool PostBufferToPath(PostBufferParams*,
+                        const std::string& path,
+                        const std::string& auth_token,
+                        ScopedServerStatusWatcher* watcher) override;
 
   // Control of commit response.
   // NOTE: Commit callback is invoked only once then reset.
@@ -146,7 +145,7 @@ class MockConnectionManager : public ServerConnectionManager {
   // Add a deleted item.  Deletion records typically contain no
   // additional information beyond the deletion, and no specifics.
   // The server may send the originator fields.
-  void AddUpdateTombstone(const syncable::Id& id);
+  void AddUpdateTombstone(const syncable::Id& id, ModelType type);
 
   void SetLastUpdateDeleted();
   void SetLastUpdateServerTag(const std::string& tag);
@@ -220,6 +219,8 @@ class MockConnectionManager : public ServerConnectionManager {
     store_birthday_ = new_birthday;
   }
 
+  void set_partial_throttling(bool value) { partialThrottling_ = value; }
+
   // Retrieve the number of GetUpdates requests that the mock server has
   // seen since the last time this function was called.  Can be used to
   // verify that a GetUpdates actually did or did not happen after running
@@ -235,6 +236,9 @@ class MockConnectionManager : public ServerConnectionManager {
   void ExpectGetUpdatesRequestTypes(ModelTypeSet expected_filter) {
     expected_filter_ = expected_filter;
   }
+
+  // Set throttled date types.
+  void SetThrottledTypes(ModelTypeSet types) { throttled_type_ = types; }
 
   void SetServerReachable();
 
@@ -369,6 +373,11 @@ class MockConnectionManager : public ServerConnectionManager {
   // Protected by |response_code_override_lock_|.
   bool throttling_;
 
+  // Whether we are faking a server mandating clients to partial throttle
+  // requests.
+  // Protected by |response_code_override_lock_|.
+  bool partialThrottling_;
+
   // Whether we are failing all requests by returning
   // ClientToServerResponse::AUTH_INVALID.
   // Protected by |response_code_override_lock_|.
@@ -391,6 +400,8 @@ class MockConnectionManager : public ServerConnectionManager {
   bool use_legacy_bookmarks_protocol_;
 
   ModelTypeSet expected_filter_;
+
+  ModelTypeSet throttled_type_;
 
   int num_get_updates_requests_;
 

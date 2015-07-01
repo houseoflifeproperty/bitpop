@@ -34,7 +34,7 @@ class HostStarter : public gaia::GaiaOAuthClient::Delegate,
 
   typedef base::Callback<void(Result)> CompletionCallback;
 
-  virtual ~HostStarter();
+  ~HostStarter() override;
 
   // Creates a HostStarter.
   static scoped_ptr<HostStarter> Create(
@@ -52,23 +52,23 @@ class HostStarter : public gaia::GaiaOAuthClient::Delegate,
                  CompletionCallback on_done);
 
   // gaia::GaiaOAuthClient::Delegate
-  virtual void OnGetTokensResponse(const std::string& refresh_token,
-                                   const std::string& access_token,
-                                   int expires_in_seconds) OVERRIDE;
-  virtual void OnRefreshTokenResponse(const std::string& access_token,
-                                      int expires_in_seconds) OVERRIDE;
-  virtual void OnGetUserEmailResponse(const std::string& user_email) OVERRIDE;
+  void OnGetTokensResponse(const std::string& refresh_token,
+                           const std::string& access_token,
+                           int expires_in_seconds) override;
+  void OnRefreshTokenResponse(const std::string& access_token,
+                              int expires_in_seconds) override;
+  void OnGetUserEmailResponse(const std::string& user_email) override;
 
   // remoting::ServiceClient::Delegate
-  virtual void OnHostRegistered(const std::string& authorization_code) OVERRIDE;
-  virtual void OnHostUnregistered() OVERRIDE;
+  void OnHostRegistered(const std::string& authorization_code) override;
+  void OnHostUnregistered() override;
 
   // TODO(sergeyu): Following methods are members of all three delegate
   // interfaces implemented in this class. Fix ServiceClient and
   // GaiaUserEmailFetcher so that Delegate interfaces do not overlap (ideally
   // they should be changed to use Callback<>).
-  virtual void OnOAuthError() OVERRIDE;
-  virtual void OnNetworkError(int response_code) OVERRIDE;
+  void OnOAuthError() override;
+  void OnNetworkError(int response_code) override;
 
  private:
   HostStarter(scoped_ptr<gaia::GaiaOAuthClient> oauth_client,
@@ -94,7 +94,6 @@ class HostStarter : public gaia::GaiaOAuthClient::Delegate,
   std::string xmpp_login_;
   scoped_refptr<remoting::RsaKeyPair> key_pair_;
   std::string host_id_;
-  bool use_service_account_;
 
   // True if the host was not started and unregistration was requested. If this
   // is set and a network/OAuth error occurs during unregistration, this will

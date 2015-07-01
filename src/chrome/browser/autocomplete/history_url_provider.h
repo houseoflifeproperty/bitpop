@@ -193,9 +193,10 @@ class HistoryURLProvider : public HistoryProvider {
   HistoryURLProvider(AutocompleteProviderListener* listener, Profile* profile);
 
   // HistoryProvider:
-  virtual void Start(const AutocompleteInput& input,
-                     bool minimal_changes) OVERRIDE;
-  virtual void Stop(bool clear_cached_results) OVERRIDE;
+  void Start(const AutocompleteInput& input,
+             bool minimal_changes,
+             bool called_due_to_focus) override;
+  void Stop(bool clear_cached_results, bool due_to_user_inactivity) override;
 
   // Returns a match representing a navigation to |destination_url| given user
   // input of |text|.  |trim_http| controls whether the match's |fill_into_edit|
@@ -227,7 +228,7 @@ class HistoryURLProvider : public HistoryProvider {
   };
   class VisitClassifier;
 
-  ~HistoryURLProvider();
+  ~HistoryURLProvider() override;
 
   // Determines the relevance for a match, given its type.  If |match_type| is
   // NORMAL, |match_number| is a number indicating the relevance of the match
@@ -250,8 +251,9 @@ class HistoryURLProvider : public HistoryProvider {
                       HistoryURLProviderParams* params);
 
   // May promote the what you typed match, the first history match in
-  // parmas->matches, or both to the front of |matches_|, depending on the
-  // values of params->promote_type and params->have_what_you_typed_match.
+  // params->matches, or both to the front of |matches_|, depending on the
+  // values of params->promote_type, params->have_what_you_typed_match, and
+  // params->prevent_inline_autocomplete.
   void PromoteMatchesIfNecessary(const HistoryURLProviderParams& params);
 
   // Dispatches the results to the autocomplete controller. Called on the
@@ -284,7 +286,6 @@ class HistoryURLProvider : public HistoryProvider {
   // willing to inline autocomplete.
   bool PromoteOrCreateShorterSuggestion(
       history::URLDatabase* db,
-      bool have_what_you_typed_match,
       HistoryURLProviderParams* params);
 
   // Removes results that have been rarely typed or visited, and not any time

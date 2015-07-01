@@ -19,8 +19,8 @@
             </intent-filter>
         </activity>
     </application>
-    <uses-sdk android:minSdkVersion="14" android:targetSdkVersion="20" />
-    <instrumentation android:name="android.test.InstrumentationTestRunner"
+    <uses-sdk android:minSdkVersion="16" android:targetSdkVersion="22" />
+    <instrumentation android:name="org.chromium.chrome.test.ChromeInstrumentationTestRunner"
         android:targetPackage="org.chromium.chrome.sync_shell"
         android:label="Tests for org.chromium.chrome.sync_shell"/>
     <uses-permission android:name="android.permission.RUN_INSTRUMENTATION" />

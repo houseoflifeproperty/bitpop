@@ -37,7 +37,7 @@ EXTRA_ENV = {
   'OPT_LEVEL': '',  # Default opt is 0, but we need to know if it's explicitly
                     # requested or not, since we don't want to propagate
                     # the value to TRANSLATE_FLAGS if it wasn't explicitly set.
-  'OPT_LTO_FLAGS': '-std-link-opts -disable-internalize',
+  'OPT_LTO_FLAGS': '-std-link-opts',
   'OPT_FLAGS': '${#OPT_LEVEL && !OPT_LEVEL == 0 ? ${OPT_LTO_FLAGS}} ' +
                '-inline-threshold=${OPT_INLINE_THRESHOLD} ',
 
@@ -68,18 +68,18 @@ EXTRA_ENV = {
 
   # Standard Library Directories
   'SEARCH_DIRS_BUILTIN': '${USE_STDLIB ? ' +
-                         '  ${BASE_USR}/local/lib/ ' +
+                         '  ${BASE_USR}/usr/lib/ ' +
                          '  ${BASE_USR}/lib/ ' +
                          '  ${BASE_SDK}/lib/ ' +
                          '  ${BASE_LIB}/ ' +
                          '}',
 
   'BCLD_OFORMAT'               : '${BCLD_OFORMAT_%ARCH%}',
-  'BCLD_OFORMAT_ARM'           : 'elf32-littlearm',
+  'BCLD_OFORMAT_ARM'           : 'elf32-littlearm-nacl',
   'BCLD_OFORMAT_X8632'         : 'elf32-i386-nacl',
   'BCLD_OFORMAT_X8664'         : 'elf64-x86-64-nacl',
   'BCLD_OFORMAT_MIPS32'        : 'elf32-tradlittlemips-nacl',
-  'BCLD_OFORMAT_ARM_NONSFI'    : 'elf32-littlearm',
+  'BCLD_OFORMAT_ARM_NONSFI'    : 'elf32-littlearm-nacl',
   'BCLD_OFORMAT_X8632_NONSFI'  : 'elf32-i386-nacl',
 
   'BCLD_ALLOW_UNRESOLVED'  :
@@ -281,7 +281,7 @@ LDPatterns = [
   ( '(--end-group)',       "env.append('INPUTS', $0)"),
   ( '(-Bstatic)',          "env.append('INPUTS', $0)"),
   ( '(-Bdynamic)',          "env.append('INPUTS', $0)"),
-  ( '(--(no-)?whole-archive)', "env.append('INPUTS', $0)"),
+  ( '((-)?-(no-)?whole-archive)', "env.append('INPUTS', $0)"),
   ( '(--undefined=.*)',    "env.append('INPUTS', $0)"),
   ( ('(-u)','(.*)'),       "env.append('INPUTS', $0+$1)"),
   ( '(-u.*)',              "env.append('INPUTS', $0)"),
@@ -380,16 +380,18 @@ def main(argv):
     # it requires '-expand-constant-expr' to be able to handle
     # 'landingpad' instructions.
     # However, if we aren't using biased bitcode, then at least -expand-byval
-    # must be run to work with the PPAPI shim calling convention.
-    # This assumes that PPAPI does not use var-args, so passes like
-    # -expand-varargs and other calling-convention-changing passes are
-    # not needed.
+    # must be run to work with the PPAPI shim calling convention, and
+    # -expand-varargs is needed because after LLVM 3.5 the x86-32 backend does
+    # not expand the llvm.va_arg intrinsic correctly.
+    # (see https://code.google.com/p/nativeclient/issues/detail?id=3913#c24)
     abi_simplify = (env.getbool('STATIC') and
                     len(native_objects) == 0 and
                     env.getone('CXX_EH_MODE') != 'zerocost' and
                     not env.getbool('ALLOW_NEXE_BUILD_ID') and
                     IsPortable())
-    still_need_expand_byval = IsPortable()
+    still_need_expand_byval = IsPortable() and env.getbool('STATIC')
+    still_need_expand_varargs = (still_need_expand_byval and
+                                 len(native_objects) == 0)
 
     # A list of groups of args. Each group should contain a pass to run
     # along with relevant flags that go with that pass.
@@ -401,15 +403,18 @@ def main(argv):
       else:
         assert env.getone('CXX_EH_MODE') == 'none'
       opt_args.append(pre_simplify)
-    elif env.getone('CXX_EH_MODE') != 'zerocost':
-      # '-lowerinvoke' prevents use of C++ exception handling, which
-      # is not yet supported in the PNaCl ABI.  '-simplifycfg' removes
-      # landingpad blocks made unreachable by '-lowerinvoke'.
-      #
-      # We run this in order to remove 'resume' instructions,
-      # otherwise these are translated to calls to _Unwind_Resume(),
-      # which will not be available at native link time.
-      opt_args.append(['-lowerinvoke', '-simplifycfg'])
+    else:
+      if env.getone('CXX_EH_MODE') != 'zerocost':
+        # '-lowerinvoke' prevents use of C++ exception handling, which
+        # is not yet supported in the PNaCl ABI.  '-simplifycfg' removes
+        # landingpad blocks made unreachable by '-lowerinvoke'.
+        #
+        # We run this in order to remove 'resume' instructions,
+        # otherwise these are translated to calls to _Unwind_Resume(),
+        # which will not be available at native link time.
+        opt_args.append(['-lowerinvoke', '-simplifycfg'])
+      if still_need_expand_varargs:
+        opt_args.append(['-expand-varargs'])
 
     if env.getone('OPT_LEVEL') != '' and env.getone('OPT_LEVEL') != '0':
       opt_args.append(env.get('OPT_FLAGS'))

@@ -7,7 +7,6 @@
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_output_surface.h"
-#include "cc/test/mock_occlusion_tracker.h"
 #include "cc/test/test_shared_bitmap_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -17,12 +16,11 @@ namespace {
 void CheckDrawLayer(HeadsUpDisplayLayerImpl* layer,
                     ResourceProvider* resource_provider,
                     DrawMode draw_mode) {
-  MockOcclusionTracker<LayerImpl> occlusion_tracker;
   scoped_ptr<RenderPass> render_pass = RenderPass::Create();
   AppendQuadsData data;
   bool will_draw = layer->WillDraw(draw_mode, resource_provider);
   if (will_draw)
-    layer->AppendQuads(render_pass.get(), occlusion_tracker, &data);
+    layer->AppendQuads(render_pass.get(), &data);
   layer->UpdateHudTexture(draw_mode, resource_provider);
   if (will_draw)
     layer->DidDraw(resource_provider);
@@ -34,13 +32,13 @@ void CheckDrawLayer(HeadsUpDisplayLayerImpl* layer,
 TEST(HeadsUpDisplayLayerImplTest, ResourcelessSoftwareDrawAfterResourceLoss) {
   FakeImplProxy proxy;
   TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager, nullptr);
   host_impl.CreatePendingTree();
-  host_impl.InitializeRenderer(
-      FakeOutputSurface::Create3d().PassAs<OutputSurface>());
+  host_impl.InitializeRenderer(FakeOutputSurface::Create3d());
   scoped_ptr<HeadsUpDisplayLayerImpl> layer =
     HeadsUpDisplayLayerImpl::Create(host_impl.pending_tree(), 1);
-  layer->SetContentBounds(gfx::Size(100, 100));
+  layer->SetBounds(gfx::Size(100, 100));
+  layer->draw_properties().ideal_contents_scale = 1.f;
 
   // Check regular hardware draw is ok.
   CheckDrawLayer(

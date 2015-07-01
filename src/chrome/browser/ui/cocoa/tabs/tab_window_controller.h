@@ -23,8 +23,19 @@
 
 @interface TabWindowController : NSWindowController<NSWindowDelegate> {
  @private
+  // Wrapper view around web content, and the developer tools view.
   base::scoped_nsobject<FastResizeView> tabContentArea_;
+  base::scoped_nsobject<NSView> tabStripBackgroundView_;
+
+  // The tab strip overlaps the titlebar of the window.
   base::scoped_nsobject<TabStripView> tabStripView_;
+
+  // No views should be added directly to the root view. Views that overlap
+  // the title bar should be added to the window's contentView. All other views
+  // should be added to chromeContentView_. This allows tab dragging and
+  // fullscreen logic to easily move the views that don't need special
+  // treatment.
+  base::scoped_nsobject<NSView> chromeContentView_;
 
   // The child window used during dragging to achieve the opacity tricks.
   NSWindow* overlayWindow_;
@@ -36,8 +47,10 @@
   base::scoped_nsobject<FocusTracker> focusBeforeOverlay_;
   BOOL closeDeferred_;  // If YES, call performClose: in removeOverlay:.
 }
+@property(readonly, nonatomic) NSView* tabStripBackgroundView;
 @property(readonly, nonatomic) TabStripView* tabStripView;
 @property(readonly, nonatomic) FastResizeView* tabContentArea;
+@property(readonly, nonatomic) NSView* chromeContentView;
 
 // This is the designated initializer for this class.
 - (id)initTabWindowControllerWithTabStrip:(BOOL)hasTabStrip;
@@ -140,20 +153,6 @@
 // drag is complete. This prevents a window (and its overlay) from going away
 // during a drag.
 - (void)deferPerformClose;
-
-// There are 2 view hierarchy constraints that must be enforced:
-//  - The tab strip must be above the content view.
-//  - The tab strip must be below the traffic lights.
-// AppKit does not enforce these constraints, because it assumes that Chrome
-// does not mess with the NSThemeFrame. Chrome must manually enforce these
-// constraints.
-//
-// Immediately after creation of the window, or after the window's content view
-// is changed, the content view must be moved to the back.
-- (void)moveContentViewToBack:(NSView*)contentView;
-
-// The tab strip should always be inserted directly above the content view.
-- (void)insertTabStripView:(NSView*)tabStripView intoWindow:(NSWindow*)window;
 
 @end
 

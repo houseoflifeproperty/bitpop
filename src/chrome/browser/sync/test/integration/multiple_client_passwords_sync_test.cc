@@ -8,7 +8,7 @@
 #include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_integration_test_util.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
-#include "components/password_manager/core/browser/password_form_data.h"
+#include "components/password_manager/core/browser/password_manager_test_utils.h"
 
 using passwords_helper::AddLogin;
 using passwords_helper::AllProfilesContainSamePasswordFormsAsVerifier;
@@ -33,11 +33,9 @@ static const char* kAnotherValidPassphrase = "Mot de passe!";
 class MultipleClientPasswordsSyncTest : public SyncTest {
  public:
   MultipleClientPasswordsSyncTest() : SyncTest(MULTIPLE_CLIENT) {}
-  virtual ~MultipleClientPasswordsSyncTest() {}
+  ~MultipleClientPasswordsSyncTest() override {}
 
-  virtual bool TestUsesSelfNotifications() OVERRIDE {
-    return false;
-  }
+  bool TestUsesSelfNotifications() override { return false; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MultipleClientPasswordsSyncTest);

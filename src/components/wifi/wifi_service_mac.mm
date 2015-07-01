@@ -17,6 +17,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "components/onc/onc_constants.h"
 #include "components/wifi/network_properties.h"
+#include "crypto/apple_keychain.h"
 
 namespace wifi {
 
@@ -24,57 +25,59 @@ namespace wifi {
 class WiFiServiceMac : public WiFiService {
  public:
   WiFiServiceMac();
-  virtual ~WiFiServiceMac();
+  ~WiFiServiceMac() override;
 
   // WiFiService interface implementation.
-  virtual void Initialize(
-      scoped_refptr<base::SequencedTaskRunner> task_runner) OVERRIDE;
+  void Initialize(
+      scoped_refptr<base::SequencedTaskRunner> task_runner) override;
 
-  virtual void UnInitialize() OVERRIDE;
+  void UnInitialize() override;
 
-  virtual void GetProperties(const std::string& network_guid,
-                             base::DictionaryValue* properties,
-                             std::string* error) OVERRIDE;
+  void GetProperties(const std::string& network_guid,
+                     base::DictionaryValue* properties,
+                     std::string* error) override;
 
-  virtual void GetManagedProperties(const std::string& network_guid,
-                                    base::DictionaryValue* managed_properties,
-                                    std::string* error) OVERRIDE;
+  void GetManagedProperties(const std::string& network_guid,
+                            base::DictionaryValue* managed_properties,
+                            std::string* error) override;
 
-  virtual void GetState(const std::string& network_guid,
-                        base::DictionaryValue* properties,
-                        std::string* error) OVERRIDE;
+  void GetState(const std::string& network_guid,
+                base::DictionaryValue* properties,
+                std::string* error) override;
 
-  virtual void SetProperties(const std::string& network_guid,
-                             scoped_ptr<base::DictionaryValue> properties,
-                             std::string* error) OVERRIDE;
+  void SetProperties(const std::string& network_guid,
+                     scoped_ptr<base::DictionaryValue> properties,
+                     std::string* error) override;
 
-  virtual void CreateNetwork(bool shared,
-                             scoped_ptr<base::DictionaryValue> properties,
-                             std::string* network_guid,
-                             std::string* error) OVERRIDE;
+  void CreateNetwork(bool shared,
+                     scoped_ptr<base::DictionaryValue> properties,
+                     std::string* network_guid,
+                     std::string* error) override;
 
-  virtual void GetVisibleNetworks(const std::string& network_type,
-                                  base::ListValue* network_list,
-                                  bool include_details) OVERRIDE;
+  void GetVisibleNetworks(const std::string& network_type,
+                          base::ListValue* network_list,
+                          bool include_details) override;
 
-  virtual void RequestNetworkScan() OVERRIDE;
+  void RequestNetworkScan() override;
 
-  virtual void StartConnect(const std::string& network_guid,
-                            std::string* error) OVERRIDE;
+  void StartConnect(const std::string& network_guid,
+                    std::string* error) override;
 
-  virtual void StartDisconnect(const std::string& network_guid,
-                               std::string* error) OVERRIDE;
+  void StartDisconnect(const std::string& network_guid,
+                       std::string* error) override;
 
-  virtual void GetKeyFromSystem(const std::string& network_guid,
-                                std::string* key_data,
-                                std::string* error) OVERRIDE;
+  void GetKeyFromSystem(const std::string& network_guid,
+                        std::string* key_data,
+                        std::string* error) override;
 
-  virtual void SetEventObservers(
+  void SetEventObservers(
       scoped_refptr<base::MessageLoopProxy> message_loop_proxy,
       const NetworkGuidListCallback& networks_changed_observer,
-      const NetworkGuidListCallback& network_list_changed_observer) OVERRIDE;
+      const NetworkGuidListCallback& network_list_changed_observer) override;
 
-  virtual void RequestConnectedNetworkUpdate() OVERRIDE;
+  void RequestConnectedNetworkUpdate() override;
+
+  void GetConnectedNetworkSSID(std::string* ssid, std::string* error) override;
 
  private:
   // Checks |ns_error| and if is not |nil|, then stores |error_name|
@@ -359,14 +362,15 @@ void WiFiServiceMac::GetKeyFromSystem(const std::string& network_guid,
 
   UInt32 password_length = 0;
   void *password_data = NULL;
-  OSStatus status = SecKeychainFindGenericPassword(NULL,
-                                                   strlen(kAirPortServiceName),
-                                                   kAirPortServiceName,
-                                                   network_guid.length(),
-                                                   network_guid.c_str(),
-                                                   &password_length,
-                                                   &password_data,
-                                                   NULL);
+  crypto::AppleKeychain keychain;
+  OSStatus status = keychain.FindGenericPassword(NULL,
+                                                 strlen(kAirPortServiceName),
+                                                 kAirPortServiceName,
+                                                 network_guid.length(),
+                                                 network_guid.c_str(),
+                                                 &password_length,
+                                                 &password_data,
+                                                 NULL);
   if (status != errSecSuccess) {
     *error = kErrorNotFound;
     return;
@@ -375,7 +379,7 @@ void WiFiServiceMac::GetKeyFromSystem(const std::string& network_guid,
   if (password_data) {
     *key_data = std::string(reinterpret_cast<char*>(password_data),
                             password_length);
-    SecKeychainItemFreeContent(NULL, password_data);
+    keychain.ItemFreeContent(NULL, password_data);
   }
 }
 
@@ -414,6 +418,12 @@ void WiFiServiceMac::SetEventObservers(
 
 void WiFiServiceMac::RequestConnectedNetworkUpdate() {
   OnWlanObserverNotification();
+}
+
+void WiFiServiceMac::GetConnectedNetworkSSID(std::string* ssid,
+                                             std::string* error) {
+  *ssid = base::SysNSStringToUTF8([interface_ ssid]);
+  *error = "";
 }
 
 std::string WiFiServiceMac::GetNetworkConnectionState(

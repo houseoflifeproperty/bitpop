@@ -33,6 +33,7 @@
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/HTMLSelectElement.h"
+#include "core/layout/LayoutBlockFlow.h"
 #include "platform/text/PlatformLocale.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebLocalizedString.h"
@@ -56,6 +57,14 @@ PassRefPtrWillBeRawPtr<HTMLKeygenElement> HTMLKeygenElement::create(Document& do
     return keygen.release();
 }
 
+LayoutObject* HTMLKeygenElement::createLayoutObject(const ComputedStyle& style)
+{
+    // TODO(mstensho): While it's harmful and meaningless to allow most display types on replaced
+    // content (e.g. table, table-row or flex), it would be useful to honor at least some of
+    // them. Table-cell (and maybe table-caption too), for instance. See crbug.com/335040
+    return new LayoutBlockFlow(this);
+}
+
 void HTMLKeygenElement::didAddUserAgentShadowRoot(ShadowRoot& root)
 {
     DEFINE_STATIC_LOCAL(AtomicString, keygenSelectPseudoId, ("-webkit-keygen-select", AtomicString::ConstructFromLiteral));
@@ -68,9 +77,9 @@ void HTMLKeygenElement::didAddUserAgentShadowRoot(ShadowRoot& root)
     // Create a select element with one option element for each key size.
     RefPtrWillBeRawPtr<HTMLSelectElement> select = HTMLSelectElement::create(document());
     select->setShadowPseudoId(keygenSelectPseudoId);
-    for (size_t i = 0; i < keys.size(); ++i) {
+    for (const String& key : keys) {
         RefPtrWillBeRawPtr<HTMLOptionElement> option = HTMLOptionElement::create(document());
-        option->appendChild(Text::create(document(), keys[i]));
+        option->appendChild(Text::create(document(), key));
         select->appendChild(option);
     }
 

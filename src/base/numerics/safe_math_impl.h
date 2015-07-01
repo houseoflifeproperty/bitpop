@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SAFE_MATH_IMPL_H_
-#define SAFE_MATH_IMPL_H_
+#ifndef BASE_NUMERICS_SAFE_MATH_IMPL_H_
+#define BASE_NUMERICS_SAFE_MATH_IMPL_H_
 
 #include <stdint.h>
 
@@ -11,7 +11,6 @@
 #include <cstdlib>
 #include <limits>
 
-#include "base/macros.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/template_util.h"
 
@@ -177,8 +176,8 @@ typename enable_if<std::numeric_limits<T>::is_integer&& std::numeric_limits<
                        T>::is_signed&&(sizeof(T) * 2 > sizeof(uintmax_t)),
                    T>::type
 CheckedMul(T x, T y, RangeConstraint* validity) {
-  // if either side is zero then the result will be zero.
-  if (!(x || y)) {
+  // If either side is zero then the result will be zero.
+  if (!x || !y) {
     return RANGE_VALID;
 
   } else if (x > 0) {
@@ -277,7 +276,7 @@ typename enable_if<
 CheckedAbs(T value, RangeConstraint* validity) {
   *validity =
       value != std::numeric_limits<T>::min() ? RANGE_VALID : RANGE_OVERFLOW;
-  return std::abs(value);
+  return static_cast<T>(std::abs(value));
 }
 
 template <typename T>
@@ -359,11 +358,11 @@ class CheckedNumericState<T, NUMERIC_INTEGER> {
 
   template <typename Src>
   CheckedNumericState(Src value, RangeConstraint validity)
-      : value_(value),
+      : value_(static_cast<T>(value)),
         validity_(GetRangeConstraint(validity |
                                      DstRangeRelationToSrcRange<T>(value))) {
-    COMPILE_ASSERT(std::numeric_limits<Src>::is_specialized,
-                   argument_must_be_numeric);
+    static_assert(std::numeric_limits<Src>::is_specialized,
+                  "Argument must be numeric.");
   }
 
   // Copy constructor.
@@ -499,4 +498,4 @@ struct IsIntegerArithmeticSafe {
 }  // namespace internal
 }  // namespace base
 
-#endif  // SAFE_MATH_IMPL_H_
+#endif  // BASE_NUMERICS_SAFE_MATH_IMPL_H_

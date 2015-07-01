@@ -6,20 +6,24 @@
 
 #include "base/base64.h"
 #include "base/strings/stringprintf.h"
-#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_function.h"
 #include "extensions/common/constants.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/display.h"
+#include "ui/gfx/geometry/size_conversions.h"
+#include "ui/gfx/screen.h"
 
-using content::RenderViewHost;
 using content::RenderWidgetHost;
 using content::RenderWidgetHostView;
 using content::WebContents;
 
 namespace extensions {
+
+using core_api::extension_types::ImageDetails;
 
 bool CaptureWebContentsFunction::HasPermission() {
   return true;
@@ -46,28 +50,44 @@ bool CaptureWebContentsFunction::RunAsync() {
     return false;
 
   // The default format and quality setting used when encoding jpegs.
-  const ImageDetails::Format kDefaultFormat = ImageDetails::FORMAT_JPEG;
+  const core_api::extension_types::ImageFormat kDefaultFormat =
+      core_api::extension_types::IMAGE_FORMAT_JPEG;
   const int kDefaultQuality = 90;
 
   image_format_ = kDefaultFormat;
   image_quality_ = kDefaultQuality;
 
   if (image_details) {
-    if (image_details->format != ImageDetails::FORMAT_NONE)
+    if (image_details->format !=
+        core_api::extension_types::IMAGE_FORMAT_NONE)
       image_format_ = image_details->format;
     if (image_details->quality.get())
       image_quality_ = *image_details->quality;
   }
 
-  RenderViewHost* render_view_host = contents->GetRenderViewHost();
-  RenderWidgetHostView* view = render_view_host->GetView();
-  if (!view) {
+  // TODO(miu): Account for fullscreen render widget?  http://crbug.com/419878
+  RenderWidgetHostView* const view = contents->GetRenderWidgetHostView();
+  RenderWidgetHost* const host = view ? view->GetRenderWidgetHost() : nullptr;
+  if (!view || !host) {
     OnCaptureFailure(FAILURE_REASON_VIEW_INVISIBLE);
     return false;
   }
-  render_view_host->CopyFromBackingStore(
-      gfx::Rect(),
-      view->GetViewBounds().size(),
+
+  // By default, the requested bitmap size is the view size in screen
+  // coordinates.  However, if there's more pixel detail available on the
+  // current system, increase the requested bitmap size to capture it all.
+  const gfx::Size view_size = view->GetViewBounds().size();
+  gfx::Size bitmap_size = view_size;
+  const gfx::NativeView native_view = view->GetNativeView();
+  gfx::Screen* const screen = gfx::Screen::GetScreenFor(native_view);
+  const float scale =
+      screen->GetDisplayNearestWindow(native_view).device_scale_factor();
+  if (scale > 1.0f)
+    bitmap_size = gfx::ToCeiledSize(gfx::ScaleSize(view_size, scale));
+
+  host->CopyFromBackingStore(
+      gfx::Rect(view_size),
+      bitmap_size,
       base::Bind(&CaptureWebContentsFunction::CopyFromBackingStoreComplete,
                  this),
       kN32_SkColorType);
@@ -75,9 +95,9 @@ bool CaptureWebContentsFunction::RunAsync() {
 }
 
 void CaptureWebContentsFunction::CopyFromBackingStoreComplete(
-    bool succeeded,
-    const SkBitmap& bitmap) {
-  if (succeeded) {
+    const SkBitmap& bitmap,
+    content::ReadbackResponse response) {
+  if (response == content::READBACK_SUCCESS) {
     OnCaptureSuccess(bitmap);
     return;
   }
@@ -90,7 +110,7 @@ void CaptureWebContentsFunction::OnCaptureSuccess(const SkBitmap& bitmap) {
   bool encoded = false;
   std::string mime_type;
   switch (image_format_) {
-    case ImageDetails::FORMAT_JPEG:
+    case core_api::extension_types::IMAGE_FORMAT_JPEG:
       encoded = gfx::JPEGCodec::Encode(
           reinterpret_cast<unsigned char*>(bitmap.getAddr32(0, 0)),
           gfx::JPEGCodec::FORMAT_SkBitmap,
@@ -101,7 +121,7 @@ void CaptureWebContentsFunction::OnCaptureSuccess(const SkBitmap& bitmap) {
           &data);
       mime_type = kMimeTypeJpeg;
       break;
-    case ImageDetails::FORMAT_PNG:
+    case core_api::extension_types::IMAGE_FORMAT_PNG:
       encoded =
           gfx::PNGCodec::EncodeBGRASkBitmap(bitmap,
                                             true,  // Discard transparency.

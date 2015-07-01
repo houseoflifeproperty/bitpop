@@ -43,12 +43,7 @@
 
 namespace blink {
 
-class CustomElementConstructorBuilder;
-class Document;
-class Element;
-class ExceptionState;
-
-class CustomElementRegistrationContext FINAL : public RefCountedWillBeGarbageCollectedFinalized<CustomElementRegistrationContext> {
+class CustomElementRegistrationContext final : public RefCountedWillBeGarbageCollectedFinalized<CustomElementRegistrationContext> {
 public:
     static PassRefPtrWillBeRawPtr<CustomElementRegistrationContext> create()
     {
@@ -56,6 +51,7 @@ public:
     }
 
     ~CustomElementRegistrationContext() { }
+    void documentWasDetached() { m_registry.documentWasDetached(); }
 
     // Definitions
     void registerElement(Document*, CustomElementConstructorBuilder*, const AtomicString& type, CustomElement::NameSet validNames, ExceptionState&);
@@ -66,7 +62,7 @@ public:
 
     void resolve(Element*, const CustomElementDescriptor&);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 protected:
     CustomElementRegistrationContext();
@@ -83,7 +79,7 @@ private:
     OwnPtrWillBeMember<CustomElementUpgradeCandidateMap> m_candidates;
 };
 
-}
+} // namespace blink
 
 #endif // CustomElementRegistrationContext_h
 

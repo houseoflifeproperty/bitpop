@@ -85,6 +85,13 @@ readonly ScriptName=$(basename "$0")
 readonly ThisScript="${ScriptDir}/${ScriptName}"
 readonly SimExecutable="${ScriptDir}/iossim"
 
+# Simulator process name changes from Xcode 6.
+if [[ ${XCODE_VERSION_MINOR} -ge "0600" ]]; then
+  readonly SimulatorProcessName='iOS Simulator'
+else
+  readonly SimulatorProcessName='iPhone Simulator'
+fi
+
 # Variables that follow Xcode unittesting conventions
 readonly TEST_BUNDLE_PATH="${TEST_BUNDLE_PATH:=${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.${WRAPPER_EXTENSION}}"
 TEST_HOST="${TEST_HOST:=}"
@@ -120,7 +127,14 @@ GTMKillNamedAndWait() {
 }
 
 GTMKillSimulator() {
-  GTMKillNamedAndWait "iPhone Simulator"
+  GTMKillNamedAndWait "${SimulatorProcessName}"
+}
+
+GTMResetSimulator() {
+  GTMKillSimulator
+  device_id=`xcrun simctl list | grep "${GTM_DEVICE_TYPE} (" | sed -n 2p | \
+      cut -d "(" -f2 | cut -d ")" -f1`
+  xcrun simctl erase $device_id || true
 }
 
 # Honor TEST_AFTER_BUILD if requested.
@@ -257,6 +271,17 @@ set -e
 
 GTMKillSimulator
 GTMKillNamedAndWait "${GTM_TEST_APP_NAME}"
+
+# If the simulator fails to open with error FBSOpenApplicationErrorDomain:4,
+# reset the sim and try again (Known simulator issue for Xcode 6).
+if [ ${TEST_HOST_RESULT} -eq 4 ] && [ ${XCODE_VERSION_MINOR} -ge "0600" ]; then
+    GTMFakeUnitTestingMsg ${LINENO} "note" "Simulator failed to open with result $TEST_HOST_RESULT, trying again."
+    GTMResetSimulator
+    set +e
+    "${GTM_TEST_COMMAND[@]}"
+    TEST_HOST_RESULT=$?
+    set -e
+fi
 
 if [[ ${TEST_HOST_RESULT} -ne 0 ]]; then
   GTMXcodeError ${LINENO} "Tests failed."

@@ -4,10 +4,8 @@
 
 #include "base/command_line.h"
 #include "base/files/file_util.h"
-#include "base/path_service.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/media/media_stream_devices_controller.h"
 #include "chrome/browser/media/webrtc_browsertest_base.h"
@@ -20,6 +18,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/notification_service.h"
@@ -34,10 +33,10 @@
 class MediaStreamInfoBarTest : public WebRtcTestBase {
  public:
   MediaStreamInfoBarTest() {}
-  virtual ~MediaStreamInfoBarTest() {}
+  ~MediaStreamInfoBarTest() override {}
 
   // InProcessBrowserTest:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     // This test expects to run with fake devices but real UI.
     command_line->AppendSwitch(switches::kUseFakeDeviceForMediaStream);
     EXPECT_FALSE(command_line->HasSwitch(switches::kUseFakeUIForMediaStream))
@@ -107,7 +106,7 @@ class MediaStreamInfoBarTest : public WebRtcTestBase {
 
 IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest, TestAllowingUserMedia) {
   content::WebContents* tab_contents = LoadTestPageInTab();
-  GetUserMediaAndAccept(tab_contents);
+  EXPECT_TRUE(GetUserMediaAndAccept(tab_contents));
 }
 
 IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest, TestDenyingUserMedia) {
@@ -129,13 +128,14 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
                        TestAcceptThenDenyWhichShouldBeSticky) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
 
   content::WebContents* tab_contents = LoadTestPageInTab();
 
-  GetUserMediaAndAccept(tab_contents);
+  EXPECT_TRUE(GetUserMediaAndAccept(tab_contents));
   GetUserMediaAndDeny(tab_contents);
 
   // Should fail with permission denied right away with no infobar popping up.
@@ -153,8 +153,8 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest, TestAcceptIsNotSticky) {
 
   // If accept were sticky the second call would hang because it hangs if an
   // infobar does not pop up.
-  GetUserMediaAndAccept(tab_contents);
-  GetUserMediaAndAccept(tab_contents);
+  EXPECT_TRUE(GetUserMediaAndAccept(tab_contents));
+  EXPECT_TRUE(GetUserMediaAndAccept(tab_contents));
 }
 
 IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest, TestDismissIsNotSticky) {
@@ -198,8 +198,8 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
   // If mic blocking also blocked cameras, the second call here would hang.
   GetUserMediaWithSpecificConstraintsAndDeny(tab_contents,
                                              kAudioOnlyCallConstraints);
-  GetUserMediaWithSpecificConstraintsAndAccept(tab_contents,
-                                               kVideoOnlyCallConstraints);
+  EXPECT_TRUE(GetUserMediaWithSpecificConstraintsAndAccept(
+      tab_contents, kVideoOnlyCallConstraints));
 }
 
 IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
@@ -209,6 +209,6 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
   // If camera blocking also blocked mics, the second call here would hang.
   GetUserMediaWithSpecificConstraintsAndDeny(tab_contents,
                                              kVideoOnlyCallConstraints);
-  GetUserMediaWithSpecificConstraintsAndAccept(tab_contents,
-                                               kAudioOnlyCallConstraints);
+  EXPECT_TRUE(GetUserMediaWithSpecificConstraintsAndAccept(
+      tab_contents, kAudioOnlyCallConstraints));
 }

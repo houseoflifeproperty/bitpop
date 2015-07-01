@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "device/bluetooth/bluetooth_export.h"
 #include "device/bluetooth/bluetooth_gatt_characteristic.h"
 #include "device/bluetooth/bluetooth_uuid.h"
 
@@ -18,13 +19,21 @@ namespace device {
 // descriptor. A GATT characteristic descriptor provides further information
 // about a characteristic's value. They can be used to describe the
 // characteristic's features or to control certain behaviors.
-class BluetoothGattDescriptor {
+class DEVICE_BLUETOOTH_EXPORT BluetoothGattDescriptor {
  public:
+  // The ErrorCallback is used by methods to asynchronously report errors.
+  typedef base::Callback<void(BluetoothGattService::GattErrorCode)>
+      ErrorCallback;
+
+  // The ValueCallback is used to return the value of a remote characteristic
+  // descriptor upon a read request.
+  typedef base::Callback<void(const std::vector<uint8>&)> ValueCallback;
+
   // The Bluetooth Specification declares several predefined descriptors that
   // profiles can use. The following are definitions for the list of UUIDs
   // and descriptions of the characteristic descriptors that they represent.
   // Possible values for and further information on each descriptor can be found
-  // in Core v4.0, Volume 3, Part G, Section 3.3.3. All of these desciptors are
+  // in Core v4.0, Volume 3, Part G, Section 3.3.3. All of these descriptors are
   // optional and may not be present for a given characteristic.
 
   // The "Characteristic Extended Properties" descriptor. This defines
@@ -83,7 +92,7 @@ class BluetoothGattDescriptor {
   static const BluetoothUUID& CharacteristicPresentationFormatUuid();
 
   // The "Characteristic Aggregate Format" descriptor defines the format of an
-  // aggragated characteristic value. In GATT's underlying protocol, ATT, each
+  // aggregated characteristic value. In GATT's underlying protocol, ATT, each
   // attribute is identified by a handle that is unique for the hosting server.
   // Multiple characteristics can share the same instance(s) of a
   // "Characteristic Presentation Format" descriptor. The value of the
@@ -95,7 +104,8 @@ class BluetoothGattDescriptor {
   //
   // Applications that are using the device::Bluetooth API do not have access to
   // the underlying handles and shouldn't use this descriptor to determine which
-  // "Characteristic Presentation Format" desciptors belong to a characteristic.
+  // "Characteristic Presentation Format" descriptors belong to a
+  // characteristic.
   // The API will construct a BluetoothGattDescriptor object for each instance
   // of "Characteristic Presentation Format" descriptor per instance of
   // BluetoothGattCharacteristic that represents a remote characteristic.
@@ -103,13 +113,6 @@ class BluetoothGattDescriptor {
   // an instance of BluetoothGattDescriptor for this descriptor as this will be
   // handled by the subsystem.
   static const BluetoothUUID& CharacteristicAggregateFormatUuid();
-
-  // The ErrorCallback is used by methods to asynchronously report errors.
-  typedef base::Closure ErrorCallback;
-
-  // The ValueCallback is used to return the value of a remote characteristic
-  // descriptor upon a read request.
-  typedef base::Callback<void(const std::vector<uint8>&)> ValueCallback;
 
   // Constructs a BluetoothGattDescriptor that can be associated with a local
   // GATT characteristic when the adapter is in the peripheral role. To
@@ -132,7 +135,7 @@ class BluetoothGattDescriptor {
       const std::vector<uint8>& value,
       BluetoothGattCharacteristic::Permissions permissions);
 
-  // Identifier used to uniquely identify a GATT descriptorobject. This is
+  // Identifier used to uniquely identify a GATT descriptor object. This is
   // different from the descriptor UUID: while multiple descriptors with the
   // same UUID can exist on a Bluetooth device, the identifier returned from
   // this method is unique among all descriptors of a device. The contents of

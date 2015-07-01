@@ -20,45 +20,42 @@ namespace android_webview {
 
 class AwContentBrowserClient;
 class AwContentRendererClient;
-class GpuMemoryBufferFactoryImpl;
 
 // Android WebView implementation of ContentMainDelegate.
 class AwMainDelegate : public content::ContentMainDelegate,
                        public JniDependencyFactory {
  public:
   AwMainDelegate();
-  virtual ~AwMainDelegate();
+  ~AwMainDelegate() override;
 
  private:
   // content::ContentMainDelegate implementation:
-  virtual bool BasicStartupComplete(int* exit_code) OVERRIDE;
-  virtual void PreSandboxStartup() OVERRIDE;
-  virtual void SandboxInitialized(const std::string& process_type) OVERRIDE;
-  virtual int RunProcess(
+  bool BasicStartupComplete(int* exit_code) override;
+  void PreSandboxStartup() override;
+  void SandboxInitialized(const std::string& process_type) override;
+  int RunProcess(
       const std::string& process_type,
-      const content::MainFunctionParams& main_function_params) OVERRIDE;
-  virtual void ProcessExiting(const std::string& process_type) OVERRIDE;
-  virtual content::ContentBrowserClient* CreateContentBrowserClient() OVERRIDE;
-  virtual content::ContentRendererClient*
-      CreateContentRendererClient() OVERRIDE;
+      const content::MainFunctionParams& main_function_params) override;
+  void ProcessExiting(const std::string& process_type) override;
+  content::ContentBrowserClient* CreateContentBrowserClient() override;
+  content::ContentRendererClient* CreateContentRendererClient() override;
 
   // JniDependencyFactory implementation.
-  virtual scoped_refptr<AwQuotaManagerBridge> CreateAwQuotaManagerBridge(
-      AwBrowserContext* browser_context) OVERRIDE;
-  virtual content::WebContentsViewDelegate* CreateViewDelegate(
-      content::WebContents* web_contents) OVERRIDE;
-  virtual AwWebPreferencesPopulater* CreateWebPreferencesPopulater() OVERRIDE;
+  scoped_refptr<AwQuotaManagerBridge> CreateAwQuotaManagerBridge(
+      AwBrowserContext* browser_context) override;
+  content::WebContentsViewDelegate* CreateViewDelegate(
+      content::WebContents* web_contents) override;
+  AwWebPreferencesPopulater* CreateWebPreferencesPopulater() override;
+  AwMessagePortService* CreateAwMessagePortService() override;
 #if defined(VIDEO_HOLE)
-  virtual content::ExternalVideoSurfaceContainer*
-      CreateExternalVideoSurfaceContainer(
-          content::WebContents* web_contents) OVERRIDE;
+  content::ExternalVideoSurfaceContainer* CreateExternalVideoSurfaceContainer(
+      content::WebContents* web_contents) override;
 #endif
 
   scoped_ptr<content::BrowserMainRunner> browser_runner_;
   AwContentClient content_client_;
   scoped_ptr<AwContentBrowserClient> content_browser_client_;
   scoped_ptr<AwContentRendererClient> content_renderer_client_;
-  scoped_ptr<GpuMemoryBufferFactoryImpl> gpu_memory_buffer_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AwMainDelegate);
 };

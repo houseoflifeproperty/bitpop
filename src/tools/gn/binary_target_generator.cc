@@ -63,16 +63,6 @@ void BinaryTargetGenerator::DoRun() {
     return;
 }
 
-bool BinaryTargetGenerator::FillCheckIncludes() {
-  const Value* value = scope_->GetValue(variables::kCheckIncludes, true);
-  if (!value)
-    return true;
-  if (!value->VerifyTypeIs(Value::BOOLEAN, err_))
-    return false;
-  target_->set_check_includes(value->boolean_value());
-  return true;
-}
-
 bool BinaryTargetGenerator::FillCompleteStaticLib() {
   if (target_->output_type() == Target::STATIC_LIBRARY) {
     const Value* value = scope_->GetValue(variables::kCompleteStaticLib, true);
@@ -118,18 +108,17 @@ bool BinaryTargetGenerator::FillAllowCircularIncludesFrom() {
     return false;
 
   // Validate that all circular includes entries are in the deps.
-  for (size_t circular_i = 0; circular_i < circular.size(); circular_i++) {
+  for (const auto& cur : circular) {
     bool found_dep = false;
-    for (DepsIterator iter(target_, DepsIterator::LINKED_ONLY);
-         !iter.done(); iter.Advance()) {
-      if (iter.label() == circular[circular_i]) {
+    for (const auto& dep_pair : target_->GetDeps(Target::DEPS_LINKED)) {
+      if (dep_pair.label == cur) {
         found_dep = true;
         break;
       }
     }
     if (!found_dep) {
       *err_ = Err(*value, "Label not in deps.",
-          "The label \"" + circular[circular_i].GetUserVisibleName(false) +
+          "The label \"" + cur.GetUserVisibleName(false) +
           "\"\nwas not in the deps of this target. "
           "allow_circular_includes_from only allows\ntargets present in the "
           "deps.");
@@ -138,7 +127,7 @@ bool BinaryTargetGenerator::FillAllowCircularIncludesFrom() {
   }
 
   // Add to the set.
-  for (size_t i = 0; i < circular.size(); i++)
-    target_->allow_circular_includes_from().insert(circular[i]);
+  for (const auto& cur : circular)
+    target_->allow_circular_includes_from().insert(cur);
   return true;
 }

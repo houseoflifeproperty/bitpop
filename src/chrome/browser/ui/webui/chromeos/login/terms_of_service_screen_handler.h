@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "chrome/browser/chromeos/base/locale_util.h"
 #include "chrome/browser/chromeos/login/screens/terms_of_service_screen_actor.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
 
@@ -21,30 +22,30 @@ class TermsOfServiceScreenHandler : public BaseScreenHandler,
                                     public TermsOfServiceScreenActor {
  public:
   explicit TermsOfServiceScreenHandler(CoreOobeActor* core_oobe_actor);
-  virtual ~TermsOfServiceScreenHandler();
+  ~TermsOfServiceScreenHandler() override;
 
   // content::WebUIMessageHandler:
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
   // BaseScreenHandler:
-  virtual void DeclareLocalizedValues(LocalizedValuesBuilder* builder) OVERRIDE;
+  void DeclareLocalizedValues(
+      ::login::LocalizedValuesBuilder* builder) override;
 
   // TermsOfServiceScreenActor:
-  virtual void SetDelegate(Delegate* screen) OVERRIDE;
-  virtual void Show() OVERRIDE;
-  virtual void Hide() OVERRIDE;
-  virtual void SetDomain(const std::string& domain) OVERRIDE;
-  virtual void OnLoadError() OVERRIDE;
-  virtual void OnLoadSuccess(const std::string& terms_of_service) OVERRIDE;
+  void SetDelegate(Delegate* screen) override;
+  void Show() override;
+  void Hide() override;
+  void SetDomain(const std::string& domain) override;
+  void OnLoadError() override;
+  void OnLoadSuccess(const std::string& terms_of_service) override;
 
  private:
   // BaseScreenHandler:
-  virtual void Initialize() OVERRIDE;
+  void Initialize() override;
 
   // Callback invoked after the UI locale has been changed.
-  void OnLanguageChangedCallback(const std::string& requested_locale,
-                                 const std::string& loaded_locale,
-                                 const bool success);
+  void OnLanguageChangedCallback(
+      const locale_util::LanguageSwitchResult& result);
 
   // Switch to the user's preferred input method and show the screen. This
   // method is called after it has been ensured that the current UI locale

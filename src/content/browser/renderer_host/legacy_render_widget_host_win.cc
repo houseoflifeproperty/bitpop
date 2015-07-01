@@ -33,10 +33,10 @@ LegacyRenderWidgetHostHWND* LegacyRenderWidgetHostHWND::Create(
   // content_unittests passes in the desktop window as the parent. We allow
   // the LegacyRenderWidgetHostHWND instance to be created in this case for
   // these tests to pass.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableLegacyIntermediateWindow) ||
       (!GetWindowEventTarget(parent) && parent != ::GetDesktopWindow()))
-    return NULL;
+    return nullptr;
 
   LegacyRenderWidgetHostHWND* legacy_window_instance =
       new LegacyRenderWidgetHostHWND(parent);
@@ -56,6 +56,8 @@ void LegacyRenderWidgetHostHWND::Destroy() {
 }
 
 void LegacyRenderWidgetHostHWND::UpdateParent(HWND parent) {
+  if (GetWindowEventTarget(GetParent()))
+    GetWindowEventTarget(GetParent())->HandleParentChanged();
   ::SetParent(hwnd(), parent);
   // If the new parent is the desktop Window, then we disable the child window
   // to ensure that it does not receive any input events. It should not because

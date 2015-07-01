@@ -6,6 +6,7 @@
 #define CHROMECAST_MEDIA_CMA_BASE_BUFFERING_CONTROLLER_H
 
 #include <list>
+#include <string>
 
 #include "base/callback.h"
 #include "base/macros.h"
@@ -36,7 +37,7 @@ class BufferingController {
 
   // Creates a buffering state for one stream. This state is added to the list
   // of streams monitored by the buffering controller.
-  scoped_refptr<BufferingState> AddStream();
+  scoped_refptr<BufferingState> AddStream(const std::string& stream_id);
 
   // Sets the playback time.
   void SetMediaTime(base::TimeDelta time);
@@ -91,13 +92,14 @@ class BufferingController {
 
   // Start time of a re-buffering phase.
   base::Time begin_buffering_time_;
+  bool initial_buffering_;
 
   // Buffering level for each individual stream.
   typedef std::list<scoped_refptr<BufferingState> > StreamList;
   StreamList stream_list_;
 
-  base::WeakPtrFactory<BufferingController> weak_factory_;
   base::WeakPtr<BufferingController> weak_this_;
+  base::WeakPtrFactory<BufferingController> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BufferingController);
 };

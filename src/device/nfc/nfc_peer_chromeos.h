@@ -21,16 +21,16 @@ class NfcPeerChromeOS : public device::NfcPeer,
                         public NfcRecordClient::Observer {
  public:
   // NfcPeer overrides.
-  virtual void AddObserver(device::NfcPeer::Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(device::NfcPeer::Observer* observer) OVERRIDE;
-  virtual std::string GetIdentifier() const OVERRIDE;
-  virtual const device::NfcNdefMessage& GetNdefMessage() const OVERRIDE;
-  virtual void PushNdef(const device::NfcNdefMessage& message,
-                        const base::Closure& callback,
-                        const ErrorCallback& error_callback) OVERRIDE;
-  virtual void StartHandover(HandoverType handover_type,
-                             const base::Closure& callback,
-                             const ErrorCallback& error_callback) OVERRIDE;
+  void AddObserver(device::NfcPeer::Observer* observer) override;
+  void RemoveObserver(device::NfcPeer::Observer* observer) override;
+  std::string GetIdentifier() const override;
+  const device::NfcNdefMessage& GetNdefMessage() const override;
+  void PushNdef(const device::NfcNdefMessage& message,
+                const base::Closure& callback,
+                const ErrorCallback& error_callback) override;
+  void StartHandover(HandoverType handover_type,
+                     const base::Closure& callback,
+                     const ErrorCallback& error_callback) override;
 
  private:
   friend class NfcAdapterChromeOS;
@@ -39,13 +39,12 @@ class NfcPeerChromeOS : public device::NfcPeer,
   typedef std::map<dbus::ObjectPath, device::NfcNdefRecord*> NdefRecordMap;
 
   explicit NfcPeerChromeOS(const dbus::ObjectPath& object_path);
-  virtual ~NfcPeerChromeOS();
+  ~NfcPeerChromeOS() override;
 
   // NfcRecordClient::Observer overrides.
-  virtual void RecordAdded(const dbus::ObjectPath& object_path) OVERRIDE;
-  virtual void RecordRemoved(const dbus::ObjectPath& object_path) OVERRIDE;
-  virtual void RecordPropertiesReceived(
-      const dbus::ObjectPath& object_path) OVERRIDE;
+  void RecordAdded(const dbus::ObjectPath& object_path) override;
+  void RecordRemoved(const dbus::ObjectPath& object_path) override;
+  void RecordPropertiesReceived(const dbus::ObjectPath& object_path) override;
 
   // Called by dbus:: on completion of the D-Bus method call to push an NDEF.
   void OnPushNdef(const base::Closure& callback);

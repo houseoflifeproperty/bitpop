@@ -14,8 +14,6 @@
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "base/timer/timer.h"
-#include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/sync_file_system/conflict_resolution_policy.h"
 #include "chrome/browser/sync_file_system/file_status_observer.h"
 #include "chrome/browser/sync_file_system/remote_file_sync_service.h"
@@ -24,14 +22,18 @@
 #include "chrome/browser/sync_file_system/sync_service_state.h"
 #include "chrome/browser/sync_file_system/task_logger.h"
 #include "components/keyed_service/core/keyed_service.h"
+#include "components/sync_driver/sync_service_observer.h"
 #include "extensions/browser/extension_registry_observer.h"
 #include "url/gurl.h"
 
 class Profile;
-class ProfileSyncServiceBase;
 
 namespace storage {
 class FileSystemContext;
+}
+
+namespace sync_driver {
+class SyncService;
 }
 
 namespace sync_file_system {
@@ -44,7 +46,7 @@ class SyncEventObserver;
 class SyncFileSystemService
     : public KeyedService,
       public SyncProcessRunner::Client,
-      public ProfileSyncServiceObserver,
+      public sync_driver::SyncServiceObserver,
       public FileStatusObserver,
       public extensions::ExtensionRegistryObserver,
       public base::SupportsWeakPtr<SyncFileSystemService> {
@@ -54,7 +56,7 @@ class SyncFileSystemService
       ExtensionStatusMapCallback;
 
   // KeyedService implementation.
-  virtual void Shutdown() OVERRIDE;
+  void Shutdown() override;
 
   void InitializeForApp(storage::FileSystemContext* file_system_context,
                         const GURL& app_origin,
@@ -74,9 +76,9 @@ class SyncFileSystemService
   LocalChangeProcessor* GetLocalChangeProcessor(const GURL& origin);
 
   // SyncProcessRunner::Client implementations.
-  virtual void OnSyncIdle() OVERRIDE;
-  virtual SyncServiceState GetSyncServiceState() OVERRIDE;
-  virtual SyncFileSystemService* GetSyncService() OVERRIDE;
+  void OnSyncIdle() override;
+  SyncServiceState GetSyncServiceState() override;
+  SyncFileSystemService* GetSyncService() override;
 
   void OnPromotionCompleted(int* num_running_jobs);
   void CheckIfIdle();
@@ -94,7 +96,7 @@ class SyncFileSystemService
   friend class RemoteSyncRunner;
 
   explicit SyncFileSystemService(Profile* profile);
-  virtual ~SyncFileSystemService();
+  ~SyncFileSystemService() override;
 
   void Initialize(scoped_ptr<LocalFileSyncService> local_file_service,
                   scoped_ptr<RemoteFileSyncService> remote_file_service);
@@ -132,43 +134,37 @@ class SyncFileSystemService
                                    const std::string& description);
 
   // extensions::ExtensionRegistryObserver implementations.
-  virtual void OnExtensionInstalled(
+  void OnExtensionInstalled(content::BrowserContext* browser_context,
+                            const extensions::Extension* extension,
+                            bool is_update) override;
+  void OnExtensionUnloaded(
       content::BrowserContext* browser_context,
       const extensions::Extension* extension,
-      bool is_update) OVERRIDE;
-  virtual void OnExtensionUnloaded(
-      content::BrowserContext* browser_context,
-      const extensions::Extension* extension,
-      extensions::UnloadedExtensionInfo::Reason reason) OVERRIDE;
-  virtual void OnExtensionUninstalled(
-      content::BrowserContext* browser_context,
-      const extensions::Extension* extension,
-      extensions::UninstallReason reason) OVERRIDE;
-  virtual void OnExtensionLoaded(
-      content::BrowserContext* browser_context,
-      const extensions::Extension* extension) OVERRIDE;
+      extensions::UnloadedExtensionInfo::Reason reason) override;
+  void OnExtensionUninstalled(content::BrowserContext* browser_context,
+                              const extensions::Extension* extension,
+                              extensions::UninstallReason reason) override;
+  void OnExtensionLoaded(content::BrowserContext* browser_context,
+                         const extensions::Extension* extension) override;
 
-  // ProfileSyncServiceObserver implementation.
-  virtual void OnStateChanged() OVERRIDE;
+  // sync_driver::SyncServiceObserver implementation.
+  void OnStateChanged() override;
 
   // SyncFileStatusObserver implementation.
-  virtual void OnFileStatusChanged(const storage::FileSystemURL& url,
-                                   SyncFileStatus sync_status,
-                                   SyncAction action_taken,
-                                   SyncDirection direction) OVERRIDE;
+  void OnFileStatusChanged(const storage::FileSystemURL& url,
+                           SyncFileType file_type,
+                           SyncFileStatus sync_status,
+                           SyncAction action_taken,
+                           SyncDirection direction) override;
 
   // Check the profile's sync preference settings and call
   // remote_file_service_->SetSyncEnabled() to update the status.
   // |profile_sync_service| must be non-null.
-  void UpdateSyncEnabledStatus(ProfileSyncServiceBase* profile_sync_service);
+  void UpdateSyncEnabledStatus(sync_driver::SyncService* profile_sync_service);
 
   // Runs the SyncProcessRunner method of all sync runners (e.g. for Local sync
   // and Remote sync).
   void RunForEachSyncRunners(void(SyncProcessRunner::*method)());
-
-  // Returns the appropriate RemoteFileSyncService for the given origin/app.
-  // (crbug.com/324215)
-  RemoteFileSyncService* GetRemoteService(const GURL& origin);
 
   Profile* profile_;
 

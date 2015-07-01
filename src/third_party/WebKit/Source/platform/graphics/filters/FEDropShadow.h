@@ -22,14 +22,13 @@
 #define FEDropShadow_h
 
 #include "platform/graphics/Color.h"
-#include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/FilterEffect.h"
 
 namespace blink {
 
 class PLATFORM_EXPORT FEDropShadow : public FilterEffect {
 public:
-    static PassRefPtr<FEDropShadow> create(Filter*, float, float, float, float, const Color&, float);
+    static PassRefPtrWillBeRawPtr<FEDropShadow> create(Filter*, float, float, float, float, const Color&, float);
 
     float stdDeviationX() const { return m_stdX; }
     void setStdDeviationX(float stdX) { m_stdX = stdX; }
@@ -49,15 +48,13 @@ public:
     float shadowOpacity() const { return m_shadowOpacity; }
     void setShadowOpacity(float shadowOpacity) { m_shadowOpacity = shadowOpacity; }
 
-    virtual FloatRect mapRect(const FloatRect&, bool forward = true) OVERRIDE FINAL;
+    virtual FloatRect mapRect(const FloatRect&, bool forward = true) override final;
 
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
-    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const override;
+    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
 
 private:
     FEDropShadow(Filter*, float, float, float, float, const Color&, float);
-
-    virtual void applySoftware() OVERRIDE;
 
     float m_stdX;
     float m_stdY;

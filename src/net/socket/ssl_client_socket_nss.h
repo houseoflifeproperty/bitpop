@@ -17,15 +17,15 @@
 #include "base/synchronization/lock.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
-#include "base/timer/timer.h"
 #include "net/base/completion_callback.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_export.h"
-#include "net/base/net_log.h"
 #include "net/base/nss_memio.h"
+#include "net/cert/cert_verifier.h"
 #include "net/cert/cert_verify_result.h"
 #include "net/cert/ct_verify_result.h"
 #include "net/cert/x509_certificate.h"
+#include "net/log/net_log.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/ssl/channel_id_service.h"
 #include "net/ssl/ssl_config_service.h"
@@ -37,11 +37,11 @@ class SequencedTaskRunner;
 namespace net {
 
 class BoundNetLog;
+class CertPolicyEnforcer;
 class CertVerifier;
 class ChannelIDService;
 class CTVerifier;
 class ClientSocketHandle;
-class SingleRequestCertVerifier;
 class TransportSecurityState;
 class X509Certificate;
 
@@ -65,54 +65,55 @@ class SSLClientSocketNSS : public SSLClientSocket {
                      const HostPortPair& host_and_port,
                      const SSLConfig& ssl_config,
                      const SSLClientSocketContext& context);
-  virtual ~SSLClientSocketNSS();
+  ~SSLClientSocketNSS() override;
 
   // SSLClientSocket implementation.
-  virtual std::string GetSessionCacheKey() const OVERRIDE;
-  virtual bool InSessionCache() const OVERRIDE;
-  virtual void SetHandshakeCompletionCallback(
-      const base::Closure& callback) OVERRIDE;
-  virtual void GetSSLCertRequestInfo(
-      SSLCertRequestInfo* cert_request_info) OVERRIDE;
-  virtual NextProtoStatus GetNextProto(std::string* proto) OVERRIDE;
+  void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info) override;
+  NextProtoStatus GetNextProto(std::string* proto) const override;
 
   // SSLSocket implementation.
-  virtual int ExportKeyingMaterial(const base::StringPiece& label,
-                                   bool has_context,
-                                   const base::StringPiece& context,
-                                   unsigned char* out,
-                                   unsigned int outlen) OVERRIDE;
-  virtual int GetTLSUniqueChannelBinding(std::string* out) OVERRIDE;
+  int ExportKeyingMaterial(const base::StringPiece& label,
+                           bool has_context,
+                           const base::StringPiece& context,
+                           unsigned char* out,
+                           unsigned int outlen) override;
+  int GetTLSUniqueChannelBinding(std::string* out) override;
 
   // StreamSocket implementation.
-  virtual int Connect(const CompletionCallback& callback) OVERRIDE;
-  virtual void Disconnect() OVERRIDE;
-  virtual bool IsConnected() const OVERRIDE;
-  virtual bool IsConnectedAndIdle() const OVERRIDE;
-  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
-  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
-  virtual const BoundNetLog& NetLog() const OVERRIDE;
-  virtual void SetSubresourceSpeculation() OVERRIDE;
-  virtual void SetOmniboxSpeculation() OVERRIDE;
-  virtual bool WasEverUsed() const OVERRIDE;
-  virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
+  int Connect(const CompletionCallback& callback) override;
+  void Disconnect() override;
+  bool IsConnected() const override;
+  bool IsConnectedAndIdle() const override;
+  int GetPeerAddress(IPEndPoint* address) const override;
+  int GetLocalAddress(IPEndPoint* address) const override;
+  const BoundNetLog& NetLog() const override;
+  void SetSubresourceSpeculation() override;
+  void SetOmniboxSpeculation() override;
+  bool WasEverUsed() const override;
+  bool UsingTCPFastOpen() const override;
+  bool GetSSLInfo(SSLInfo* ssl_info) override;
+  void GetConnectionAttempts(ConnectionAttempts* out) const override;
+  void ClearConnectionAttempts() override {}
+  void AddConnectionAttempts(const ConnectionAttempts& attempts) override {}
 
   // Socket implementation.
-  virtual int Read(IOBuffer* buf,
-                   int buf_len,
-                   const CompletionCallback& callback) OVERRIDE;
-  virtual int Write(IOBuffer* buf,
-                    int buf_len,
-                    const CompletionCallback& callback) OVERRIDE;
-  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual int SetSendBufferSize(int32 size) OVERRIDE;
-  virtual ChannelIDService* GetChannelIDService() const OVERRIDE;
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override;
+  int Write(IOBuffer* buf,
+            int buf_len,
+            const CompletionCallback& callback) override;
+  int SetReceiveBufferSize(int32 size) override;
+  int SetSendBufferSize(int32 size) override;
+
+  // SSLClientSocket implementation.
+  ChannelIDService* GetChannelIDService() const override;
+  SSLFailureState GetSSLFailureState() const override;
 
  protected:
   // SSLClientSocket implementation.
-  virtual scoped_refptr<X509Certificate> GetUnverifiedServerCertificateChain()
-      const OVERRIDE;
+  scoped_refptr<X509Certificate> GetUnverifiedServerCertificateChain()
+      const override;
 
  private:
   // Helper class to handle marshalling any NSS interaction to and from the
@@ -147,8 +148,6 @@ class SSLClientSocketNSS : public SSLClientSocket {
 
   void VerifyCT();
 
-  void LogConnectionTypeMetrics() const;
-
   // The following methods are for debugging bug 65948. Will remove this code
   // after fixing bug 65948.
   void EnsureThreadIdAssigned() const;
@@ -174,7 +173,7 @@ class SSLClientSocketNSS : public SSLClientSocket {
   CertVerifyResult server_cert_verify_result_;
 
   CertVerifier* const cert_verifier_;
-  scoped_ptr<SingleRequestCertVerifier> verifier_;
+  scoped_ptr<CertVerifier::Request> cert_verifier_request_;
 
   // Certificate Transparency: Verifier and result holder.
   ct::CTVerifyResult ct_verify_result_;
@@ -203,6 +202,8 @@ class SSLClientSocketNSS : public SSLClientSocket {
   base::TimeTicks start_cert_verification_time_;
 
   TransportSecurityState* transport_security_state_;
+
+  CertPolicyEnforcer* const policy_enforcer_;
 
   // pinning_failure_log contains a message produced by
   // TransportSecurityState::CheckPublicKeyPins in the event of a

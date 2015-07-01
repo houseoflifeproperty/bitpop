@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_MAC_LIBDISPATCH_SEQUENCED_TASK_RUNNER_H_
-#define BASE_MAC_LIBDISPATCH_SEQUENCED_TASK_RUNNER_H_
+#ifndef BASE_MAC_LIBDISPATCH_TASK_RUNNER_H_
+#define BASE_MAC_LIBDISPATCH_TASK_RUNNER_H_
 
 #include <dispatch/dispatch.h>
 
@@ -38,16 +38,15 @@ class BASE_EXPORT LibDispatchTaskRunner : public base::SingleThreadTaskRunner {
   explicit LibDispatchTaskRunner(const char* name);
 
   // base::TaskRunner:
-  virtual bool PostDelayedTask(const tracked_objects::Location& from_here,
-                               const Closure& task,
-                               base::TimeDelta delay) OVERRIDE;
-  virtual bool RunsTasksOnCurrentThread() const OVERRIDE;
+  bool PostDelayedTask(const tracked_objects::Location& from_here,
+                       const Closure& task,
+                       base::TimeDelta delay) override;
+  bool RunsTasksOnCurrentThread() const override;
 
   // base::SequencedTaskRunner:
-  virtual bool PostNonNestableDelayedTask(
-      const tracked_objects::Location& from_here,
-      const Closure& task,
-      base::TimeDelta delay) OVERRIDE;
+  bool PostNonNestableDelayedTask(const tracked_objects::Location& from_here,
+                                  const Closure& task,
+                                  base::TimeDelta delay) override;
 
   // This blocks the calling thread until all work on the dispatch queue has
   // been run and the queue has been destroyed. Destroying a queue requires
@@ -64,7 +63,7 @@ class BASE_EXPORT LibDispatchTaskRunner : public base::SingleThreadTaskRunner {
   dispatch_queue_t GetDispatchQueue() const;
 
  protected:
-  virtual ~LibDispatchTaskRunner();
+  ~LibDispatchTaskRunner() override;
 
  private:
   static void Finalizer(void* context);
@@ -78,4 +77,4 @@ class BASE_EXPORT LibDispatchTaskRunner : public base::SingleThreadTaskRunner {
 }  // namespace mac
 }  // namespace base
 
-#endif  // BASE_MAC_LIBDISPATCH_SEQUENCED_TASK_RUNNER_H_
+#endif  // BASE_MAC_LIBDISPATCH_TASK_RUNNER_H_

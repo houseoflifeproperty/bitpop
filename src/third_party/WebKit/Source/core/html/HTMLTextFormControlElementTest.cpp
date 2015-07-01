@@ -16,11 +16,11 @@
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTextAreaElement.h"
+#include "core/layout/LayoutTreeAsText.h"
 #include "core/loader/EmptyClients.h"
 #include "core/page/SpellCheckerClient.h"
-#include "core/rendering/RenderTreeAsText.h"
 #include "core/testing/DummyPageHolder.h"
-#include "core/testing/UnitTestHelpers.h"
+#include "platform/testing/UnitTestHelpers.h"
 #include "wtf/OwnPtr.h"
 #include <gtest/gtest.h>
 
@@ -30,7 +30,7 @@ namespace {
 
 class HTMLTextFormControlElementTest : public ::testing::Test {
 protected:
-    virtual void SetUp() OVERRIDE;
+    virtual void SetUp() override;
 
     DummyPageHolder& page() const { return *m_dummyPageHolder; }
     HTMLDocument& document() const { return *m_document; }
@@ -53,17 +53,17 @@ class DummyTextCheckerClient : public EmptyTextCheckerClient {
 public:
     ~DummyTextCheckerClient() { }
 
-    virtual bool shouldEraseMarkersAfterChangeSelection(TextCheckingType) const OVERRIDE { return false; }
+    virtual bool shouldEraseMarkersAfterChangeSelection(TextCheckingType) const override { return false; }
 };
 
 class DummySpellCheckerClient : public EmptySpellCheckerClient {
 public:
     virtual ~DummySpellCheckerClient() { }
 
-    virtual bool isContinuousSpellCheckingEnabled() OVERRIDE { return true; }
-    virtual bool isGrammarCheckingEnabled() OVERRIDE { return true; }
+    virtual bool isContinuousSpellCheckingEnabled() override { return true; }
+    virtual bool isGrammarCheckingEnabled() override { return true; }
 
-    virtual TextCheckerClient& textChecker() OVERRIDE { return m_dummyTextCheckerClient; }
+    virtual TextCheckerClient& textChecker() override { return m_dummyTextCheckerClient; }
 
 private:
     DummyTextCheckerClient m_dummyTextCheckerClient;
@@ -79,7 +79,7 @@ void HTMLTextFormControlElementTest::SetUp()
 
     m_document = toHTMLDocument(&m_dummyPageHolder->document());
     m_document->documentElement()->setInnerHTML("<body><textarea id=textarea></textarea><input id=input /></body>", ASSERT_NO_EXCEPTION);
-    m_document->view()->updateLayoutAndStyleIfNeededRecursive();
+    m_document->view()->updateLayoutAndStyleForPainting();
     m_textControl = toHTMLTextFormControlElement(m_document->getElementById("textarea"));
     m_textControl->focus();
     m_input = toHTMLInputElement(m_document->getElementById("input"));
@@ -115,21 +115,21 @@ TEST_F(HTMLTextFormControlElementTest, SetSelectionRangeDoesNotCauseLayout)
     input().setSelectionRange(1, 1);
     FrameSelection& frameSelection = document().frame()->selection();
     forceLayoutFlag();
-    LayoutRect oldCaretRect = frameSelection.absoluteCaretBounds();
+    LayoutRect oldCaretRect(frameSelection.absoluteCaretBounds());
     EXPECT_FALSE(oldCaretRect.isEmpty());
     int startLayoutCount = layoutCount();
     input().setSelectionRange(1, 1);
     EXPECT_EQ(startLayoutCount, layoutCount());
-    LayoutRect newCaretRect = frameSelection.absoluteCaretBounds();
+    LayoutRect newCaretRect(frameSelection.absoluteCaretBounds());
     EXPECT_EQ(oldCaretRect, newCaretRect);
 
     forceLayoutFlag();
-    oldCaretRect = frameSelection.absoluteCaretBounds();
+    oldCaretRect = LayoutRect(frameSelection.absoluteCaretBounds());
     EXPECT_FALSE(oldCaretRect.isEmpty());
     startLayoutCount = layoutCount();
     input().setSelectionRange(2, 2);
     EXPECT_EQ(startLayoutCount, layoutCount());
-    newCaretRect = frameSelection.absoluteCaretBounds();
+    newCaretRect = LayoutRect(frameSelection.absoluteCaretBounds());
     EXPECT_NE(oldCaretRect, newCaretRect);
 }
 

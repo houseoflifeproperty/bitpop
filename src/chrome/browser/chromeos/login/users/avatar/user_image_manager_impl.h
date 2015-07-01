@@ -46,25 +46,25 @@ class UserImageManagerImpl
   // UserImageManager:
   UserImageManagerImpl(const std::string& user_id,
                        user_manager::UserManager* user_manager);
-  virtual ~UserImageManagerImpl();
+  ~UserImageManagerImpl() override;
 
-  virtual void LoadUserImage() OVERRIDE;
-  virtual void UserLoggedIn(bool user_is_new, bool user_is_local) OVERRIDE;
-  virtual void SaveUserDefaultImageIndex(int default_image_index) OVERRIDE;
-  virtual void SaveUserImage(
-      const user_manager::UserImage& user_image) OVERRIDE;
-  virtual void SaveUserImageFromFile(const base::FilePath& path) OVERRIDE;
-  virtual void SaveUserImageFromProfileImage() OVERRIDE;
-  virtual void DeleteUserImage() OVERRIDE;
-  virtual void DownloadProfileImage(const std::string& reason) OVERRIDE;
-  virtual const gfx::ImageSkia& DownloadedProfileImage() const OVERRIDE;
-  virtual UserImageSyncObserver* GetSyncObserver() const OVERRIDE;
-  virtual void Shutdown() OVERRIDE;
+  void LoadUserImage() override;
+  void UserLoggedIn(bool user_is_new, bool user_is_local) override;
+  void UserProfileCreated() override;
+  void SaveUserDefaultImageIndex(int default_image_index) override;
+  void SaveUserImage(const user_manager::UserImage& user_image) override;
+  void SaveUserImageFromFile(const base::FilePath& path) override;
+  void SaveUserImageFromProfileImage() override;
+  void DeleteUserImage() override;
+  void DownloadProfileImage(const std::string& reason) override;
+  const gfx::ImageSkia& DownloadedProfileImage() const override;
+  UserImageSyncObserver* GetSyncObserver() const override;
+  void Shutdown() override;
 
-  virtual void OnExternalDataSet(const std::string& policy) OVERRIDE;
-  virtual void OnExternalDataCleared(const std::string& policy) OVERRIDE;
-  virtual void OnExternalDataFetched(const std::string& policy,
-                                     scoped_ptr<std::string> data) OVERRIDE;
+  void OnExternalDataSet(const std::string& policy) override;
+  void OnExternalDataCleared(const std::string& policy) override;
+  void OnExternalDataFetched(const std::string& policy,
+                             scoped_ptr<std::string> data) override;
 
   static void IgnoreProfileDataDownloadDelayForTesting();
 
@@ -85,14 +85,14 @@ class UserImageManagerImpl
   class Job;
 
   // ProfileDownloaderDelegate:
-  virtual bool NeedsProfilePicture() const OVERRIDE;
-  virtual int GetDesiredImageSideLength() const OVERRIDE;
-  virtual Profile* GetBrowserProfile() OVERRIDE;
-  virtual std::string GetCachedPictureURL() const OVERRIDE;
-  virtual void OnProfileDownloadSuccess(ProfileDownloader* downloader) OVERRIDE;
-  virtual void OnProfileDownloadFailure(
+  bool NeedsProfilePicture() const override;
+  int GetDesiredImageSideLength() const override;
+  Profile* GetBrowserProfile() override;
+  std::string GetCachedPictureURL() const override;
+  void OnProfileDownloadSuccess(ProfileDownloader* downloader) override;
+  void OnProfileDownloadFailure(
       ProfileDownloader* downloader,
-      ProfileDownloaderDelegate::FailureReason reason) OVERRIDE;
+      ProfileDownloaderDelegate::FailureReason reason) override;
 
   // Returns true if the user image for the user is managed by
   // policy and the user is not allowed to change it.
@@ -149,8 +149,8 @@ class UserImageManagerImpl
   // Returns mutable version of user with |user_id_|.
   user_manager::User* GetUserAndModify() const;
 
-  // Returns true if user with |user_id_| is logged in and a regular user.
-  bool IsUserLoggedInAndRegular() const;
+  // Returns true if user with |user_id_| is logged in and has gaia account.
+  bool IsUserLoggedInAndHasGaiaAccount() const;
 
   // The user manager.
   user_manager::UserManager* user_manager_;

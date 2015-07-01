@@ -8,7 +8,7 @@
 #include "base/files/file_path.h"
 #include "base/native_library.h"
 #include "build/build_config.h"
-#include "content/child/child_thread.h"
+#include "content/child/child_thread_impl.h"
 #include "content/child/npapi/plugin_lib.h"
 #include "content/plugin/plugin_channel.h"
 
@@ -22,11 +22,11 @@ class BlinkPlatformImpl;
 // The PluginThread class represents a background thread where plugin instances
 // live.  Communication occurs between WebPluginDelegateProxy in the renderer
 // process and WebPluginDelegateStub in this thread through IPC messages.
-class PluginThread : public ChildThread {
+class PluginThread : public ChildThreadImpl {
  public:
   PluginThread();
-  virtual ~PluginThread();
-  virtual void Shutdown() OVERRIDE;
+  ~PluginThread() override;
+  void Shutdown() override;
 
   // Returns the one plugin thread.
   static PluginThread* current();
@@ -36,7 +36,7 @@ class PluginThread : public ChildThread {
   void SetForcefullyTerminatePluginProcess();
 
  private:
-  virtual bool OnControlMessageReceived(const IPC::Message& msg) OVERRIDE;
+  bool OnControlMessageReceived(const IPC::Message& msg) override;
 
   // Callback for when a channel has been created.
   void OnCreateChannel(int renderer_id, bool incognito);
@@ -52,7 +52,7 @@ class PluginThread : public ChildThread {
 
   bool forcefully_terminate_plugin_process_;
 
-  scoped_ptr<BlinkPlatformImpl> webkit_platform_support_;
+  scoped_ptr<BlinkPlatformImpl> blink_platform_impl_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginThread);
 };

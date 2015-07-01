@@ -17,9 +17,10 @@
 #include "net/url_request/url_request.h"
 
 namespace net {
-class GrowableIOBuffer;
+class IOBufferWithSize;
 class HttpResponseHeaders;
 class UploadDataStream;
+struct RedirectInfo;
 }  // namespace net
 
 namespace cronet {
@@ -35,7 +36,7 @@ class URLRequestAdapter : public net::URLRequest::Delegate {
       : public base::RefCountedThreadSafe<URLRequestAdapterDelegate> {
    public:
     virtual void OnResponseStarted(URLRequestAdapter* request) = 0;
-    virtual void OnBytesRead(URLRequestAdapter* request) = 0;
+    virtual void OnBytesRead(URLRequestAdapter* request, int bytes_read) = 0;
     virtual void OnRequestFinished(URLRequestAdapter* request) = 0;
     virtual int ReadFromUploadChannel(net::IOBuffer* buf, int buf_length) = 0;
 
@@ -48,7 +49,7 @@ class URLRequestAdapter : public net::URLRequest::Delegate {
                     URLRequestAdapterDelegate* delegate,
                     GURL url,
                     net::RequestPriority priority);
-  virtual ~URLRequestAdapter();
+  ~URLRequestAdapter() override;
 
   // Sets the request method GET, POST etc
   void SetMethod(const std::string& method);
@@ -61,6 +62,9 @@ class URLRequestAdapter : public net::URLRequest::Delegate {
 
   // Sets the request to streaming upload.
   void SetUploadChannel(JNIEnv* env, int64 content_length);
+
+  // Disables redirect. Note that redirect is enabled by default.
+  void DisableRedirects();
 
   // Indicates that the request body will be streamed by calling AppendChunk()
   // repeatedly. This must be called before Start().
@@ -91,6 +95,11 @@ class URLRequestAdapter : public net::URLRequest::Delegate {
     return http_status_code_;
   };
 
+  // Returns the HTTP status text of the normalized status line.
+  const std::string& http_status_text() const {
+    return http_status_text_;
+  }
+
   // Returns the value of the content-length response header.
   int64 content_length() const { return expected_size_; }
 
@@ -103,19 +112,23 @@ class URLRequestAdapter : public net::URLRequest::Delegate {
   // Get all response headers, as a HttpResponseHeaders object.
   net::HttpResponseHeaders* GetResponseHeaders() const;
 
-  // Returns the overall number of bytes read.
-  size_t bytes_read() const { return bytes_read_; }
-
   // Returns a pointer to the downloaded data.
   unsigned char* Data() const;
 
   // Get NPN or ALPN Negotiated Protocol (if any) from HttpResponseInfo.
   std::string GetNegotiatedProtocol() const;
 
-  virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE;
+  // Returns whether the response is serviced from cache.
+  bool GetWasCached() const;
 
-  virtual void OnReadCompleted(net::URLRequest* request,
-                               int bytes_read) OVERRIDE;
+  // net::URLRequest::Delegate implementation:
+  void OnResponseStarted(net::URLRequest* request) override;
+  void OnReadCompleted(net::URLRequest* request, int bytes_read) override;
+  void OnReceivedRedirect(net::URLRequest* request,
+                          const net::RedirectInfo& redirect_info,
+                          bool* defer_redirect) override;
+
+  bool OnNetworkThread() const;
 
  private:
   static void OnDestroyRequest(URLRequestAdapter* self);
@@ -125,12 +138,14 @@ class URLRequestAdapter : public net::URLRequest::Delegate {
   void OnRequestSucceeded();
   void OnRequestFailed();
   void OnRequestCompleted();
-  void OnRequestCanceled();
-  void OnBytesRead(int bytes_read);
   void OnAppendChunk(const scoped_ptr<char[]> bytes, int bytes_len,
                      bool is_last_chunk);
 
   void Read();
+
+  // Handles synchronous or asynchronous read result, calls |delegate_| with
+  // bytes read and returns true unless request has succeeded or failed.
+  bool HandleReadResult(int bytes_read);
 
   URLRequestContextAdapter* context_;
   scoped_refptr<URLRequestAdapterDelegate> delegate_;
@@ -140,15 +155,17 @@ class URLRequestAdapter : public net::URLRequest::Delegate {
   net::HttpRequestHeaders headers_;
   scoped_ptr<net::URLRequest> url_request_;
   scoped_ptr<net::UploadDataStream> upload_data_stream_;
-  scoped_refptr<net::GrowableIOBuffer> read_buffer_;
-  int bytes_read_;
+  scoped_refptr<net::IOBufferWithSize> read_buffer_;
   int total_bytes_read_;
   int error_code_;
   int http_status_code_;
+  std::string http_status_text_;
   std::string content_type_;
   bool canceled_;
   int64 expected_size_;
   bool chunked_upload_;
+  // Indicates whether redirect has been disabled.
+  bool disable_redirect_;
 
   DISALLOW_COPY_AND_ASSIGN(URLRequestAdapter);
 };

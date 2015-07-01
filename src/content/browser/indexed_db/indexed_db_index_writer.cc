@@ -131,16 +131,13 @@ bool MakeIndexWriters(
     bool* completed) {
   *completed = false;
 
-  for (std::vector<IndexedDBDatabase::IndexKeys>::const_iterator it =
-           index_keys.begin();
-       it != index_keys.end();
-       ++it) {
+  for (const auto& it : index_keys) {
     IndexedDBObjectStoreMetadata::IndexMap::const_iterator found =
-        object_store.indexes.find(it->first);
+        object_store.indexes.find(it.first);
     if (found == object_store.indexes.end())
       continue;
     const IndexedDBIndexMetadata& index = found->second;
-    IndexedDBDatabase::IndexKeys keys = *it;
+    IndexedDBDatabase::IndexKeys keys = it;
 
     // If the object_store is using auto_increment, then any indexes with an
     // identical key_path need to also use the primary (generated) key as a key.
@@ -163,7 +160,7 @@ bool MakeIndexWriters(
     if (!can_add_keys)
       return true;
 
-    index_writers->push_back(index_writer.release());
+    index_writers->push_back(index_writer.Pass());
   }
 
   *completed = true;

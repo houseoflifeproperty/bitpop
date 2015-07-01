@@ -103,9 +103,9 @@ bool Base64UrlEncode(const std::string& value, std::string* encoded) {
 class ComponentCloudPolicyTest : public ExtensionBrowserTest {
  protected:
   ComponentCloudPolicyTest() {}
-  virtual ~ComponentCloudPolicyTest() {}
+  ~ComponentCloudPolicyTest() override {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     ExtensionBrowserTest::SetUpCommandLine(command_line);
 #if defined(OS_CHROMEOS)
     // ExtensionBrowserTest sets the login users to a non-managed value;
@@ -116,20 +116,20 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
 #endif
   }
 
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  void SetUpInProcessBrowserTestFixture() override {
     test_server_.RegisterClient(kDMToken, kDeviceID);
     EXPECT_TRUE(test_server_.UpdatePolicyData(
         dm_protocol::kChromeExtensionPolicyType, kTestExtension, kTestPolicy));
     ASSERT_TRUE(test_server_.Start());
 
     std::string url = test_server_.GetServiceURL().spec();
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
     command_line->AppendSwitchASCII(switches::kDeviceManagementUrl, url);
 
     ExtensionBrowserTest::SetUpInProcessBrowserTestFixture();
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     ASSERT_TRUE(PolicyServiceIsEmpty(g_browser_process->policy_service()))
         << "Pre-existing policies in this machine will make this test fail.";
 
@@ -182,7 +182,7 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
     SigninManager* signin_manager =
         SigninManagerFactory::GetForProfile(browser()->profile());
     ASSERT_TRUE(signin_manager);
-    signin_manager->SetAuthenticatedUsername("user@example.com");
+    signin_manager->SetAuthenticatedAccountInfo("12345", "user@example.com");
 
     UserCloudPolicyManager* policy_manager =
         UserCloudPolicyManagerFactory::GetForBrowserContext(
@@ -220,7 +220,8 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
 
   void RefreshPolicies() {
     ProfilePolicyConnector* profile_connector =
-        ProfilePolicyConnectorFactory::GetForProfile(browser()->profile());
+        ProfilePolicyConnectorFactory::GetForBrowserContext(
+            browser()->profile());
     PolicyService* policy_service = profile_connector->policy_service();
     base::RunLoop run_loop;
     policy_service->RefreshPolicies(run_loop.QuitClosure());

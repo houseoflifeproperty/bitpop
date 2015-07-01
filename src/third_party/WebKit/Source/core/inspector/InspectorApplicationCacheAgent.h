@@ -36,35 +36,33 @@ namespace blink {
 class LocalFrame;
 class InspectorFrontend;
 class InspectorPageAgent;
-class InstrumentingAgents;
 
 typedef String ErrorString;
 
-class InspectorApplicationCacheAgent FINAL : public InspectorBaseAgent<InspectorApplicationCacheAgent>, public InspectorBackendDispatcher::ApplicationCacheCommandHandler {
+class InspectorApplicationCacheAgent final : public InspectorBaseAgent<InspectorApplicationCacheAgent, InspectorFrontend::ApplicationCache>, public InspectorBackendDispatcher::ApplicationCacheCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorApplicationCacheAgent);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InspectorApplicationCacheAgent);
 public:
     static PassOwnPtrWillBeRawPtr<InspectorApplicationCacheAgent> create(InspectorPageAgent* pageAgent)
     {
         return adoptPtrWillBeNoop(new InspectorApplicationCacheAgent(pageAgent));
     }
     virtual ~InspectorApplicationCacheAgent() { }
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
     // InspectorBaseAgent
-    virtual void setFrontend(InspectorFrontend*) OVERRIDE;
-    virtual void clearFrontend() OVERRIDE;
-    virtual void restore() OVERRIDE;
+    void restore() override;
+    void disable(ErrorString*) override;
 
     // InspectorInstrumentation API
     void updateApplicationCacheStatus(LocalFrame*);
-    void networkStateChanged(bool online);
+    void networkStateChanged(LocalFrame*, bool online);
 
     // ApplicationCache API for InspectorFrontend
-    virtual void enable(ErrorString*) OVERRIDE;
-    virtual void getFramesWithManifests(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::ApplicationCache::FrameWithManifest> >& result) OVERRIDE;
-    virtual void getManifestForFrame(ErrorString*, const String& frameId, String* manifestURL) OVERRIDE;
-    virtual void getApplicationCacheForFrame(ErrorString*, const String& frameId, RefPtr<TypeBuilder::ApplicationCache::ApplicationCache>&) OVERRIDE;
+    virtual void enable(ErrorString*) override;
+    virtual void getFramesWithManifests(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::ApplicationCache::FrameWithManifest> >& result) override;
+    virtual void getManifestForFrame(ErrorString*, const String& frameId, String* manifestURL) override;
+    virtual void getApplicationCacheForFrame(ErrorString*, const String& frameId, RefPtr<TypeBuilder::ApplicationCache::ApplicationCache>&) override;
 
 private:
     InspectorApplicationCacheAgent(InspectorPageAgent*);
@@ -75,7 +73,6 @@ private:
     DocumentLoader* assertFrameWithDocumentLoader(ErrorString*, String frameId);
 
     RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
-    InspectorFrontend::ApplicationCache* m_frontend;
 };
 
 } // namespace blink

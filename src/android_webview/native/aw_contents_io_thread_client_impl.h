@@ -42,26 +42,29 @@ class AwContentsIoThreadClientImpl : public AwContentsIoThreadClient {
   // Java object.
   AwContentsIoThreadClientImpl(bool pending_associate,
                                const base::android::JavaRef<jobject>& jclient);
-  virtual ~AwContentsIoThreadClientImpl() OVERRIDE;
+  ~AwContentsIoThreadClientImpl() override;
 
   // Implementation of AwContentsIoThreadClient.
-  virtual bool PendingAssociation() const OVERRIDE;
-  virtual CacheMode GetCacheMode() const OVERRIDE;
-  virtual scoped_ptr<AwWebResourceResponse> ShouldInterceptRequest(
-      const GURL& location,
-      const net::URLRequest* request) OVERRIDE;
-  virtual bool ShouldBlockContentUrls() const OVERRIDE;
-  virtual bool ShouldBlockFileUrls() const OVERRIDE;
-  virtual bool ShouldAcceptThirdPartyCookies() const OVERRIDE;
-  virtual bool ShouldBlockNetworkLoads() const OVERRIDE;
-  virtual void NewDownload(const GURL& url,
-                           const std::string& user_agent,
-                           const std::string& content_disposition,
-                           const std::string& mime_type,
-                           int64 content_length) OVERRIDE;
-  virtual void NewLoginRequest(const std::string& realm,
-                               const std::string& account,
-                               const std::string& args) OVERRIDE;
+  bool PendingAssociation() const override;
+  CacheMode GetCacheMode() const override;
+  scoped_ptr<AwWebResourceResponse> ShouldInterceptRequest(
+      const net::URLRequest* request) override;
+  bool ShouldBlockContentUrls() const override;
+  bool ShouldBlockFileUrls() const override;
+  bool ShouldAcceptThirdPartyCookies() const override;
+  bool ShouldBlockNetworkLoads() const override;
+  void NewDownload(const GURL& url,
+                   const std::string& user_agent,
+                   const std::string& content_disposition,
+                   const std::string& mime_type,
+                   int64 content_length) override;
+  void NewLoginRequest(const std::string& realm,
+                       const std::string& account,
+                       const std::string& args) override;
+  void OnReceivedError(const net::URLRequest* request) override;
+  void OnReceivedHttpError(
+      const net::URLRequest* request,
+      const net::HttpResponseHeaders* response_headers) override;
 
  private:
   bool pending_association_;

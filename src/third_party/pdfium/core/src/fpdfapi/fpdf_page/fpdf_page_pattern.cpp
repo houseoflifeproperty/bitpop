@@ -55,7 +55,7 @@ FX_BOOL CPDF_TilingPattern::Load()
         return FALSE;
     }
     CPDF_Stream* pStream = (CPDF_Stream*)m_pPatternObj;
-    m_pForm = FX_NEW CPDF_Form(m_pDocument, NULL, pStream);
+    m_pForm = new CPDF_Form(m_pDocument, NULL, pStream);
     m_pForm->ParseContent(NULL, &m_ParentMatrix, NULL, NULL);
     m_BBox = pDict->GetRect(FX_BSTRC("BBox"));
     return TRUE;
@@ -266,7 +266,7 @@ CFX_FloatRect _GetShadingBBox(CPDF_Stream* pStream, int type, const CFX_AffineMa
     int full_point_count = type == 7 ? 16 : (type == 6 ? 12 : 1);
     int full_color_count = (type == 6 || type == 7) ? 4 : 1;
     while (!stream.m_BitStream.IsEOF()) {
-        FX_DWORD flag;
+        FX_DWORD flag = 0;
         if (type != 5) {
             flag = stream.GetFlag();
         }

@@ -14,15 +14,18 @@
 
 namespace extensions {
 
+// Extension ids for the chromecast.
+extern const char* const kChromecastExtensionIds[6];
+
 class TabCaptureCaptureFunction : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("tabCapture.capture", TABCAPTURE_CAPTURE)
 
  protected:
-  virtual ~TabCaptureCaptureFunction() {}
+  ~TabCaptureCaptureFunction() override {}
 
   // ExtensionFunction:
-  virtual bool RunSync() OVERRIDE;
+  bool RunSync() override;
 };
 
 class TabCaptureGetCapturedTabsFunction : public ChromeSyncExtensionFunction {
@@ -31,10 +34,10 @@ class TabCaptureGetCapturedTabsFunction : public ChromeSyncExtensionFunction {
                              TABCAPTURE_GETCAPTUREDTABS)
 
  protected:
-  virtual ~TabCaptureGetCapturedTabsFunction() {}
+  ~TabCaptureGetCapturedTabsFunction() override {}
 
   // ExtensionFunction:
-  virtual bool RunSync() OVERRIDE;
+  bool RunSync() override;
 };
 
 }  // namespace extensions

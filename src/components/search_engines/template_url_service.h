@@ -16,6 +16,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/prefs/pref_change_registrar.h"
+#include "base/time/clock.h"
 #include "components/google/core/browser/google_url_tracker.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/search_engines/default_search_manager.h"
@@ -69,8 +70,6 @@ class TemplateURLService : public WebDataServiceConsumer,
  public:
   typedef std::map<std::string, std::string> QueryTerms;
   typedef std::vector<TemplateURL*> TemplateURLVector;
-  // Type for a static function pointer that acts as a time source.
-  typedef base::Time(TimeProvider)();
   typedef std::map<std::string, syncer::SyncData> SyncDataMap;
   typedef base::CallbackList<void(void)>::Subscription Subscription;
 
@@ -97,27 +96,11 @@ class TemplateURLService : public WebDataServiceConsumer,
       const base::Closure& dsp_change_callback);
   // The following is for testing.
   TemplateURLService(const Initializer* initializers, const int count);
-  virtual ~TemplateURLService();
-
-  // Creates a TemplateURLData that was previously saved to |prefs| via
-  // SaveDefaultSearchProviderToPrefs or set via policy.
-  // Returns true if successful, false otherwise.
-  // If the user or the policy has opted for no default search, this
-  // returns true but default_provider is set to NULL.
-  // |*is_managed| specifies whether the default is managed via policy.
-  static bool LoadDefaultSearchProviderFromPrefs(
-      PrefService* prefs,
-      scoped_ptr<TemplateURLData>* default_provider_data,
-      bool* is_managed);
+  ~TemplateURLService() override;
 
   // Removes any unnecessary characters from a user input keyword.
   // This removes the leading scheme, "www." and any trailing slash.
   static base::string16 CleanUserInputKeyword(const base::string16& keyword);
-
-  // Saves enough of url to |prefs| so that it can be loaded from preferences on
-  // start up.
-  static void SaveDefaultSearchProviderToPrefs(const TemplateURL* url,
-                                               PrefService* prefs);
 
   // Returns true if there is no TemplateURL that conflicts with the
   // keyword/url pair, or there is one but it can be replaced. If there is an
@@ -290,9 +273,8 @@ class TemplateURLService : public WebDataServiceConsumer,
   // Notification that the keywords have been loaded.
   // This is invoked from WebDataService, and should not be directly
   // invoked.
-  virtual void OnWebDataServiceRequestDone(
-      KeywordWebDataService::Handle h,
-      const WDTypedResult* result) OVERRIDE;
+  void OnWebDataServiceRequestDone(KeywordWebDataService::Handle h,
+                                   const WDTypedResult* result) override;
 
   // Returns the locale-direction-adjusted short name for the given keyword.
   // Also sets the out param to indicate whether the keyword belongs to an
@@ -304,29 +286,28 @@ class TemplateURLService : public WebDataServiceConsumer,
   void OnHistoryURLVisited(const URLVisitedDetails& details);
 
   // KeyedService implementation.
-  virtual void Shutdown() OVERRIDE;
+  void Shutdown() override;
 
   // syncer::SyncableService implementation.
 
   // Returns all syncable TemplateURLs from this model as SyncData. This should
   // include every search engine and no Extension keywords.
-  virtual syncer::SyncDataList GetAllSyncData(
-      syncer::ModelType type) const OVERRIDE;
+  syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const override;
   // Process new search engine changes from Sync, merging them into our local
   // data. This may send notifications if local search engines are added,
   // updated or removed.
-  virtual syncer::SyncError ProcessSyncChanges(
+  syncer::SyncError ProcessSyncChanges(
       const tracked_objects::Location& from_here,
-      const syncer::SyncChangeList& change_list) OVERRIDE;
+      const syncer::SyncChangeList& change_list) override;
   // Merge initial search engine data from Sync and push any local changes up
   // to Sync. This may send notifications if local search engines are added,
   // updated or removed.
-  virtual syncer::SyncMergeResult MergeDataAndStartSyncing(
+  syncer::SyncMergeResult MergeDataAndStartSyncing(
       syncer::ModelType type,
       const syncer::SyncDataList& initial_sync_data,
       scoped_ptr<syncer::SyncChangeProcessor> sync_processor,
-      scoped_ptr<syncer::SyncErrorFactory> sync_error_factory) OVERRIDE;
-  virtual void StopSyncing(syncer::ModelType type) OVERRIDE;
+      scoped_ptr<syncer::SyncErrorFactory> sync_error_factory) override;
+  void StopSyncing(syncer::ModelType type) override;
 
   // Processes a local TemplateURL change for Sync. |turl| is the TemplateURL
   // that has been modified, and |type| is the Sync ChangeType that took place.
@@ -355,7 +336,8 @@ class TemplateURLService : public WebDataServiceConsumer,
   // data, an appropriate SyncChange is added to |change_list|.  If the sync
   // data is bad for some reason, an ACTION_DELETE change is added and the
   // function returns NULL.
-  static TemplateURL* CreateTemplateURLFromTemplateURLAndSyncData(
+  static scoped_ptr<TemplateURL> CreateTemplateURLFromTemplateURLAndSyncData(
+      TemplateURLServiceClient* client,
       PrefService* prefs,
       const SearchTermsData& search_terms_data,
       TemplateURL* existing_turl,
@@ -367,11 +349,7 @@ class TemplateURLService : public WebDataServiceConsumer,
       const syncer::SyncDataList& sync_data);
 
 #if defined(UNIT_TEST)
-  // Sets a different time provider function, such as
-  // base::MockTimeProvider::StaticNow, for testing calls to base::Time::Now.
-  void set_time_provider(TimeProvider* time_provider) {
-    time_provider_ = time_provider;
-  }
+  void set_clock(scoped_ptr<base::Clock> clock) { clock_ = clock.Pass(); }
 #endif
 
  private:
@@ -382,6 +360,7 @@ class TemplateURLService : public WebDataServiceConsumer,
                            DontUpdateKeywordSearchForNonReplaceable);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceTest, ChangeGoogleBaseValue);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceTest, MergeDeletesUnusedProviders);
+  FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceTest, AddExtensionKeyword);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest, UniquifyKeyword);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest,
                            IsLocalTemplateURLBetter);
@@ -706,8 +685,8 @@ class TemplateURLService : public WebDataServiceConsumer,
   // increasing integer that is initialized from the database.
   TemplateURLID next_id_;
 
-  // Function returning current time in base::Time units.
-  TimeProvider* time_provider_;
+  // Used to retrieve the current time, in base::Time units.
+  scoped_ptr<base::Clock> clock_;
 
   // Do we have an active association between the TemplateURLs and sync models?
   // Set in MergeDataAndStartSyncing, reset in StopSyncing. While this is not

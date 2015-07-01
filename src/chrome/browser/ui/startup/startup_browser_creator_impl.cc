@@ -18,7 +18,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/statistics_recorder.h"
-#include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -61,6 +60,7 @@
 #include "chrome/browser/ui/browser_tabrestore.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/extensions/app_launch_params.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/startup/autolaunch_prompt.h"
@@ -68,19 +68,17 @@
 #include "chrome/browser/ui/startup/default_browser_prompt.h"
 #include "chrome/browser/ui/startup/google_api_keys_infobar_delegate.h"
 #include "chrome/browser/ui/startup/obsolete_system_infobar_delegate.h"
-#include "chrome/browser/ui/startup/session_crashed_bubble.h"
 #include "chrome/browser/ui/startup/session_crashed_infobar_delegate.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/browser/ui/tabs/pinned_tab_codec.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/pref_names.h"
+#include "chrome/common/extensions/extension_metrics.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/locale_settings.h"
 #include "chrome/installer/util/browser_distribution.h"
@@ -151,7 +149,7 @@ LaunchMode GetLaunchShortcutKind() {
     std::string appdata_path;
     env->GetVar("USERPROFILE", &appdata_path);
     if (!appdata_path.empty() &&
-        shortcut.find(base::ASCIIToWide(appdata_path)) != std::wstring::npos)
+        shortcut.find(base::ASCIIToUTF16(appdata_path)) != base::string16::npos)
       return LM_SHORTCUT_DESKTOP;
     return LM_SHORTCUT_UNKNOWN;
   }
@@ -204,9 +202,9 @@ bool GetAppLaunchContainer(
   extensions::LaunchContainer launch_container = extensions::GetLaunchContainer(
       extensions::ExtensionPrefs::Get(profile), extension);
 
-  if (!extensions::util::IsStreamlinedHostedAppsEnabled() &&
+  if (!extensions::util::IsNewBookmarkAppsEnabled() &&
       !extensions::HasPreferredLaunchContainer(
-           extensions::ExtensionPrefs::Get(profile), extension)) {
+          extensions::ExtensionPrefs::Get(profile), extension)) {
     launch_container = extensions::LAUNCH_CONTAINER_WINDOW;
   }
 
@@ -216,9 +214,8 @@ bool GetAppLaunchContainer(
 }
 
 void RecordCmdLineAppHistogram(extensions::Manifest::Type app_type) {
-  CoreAppLauncherHandler::RecordAppLaunchType(
-      extension_misc::APP_LAUNCH_CMD_LINE_APP,
-      app_type);
+  extensions::RecordAppLaunchType(extension_misc::APP_LAUNCH_CMD_LINE_APP,
+                                  app_type);
 }
 
 void RecordAppLaunches(Profile* profile,
@@ -230,18 +227,16 @@ void RecordAppLaunches(Profile* profile,
     const extensions::Extension* extension =
         extensions.GetAppByURL(cmd_line_urls.at(i));
     if (extension) {
-      CoreAppLauncherHandler::RecordAppLaunchType(
-          extension_misc::APP_LAUNCH_CMD_LINE_URL,
-          extension->GetType());
+      extensions::RecordAppLaunchType(extension_misc::APP_LAUNCH_CMD_LINE_URL,
+                                      extension->GetType());
     }
   }
   for (size_t i = 0; i < autolaunch_tabs.size(); ++i) {
     const extensions::Extension* extension =
         extensions.GetAppByURL(autolaunch_tabs.at(i).url);
     if (extension) {
-      CoreAppLauncherHandler::RecordAppLaunchType(
-          extension_misc::APP_LAUNCH_AUTOLAUNCH,
-          extension->GetType());
+      extensions::RecordAppLaunchType(extension_misc::APP_LAUNCH_AUTOLAUNCH,
+                                      extension->GetType());
     }
   }
 }
@@ -249,7 +244,7 @@ void RecordAppLaunches(Profile* profile,
 class WebContentsCloseObserver : public content::NotificationObserver {
  public:
   WebContentsCloseObserver() : contents_(NULL) {}
-  virtual ~WebContentsCloseObserver() {}
+  ~WebContentsCloseObserver() override {}
 
   void SetContents(content::WebContents* contents) {
     DCHECK(!contents_);
@@ -264,9 +259,9 @@ class WebContentsCloseObserver : public content::NotificationObserver {
 
  private:
   // content::NotificationObserver overrides:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     DCHECK_EQ(type, content::NOTIFICATION_WEB_CONTENTS_DESTROYED);
     contents_ = NULL;
   }
@@ -299,7 +294,7 @@ GURL GetWelcomePageURL() {
 
 StartupBrowserCreatorImpl::StartupBrowserCreatorImpl(
     const base::FilePath& cur_dir,
-    const CommandLine& command_line,
+    const base::CommandLine& command_line,
     chrome::startup::IsFirstRun is_first_run)
     : cur_dir_(cur_dir),
       command_line_(command_line),
@@ -310,7 +305,7 @@ StartupBrowserCreatorImpl::StartupBrowserCreatorImpl(
 
 StartupBrowserCreatorImpl::StartupBrowserCreatorImpl(
     const base::FilePath& cur_dir,
-    const CommandLine& command_line,
+    const base::CommandLine& command_line,
     StartupBrowserCreator* browser_creator,
     chrome::startup::IsFirstRun is_first_run)
     : cur_dir_(cur_dir),
@@ -367,7 +362,8 @@ bool StartupBrowserCreatorImpl::Launch(Profile* profile,
     if (extension) {
       RecordCmdLineAppHistogram(extensions::Manifest::TYPE_PLATFORM_APP);
       AppLaunchParams params(profile, extension,
-                             extensions::LAUNCH_CONTAINER_NONE, NEW_WINDOW);
+                             extensions::LAUNCH_CONTAINER_NONE, NEW_WINDOW,
+                             extensions::SOURCE_COMMAND_LINE);
       params.command_line = command_line_;
       params.current_directory = cur_dir_;
       // If we are being launched from the command line, default to native
@@ -410,6 +406,18 @@ bool StartupBrowserCreatorImpl::Launch(Profile* profile,
       KeystoneInfoBar::PromotionInfoBar(profile);
     }
 #endif
+  }
+
+  // In kiosk mode, we want to always be fullscreen, so switch to that now.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode) ||
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kStartFullscreen)) {
+    // It's possible for there to be no browser window, e.g. if someone
+    // specified a non-sensical combination of options
+    // ("--kiosk --no_startup_window"); do nothing in that case.
+    Browser* browser = BrowserList::GetInstance(desktop_type)->GetLastActive();
+    if (browser)
+      chrome::ToggleFullscreenMode(browser);
   }
 
 #if defined(OS_WIN)
@@ -455,9 +463,9 @@ bool StartupBrowserCreatorImpl::OpenApplicationTab(Profile* profile) {
 
   RecordCmdLineAppHistogram(extension->GetType());
 
-  WebContents* app_tab = OpenApplication(AppLaunchParams(
-      profile, extension, extensions::LAUNCH_CONTAINER_TAB,
-      NEW_FOREGROUND_TAB));
+  WebContents* app_tab = OpenApplication(
+      AppLaunchParams(profile, extension, extensions::LAUNCH_CONTAINER_TAB,
+                      NEW_FOREGROUND_TAB, extensions::SOURCE_COMMAND_LINE));
   return (app_tab != NULL);
 }
 
@@ -491,7 +499,8 @@ bool StartupBrowserCreatorImpl::OpenApplicationWindow(
 
     RecordCmdLineAppHistogram(extension->GetType());
 
-    AppLaunchParams params(profile, extension, launch_container, NEW_WINDOW);
+    AppLaunchParams params(profile, extension, launch_container, NEW_WINDOW,
+                           extensions::SOURCE_COMMAND_LINE);
     params.command_line = command_line_;
     params.current_directory = cur_dir_;
     WebContents* tab_in_app_window = OpenApplication(params);
@@ -523,7 +532,7 @@ bool StartupBrowserCreatorImpl::OpenApplicationWindow(
       if (extension) {
         RecordCmdLineAppHistogram(extension->GetType());
       } else {
-        CoreAppLauncherHandler::RecordAppLaunchType(
+        extensions::RecordAppLaunchType(
             extension_misc::APP_LAUNCH_CMD_LINE_APP_LEGACY,
             extensions::Manifest::TYPE_HOSTED_APP);
       }
@@ -644,7 +653,7 @@ bool StartupBrowserCreatorImpl::ProcessStartupURLs(
 
     uint32 restore_behavior = SessionRestore::SYNCHRONOUS;
     if (browser_defaults::kAlwaysCreateTabbedBrowserOnSessionRestore ||
-        CommandLine::ForCurrentProcess()->HasSwitch(
+        base::CommandLine::ForCurrentProcess()->HasSwitch(
             switches::kCreateBrowserOnStartupForTests)) {
       restore_behavior |= SessionRestore::ALWAYS_CREATE_TABBED_BROWSER;
     }
@@ -830,11 +839,6 @@ Browser* StartupBrowserCreatorImpl::OpenTabsInBrowser(
   if (!browser_creator_ || browser_creator_->show_main_browser_window())
     browser->window()->Show();
 
-  // In kiosk mode, we want to always be fullscreen, so switch to that now.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode) ||
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kStartFullscreen))
-    chrome::ToggleFullscreenMode(browser);
-
   return browser;
 }
 
@@ -845,7 +849,7 @@ void StartupBrowserCreatorImpl::AddInfoBarsIfNecessary(
     return;
 
   if (HasPendingUncleanExit(browser->profile()) &&
-      !ShowSessionCrashedBubble(browser)) {
+      !browser->window()->ShowSessionCrashedBubble()) {
     SessionCrashedInfoBarDelegate::Create(browser);
   }
 
@@ -915,8 +919,8 @@ void StartupBrowserCreatorImpl::AddStartupURLs(
   if (signin::ShouldShowPromoAtStartup(profile_, is_first_run_)) {
     signin::DidShowPromoAtStartup(profile_);
 
-    const GURL sync_promo_url = signin::GetPromoURL(signin::SOURCE_START_PAGE,
-                                                    false);
+    const GURL sync_promo_url = signin::GetPromoURL(
+        signin_metrics::SOURCE_START_PAGE, false);
 
     // No need to add if the sync promo is already in the startup list.
     bool add_promo = true;

@@ -50,38 +50,31 @@ class ProfileShortcutManagerWin : public ProfileShortcutManager,
   };
 
   explicit ProfileShortcutManagerWin(ProfileManager* manager);
-  virtual ~ProfileShortcutManagerWin();
+  ~ProfileShortcutManagerWin() override;
 
   // ProfileShortcutManager implementation:
-  virtual void CreateOrUpdateProfileIcon(
-      const base::FilePath& profile_path) OVERRIDE;
-  virtual void CreateProfileShortcut(
-      const base::FilePath& profile_path) OVERRIDE;
-  virtual void RemoveProfileShortcuts(
-      const base::FilePath& profile_path) OVERRIDE;
-  virtual void HasProfileShortcuts(
-      const base::FilePath& profile_path,
-      const base::Callback<void(bool)>& callback) OVERRIDE;
-  virtual void GetShortcutProperties(const base::FilePath& profile_path,
-                                     base::CommandLine* command_line,
-                                     base::string16* name,
-                                     base::FilePath* icon_path) OVERRIDE;
+  void CreateOrUpdateProfileIcon(const base::FilePath& profile_path) override;
+  void CreateProfileShortcut(const base::FilePath& profile_path) override;
+  void RemoveProfileShortcuts(const base::FilePath& profile_path) override;
+  void HasProfileShortcuts(const base::FilePath& profile_path,
+                           const base::Callback<void(bool)>& callback) override;
+  void GetShortcutProperties(const base::FilePath& profile_path,
+                             base::CommandLine* command_line,
+                             base::string16* name,
+                             base::FilePath* icon_path) override;
 
   // ProfileInfoCacheObserver implementation:
-  virtual void OnProfileAdded(const base::FilePath& profile_path) OVERRIDE;
-  virtual void OnProfileWasRemoved(
-      const base::FilePath& profile_path,
-      const base::string16& profile_name) OVERRIDE;
-  virtual void OnProfileNameChanged(
-      const base::FilePath& profile_path,
-      const base::string16& old_profile_name) OVERRIDE;
-  virtual void OnProfileAvatarChanged(
-      const base::FilePath& profile_path) OVERRIDE;
+  void OnProfileAdded(const base::FilePath& profile_path) override;
+  void OnProfileWasRemoved(const base::FilePath& profile_path,
+                           const base::string16& profile_name) override;
+  void OnProfileNameChanged(const base::FilePath& profile_path,
+                            const base::string16& old_profile_name) override;
+  void OnProfileAvatarChanged(const base::FilePath& profile_path) override;
 
   // content::NotificationObserver implementation:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
  private:
   // Gives the profile path of an alternate profile than |profile_path|.

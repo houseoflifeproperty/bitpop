@@ -10,7 +10,7 @@
 #include "base/callback_forward.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "components/component_updater/component_patcher_operation.h"
+#include "components/update_client/component_patcher_operation.h"
 
 namespace base {
 class FilePath;
@@ -22,20 +22,20 @@ namespace component_updater {
 class PatchHost;
 
 // Implements the DeltaUpdateOpPatch out-of-process patching.
-class ChromeOutOfProcessPatcher : public OutOfProcessPatcher {
+class ChromeOutOfProcessPatcher : public update_client::OutOfProcessPatcher {
  public:
   ChromeOutOfProcessPatcher();
 
   // DeltaUpdateOpPatch::OutOfProcessPatcher implementation.
-  virtual void Patch(const std::string& operation,
-                     scoped_refptr<base::SequencedTaskRunner> task_runner,
-                     const base::FilePath& input_abs_path,
-                     const base::FilePath& patch_abs_path,
-                     const base::FilePath& output_abs_path,
-                     base::Callback<void(int result)> callback) OVERRIDE;
+  void Patch(const std::string& operation,
+             scoped_refptr<base::SequencedTaskRunner> task_runner,
+             const base::FilePath& input_abs_path,
+             const base::FilePath& patch_abs_path,
+             const base::FilePath& output_abs_path,
+             base::Callback<void(int result)> callback) override;
 
  private:
-  virtual ~ChromeOutOfProcessPatcher();
+  ~ChromeOutOfProcessPatcher() override;
 
   scoped_refptr<PatchHost> host_;
 

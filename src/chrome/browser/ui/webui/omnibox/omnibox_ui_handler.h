@@ -27,22 +27,23 @@ class OmniboxUIHandler : public AutocompleteControllerDelegate,
                          public MojoWebUIHandler {
  public:
   explicit OmniboxUIHandler(Profile* profile);
-  virtual ~OmniboxUIHandler();
+  ~OmniboxUIHandler() override;
 
   // AutocompleteControllerDelegate overrides:
-  virtual void OnResultChanged(bool default_match_changed) OVERRIDE;
+  void OnResultChanged(bool default_match_changed) override;
 
   // ErrorHandler overrides:
-  virtual void OnConnectionError() OVERRIDE {
+  void OnConnectionError() override {
     // TODO(darin): How should we handle connection error?
   }
 
   // OmniboxUIHandlerMojo overrides:
-  virtual void StartOmniboxQuery(const mojo::String& input_string,
-                                 int32_t cursor_position,
-                                 bool prevent_inline_autocomplete,
-                                 bool prefer_keyword,
-                                 int32_t page_classification) OVERRIDE;
+  void StartOmniboxQuery(const mojo::String& input_string,
+                         int32_t cursor_position,
+                         bool prevent_inline_autocomplete,
+                         bool prefer_keyword,
+                         int32_t page_classification,
+                         OmniboxPagePtr page) override;
 
  private:
   // Looks up whether the hostname is a typed host (i.e., has received
@@ -65,6 +66,9 @@ class OmniboxUIHandler : public AutocompleteControllerDelegate,
 
   // The input used when starting the AutocompleteController.
   AutocompleteInput input_;
+
+  // Handle back to the page by which we can pass results.
+  OmniboxPagePtr page_;
 
   // The Profile* handed to us in our constructor.
   Profile* profile_;

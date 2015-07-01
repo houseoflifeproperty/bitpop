@@ -21,6 +21,7 @@
 #ifndef CSSStyleSheet_h
 #define CSSStyleSheet_h
 
+#include "core/CoreExport.h"
 #include "core/css/CSSRule.h"
 #include "core/css/StyleSheet.h"
 #include "platform/heap/Handle.h"
@@ -36,6 +37,7 @@ class CSSStyleSheet;
 class Document;
 class ExceptionState;
 class MediaQuerySet;
+class SecurityOrigin;
 class StyleSheetContents;
 
 enum StyleSheetUpdateType {
@@ -43,7 +45,7 @@ enum StyleSheetUpdateType {
     EntireStyleSheetUpdate
 };
 
-class CSSStyleSheet FINAL : public StyleSheet {
+class CORE_EXPORT CSSStyleSheet final : public StyleSheet {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<CSSStyleSheet> create(PassRefPtrWillBeRawPtr<StyleSheetContents>, CSSImportRule* ownerRule = 0);
@@ -53,13 +55,13 @@ public:
 
     virtual ~CSSStyleSheet();
 
-    virtual CSSStyleSheet* parentStyleSheet() const OVERRIDE;
-    virtual Node* ownerNode() const OVERRIDE { return m_ownerNode; }
-    virtual MediaList* media() const OVERRIDE;
-    virtual String href() const OVERRIDE;
-    virtual String title() const OVERRIDE { return m_title; }
-    virtual bool disabled() const OVERRIDE { return m_isDisabled; }
-    virtual void setDisabled(bool) OVERRIDE;
+    virtual CSSStyleSheet* parentStyleSheet() const override;
+    virtual Node* ownerNode() const override { return m_ownerNode; }
+    virtual MediaList* media() const override;
+    virtual String href() const override;
+    virtual String title() const override { return m_title; }
+    virtual bool disabled() const override { return m_isDisabled; }
+    virtual void setDisabled(bool) override;
 
     PassRefPtrWillBeRawPtr<CSSRuleList> cssRules();
     unsigned insertRule(const String& rule, unsigned index, ExceptionState&);
@@ -76,17 +78,19 @@ public:
     unsigned length() const;
     CSSRule* item(unsigned index);
 
-    virtual void clearOwnerNode() OVERRIDE;
+    virtual void clearOwnerNode() override;
 
-    virtual CSSRule* ownerRule() const OVERRIDE { return m_ownerRule; }
-    virtual KURL baseURL() const OVERRIDE;
-    virtual bool isLoading() const OVERRIDE;
+    virtual CSSRule* ownerRule() const override { return m_ownerRule; }
+    virtual KURL baseURL() const override;
+    virtual bool isLoading() const override;
 
     void clearOwnerRule() { m_ownerRule = nullptr; }
     Document* ownerDocument() const;
     MediaQuerySet* mediaQueries() const { return m_mediaQueries.get(); }
     void setMediaQueries(PassRefPtrWillBeRawPtr<MediaQuerySet>);
     void setTitle(const String& title) { m_title = title; }
+    // Set by LinkStyle iff CORS-enabled fetch of stylesheet succeeded from this origin.
+    void setAllowRuleAccessFromOrigin(PassRefPtr<SecurityOrigin> allowedOrigin);
 
     class RuleMutationScope {
         WTF_MAKE_NONCOPYABLE(RuleMutationScope);
@@ -115,14 +119,14 @@ public:
     bool loadCompleted() const { return m_loadCompleted; }
     void startLoadingDynamicSheet();
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     CSSStyleSheet(PassRefPtrWillBeRawPtr<StyleSheetContents>, CSSImportRule* ownerRule);
     CSSStyleSheet(PassRefPtrWillBeRawPtr<StyleSheetContents>, Node* ownerNode, bool isInlineStylesheet, const TextPosition& startPosition);
 
-    virtual bool isCSSStyleSheet() const OVERRIDE { return true; }
-    virtual String type() const OVERRIDE { return "text/css"; }
+    virtual bool isCSSStyleSheet() const override { return true; }
+    virtual String type() const override { return "text/css"; }
 
     void reattachChildRuleCSSOMWrappers();
 
@@ -136,13 +140,15 @@ private:
     String m_title;
     RefPtrWillBeMember<MediaQuerySet> m_mediaQueries;
 
+    RefPtr<SecurityOrigin> m_allowRuleAccessFromOrigin;
+
     RawPtrWillBeMember<Node> m_ownerNode;
     RawPtrWillBeMember<CSSRule> m_ownerRule;
 
     TextPosition m_startPosition;
     bool m_loadCompleted;
     mutable RefPtrWillBeMember<MediaList> m_mediaCSSOMWrapper;
-    mutable WillBeHeapVector<RefPtrWillBeMember<CSSRule> > m_childRuleCSSOMWrappers;
+    mutable WillBeHeapVector<RefPtrWillBeMember<CSSRule>> m_childRuleCSSOMWrappers;
     mutable OwnPtrWillBeMember<CSSRuleList> m_ruleListCSSOMWrapper;
 };
 

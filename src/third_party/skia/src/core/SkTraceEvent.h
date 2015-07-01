@@ -161,6 +161,7 @@
 #ifndef SkTraceEvent_DEFINED
 #define SkTraceEvent_DEFINED
 
+#include "SkAtomics.h"
 #include "SkEventTracer.h"
 
 // By default, const char* argument values are assumed to have long-lived scope
@@ -759,15 +760,10 @@
 #define TRACE_EVENT_API_UPDATE_TRACE_EVENT_DURATION \
     SkEventTracer::GetInstance()->updateTraceEventDuration
 
-// These operations are atomic in the Chrome tracing implementation
-// to cater to ARM's weak memory consistency; we're just doing read/
-// write here because it's not strictly needed for correctness.
-// So says Nat.
-// FIXME
-
 #define TRACE_EVENT_API_ATOMIC_WORD intptr_t
-#define TRACE_EVENT_API_ATOMIC_LOAD(var) (*(&var))
-#define TRACE_EVENT_API_ATOMIC_STORE(var, value) (var=value)
+#define TRACE_EVENT_API_ATOMIC_LOAD(var) sk_atomic_load(&var, sk_memory_order_relaxed)
+#define TRACE_EVENT_API_ATOMIC_STORE(var, value) \
+    sk_atomic_store(&var, value, sk_memory_order_relaxed)
 
 // Defines visibility for classes in trace_event.h
 #define TRACE_EVENT_API_CLASS_EXPORT SK_API

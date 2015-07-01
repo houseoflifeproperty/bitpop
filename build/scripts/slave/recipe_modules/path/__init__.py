@@ -1,5 +1,0 @@
-DEPS = [
-  'json',
-  'platform',
-  'python',
-]

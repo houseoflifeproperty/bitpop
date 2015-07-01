@@ -12,12 +12,10 @@
 class TtsPlatformImplChromeOs : public TtsPlatformImpl {
  public:
   // TtsPlatformImpl overrides:
-  virtual bool PlatformImplAvailable() OVERRIDE {
-    return false;
-  }
+  bool PlatformImplAvailable() override { return false; }
 
-  virtual bool LoadBuiltInTtsExtension(
-      content::BrowserContext* browser_context) OVERRIDE {
+  bool LoadBuiltInTtsExtension(
+      content::BrowserContext* browser_context) override {
     TtsEngineDelegate* tts_engine_delegate =
         TtsController::GetInstance()->GetTtsEngineDelegate();
     if (tts_engine_delegate)
@@ -25,36 +23,30 @@ class TtsPlatformImplChromeOs : public TtsPlatformImpl {
     return false;
   }
 
-  virtual bool Speak(
-      int utterance_id,
-      const std::string& utterance,
-      const std::string& lang,
-      const VoiceData& voice,
-      const UtteranceContinuousParameters& params) OVERRIDE {
+  bool Speak(int utterance_id,
+             const std::string& utterance,
+             const std::string& lang,
+             const VoiceData& voice,
+             const UtteranceContinuousParameters& params) override {
     return false;
   }
 
-  virtual bool StopSpeaking() OVERRIDE {
-    return false;
-  }
+  bool StopSpeaking() override { return false; }
 
-  virtual void Pause() OVERRIDE {}
+  void Pause() override {}
 
-  virtual void Resume() OVERRIDE {}
+  void Resume() override {}
 
-  virtual bool IsSpeaking() OVERRIDE {
-    return false;
-  }
+  bool IsSpeaking() override { return false; }
 
-  virtual void GetVoices(std::vector<VoiceData>* out_voices) OVERRIDE {
-  }
+  void GetVoices(std::vector<VoiceData>* out_voices) override {}
 
   // Get the single instance of this class.
   static TtsPlatformImplChromeOs* GetInstance();
 
  private:
   TtsPlatformImplChromeOs() {}
-  virtual ~TtsPlatformImplChromeOs() {}
+  ~TtsPlatformImplChromeOs() override {}
 
   friend struct DefaultSingletonTraits<TtsPlatformImplChromeOs>;
 

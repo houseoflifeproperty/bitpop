@@ -32,61 +32,33 @@
 #define ReplayingCanvas_h
 
 #include "platform/graphics/InterceptingCanvas.h"
-#include "third_party/skia/include/core/SkPictureRecorder.h"
+#include "third_party/skia/include/core/SkDrawPictureCallback.h"
 
 namespace blink {
 
-class ReplayingCanvas : public InterceptingCanvas, public SkDrawPictureCallback {
+class ReplayingCanvas;
+
+template<> class CanvasInterceptor<ReplayingCanvas> : protected InterceptingCanvasBase::CanvasInterceptorBase<ReplayingCanvas> {
+public:
+    CanvasInterceptor(InterceptingCanvasBase* canvas) : InterceptingCanvasBase::CanvasInterceptorBase<ReplayingCanvas>(canvas) { }
+    ~CanvasInterceptor();
+};
+
+class ReplayingCanvas : public InterceptingCanvas<ReplayingCanvas>, public SkDrawPictureCallback {
 public:
     ReplayingCanvas(SkBitmap, unsigned fromStep, unsigned toStep);
-    void resetStepCount();
 
-    virtual bool abortDrawing() OVERRIDE;
-
-    virtual void clear(SkColor) OVERRIDE;
-    virtual void drawPaint(const SkPaint&) OVERRIDE;
-    virtual void drawPoints(PointMode, size_t count, const SkPoint pts[], const SkPaint&) OVERRIDE;
-    virtual void drawRect(const SkRect&, const SkPaint&) OVERRIDE;
-    virtual void drawOval(const SkRect&, const SkPaint&) OVERRIDE;
-    virtual void drawRRect(const SkRRect&, const SkPaint&) OVERRIDE;
-    virtual void drawPath(const SkPath&, const SkPaint&) OVERRIDE;
-    virtual void drawBitmap(const SkBitmap&, SkScalar left, SkScalar top, const SkPaint* = 0) OVERRIDE;
-    virtual void drawBitmapRectToRect(const SkBitmap&, const SkRect* src, const SkRect& dst, const SkPaint*, DrawBitmapRectFlags) OVERRIDE;
-    virtual void drawBitmapMatrix(const SkBitmap&, const SkMatrix&, const SkPaint* = 0) OVERRIDE;
-    virtual void drawBitmapNine(const SkBitmap&, const SkIRect& center, const SkRect& dst, const SkPaint*) OVERRIDE;
-    virtual void drawSprite(const SkBitmap&, int left, int top, const SkPaint* = 0) OVERRIDE;
-    virtual void drawVertices(VertexMode vmode, int vertexCount, const SkPoint vertices[], const SkPoint texs[],
-        const SkColor colors[], SkXfermode* xmode, const uint16_t indices[], int indexCount, const SkPaint&) OVERRIDE;
-    virtual void drawData(const void* data, size_t length) OVERRIDE;
-    virtual void beginCommentGroup(const char* description) OVERRIDE;
-    virtual void addComment(const char* keyword, const char* value) OVERRIDE;
-    virtual void endCommentGroup() OVERRIDE;
-
-    virtual void onDrawDRRect(const SkRRect& outer, const SkRRect& inner, const SkPaint&) OVERRIDE;
-    virtual void onDrawText(const void* text, size_t byteLength, SkScalar x, SkScalar y, const SkPaint&) OVERRIDE;
-    virtual void onDrawPosText(const void* text, size_t byteLength, const SkPoint pos[], const SkPaint&) OVERRIDE;
-    virtual void onDrawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[], SkScalar constY, const SkPaint&) OVERRIDE;
-    virtual void onDrawTextOnPath(const void* text, size_t byteLength, const SkPath&, const SkMatrix*, const SkPaint&) OVERRIDE;
-    virtual void onPushCull(const SkRect& cullRect) OVERRIDE;
-    virtual void onPopCull() OVERRIDE;
-    virtual void onClipRect(const SkRect&, SkRegion::Op, ClipEdgeStyle) OVERRIDE;
-    virtual void onClipRRect(const SkRRect&, SkRegion::Op, ClipEdgeStyle) OVERRIDE;
-    virtual void onClipPath(const SkPath&, SkRegion::Op, ClipEdgeStyle) OVERRIDE;
-    virtual void onClipRegion(const SkRegion&, SkRegion::Op) OVERRIDE;
-    virtual void onDrawPicture(const SkPicture*, const SkMatrix*, const SkPaint*);
-    virtual void didSetMatrix(const SkMatrix&) OVERRIDE;
-    virtual void didConcat(const SkMatrix&) OVERRIDE;
-    virtual void willSave() OVERRIDE;
-    SaveLayerStrategy willSaveLayer(const SkRect* bounds, const SkPaint*, SaveFlags) OVERRIDE;
-    virtual void willRestore() OVERRIDE;
+    virtual bool abortDrawing() override;
+    virtual SkCanvas::SaveLayerStrategy willSaveLayer(const SkRect* bounds, const SkPaint*, SaveFlags) override;
 
 private:
+    friend class CanvasInterceptor<ReplayingCanvas>;
+
+    void updateInRange();
+
     unsigned m_fromStep;
     unsigned m_toStep;
-    unsigned m_stepCount;
     bool m_abortDrawing;
-    void updateInRange();
-    friend class AutoReplayer;
 };
 
 } // namespace blink

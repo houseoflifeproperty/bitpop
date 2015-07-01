@@ -68,7 +68,7 @@ class QuotaDispatcherHost::QueryUsageAndQuotaDispatcher
       int request_id)
       : RequestDispatcher(dispatcher_host, request_id),
         weak_factory_(this) {}
-  virtual ~QueryUsageAndQuotaDispatcher() {}
+  ~QueryUsageAndQuotaDispatcher() override {}
 
   void QueryStorageUsageAndQuota(const GURL& origin, StorageType type) {
     quota_manager()->GetUsageAndQuotaForWebApps(
@@ -112,14 +112,13 @@ class QuotaDispatcherHost::RequestQuotaDispatcher
     // TODO(nhiroki): The backend should accept uint64 values.
     requested_quota_ = base::saturated_cast<int64>(params_.requested_size);
   }
-  virtual ~RequestQuotaDispatcher() {}
+  ~RequestQuotaDispatcher() override {}
 
   void Start() {
     DCHECK(dispatcher_host());
 
     DCHECK(params_.storage_type == storage::kStorageTypeTemporary ||
-           params_.storage_type == storage::kStorageTypePersistent ||
-           params_.storage_type == storage::kStorageTypeSyncable);
+           params_.storage_type == storage::kStorageTypePersistent);
     if (params_.storage_type == storage::kStorageTypePersistent) {
       quota_manager()->GetUsageAndQuotaForWebApps(
           params_.origin_url, params_.storage_type,

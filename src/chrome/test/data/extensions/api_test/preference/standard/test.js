@@ -9,7 +9,8 @@ var preferences_to_test = [
   {
     root: chrome.privacy.network,
     preferences: [
-      'networkPredictionEnabled'
+      'networkPredictionEnabled',
+      'webRTCMultipleRoutesEnabled'
     ]
   },
   {
@@ -26,14 +27,23 @@ var preferences_to_test = [
     preferences: [
       'alternateErrorPagesEnabled',
       'autofillEnabled',
+      'hotwordSearchEnabled',
       'passwordSavingEnabled',
       'safeBrowsingEnabled',
+      'safeBrowsingExtendedReportingEnabled',
       'searchSuggestEnabled',
       'spellingServiceEnabled',
       'translationServiceEnabled'
     ]
   },
 ];
+
+// Some preferences are only present on certain platforms or are hidden
+// behind flags and might not be present when this test runs.
+var possibly_missing_preferences = new Set([
+  'protectedContentEnabled',    // Windows/ChromeOS only
+  'webRTCMultipleRoutesEnabled' // requires ENABLE_WEBRTC=1
+]);
 
 function expect(expected, message) {
   return chrome.test.callbackPass(function(value) {
@@ -49,18 +59,14 @@ function expectFalse(pref) {
 }
 
 function prefGetter(pref) {
-  if (pref === 'protectedContentEnabled' && !this[pref]) {
-    // `protectedContentEnabled` is Windows/ChromeOS only, so it might not exist
-    // when this test runs, and that's pretty much OK.
+  if (possibly_missing_preferences.has(pref) && !this[pref]) {
     return true;
   }
   this[pref].get({}, expectFalse(pref));
 }
 
 function prefSetter(pref) {
-  if (pref === 'protectedContentEnabled' && !this[pref]) {
-    // `protectedContentEnabled` is Windows/ChromeOS only, so it might not exist
-    // when this test runs, and that's pretty much OK.
+  if (possibly_missing_preferences.has(pref) && !this[pref]) {
     return true;
   }
   this[pref].set({value: true}, chrome.test.callbackPass());

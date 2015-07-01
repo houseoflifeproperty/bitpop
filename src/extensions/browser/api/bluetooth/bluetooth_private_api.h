@@ -26,14 +26,14 @@ class BluetoothPrivateAPI : public BrowserContextKeyedAPI,
       GetFactoryInstance();
 
   explicit BluetoothPrivateAPI(content::BrowserContext* context);
-  virtual ~BluetoothPrivateAPI();
+  ~BluetoothPrivateAPI() override;
 
   // KeyedService implementation.
-  virtual void Shutdown() OVERRIDE;
+  void Shutdown() override;
 
   // EventRouter::Observer implementation.
-  virtual void OnListenerAdded(const EventListenerInfo& details) OVERRIDE;
-  virtual void OnListenerRemoved(const EventListenerInfo& details) OVERRIDE;
+  void OnListenerAdded(const EventListenerInfo& details) override;
+  void OnListenerRemoved(const EventListenerInfo& details) override;
 
   // BrowserContextKeyedAPI implementation.
   static const char* service_name() { return "BluetoothPrivateAPI"; }
@@ -56,7 +56,7 @@ class BluetoothPrivateSetAdapterStateFunction
   BluetoothPrivateSetAdapterStateFunction();
 
  private:
-  virtual ~BluetoothPrivateSetAdapterStateFunction();
+  ~BluetoothPrivateSetAdapterStateFunction() override;
 
   base::Closure CreatePropertySetCallback(const std::string& property_name);
   base::Closure CreatePropertyErrorCallback(const std::string& property_name);
@@ -65,7 +65,7 @@ class BluetoothPrivateSetAdapterStateFunction
   void SendError();
 
   // BluetoothExtensionFunction overrides:
-  virtual bool DoWork(scoped_refptr<device::BluetoothAdapter> adapter) OVERRIDE;
+  bool DoWork(scoped_refptr<device::BluetoothAdapter> adapter) override;
 
   // Set of expected adapter properties to be changed.
   std::set<std::string> pending_properties_;
@@ -83,11 +83,48 @@ class BluetoothPrivateSetPairingResponseFunction
                              BLUETOOTHPRIVATE_SETPAIRINGRESPONSE)
   BluetoothPrivateSetPairingResponseFunction();
   // BluetoothExtensionFunction overrides:
-  virtual bool DoWork(scoped_refptr<device::BluetoothAdapter> adapter) OVERRIDE;
+  bool DoWork(scoped_refptr<device::BluetoothAdapter> adapter) override;
 
  private:
-  virtual ~BluetoothPrivateSetPairingResponseFunction();
+  ~BluetoothPrivateSetPairingResponseFunction() override;
   DISALLOW_COPY_AND_ASSIGN(BluetoothPrivateSetPairingResponseFunction);
+};
+
+class BluetoothPrivateDisconnectAllFunction
+    : public BluetoothExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("bluetoothPrivate.disconnectAll",
+                             BLUETOOTHPRIVATE_DISCONNECTALL);
+  BluetoothPrivateDisconnectAllFunction();
+
+  // BluetoothExtensionFunction overrides:
+  bool DoWork(scoped_refptr<device::BluetoothAdapter> adapter) override;
+
+ private:
+  ~BluetoothPrivateDisconnectAllFunction() override;
+
+  void OnSuccessCallback();
+  void OnErrorCallback(scoped_refptr<device::BluetoothAdapter> adapter,
+                       const std::string& device_address);
+
+  DISALLOW_COPY_AND_ASSIGN(BluetoothPrivateDisconnectAllFunction);
+};
+
+class BluetoothPrivateSetDiscoveryFilterFunction
+    : public BluetoothExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("bluetoothPrivate.setDiscoveryFilter",
+                             BLUETOOTHPRIVATE_SETDISCOVERYFILTER)
+
+ protected:
+  ~BluetoothPrivateSetDiscoveryFilterFunction() override {}
+
+  // BluetoothExtensionFunction:
+  bool DoWork(scoped_refptr<device::BluetoothAdapter> adapter) override;
+
+ private:
+  void OnSuccessCallback();
+  void OnErrorCallback();
 };
 
 }  // namespace core_api

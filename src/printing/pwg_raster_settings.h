@@ -5,18 +5,14 @@
 #ifndef PRINTING_BITMAP_TRANSFORM_SETTINGS_H_
 #define PRINTING_BITMAP_TRANSFORM_SETTINGS_H_
 
-#include "base/tuple.h"
-#include "ipc/ipc_param_traits.h"
-#include "printing/printing_export.h"
-#include "ui/gfx/rect.h"
-
 namespace printing {
 
 enum PwgRasterTransformType {
   TRANSFORM_NORMAL,
   TRANSFORM_ROTATE_180,
   TRANSFORM_FLIP_HORIZONTAL,
-  TRANSFORM_FLIP_VERTICAL
+  TRANSFORM_FLIP_VERTICAL,
+  TRANSFORM_TYPE_LAST = TRANSFORM_FLIP_VERTICAL
 };
 
 struct PwgRasterSettings {

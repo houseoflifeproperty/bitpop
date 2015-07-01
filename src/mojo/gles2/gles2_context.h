@@ -21,17 +21,16 @@ class GLES2Implementation;
 }
 }
 
-namespace mojo {
 namespace gles2 {
 
 class GLES2Context : public CommandBufferDelegate,
                      public MojoGLES2ContextPrivate {
  public:
   explicit GLES2Context(const MojoAsyncWaiter* async_waiter,
-                        ScopedMessagePipeHandle command_buffer_handle,
+                        mojo::ScopedMessagePipeHandle command_buffer_handle,
                         MojoGLES2ContextLost lost_callback,
                         void* closure);
-  virtual ~GLES2Context();
+  ~GLES2Context() override;
   bool Initialize();
 
   gpu::gles2::GLES2Interface* interface() const {
@@ -40,7 +39,7 @@ class GLES2Context : public CommandBufferDelegate,
   gpu::ContextSupport* context_support() const { return implementation_.get(); }
 
  private:
-  virtual void ContextLost() OVERRIDE;
+  void ContextLost() override;
 
   CommandBufferClientImpl command_buffer_;
   scoped_ptr<gpu::gles2::GLES2CmdHelper> gles2_helper_;
@@ -53,6 +52,5 @@ class GLES2Context : public CommandBufferDelegate,
 };
 
 }  // namespace gles2
-}  // namespace mojo
 
 #endif  // MOJO_GLES2_GLES2_CONTEXT_H_

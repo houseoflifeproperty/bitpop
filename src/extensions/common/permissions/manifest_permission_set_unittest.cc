@@ -17,46 +17,39 @@ class MockManifestPermission : public ManifestPermission {
       : name_(name) {
   }
 
-  virtual std::string name() const OVERRIDE {
-    return name_;
-  }
+  std::string name() const override { return name_; }
 
-  virtual std::string id() const OVERRIDE {
-    return name();
-  }
+  std::string id() const override { return name(); }
 
-  virtual bool HasMessages() const OVERRIDE {
-    return false;
-  }
+  PermissionIDSet GetPermissions() const override { return PermissionIDSet(); }
 
-  virtual PermissionMessages GetMessages() const OVERRIDE {
+  bool HasMessages() const override { return false; }
+
+  PermissionMessages GetMessages() const override {
     return PermissionMessages();
   }
 
-  virtual bool FromValue(const base::Value* value) OVERRIDE { return true; }
+  bool FromValue(const base::Value* value) override { return true; }
 
-  virtual scoped_ptr<base::Value> ToValue() const OVERRIDE {
-    return make_scoped_ptr(base::Value::CreateNullValue());
+  scoped_ptr<base::Value> ToValue() const override {
+    return base::Value::CreateNullValue();
   }
 
-  virtual ManifestPermission* Diff(const ManifestPermission* rhs)
-      const OVERRIDE {
+  ManifestPermission* Diff(const ManifestPermission* rhs) const override {
     const MockManifestPermission* other =
         static_cast<const MockManifestPermission*>(rhs);
     EXPECT_EQ(name_, other->name_);
     return NULL;
   }
 
-  virtual ManifestPermission* Union(const ManifestPermission* rhs)
-      const OVERRIDE {
+  ManifestPermission* Union(const ManifestPermission* rhs) const override {
     const MockManifestPermission* other =
         static_cast<const MockManifestPermission*>(rhs);
     EXPECT_EQ(name_, other->name_);
     return new MockManifestPermission(name_);
   }
 
-  virtual ManifestPermission* Intersect(const ManifestPermission* rhs)
-      const OVERRIDE {
+  ManifestPermission* Intersect(const ManifestPermission* rhs) const override {
     const MockManifestPermission* other =
         static_cast<const MockManifestPermission*>(rhs);
     EXPECT_EQ(name_, other->name_);

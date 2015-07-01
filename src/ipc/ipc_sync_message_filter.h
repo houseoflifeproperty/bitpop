@@ -15,7 +15,7 @@
 #include "ipc/message_filter.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 class WaitableEvent;
 }
 
@@ -31,16 +31,16 @@ class IPC_EXPORT SyncMessageFilter : public MessageFilter, public Sender {
   explicit SyncMessageFilter(base::WaitableEvent* shutdown_event);
 
   // MessageSender implementation.
-  virtual bool Send(Message* message) OVERRIDE;
+  bool Send(Message* message) override;
 
   // MessageFilter implementation.
-  virtual void OnFilterAdded(Sender* sender) OVERRIDE;
-  virtual void OnChannelError() OVERRIDE;
-  virtual void OnChannelClosing() OVERRIDE;
-  virtual bool OnMessageReceived(const Message& message) OVERRIDE;
+  void OnFilterAdded(Sender* sender) override;
+  void OnChannelError() override;
+  void OnChannelClosing() override;
+  bool OnMessageReceived(const Message& message) override;
 
  protected:
-  virtual ~SyncMessageFilter();
+  ~SyncMessageFilter() override;
 
  private:
   void SendOnIOThread(Message* message);
@@ -51,10 +51,10 @@ class IPC_EXPORT SyncMessageFilter : public MessageFilter, public Sender {
   Sender* sender_;
 
   // The process's main thread.
-  scoped_refptr<base::MessageLoopProxy> listener_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> listener_task_runner_;
 
   // The message loop where the Channel lives.
-  scoped_refptr<base::MessageLoopProxy> io_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
 
   typedef std::set<PendingSyncMsg*> PendingSyncMessages;
   PendingSyncMessages pending_sync_messages_;

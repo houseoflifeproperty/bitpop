@@ -34,29 +34,22 @@ class URLRequestMockHTTPJob : public URLRequestFileJob {
                         const base::FilePath& file_path,
                         const scoped_refptr<base::TaskRunner>& task_runner);
 
-  virtual void Start() OVERRIDE;
-  virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
-  virtual int GetResponseCode() const OVERRIDE;
-  virtual bool GetCharset(std::string* charset) OVERRIDE;
-  virtual void GetResponseInfo(HttpResponseInfo* info) OVERRIDE;
-  virtual bool IsRedirectResponse(GURL* location,
-                                  int* http_status_code) OVERRIDE;
+  void Start() override;
+  bool GetMimeType(std::string* mime_type) const override;
+  int GetResponseCode() const override;
+  bool GetCharset(std::string* charset) override;
+  void GetResponseInfo(HttpResponseInfo* info) override;
+  bool IsRedirectResponse(GURL* location, int* http_status_code) override;
 
-  // Adds the testing URLs to the URLRequestFilter.
-  static void AddUrlHandler(
+  // Adds the testing URLs to the URLRequestFilter, both under HTTP and HTTPS.
+  static void AddUrlHandlers(
       const base::FilePath& base_path,
-      const scoped_refptr<base::SequencedWorkerPool>& worker_pool);
-
-  // Respond to all HTTP requests of |hostname| with contents of the file
-  // located at |file_path|.
-  static void AddHostnameToFileHandler(
-      const std::string& hostname,
-      const base::FilePath& file,
       const scoped_refptr<base::SequencedWorkerPool>& worker_pool);
 
   // Given the path to a file relative to the path passed to AddUrlHandler(),
   // construct a mock URL.
   static GURL GetMockUrl(const base::FilePath& path);
+  static GURL GetMockHttpsUrl(const base::FilePath& path);
 
   // Returns a URLRequestJobFactory::ProtocolHandler that serves
   // URLRequestMockHTTPJob's responding like an HTTP server. |base_path| is the
@@ -74,11 +67,12 @@ class URLRequestMockHTTPJob : public URLRequestFileJob {
       const scoped_refptr<base::SequencedWorkerPool>& worker_pool);
 
  protected:
-  virtual ~URLRequestMockHTTPJob();
+  ~URLRequestMockHTTPJob() override;
 
  private:
   void GetResponseInfoConst(HttpResponseInfo* info) const;
-  void GetRawHeaders(std::string raw_headers);
+  void SetHeadersAndStart(const std::string& raw_headers);
+
   std::string raw_headers_;
   const scoped_refptr<base::TaskRunner> task_runner_;
 

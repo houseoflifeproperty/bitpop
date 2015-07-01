@@ -12,7 +12,7 @@
 #include "components/copresence/public/copresence_manager.h"
 
 using base::ListValue;
-using copresence::AUDIBLE;
+using copresence::AUDIO_CONFIGURATION_AUDIBLE;
 using copresence::AUDIO_CONFIGURATION_UNKNOWN;
 using copresence::BROADCAST_ONLY;
 using copresence::CopresenceDelegate;
@@ -43,7 +43,8 @@ PublishOperation* CreatePublish(const std::string& id) {
   publish->id = id;
   publish->time_to_live_millis.reset(new int(1000));
   publish->message.type = "joke";
-  publish->message.payload = "Knock Knock!";
+  std::string payload("Knock Knock!");
+  publish->message.payload.assign(payload.begin(), payload.end());
 
   return publish;
 }
@@ -67,16 +68,22 @@ bool GetOnly(const RepeatedPtrField<T>& things, T* out) {
   return true;
 }
 
-class MockCopresenceManager : public CopresenceManager {
+class FakeCopresenceManager : public CopresenceManager {
  public:
-  explicit MockCopresenceManager(CopresenceDelegate* delegate)
+  explicit FakeCopresenceManager(CopresenceDelegate* delegate)
       : delegate_(delegate) {}
-  virtual ~MockCopresenceManager() {}
+  ~FakeCopresenceManager() override {}
 
-  virtual void ExecuteReportRequest(
-      ReportRequest request,
+  // CopresenceManager overrides.
+  copresence::CopresenceState* state() override {
+    NOTREACHED();
+    return nullptr;
+  }
+  void ExecuteReportRequest(
+      const ReportRequest& request,
       const std::string& app_id,
-      const copresence::StatusCallback& status_callback) OVERRIDE {
+      const std::string& /* auth_token */,
+      const copresence::StatusCallback& status_callback) override {
     request_ = request;
     app_id_ = app_id;
     status_callback.Run(copresence::SUCCESS);
@@ -91,14 +98,14 @@ class MockCopresenceManager : public CopresenceManager {
 class CopresenceApiUnittest : public ExtensionApiUnittest {
  public:
   CopresenceApiUnittest() {}
-  virtual ~CopresenceApiUnittest() {}
+  ~CopresenceApiUnittest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ExtensionApiUnittest::SetUp();
 
     CopresenceService* service =
         CopresenceService::GetFactoryInstance()->Get(profile());
-    copresence_manager_ = new MockCopresenceManager(service);
+    copresence_manager_ = new FakeCopresenceManager(service);
     service->set_manager_for_testing(
         make_scoped_ptr<CopresenceManager>(copresence_manager_));
   }
@@ -133,7 +140,7 @@ class CopresenceApiUnittest : public ExtensionApiUnittest {
   }
 
   void clear_app_id() {
-    copresence_manager_->app_id_ = "";
+    copresence_manager_->app_id_.clear();
   }
 
   CopresenceDelegate* delegate() {
@@ -141,7 +148,7 @@ class CopresenceApiUnittest : public ExtensionApiUnittest {
   }
 
  protected:
-  MockCopresenceManager* copresence_manager_;
+  FakeCopresenceManager* copresence_manager_;
 };
 
 TEST_F(CopresenceApiUnittest, Publish) {
@@ -174,7 +181,7 @@ TEST_F(CopresenceApiUnittest, Subscribe) {
   scoped_ptr<SubscribeOperation> subscribe(CreateSubscribe("sub"));
   subscribe->strategies.reset(new Strategy);
   subscribe->strategies->only_broadcast.reset(new bool(true));  // Not default
-  subscribe->strategies->audible.reset(new bool(true)); // Not default
+  subscribe->strategies->audible.reset(new bool(true));  // Not default
 
   scoped_ptr<Operation> operation(new Operation);
   operation->subscribe = subscribe.Pass();
@@ -193,7 +200,7 @@ TEST_F(CopresenceApiUnittest, Subscribe) {
   copresence::BroadcastScanConfiguration broadcast_scan =
       subscription.token_exchange_strategy().broadcast_scan_configuration();
   EXPECT_EQ(BROADCAST_ONLY, broadcast_scan);
-  EXPECT_EQ(AUDIBLE,
+  EXPECT_EQ(AUDIO_CONFIGURATION_AUDIBLE,
             subscription.token_exchange_strategy().audio_configuration());
 }
 
@@ -213,6 +220,21 @@ TEST_F(CopresenceApiUnittest, DefaultStrategies) {
             request_sent().manage_messages_request().message_to_publish(0)
                 .token_exchange_strategy().broadcast_scan_configuration());
   EXPECT_EQ(SCAN_ONLY,
+            request_sent().manage_subscriptions_request().subscription(0)
+                .token_exchange_strategy().broadcast_scan_configuration());
+}
+
+TEST_F(CopresenceApiUnittest, LowPowerStrategy) {
+  scoped_ptr<Operation> subscribe_operation(new Operation);
+  subscribe_operation->subscribe.reset(CreateSubscribe("sub"));
+  subscribe_operation->subscribe->strategies.reset(new Strategy);
+  subscribe_operation->subscribe->strategies->low_power.reset(new bool(true));
+
+  ListValue* operation_list = new ListValue;
+  operation_list->Append(subscribe_operation->ToValue().release());
+  EXPECT_TRUE(ExecuteOperations(operation_list));
+
+  EXPECT_EQ(copresence::BROADCAST_SCAN_CONFIGURATION_UNKNOWN,
             request_sent().manage_subscriptions_request().subscription(0)
                 .token_exchange_strategy().broadcast_scan_configuration());
 }
@@ -271,3 +293,5 @@ TEST_F(CopresenceApiUnittest, MultipleOperations) {
 }
 
 }  // namespace extensions
+
+// TODO(ckehoe): add tests for auth tokens and api key functionality

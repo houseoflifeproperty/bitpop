@@ -32,10 +32,7 @@ namespace blink {
 ScopedPageLoadDeferrer::ScopedPageLoadDeferrer(Page* exclusion)
 {
     const HashSet<Page*>& pages = Page::ordinaryPages();
-
-    HashSet<Page*>::const_iterator end = pages.end();
-    for (HashSet<Page*>::const_iterator it = pages.begin(); it != end; ++it) {
-        Page* page = *it;
+    for (const Page* page : pages) {
         if (page == exclusion || page->defersLoading())
             continue;
 
@@ -45,13 +42,6 @@ ScopedPageLoadDeferrer::ScopedPageLoadDeferrer(Page* exclusion)
             // Ensure that we notify the client if the initial empty document is accessed before
             // showing anything modal, to prevent spoofs while the modal window or sheet is visible.
             page->deprecatedLocalMainFrame()->loader().notifyIfInitialDocumentAccessed();
-        }
-
-        // This code is not logically part of load deferring, but we do not want JS code executed
-        // beneath modal windows or sheets, which is exactly when ScopedPageLoadDeferrer is used.
-        for (Frame* frame = page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
-            if (frame->isLocalFrame())
-                toLocalFrame(frame)->document()->suspendScheduledTasks();
         }
     }
 
@@ -65,14 +55,8 @@ ScopedPageLoadDeferrer::ScopedPageLoadDeferrer(Page* exclusion)
 void ScopedPageLoadDeferrer::detach()
 {
     for (size_t i = 0; i < m_deferredFrames.size(); ++i) {
-        if (Page* page = m_deferredFrames[i]->page()) {
+        if (Page* page = m_deferredFrames[i]->page())
             page->setDefersLoading(false);
-
-            for (Frame* frame = page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
-                if (frame->isLocalFrame())
-                    toLocalFrame(frame)->document()->resumeScheduledTasks();
-            }
-        }
     }
 }
 
@@ -89,7 +73,7 @@ ScopedPageLoadDeferrer::~ScopedPageLoadDeferrer()
     detach();
 }
 
-void ScopedPageLoadDeferrer::trace(Visitor* visitor)
+DEFINE_TRACE(ScopedPageLoadDeferrer)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_deferredFrames);

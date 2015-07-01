@@ -5,10 +5,13 @@
 {
   'targets': [
     {
+      # GN: //testing/android/junit:junit_test_support
       'target_name': 'junit_test_support',
       'type': 'none',
       'dependencies': [
         '../../../third_party/junit/junit.gyp:junit_jar',
+        '../../../third_party/mockito/mockito.gyp:mockito_jar',
+        '../../../third_party/robolectric/robolectric.gyp:robolectric_jar'
       ],
       'variables': {
         'src_paths': [
@@ -20,6 +23,7 @@
       ],
     },
     {
+      # GN: //testing/android/junit:junit_unittests
       'target_name': 'junit_unit_tests',
       'type': 'none',
       'dependencies': [

@@ -31,9 +31,8 @@ class MyInterceptor : public Wrappable<MyInterceptor>,
   void set_value(int value) { value_ = value; }
 
   // gin::NamedPropertyInterceptor
-  virtual v8::Local<v8::Value> GetNamedProperty(v8::Isolate* isolate,
-                                                const std::string& property)
-      OVERRIDE {
+  v8::Local<v8::Value> GetNamedProperty(v8::Isolate* isolate,
+                                        const std::string& property) override {
     if (property == "value") {
       return ConvertToV8(isolate, value_);
     } else if (property == "func") {
@@ -42,17 +41,17 @@ class MyInterceptor : public Wrappable<MyInterceptor>,
       return v8::Local<v8::Value>();
     }
   }
-  virtual bool SetNamedProperty(v8::Isolate* isolate,
-                                const std::string& property,
-                                v8::Local<v8::Value> value) OVERRIDE {
+  bool SetNamedProperty(v8::Isolate* isolate,
+                        const std::string& property,
+                        v8::Local<v8::Value> value) override {
     if (property == "value") {
       ConvertFromV8(isolate, value, &value_);
       return true;
     }
     return false;
   }
-  virtual std::vector<std::string> EnumerateNamedProperties(
-      v8::Isolate* isolate) OVERRIDE {
+  std::vector<std::string> EnumerateNamedProperties(
+      v8::Isolate* isolate) override {
     std::vector<std::string> result;
     result.push_back("func");
     result.push_back("value");
@@ -60,15 +59,15 @@ class MyInterceptor : public Wrappable<MyInterceptor>,
   }
 
   // gin::IndexedPropertyInterceptor
-  virtual v8::Local<v8::Value> GetIndexedProperty(v8::Isolate* isolate,
-                                                  uint32_t index) OVERRIDE {
+  v8::Local<v8::Value> GetIndexedProperty(v8::Isolate* isolate,
+                                          uint32_t index) override {
     if (index == 0)
       return ConvertToV8(isolate, value_);
     return v8::Local<v8::Value>();
   }
-  virtual bool SetIndexedProperty(v8::Isolate* isolate,
-                                  uint32_t index,
-                                  v8::Local<v8::Value> value) OVERRIDE {
+  bool SetIndexedProperty(v8::Isolate* isolate,
+                          uint32_t index,
+                          v8::Local<v8::Value> value) override {
     if (index == 0) {
       ConvertFromV8(isolate, value, &value_);
       return true;
@@ -76,8 +75,8 @@ class MyInterceptor : public Wrappable<MyInterceptor>,
     // Don't allow bypassing the interceptor.
     return true;
   }
-  virtual std::vector<uint32_t> EnumerateIndexedProperties(v8::Isolate* isolate)
-      OVERRIDE {
+  std::vector<uint32_t> EnumerateIndexedProperties(
+      v8::Isolate* isolate) override {
     std::vector<uint32_t> result;
     result.push_back(0);
     return result;
@@ -89,11 +88,11 @@ class MyInterceptor : public Wrappable<MyInterceptor>,
         IndexedPropertyInterceptor(isolate, this),
         value_(0),
         template_cache_(isolate) {}
-  virtual ~MyInterceptor() {}
+  ~MyInterceptor() override {}
 
   // gin::Wrappable
-  virtual ObjectTemplateBuilder GetObjectTemplateBuilder(v8::Isolate* isolate)
-      OVERRIDE {
+  ObjectTemplateBuilder GetObjectTemplateBuilder(
+      v8::Isolate* isolate) override {
     return Wrappable<MyInterceptor>::GetObjectTemplateBuilder(isolate)
         .AddNamedPropertyInterceptor()
         .AddIndexedPropertyInterceptor();
@@ -119,7 +118,7 @@ class MyInterceptor : public Wrappable<MyInterceptor>,
 
   int value_;
 
-  v8::StdPersistentValueMap<std::string, v8::FunctionTemplate> template_cache_;
+  v8::StdGlobalValueMap<std::string, v8::FunctionTemplate> template_cache_;
 
   DISALLOW_COPY_AND_ASSIGN(MyInterceptor);
 };
@@ -137,17 +136,17 @@ class InterceptorTest : public V8Test {
     obj->set_value(42);
     EXPECT_EQ(42, obj->value());
 
-    v8::Handle<v8::String> source = StringToV8(isolate, script_source);
+    v8::Local<v8::String> source = StringToV8(isolate, script_source);
     EXPECT_FALSE(source.IsEmpty());
 
     gin::TryCatch try_catch;
-    v8::Handle<v8::Script> script = v8::Script::Compile(source);
+    v8::Local<v8::Script> script = v8::Script::Compile(source);
     EXPECT_FALSE(script.IsEmpty());
-    v8::Handle<v8::Value> val = script->Run();
+    v8::Local<v8::Value> val = script->Run();
     EXPECT_FALSE(val.IsEmpty());
-    v8::Handle<v8::Function> func;
+    v8::Local<v8::Function> func;
     EXPECT_TRUE(ConvertFromV8(isolate, val, &func));
-    v8::Handle<v8::Value> argv[] = {ConvertToV8(isolate, obj.get()), };
+    v8::Local<v8::Value> argv[] = {ConvertToV8(isolate, obj.get()), };
     func->Call(v8::Undefined(isolate), 1, argv);
     EXPECT_FALSE(try_catch.HasCaught());
     EXPECT_EQ("", try_catch.GetStackTrace());

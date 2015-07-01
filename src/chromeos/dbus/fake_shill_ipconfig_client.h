@@ -19,34 +19,34 @@ class CHROMEOS_EXPORT FakeShillIPConfigClient
       public ShillIPConfigClient::TestInterface {
  public:
   FakeShillIPConfigClient();
-  virtual ~FakeShillIPConfigClient();
+  ~FakeShillIPConfigClient() override;
 
   // ShillIPConfigClient overrides
-  virtual void Init(dbus::Bus* bus) OVERRIDE;
-  virtual void AddPropertyChangedObserver(
+  void Init(dbus::Bus* bus) override;
+  void AddPropertyChangedObserver(
       const dbus::ObjectPath& ipconfig_path,
-      ShillPropertyChangedObserver* observer) OVERRIDE;
-  virtual void RemovePropertyChangedObserver(
+      ShillPropertyChangedObserver* observer) override;
+  void RemovePropertyChangedObserver(
       const dbus::ObjectPath& ipconfig_path,
-      ShillPropertyChangedObserver* observer) OVERRIDE;
-  virtual void Refresh(const dbus::ObjectPath& ipconfig_path,
-                       const VoidDBusMethodCallback& callback) OVERRIDE;
-  virtual void GetProperties(const dbus::ObjectPath& ipconfig_path,
-                             const DictionaryValueCallback& callback) OVERRIDE;
-  virtual void SetProperty(const dbus::ObjectPath& ipconfig_path,
-                           const std::string& name,
-                           const base::Value& value,
-                           const VoidDBusMethodCallback& callback) OVERRIDE;
-  virtual void ClearProperty(const dbus::ObjectPath& ipconfig_path,
-                             const std::string& name,
-                             const VoidDBusMethodCallback& callback) OVERRIDE;
-  virtual void Remove(const dbus::ObjectPath& ipconfig_path,
-                      const VoidDBusMethodCallback& callback) OVERRIDE;
-  virtual ShillIPConfigClient::TestInterface* GetTestInterface() OVERRIDE;
+      ShillPropertyChangedObserver* observer) override;
+  void Refresh(const dbus::ObjectPath& ipconfig_path,
+               const VoidDBusMethodCallback& callback) override;
+  void GetProperties(const dbus::ObjectPath& ipconfig_path,
+                     const DictionaryValueCallback& callback) override;
+  void SetProperty(const dbus::ObjectPath& ipconfig_path,
+                   const std::string& name,
+                   const base::Value& value,
+                   const VoidDBusMethodCallback& callback) override;
+  void ClearProperty(const dbus::ObjectPath& ipconfig_path,
+                     const std::string& name,
+                     const VoidDBusMethodCallback& callback) override;
+  void Remove(const dbus::ObjectPath& ipconfig_path,
+              const VoidDBusMethodCallback& callback) override;
+  ShillIPConfigClient::TestInterface* GetTestInterface() override;
 
   // ShillIPConfigClient::TestInterface overrides.
-  virtual void AddIPConfig(const std::string& ip_config_path,
-                           const base::DictionaryValue& properties) OVERRIDE;
+  void AddIPConfig(const std::string& ip_config_path,
+                   const base::DictionaryValue& properties) override;
 
  private:
   // Runs callback with |values|.

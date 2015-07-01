@@ -10,12 +10,12 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/strings/string_piece.h"
 #include "base/synchronization/lock.h"
 #include "tools/gn/action_values.h"
 #include "tools/gn/config_values.h"
+#include "tools/gn/inherited_libraries.h"
 #include "tools/gn/item.h"
 #include "tools/gn/label_ptr.h"
 #include "tools/gn/ordered_set.h"
@@ -23,6 +23,7 @@
 #include "tools/gn/source_file.h"
 #include "tools/gn/unique_vector.h"
 
+class DepsIteratorRange;
 class InputFile;
 class Settings;
 class Token;
@@ -41,19 +42,25 @@ class Target : public Item {
     ACTION,
     ACTION_FOREACH,
   };
+
+  enum DepsIterationType {
+    DEPS_ALL,  // Iterates through all public, private, and data deps.
+    DEPS_LINKED,  // Iterates through all non-data dependencies.
+  };
+
   typedef std::vector<SourceFile> FileList;
   typedef std::vector<std::string> StringVector;
 
   Target(const Settings* settings, const Label& label);
-  virtual ~Target();
+  ~Target() override;
 
   // Returns a string naming the output type.
   static const char* GetStringForOutputType(OutputType type);
 
   // Item overrides.
-  virtual Target* AsTarget() OVERRIDE;
-  virtual const Target* AsTarget() const OVERRIDE;
-  virtual bool OnResolved(Err* err) OVERRIDE;
+  Target* AsTarget() override;
+  const Target* AsTarget() const override;
+  bool OnResolved(Err* err) override;
 
   OutputType output_type() const { return output_type_; }
   void set_output_type(OutputType t) { output_type_ = t; }
@@ -125,6 +132,11 @@ class Target : public Item {
            output_type_ == COPY_FILES;
   }
 
+  // Returns the iterator range which can be used in range-based for loops
+  // to iterate over multiple types of deps in one loop:
+  //   for (const auto& pair : target->GetDeps(Target::DEPS_ALL)) ...
+  DepsIteratorRange GetDeps(DepsIterationType type) const;
+
   // Linked private dependencies.
   const LabelTargetVector& private_deps() const { return private_deps_; }
   LabelTargetVector& private_deps() { return private_deps_; }
@@ -178,7 +190,7 @@ class Target : public Item {
     return allow_circular_includes_from_;
   }
 
-  const UniqueVector<const Target*>& inherited_libraries() const {
+  const InheritedLibraries& inherited_libraries() const {
     return inherited_libraries_;
   }
 
@@ -205,7 +217,7 @@ class Target : public Item {
   // or the error will be set and the function will return false. Unusually,
   // this function's "err" output is optional since this is commonly used
   // frequently by unit tests which become needlessly verbose.
-  bool SetToolchain(const Toolchain* toolchain, Err* err = NULL);
+  bool SetToolchain(const Toolchain* toolchain, Err* err = nullptr);
 
   // Returns outputs from this target. The link output file is the one that
   // other targets link to when they depend on this target. This will only be
@@ -230,7 +242,8 @@ class Target : public Item {
  private:
   // Pulls necessary information from dependencies to this one when all
   // dependencies have been resolved.
-  void PullDependentTargetInfo();
+  void PullDependentTarget(const Target* dep, bool is_public);
+  void PullDependentTargets();
 
   // These each pull specific things from dependencies to this one when all
   // deps have been resolved.
@@ -259,8 +272,6 @@ class Target : public Item {
   FileList inputs_;
   FileList data_;
 
-  bool hard_dep_;
-
   LabelTargetVector private_deps_;
   LabelTargetVector public_deps_;
   LabelTargetVector data_deps_;
@@ -272,14 +283,9 @@ class Target : public Item {
 
   std::set<Label> allow_circular_includes_from_;
 
-  bool external_;
-
-  // Static libraries and source sets from transitive deps. These things need
-  // to be linked only with the end target (executable, shared library). Source
-  // sets do not get pushed beyond static library boundaries, and neither
-  // source sets nor static libraries get pushed beyond sahred library
-  // boundaries.
-  UniqueVector<const Target*> inherited_libraries_;
+  // Static libraries, shared libraries, and source sets from transitive deps
+  // that need to be linked.
+  InheritedLibraries inherited_libraries_;
 
   // These libs and dirs are inherited from statically linked deps and all
   // configs applying to this target.
@@ -302,21 +308,5 @@ class Target : public Item {
 
   DISALLOW_COPY_AND_ASSIGN(Target);
 };
-
-namespace BASE_HASH_NAMESPACE {
-
-#if defined(COMPILER_GCC)
-template<> struct hash<const Target*> {
-  std::size_t operator()(const Target* t) const {
-    return reinterpret_cast<std::size_t>(t);
-  }
-};
-#elif defined(COMPILER_MSVC)
-inline size_t hash_value(const Target* t) {
-  return reinterpret_cast<size_t>(t);
-}
-#endif  // COMPILER...
-
-}  // namespace BASE_HASH_NAMESPACE
 
 #endif  // TOOLS_GN_TARGET_H_

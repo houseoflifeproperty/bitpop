@@ -32,35 +32,34 @@
 #include "core/events/EventListener.h"
 #include "modules/EventModules.h"
 #include "modules/EventTargetModules.h"
+#include "modules/ModulesExport.h"
 #include "modules/indexeddb/IDBMetadata.h"
 #include "modules/indexeddb/IndexedDB.h"
 #include "platform/heap/Handle.h"
-#include "public/platform/WebIDBDatabase.h"
-#include "public/platform/WebIDBTypes.h"
+#include "public/platform/modules/indexeddb/WebIDBDatabase.h"
+#include "public/platform/modules/indexeddb/WebIDBTypes.h"
 #include "wtf/HashSet.h"
 
 namespace blink {
 
 class DOMError;
 class ExceptionState;
-class IDBCursor;
 class IDBDatabase;
 class IDBObjectStore;
 class IDBOpenDBRequest;
 struct IDBObjectStoreMetadata;
 
-class IDBTransaction FINAL
-    : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<IDBTransaction>
-    , public EventTargetWithInlineData
+class MODULES_EXPORT IDBTransaction final
+    : public RefCountedGarbageCollectedEventTargetWithInlineData<IDBTransaction>
     , public ActiveDOMObject {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<IDBTransaction>);
-    DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(IDBTransaction);
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static IDBTransaction* create(ScriptState*, int64_t, const Vector<String>& objectStoreNames, WebIDBTransactionMode, IDBDatabase*);
     static IDBTransaction* create(ScriptState*, int64_t, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata& previousMetadata);
     virtual ~IDBTransaction();
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
     static WebIDBTransactionMode stringToMode(const String&, ExceptionState&);
 
@@ -77,7 +76,7 @@ public:
     // Implement the IDBTransaction IDL
     const String& mode() const;
     IDBDatabase* db() const { return m_database.get(); }
-    PassRefPtrWillBeRawPtr<DOMError> error() const { return m_error; }
+    DOMError* error() const { return m_error; }
     IDBObjectStore* objectStore(const String& name, ExceptionState&);
     void abort(ExceptionState&);
 
@@ -86,25 +85,25 @@ public:
     void objectStoreCreated(const String&, IDBObjectStore*);
     void objectStoreDeleted(const String&);
     void setActive(bool);
-    void setError(PassRefPtrWillBeRawPtr<DOMError>);
+    void setError(DOMError*);
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(abort);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(complete);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
 
-    void onAbort(PassRefPtrWillBeRawPtr<DOMError>);
+    void onAbort(DOMError*);
     void onComplete();
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
+    virtual ExecutionContext* executionContext() const override;
 
     using EventTarget::dispatchEvent;
-    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) OVERRIDE;
+    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
 
     // ActiveDOMObject
-    virtual bool hasPendingActivity() const OVERRIDE;
-    virtual void stop() OVERRIDE;
+    virtual bool hasPendingActivity() const override;
+    virtual void stop() override;
 
 private:
     IDBTransaction(ScriptState*, int64_t, const Vector<String>&, WebIDBTransactionMode, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata&);
@@ -126,14 +125,14 @@ private:
     State m_state;
     bool m_hasPendingActivity;
     bool m_contextStopped;
-    RefPtrWillBeMember<DOMError> m_error;
+    Member<DOMError> m_error;
 
-    HeapListHashSet<Member<IDBRequest> > m_requestList;
+    HeapListHashSet<Member<IDBRequest>> m_requestList;
 
-    typedef HeapHashMap<String, Member<IDBObjectStore> > IDBObjectStoreMap;
+    typedef HeapHashMap<String, Member<IDBObjectStore>> IDBObjectStoreMap;
     IDBObjectStoreMap m_objectStoreMap;
 
-    typedef HeapHashSet<Member<IDBObjectStore> > IDBObjectStoreSet;
+    typedef HeapHashSet<Member<IDBObjectStore>> IDBObjectStoreSet;
     IDBObjectStoreSet m_deletedObjectStores;
 
     typedef HeapHashMap<Member<IDBObjectStore>, IDBObjectStoreMetadata> IDBObjectStoreMetadataMap;

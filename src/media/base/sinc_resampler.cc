@@ -111,6 +111,10 @@ static double SincScaleFactor(double io_ratio) {
   return sinc_scale_factor;
 }
 
+static int CalculateChunkSize(int block_size_, double io_ratio) {
+  return block_size_ / io_ratio;
+}
+
 SincResampler::SincResampler(double io_sample_rate_ratio,
                              int request_frames,
                              const ReadCB& read_cb)
@@ -153,6 +157,7 @@ void SincResampler::UpdateRegions(bool second_load) {
   r3_ = r0_ + request_frames_ - kKernelSize;
   r4_ = r0_ + request_frames_ - kKernelSize / 2;
   block_size_ = r4_ - r2_;
+  chunk_size_ = CalculateChunkSize(block_size_, io_sample_rate_ratio_);
 
   // r1_ at the beginning of the buffer.
   CHECK_EQ(r1_, input_buffer_.get());
@@ -178,23 +183,22 @@ void SincResampler::InitializeKernel() {
 
     for (int i = 0; i < kKernelSize; ++i) {
       const int idx = i + offset_idx * kKernelSize;
-      const float pre_sinc = M_PI * (i - kKernelSize / 2 - subsample_offset);
+      const float pre_sinc =
+          static_cast<float>(M_PI * (i - kKernelSize / 2 - subsample_offset));
       kernel_pre_sinc_storage_[idx] = pre_sinc;
 
       // Compute Blackman window, matching the offset of the sinc().
       const float x = (i - subsample_offset) / kKernelSize;
-      const float window =
-          kA0 - kA1 * cos(2.0 * M_PI * x) + kA2 * cos(4.0 * M_PI * x);
+      const float window = static_cast<float>(kA0 - kA1 * cos(2.0 * M_PI * x) +
+          kA2 * cos(4.0 * M_PI * x));
       kernel_window_storage_[idx] = window;
 
       // Compute the sinc with offset, then window the sinc() function and store
       // at the correct offset.
-      if (pre_sinc == 0) {
-        kernel_storage_[idx] = sinc_scale_factor * window;
-      } else {
-        kernel_storage_[idx] =
-            window * sin(sinc_scale_factor * pre_sinc) / pre_sinc;
-      }
+      kernel_storage_[idx] = static_cast<float>(window *
+          ((pre_sinc == 0) ?
+              sinc_scale_factor :
+              (sin(sinc_scale_factor * pre_sinc) / pre_sinc)));
     }
   }
 }
@@ -206,6 +210,7 @@ void SincResampler::SetRatio(double io_sample_rate_ratio) {
   }
 
   io_sample_rate_ratio_ = io_sample_rate_ratio;
+  chunk_size_ = CalculateChunkSize(block_size_, io_sample_rate_ratio_);
 
   // Optimize reinitialization by reusing values which are independent of
   // |sinc_scale_factor|.  Provides a 3x speedup.
@@ -216,12 +221,10 @@ void SincResampler::SetRatio(double io_sample_rate_ratio) {
       const float window = kernel_window_storage_[idx];
       const float pre_sinc = kernel_pre_sinc_storage_[idx];
 
-      if (pre_sinc == 0) {
-        kernel_storage_[idx] = sinc_scale_factor * window;
-      } else {
-        kernel_storage_[idx] =
-            window * sin(sinc_scale_factor * pre_sinc) / pre_sinc;
-      }
+      kernel_storage_[idx] = static_cast<float>(window *
+          ((pre_sinc == 0) ?
+              sinc_scale_factor :
+              (sin(sinc_scale_factor * pre_sinc) / pre_sinc)));
     }
   }
 }
@@ -242,7 +245,7 @@ void SincResampler::Resample(int frames, float* destination) {
   while (remaining_frames) {
     // Note: The loop construct here can severely impact performance on ARM
     // or when built with clang.  See https://codereview.chromium.org/18566009/
-    int source_idx = virtual_source_idx_;
+    int source_idx = static_cast<int>(virtual_source_idx_);
     while (source_idx < block_size_) {
       // |virtual_source_idx_| lies in between two kernel offsets so figure out
       // what they are.
@@ -250,7 +253,7 @@ void SincResampler::Resample(int frames, float* destination) {
 
       const double virtual_offset_idx =
           subsample_remainder * kKernelOffsetCount;
-      const int offset_idx = virtual_offset_idx;
+      const int offset_idx = static_cast<int>(virtual_offset_idx);
 
       // We'll compute "convolutions" for the two kernels which straddle
       // |virtual_source_idx_|.
@@ -273,7 +276,7 @@ void SincResampler::Resample(int frames, float* destination) {
 
       // Advance the virtual index.
       virtual_source_idx_ += current_io_ratio;
-      source_idx = virtual_source_idx_;
+      source_idx = static_cast<int>(virtual_source_idx_);
 
       if (!--remaining_frames)
         return;
@@ -296,8 +299,12 @@ void SincResampler::Resample(int frames, float* destination) {
   }
 }
 
-int SincResampler::ChunkSize() const {
-  return block_size_ / io_sample_rate_ratio_;
+void SincResampler::PrimeWithSilence() {
+  // By enforcing the buffer hasn't been primed, we ensure the input buffer has
+  // already been zeroed during construction or by a previous Flush() call.
+  DCHECK(!buffer_primed_);
+  DCHECK_EQ(input_buffer_[0], 0.0f);
+  UpdateRegions(true);
 }
 
 void SincResampler::Flush() {
@@ -306,6 +313,14 @@ void SincResampler::Flush() {
   memset(input_buffer_.get(), 0,
          sizeof(*input_buffer_.get()) * input_buffer_size_);
   UpdateRegions(false);
+}
+
+double SincResampler::BufferedFrames() const {
+  if (buffer_primed_) {
+    return request_frames_ - virtual_source_idx_;
+  } else {
+    return 0.0;
+  }
 }
 
 float SincResampler::Convolve_C(const float* input_ptr, const float* k1,
@@ -323,8 +338,8 @@ float SincResampler::Convolve_C(const float* input_ptr, const float* k1,
   }
 
   // Linearly interpolate the two "convolutions".
-  return (1.0 - kernel_interpolation_factor) * sum1
-      + kernel_interpolation_factor * sum2;
+  return static_cast<float>((1.0 - kernel_interpolation_factor) * sum1 +
+      kernel_interpolation_factor * sum2);
 }
 
 #if defined(ARCH_CPU_X86_FAMILY)
@@ -352,8 +367,10 @@ float SincResampler::Convolve_SSE(const float* input_ptr, const float* k1,
   }
 
   // Linearly interpolate the two "convolutions".
-  m_sums1 = _mm_mul_ps(m_sums1, _mm_set_ps1(1.0 - kernel_interpolation_factor));
-  m_sums2 = _mm_mul_ps(m_sums2, _mm_set_ps1(kernel_interpolation_factor));
+  m_sums1 = _mm_mul_ps(m_sums1, _mm_set_ps1(
+      static_cast<float>(1.0 - kernel_interpolation_factor)));
+  m_sums2 = _mm_mul_ps(m_sums2, _mm_set_ps1(
+      static_cast<float>(kernel_interpolation_factor)));
   m_sums1 = _mm_add_ps(m_sums1, m_sums2);
 
   // Sum components together.

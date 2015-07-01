@@ -56,7 +56,7 @@ const int kLogoutButtonPushedImages[] = {
 class LogoutButton : public views::LabelButton {
  public:
   LogoutButton(views::ButtonListener* listener);
-  virtual ~LogoutButton();
+  ~LogoutButton() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(LogoutButton);
@@ -83,7 +83,7 @@ LogoutButton::LogoutButton(views::ButtonListener* listener)
   insets += gfx::Insets(0, kLogoutButtonHorizontalExtraPadding,
                         0, kLogoutButtonHorizontalExtraPadding);
   border->set_insets(insets);
-  SetBorder(border.PassAs<views::Border>());
+  SetBorder(border.Pass());
   set_animate_on_state_change(false);
 
   SetMinSize(gfx::Size(0, kShelfItemHeight));

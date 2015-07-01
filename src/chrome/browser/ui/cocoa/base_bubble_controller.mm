@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "base/mac/bundle_locations.h"
+#include "base/mac/foundation_util.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsobject.h"
 #include "base/mac/sdk_forward_declarations.h"
@@ -201,9 +202,6 @@
   }
 
   tabStripObserverBridge_.reset();
-
-  NSWindow* window = [self window];
-  [[window parentWindow] removeChildWindow:window];
 }
 
 - (void)windowWillClose:(NSNotification*)notification {
@@ -342,11 +340,10 @@
         case info_bubble::kTopLeft:
           origin.x -= offsets.width;
           break;
+        case info_bubble::kNoArrow:
+        // FALLTHROUGH.
         case info_bubble::kTopCenter:
           origin.x -= NSWidth([window frame]) / 2.0;
-          break;
-        case info_bubble::kNoArrow:
-          NOTREACHED();
           break;
       }
       break;

@@ -143,6 +143,11 @@
       { "pref": "spdy.disabled" }
     ]
   },
+  
+  "QuicAllowed": {
+    "os": ["win", "linux", "mac", "chromeos"],
+    "test_policy": { "QuicAllowed": true }
+  },
 
   "DisabledSchemes": {
     "os": ["win", "linux", "mac", "chromeos"],
@@ -202,77 +207,45 @@
   },
 
   "RemoteAccessHostFirewallTraversal": {
-    "os": [],
-    "test_policy": { "RemoteAccessHostFirewallTraversal": true },
-    "pref_mappings": [
-      { "pref": "remote_access.host_firewall_traversal" }
-    ],
-
-    "note": "TODO(frankf): Enable on all OS after crbug.com/121066 is fixed."
   },
 
   "RemoteAccessHostRequireTwoFactor": {
-    "os": [],
-    "test_policy": { "RemoteAccessHostRequireTwoFactor": false },
-    "pref_mappings": [
-      { "pref": "remote_access.host_require_two_factor" }
-    ]
   },
 
   "RemoteAccessHostDomain": {
-    "os": [],
-    "test_policy": { "RemoteAccessHostDomain": "" },
-    "pref_mappings": [
-      { "pref": "remote_access.host_domain" }
-    ]
   },
 
   "RemoteAccessHostTalkGadgetPrefix": {
-    "os": [],
-    "test_policy": { "RemoteAccessHostTalkGadgetPrefix": "chromoting-host" },
-    "pref_mappings": [
-      { "pref": "remote_access.host_talkgadget_prefix" }
-    ]
   },
 
   "RemoteAccessHostRequireCurtain": {
-    "os": [],
-    "test_policy": { "RemoteAccessHostRequireCurtain": false },
-    "pref_mappings": [
-      { "pref": "remote_access.host_require_curtain" }
-    ]
   },
 
   "RemoteAccessHostAllowClientPairing": {
-    "os": [],
-    "test_policy": { "RemoteAccessHostAllowClientPairing": true },
-    "pref_mappings": [
-      { "pref": "remote_access.host_allow_client_pairing" }
-    ]
   },
 
   "RemoteAccessHostAllowGnubbyAuth": {
-    "os": [],
-    "test_policy": { "RemoteAccessHostAllowGnubbyAuth": true },
-    "pref_mappings": [
-      { "pref": "remote_access.host_allow_gnubby_auth" }
-    ]
   },
 
   "RemoteAccessHostAllowRelayedConnection": {
-    "os": [],
-    "test_policy": { "RemoteAccessHostAllowRelayedConnection": true },
-    "pref_mappings": [
-      { "pref": "remote_access.host_allow_relayed_connection" }
-    ]
   },
 
   "RemoteAccessHostUdpPortRange": {
-    "os": [],
-    "test_policy": { "RemoteAccessHostUdpPortRange": "12400-12409" },
-    "pref_mappings": [
-      { "pref": "remote_access.host_udp_port_range" }
-    ]
+  },
+
+  "RemoteAccessHostMatchUsername": {
+  },
+
+  "RemoteAccessHostTokenUrl": {
+  },
+
+  "RemoteAccessHostTokenValidationUrl": {
+  },
+
+  "RemoteAccessHostTokenValidationCertificateIssuer": {
+  },
+
+  "RemoteAccessHostDebugOverridePolicies": {
   },
 
   "PrintingEnabled": {
@@ -319,11 +292,26 @@
     "os": ["win", "linux", "mac", "chromeos"]
   },
 
+  "ForceGoogleSafeSearch": {
+    "pref": "settings.force_google_safesearch",
+    "test_policy": { "ForceGoogleSafeSearch": true },
+    "settings_pages": [],
+    "os": ["win", "linux", "mac", "chromeos"]
+  },
+
+  "ForceYouTubeSafetyMode": {
+    "pref": "settings.force_youtube_safety_mode",
+    "test_policy": { "ForceYouTubeSafetyMode": true },
+    "settings_pages": [],
+    "os": ["win", "linux", "mac", "chromeos"]
+  },
+
   "MetricsReportingEnabled": {
     "os": ["win", "mac", "linux"],
     "official_only": true,
     "can_be_recommended": true,
     "test_policy": { "MetricsReportingEnabled": false },
+    "indicator_selector": "#metrics-reporting-disabled-icon",
     "pref_mappings": [
       { "pref": "user_experience_metrics.reporting_enabled",
         "local_state": true
@@ -350,6 +338,10 @@
     "pref_mappings": [
       { "pref": "profile.password_manager_allow_show_passwords" }
     ]
+  },
+
+  "ContextualSearchEnabled": {
+    "os": ["android"]
   },
 
   "AutoFillEnabled": {
@@ -415,9 +407,9 @@
     ]
   },
 
-  "EnableWebBasedSignin": {
+  "EnableDeprecatedWebBasedSignin": {
     "os": ["win", "linux", "mac"],
-    "test_policy": { "EnableWebBasedSignin": false }
+    "test_policy": { "EnableDeprecatedWebBasedSignin": false }
   },
 
   "UserDataDir": {
@@ -481,6 +473,14 @@
 
   "ClearSiteDataOnExit": {
     "note": "This policy is retired, see http://crbug.com/133291."
+  },
+
+  "CaptivePortalAuthenticationIgnoresProxy": {
+    "os": ["chromeos"],
+    "test_policy": { "CaptivePortalAuthenticationIgnoresProxy": true },
+    "pref_mappings": [
+      { "pref": "proxy.captive_portal_ignores_proxy" }
+    ]
   },
 
   "ProxyMode": {
@@ -696,6 +696,32 @@
     "test_policy": { "ExtensionAllowedTypes": ["hosted_app"] },
     "pref_mappings": [
       { "pref": "extensions.allowed_types" }
+    ]
+  },
+
+  "ExtensionSettings": {
+    "os": ["win", "linux", "mac", "chromeos"],
+    "test_policy": {
+      "ExtensionSettings": {
+        "abcdefghijklmnopabcdefghijklmnop" : {
+          "installation_mode": "allowed",
+          "blocked_permissions": ["history"]
+        },
+        "bcdefghijklmnopabcdefghijklmnopa" : {
+          "installation_mode": "force_installed",
+          "update_url": "http://example.com/update_url",
+          "allowed_permissions": ["downloads"]
+        },
+        "*": {
+          "installation_mode": "blocked",
+          "blocked_permissions": ["downloads", "bookmarks"],
+          "install_sources": ["http://company-intranet/chromeapps"],
+          "allowed_types": ["hosted_app"]
+        }
+      }
+    },
+    "pref_mappings": [
+      { "pref": "extensions.management" }
     ]
   },
 
@@ -968,9 +994,7 @@
           { "policy": { "DefaultPluginsSetting": 1 },
             "value": "allow"},
           { "policy": { "DefaultPluginsSetting": 2 },
-            "value": "block"},
-          { "policy": { "DefaultPluginsSetting": 3 },
-            "value": "ask"}
+            "value": "block"}
         ]
       }
     ],
@@ -1558,6 +1582,14 @@
     ]
   },
 
+  "SafeBrowsingExtendedReportingOptInAllowed": {
+    "os": ["win", "linux", "mac", "chromeos"],
+    "test_policy": { "SafeBrowsingExtendedReportingOptInAllowed": true },
+    "pref_mappings": [
+      { "pref": "safebrowsing.extended_reporting_opt_in_allowed" }
+    ]
+  },
+
   "SpellCheckServiceEnabled": {
     "os": ["win", "linux", "mac", "chromeos"],
     "official_only": true,
@@ -1777,15 +1809,6 @@
     "test_policy": { "AudioOutputAllowed": true },
     "pref_mappings": [
       { "pref": "hardware.audio_output_enabled",
-        "local_state": true }
-    ]
-  },
-
-  "AudioCaptureAllowed": {
-    "os": ["chromeos"],
-    "test_policy": { "AudioCaptureAllowed": true },
-    "pref_mappings": [
-      { "pref": "hardware.audio_capture_enabled",
         "local_state": true }
     ]
   },
@@ -2204,6 +2227,22 @@
     "can_be_recommended": true
   },
 
+  "ForceMaximizeOnFirstRun": {
+    "os": ["chromeos"],
+    "test_policy": { "ForceMaximizeOnFirstRun": true },
+    "pref_mappings": [
+      { "pref": "ui.force_maximize_on_first_run" }
+    ]
+  },
+
+  "SSLErrorOverrideAllowed": {
+    "os": ["win", "linux", "mac", "chromeos"],
+    "test_policy": { "SSLErrorOverrideAllowed": true },
+    "pref_mappings": [
+      { "pref": "ssl.error_override_allowed" }
+    ]
+  },
+
   "----- Chrome OS device policies ---------------------------------------": {},
 
   "DevicePolicyRefreshRate": {
@@ -2224,6 +2263,12 @@
   "DeviceOpenNetworkConfiguration": {
   },
 
+  "HeartbeatEnabled": {
+  },
+
+  "HeartbeatFrequency": {
+  },
+
   "ReportDeviceVersionInfo": {
   },
 
@@ -2237,6 +2282,15 @@
   },
 
   "ReportDeviceUsers": {
+  },
+
+  "ReportDeviceHardwareStatus": {
+  },
+
+  "ReportDeviceSessionStatus": {
+  },
+
+  "ReportUploadFrequency": {
   },
 
   "DeviceAllowNewUsers": {
@@ -2260,17 +2314,20 @@
     "test_policy": { "DeviceMetricsReportingEnabled": true },
     "pref_mappings": [
       { "pref": "cros.metrics.reportingEnabled",
-        "indicator_test_setup_js": "Preferences.getInstance().addEventListener('alternate_error_pages.enabled', function(event) { Preferences.prefsChangedCallback(['cros.metrics.reportingEnabled', {value: event.value.value, controlledBy: event.value.controlledBy, disabled: event.value.disabled}]); });",
+        "indicator_test_setup_js": "var controllingPref = 'spellcheck.use_spelling_service'; var testedPref = 'cros.metrics.reportingEnabled'; Preferences.prefsChangedCallback([testedPref, Preferences.getInstance().registeredPreferences_[controllingPref].orig]); Preferences.getInstance().addEventListener(controllingPref, function(event) {Preferences.prefsChangedCallback([testedPref, {value: event.value.value, controlledBy: event.value.controlledBy, disabled: event.value.disabled}]);});",
         "indicator_tests": [
-          { "policy": { "AlternateErrorPagesEnabled": true } }
+          { "policy": { "SpellCheckServiceEnabled": true } }
         ]
       }
     ],
 
-    "note": "TODO(bartfab): The |indicator_test_setup_js| above is a hack that makes |cros.metrics.reportingEnabled| track the status of the entirely unrelated |alternate_error_pages.enabled| pref. This is because cros settings cannot currently be made policy-controlled in browser tests. Remove this hack once that restriction is lifted."
+    "note": "TODO(bartfab): The |indicator_test_setup_js| above is a hack that makes |cros.metrics.reportingEnabled| track the status of the entirely unrelated |spellcheck.use_spelling_service| pref. This is because cros settings cannot currently be made policy-controlled in browser tests. Remove this hack once that restriction is lifted."
   },
 
   "DeviceEphemeralUsersEnabled": {
+  },
+
+  "DeviceRebootOnShutdown": {
   },
 
   "DeviceIdleLogoutTimeout": {
@@ -2385,6 +2442,12 @@
   },
 
   "DeviceTransferSAMLCookies": {
+  },
+
+  "ExtensionCacheSize": {
+  },
+
+  "DeviceLoginScreenDomainAutoComplete": {
   },
 
   "----- Chrome Frame policies -------------------------------------------": {},

@@ -5,11 +5,13 @@
 #include "chrome/renderer/media/cast_rtp_stream.h"
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
+#include "base/trace_event/trace_event.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/renderer/media/cast_session.h"
 #include "chrome/renderer/media/cast_udp_transport.h"
 #include "content/public/renderer/media_stream_audio_sink.h"
@@ -18,9 +20,9 @@
 #include "content/public/renderer/video_encode_accelerator.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/audio_bus.h"
+#include "media/base/audio_converter.h"
 #include "media/base/audio_fifo.h"
 #include "media/base/bind_to_current_loop.h"
-#include "media/base/multi_channel_resampler.h"
 #include "media/base/video_frame.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_defines.h"
@@ -40,13 +42,6 @@ const char kCodecNameH264[] = "H264";
 
 // To convert from kilobits per second to bits to per second.
 const int kBitrateMultiplier = 1000;
-
-// This constant defines the number of sets of audio data to buffer
-// in the FIFO. If input audio and output data have different resampling
-// rates then buffer is necessary to avoid audio glitches.
-// See CastAudioSink::ResampleData() and CastAudioSink::OnSetFormat()
-// for more defaults.
-const int kBufferAudioData = 2;
 
 CastRtpPayloadParams DefaultOpusPayload() {
   CastRtpPayloadParams payload;
@@ -75,8 +70,6 @@ CastRtpPayloadParams DefaultVp8Payload() {
   payload.min_bitrate = 50;
   payload.channels = 1;
   payload.max_frame_rate = media::cast::kDefaultMaxFrameRate;
-  payload.width = 1280;
-  payload.height = 720;
   payload.codec_name = kCodecNameVp8;
   return payload;
 }
@@ -94,13 +87,17 @@ CastRtpPayloadParams DefaultH264Payload() {
   payload.min_bitrate = 50;
   payload.channels = 1;
   payload.max_frame_rate = media::cast::kDefaultMaxFrameRate;
-  payload.width = 1280;
-  payload.height = 720;
   payload.codec_name = kCodecNameH264;
   return payload;
 }
 
 bool IsHardwareVP8EncodingSupported() {
+  const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
+  if (cmd_line->HasSwitch(switches::kDisableCastStreamingHWEncoding)) {
+    DVLOG(1) << "Disabled hardware VP8 support for Cast Streaming.";
+    return false;
+  }
+
   // Query for hardware VP8 encoder support.
   std::vector<media::VideoEncodeAccelerator::SupportedProfile> vea_profiles =
       content::GetSupportedVideoEncodeAcceleratorProfiles();
@@ -114,6 +111,12 @@ bool IsHardwareVP8EncodingSupported() {
 }
 
 bool IsHardwareH264EncodingSupported() {
+  const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
+  if (cmd_line->HasSwitch(switches::kDisableCastStreamingHWEncoding)) {
+    DVLOG(1) << "Disabled hardware h264 support for Cast Streaming.";
+    return false;
+  }
+
   // Query for hardware H.264 encoder support.
   std::vector<media::VideoEncodeAccelerator::SupportedProfile> vea_profiles =
       content::GetSupportedVideoEncodeAcceleratorProfiles();
@@ -148,17 +151,26 @@ std::vector<CastRtpParams> SupportedAudioParams() {
 
 std::vector<CastRtpParams> SupportedVideoParams() {
   std::vector<CastRtpParams> supported_params;
+
+  // Prefer VP8 over H.264 for hardware encoder.
+  if (IsHardwareVP8EncodingSupported())
+    supported_params.push_back(CastRtpParams(DefaultVp8Payload()));
   if (IsHardwareH264EncodingSupported())
     supported_params.push_back(CastRtpParams(DefaultH264Payload()));
-  supported_params.push_back(CastRtpParams(DefaultVp8Payload()));
+
+  // Propose the default software VP8 encoder, if no hardware encoders are
+  // available.
+  if (supported_params.empty())
+    supported_params.push_back(CastRtpParams(DefaultVp8Payload()));
+
   return supported_params;
 }
 
 bool ToAudioSenderConfig(const CastRtpParams& params,
                          AudioSenderConfig* config) {
   config->ssrc = params.payload.ssrc;
-  config->incoming_feedback_ssrc = params.payload.feedback_ssrc;
-  if (config->ssrc == config->incoming_feedback_ssrc)
+  config->receiver_ssrc = params.payload.feedback_ssrc;
+  if (config->ssrc == config->receiver_ssrc)
     return false;
   config->min_playout_delay =
       base::TimeDelta::FromMilliseconds(
@@ -192,8 +204,8 @@ bool ToAudioSenderConfig(const CastRtpParams& params,
 bool ToVideoSenderConfig(const CastRtpParams& params,
                          VideoSenderConfig* config) {
   config->ssrc = params.payload.ssrc;
-  config->incoming_feedback_ssrc = params.payload.feedback_ssrc;
-  if (config->ssrc == config->incoming_feedback_ssrc)
+  config->receiver_ssrc = params.payload.feedback_ssrc;
+  if (config->ssrc == config->receiver_ssrc)
     return false;
   config->min_playout_delay =
       base::TimeDelta::FromMilliseconds(
@@ -207,10 +219,6 @@ bool ToVideoSenderConfig(const CastRtpParams& params,
   if (config->min_playout_delay > config->max_playout_delay)
     return false;
   config->rtp_payload_type = params.payload.payload_type;
-  config->width = params.payload.width;
-  config->height = params.payload.height;
-  if (config->width < 2 || config->height < 2)
-    return false;
   config->min_bitrate = config->start_bitrate =
       params.payload.min_bitrate * kBitrateMultiplier;
   config->max_bitrate = params.payload.max_bitrate * kBitrateMultiplier;
@@ -250,17 +258,14 @@ class CastVideoSink : public base::SupportsWeakPtr<CastVideoSink>,
                       public content::MediaStreamVideoSink {
  public:
   // |track| provides data for this sink.
-  // |expected_natural_size| is the expected dimension of the video frame.
   // |error_callback| is called if video formats don't match.
   CastVideoSink(const blink::WebMediaStreamTrack& track,
-                const gfx::Size& expected_natural_size,
                 const CastRtpStream::ErrorCallback& error_callback)
       : track_(track),
         sink_added_(false),
-        expected_natural_size_(expected_natural_size),
         error_callback_(error_callback) {}
 
-  virtual ~CastVideoSink() {
+  ~CastVideoSink() override {
     if (sink_added_)
       RemoveFromVideoTrack(this, track_);
   }
@@ -268,24 +273,11 @@ class CastVideoSink : public base::SupportsWeakPtr<CastVideoSink>,
   // This static method is used to forward video frames to |frame_input|.
   static void OnVideoFrame(
       // These parameters are already bound when callback is created.
-      const gfx::Size& expected_natural_size,
       const CastRtpStream::ErrorCallback& error_callback,
       const scoped_refptr<media::cast::VideoFrameInput> frame_input,
       // These parameters are passed for each frame.
       const scoped_refptr<media::VideoFrame>& frame,
-      const media::VideoCaptureFormat& format,
       const base::TimeTicks& estimated_capture_time) {
-    if (frame->natural_size() != expected_natural_size) {
-      error_callback.Run(
-          base::StringPrintf("Video frame resolution does not match config."
-                             " Expected %dx%d. Got %dx%d.",
-                             expected_natural_size.width(),
-                             expected_natural_size.height(),
-                             frame->natural_size().width(),
-                             frame->natural_size().height()));
-      return;
-    }
-
     base::TimeTicks timestamp;
     if (estimated_capture_time.is_null())
       timestamp = base::TimeTicks::Now();
@@ -311,7 +303,6 @@ class CastVideoSink : public base::SupportsWeakPtr<CastVideoSink>,
         this,
         base::Bind(
             &CastVideoSink::OnVideoFrame,
-            expected_natural_size_,
             error_callback_,
             frame_input),
         track_);
@@ -320,7 +311,6 @@ class CastVideoSink : public base::SupportsWeakPtr<CastVideoSink>,
  private:
   blink::WebMediaStreamTrack track_;
   bool sink_added_;
-  gfx::Size expected_natural_size_;
   CastRtpStream::ErrorCallback error_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(CastVideoSink);
@@ -333,111 +323,31 @@ class CastVideoSink : public base::SupportsWeakPtr<CastVideoSink>,
 // Note that RemoveFromAudioTrack() is synchronous and we have
 // gurantee that there will be no more audio data after calling it.
 class CastAudioSink : public base::SupportsWeakPtr<CastAudioSink>,
-                      public content::MediaStreamAudioSink {
+                      public content::MediaStreamAudioSink,
+                      public media::AudioConverter::InputCallback {
  public:
   // |track| provides data for this sink.
-  // |error_callback| is called if audio formats don't match.
   CastAudioSink(const blink::WebMediaStreamTrack& track,
-                const CastRtpStream::ErrorCallback& error_callback,
                 int output_channels,
                 int output_sample_rate)
       : track_(track),
-        sink_added_(false),
-        error_callback_(error_callback),
-        weak_factory_(this),
         output_channels_(output_channels),
         output_sample_rate_(output_sample_rate),
-        input_preroll_(0) {}
+        current_input_bus_(nullptr),
+        sample_frames_in_(0),
+        sample_frames_out_(0) {}
 
-  virtual ~CastAudioSink() {
-    if (sink_added_)
+  ~CastAudioSink() override {
+    if (frame_input_.get())
       RemoveFromAudioTrack(this, track_);
-  }
-
-  // Called on real-time audio thread.
-  // content::MediaStreamAudioSink implementation.
-  virtual void OnData(const int16* audio_data,
-                      int sample_rate,
-                      int number_of_channels,
-                      int number_of_frames) OVERRIDE {
-    scoped_ptr<media::AudioBus> input_bus;
-    if (resampler_) {
-      input_bus = ResampleData(
-          audio_data, sample_rate, number_of_channels, number_of_frames);
-      if (!input_bus)
-        return;
-    } else {
-      input_bus = media::AudioBus::Create(
-          number_of_channels, number_of_frames);
-      input_bus->FromInterleaved(
-          audio_data, number_of_frames, number_of_channels);
-    }
-
-    // TODO(hclam): Pass in the accurate capture time to have good
-    // audio / video sync.
-    frame_input_->InsertAudio(input_bus.Pass(), base::TimeTicks::Now());
-  }
-
-  // Return a resampled audio data from input. This is called when the
-  // input sample rate doesn't match the output.
-  // The flow of data is as follows:
-  // |audio_data| ->
-  //     AudioFifo |fifo_| ->
-  //         MultiChannelResampler |resampler|.
-  //
-  // The resampler pulls data out of the FIFO and resample the data in
-  // frequency domain. It might call |fifo_| for more than once. But no more
-  // than |kBufferAudioData| times. We preroll audio data into the FIFO to
-  // make sure there's enough data for resampling.
-  scoped_ptr<media::AudioBus> ResampleData(
-      const int16* audio_data,
-      int sample_rate,
-      int number_of_channels,
-      int number_of_frames) {
-    DCHECK_EQ(number_of_channels, output_channels_);
-    fifo_input_bus_->FromInterleaved(
-        audio_data, number_of_frames, number_of_channels);
-    fifo_->Push(fifo_input_bus_.get());
-
-    if (input_preroll_ < kBufferAudioData - 1) {
-      ++input_preroll_;
-      return scoped_ptr<media::AudioBus>();
-    }
-
-    scoped_ptr<media::AudioBus> output_bus(
-        media::AudioBus::Create(
-            output_channels_,
-            output_sample_rate_ * fifo_input_bus_->frames() / sample_rate));
-
-    // Resampler will then call ProvideData() below to fetch data from
-    // |input_data_|.
-    resampler_->Resample(output_bus->frames(), output_bus.get());
-    return output_bus.Pass();
-  }
-
-  // Called on real-time audio thread.
-  virtual void OnSetFormat(const media::AudioParameters& params) OVERRIDE {
-    if (params.sample_rate() == output_sample_rate_)
-      return;
-    fifo_.reset(new media::AudioFifo(
-        output_channels_,
-        kBufferAudioData * params.frames_per_buffer()));
-    fifo_input_bus_ = media::AudioBus::Create(
-        params.channels(), params.frames_per_buffer());
-    resampler_.reset(new media::MultiChannelResampler(
-        output_channels_,
-        static_cast<double>(params.sample_rate()) / output_sample_rate_,
-        params.frames_per_buffer(),
-        base::Bind(&CastAudioSink::ProvideData, base::Unretained(this))));
   }
 
   // Add this sink to the track. Data received from the track will be
   // submitted to |frame_input|.
   void AddToTrack(
       const scoped_refptr<media::cast::AudioFrameInput>& frame_input) {
-    DCHECK(!sink_added_);
-    sink_added_ = true;
-
+    DCHECK(frame_input.get());
+    DCHECK(!frame_input_.get());
     // This member is written here and then accessed on the IO thread
     // We will not get data until AddToAudioTrack is called so it is
     // safe to access this member now.
@@ -445,25 +355,95 @@ class CastAudioSink : public base::SupportsWeakPtr<CastAudioSink>,
     AddToAudioTrack(this, track_);
   }
 
-  void ProvideData(int frame_delay, media::AudioBus* output_bus) {
-    fifo_->Consume(output_bus, 0, output_bus->frames());
+ protected:
+  // Called on real-time audio thread.
+  void OnData(const media::AudioBus& input_bus,
+              base::TimeTicks estimated_capture_time) override {
+    DCHECK(input_params_.IsValid());
+    DCHECK_EQ(input_bus.channels(), input_params_.channels());
+    DCHECK_EQ(input_bus.frames(), input_params_.frames_per_buffer());
+    DCHECK(!estimated_capture_time.is_null());
+    DCHECK(converter_.get());
+
+    // Determine the duration of the audio signal enqueued within |converter_|.
+    const base::TimeDelta signal_duration_already_buffered =
+        (sample_frames_in_ * base::TimeDelta::FromSeconds(1) /
+             input_params_.sample_rate()) -
+        (sample_frames_out_ * base::TimeDelta::FromSeconds(1) /
+             output_sample_rate_);
+    DVLOG(2) << "Audio reference time adjustment: -("
+             << signal_duration_already_buffered.InMicroseconds() << " us)";
+    const base::TimeTicks capture_time_of_first_converted_sample =
+        estimated_capture_time - signal_duration_already_buffered;
+
+    // Convert the entire input signal.  AudioConverter is efficient in that no
+    // additional copying or conversion will occur if the input signal is in the
+    // same format as the output.  Note that, while the number of sample frames
+    // provided as input is always the same, the chunk size (and the size of the
+    // |audio_bus| here) can be variable.  This is not an issue since
+    // media::cast::AudioFrameInput can handle variable-sized AudioBuses.
+    scoped_ptr<media::AudioBus> audio_bus =
+        media::AudioBus::Create(output_channels_, converter_->ChunkSize());
+    // AudioConverter will call ProvideInput() to fetch from |current_data_|.
+    current_input_bus_ = &input_bus;
+    converter_->Convert(audio_bus.get());
+    DCHECK(!current_input_bus_);  // ProvideInput() called exactly once?
+
+    sample_frames_in_ += input_params_.frames_per_buffer();
+    sample_frames_out_ += audio_bus->frames();
+
+    frame_input_->InsertAudio(audio_bus.Pass(),
+                              capture_time_of_first_converted_sample);
+  }
+
+  // Called on real-time audio thread.
+  void OnSetFormat(const media::AudioParameters& params) override {
+    if (input_params_.Equals(params))
+      return;
+    input_params_ = params;
+
+    DVLOG(1) << "Setting up audio resampling: {"
+             << input_params_.channels() << " channels, "
+             << input_params_.sample_rate() << " Hz} --> {"
+             << output_channels_ << " channels, "
+             << output_sample_rate_ << " Hz}";
+    const media::AudioParameters output_params(
+        media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
+        media::GuessChannelLayout(output_channels_),
+        output_sample_rate_, 32,
+        output_sample_rate_ * input_params_.frames_per_buffer() /
+            input_params_.sample_rate());
+    converter_.reset(
+        new media::AudioConverter(input_params_, output_params, false));
+    converter_->AddInput(this);
+    sample_frames_in_ = 0;
+    sample_frames_out_ = 0;
+  }
+
+  // Called on real-time audio thread.
+  double ProvideInput(media::AudioBus* audio_bus,
+                      base::TimeDelta buffer_delay) override {
+    DCHECK(current_input_bus_);
+    current_input_bus_->CopyTo(audio_bus);
+    current_input_bus_ = nullptr;
+    return 1.0;
   }
 
  private:
-  blink::WebMediaStreamTrack track_;
-  bool sink_added_;
-  CastRtpStream::ErrorCallback error_callback_;
-  base::WeakPtrFactory<CastAudioSink> weak_factory_;
-
+  const blink::WebMediaStreamTrack track_;
   const int output_channels_;
   const int output_sample_rate_;
 
-  // These member are accessed on the real-time audio time only.
+  // This must be set before the real-time audio thread starts calling OnData(),
+  // and remain unchanged until after the thread will stop calling OnData().
   scoped_refptr<media::cast::AudioFrameInput> frame_input_;
-  scoped_ptr<media::MultiChannelResampler> resampler_;
-  scoped_ptr<media::AudioFifo> fifo_;
-  scoped_ptr<media::AudioBus> fifo_input_bus_;
-  int input_preroll_;
+
+  // These members are accessed on the real-time audio time only.
+  media::AudioParameters input_params_;
+  scoped_ptr<media::AudioConverter> converter_;
+  const media::AudioBus* current_input_bus_;
+  int64 sample_frames_in_;
+  int64 sample_frames_out_;
 
   DISALLOW_COPY_AND_ASSIGN(CastAudioSink);
 };
@@ -485,9 +465,8 @@ CastRtpPayloadParams::CastRtpPayloadParams()
       max_bitrate(0),
       min_bitrate(0),
       channels(0),
-      max_frame_rate(0.0),
-      width(0),
-      height(0) {}
+      max_frame_rate(0.0) {
+}
 
 CastRtpPayloadParams::~CastRtpPayloadParams() {}
 
@@ -514,7 +493,7 @@ void CastRtpStream::Start(const CastRtpParams& params,
                           const base::Closure& start_callback,
                           const base::Closure& stop_callback,
                           const ErrorCallback& error_callback) {
-  VLOG(1) << "CastRtpStream::Start = " << (IsAudio() ? "audio" : "video");
+  DVLOG(1) << "CastRtpStream::Start = " << (IsAudio() ? "audio" : "video");
   stop_callback_ = stop_callback;
   error_callback_ = error_callback;
 
@@ -529,8 +508,6 @@ void CastRtpStream::Start(const CastRtpParams& params,
     // the streaming after reporting the error.
     audio_sink_.reset(new CastAudioSink(
         track_,
-        media::BindToCurrentLoop(base::Bind(&CastRtpStream::DidEncounterError,
-                                            weak_factory_.GetWeakPtr())),
         params.payload.channels,
         params.payload.clock_rate));
     cast_session_->StartAudio(
@@ -548,7 +525,6 @@ void CastRtpStream::Start(const CastRtpParams& params,
     // See the code for audio above for explanation of callbacks.
     video_sink_.reset(new CastVideoSink(
         track_,
-        gfx::Size(config.width, config.height),
         media::BindToCurrentLoop(base::Bind(&CastRtpStream::DidEncounterError,
                                             weak_factory_.GetWeakPtr()))));
     cast_session_->StartVideo(
@@ -561,7 +537,7 @@ void CastRtpStream::Start(const CastRtpParams& params,
 }
 
 void CastRtpStream::Stop() {
-  VLOG(1) << "CastRtpStream::Stop = " << (IsAudio() ? "audio" : "video");
+  DVLOG(1) << "CastRtpStream::Stop = " << (IsAudio() ? "audio" : "video");
   audio_sink_.reset();
   video_sink_.reset();
   if (!stop_callback_.is_null())
@@ -569,23 +545,23 @@ void CastRtpStream::Stop() {
 }
 
 void CastRtpStream::ToggleLogging(bool enable) {
-  VLOG(1) << "CastRtpStream::ToggleLogging(" << enable << ") = "
-          << (IsAudio() ? "audio" : "video");
+  DVLOG(1) << "CastRtpStream::ToggleLogging(" << enable << ") = "
+           << (IsAudio() ? "audio" : "video");
   cast_session_->ToggleLogging(IsAudio(), enable);
 }
 
 void CastRtpStream::GetRawEvents(
     const base::Callback<void(scoped_ptr<base::BinaryValue>)>& callback,
     const std::string& extra_data) {
-  VLOG(1) << "CastRtpStream::GetRawEvents = "
-          << (IsAudio() ? "audio" : "video");
+  DVLOG(1) << "CastRtpStream::GetRawEvents = "
+           << (IsAudio() ? "audio" : "video");
   cast_session_->GetEventLogsAndReset(IsAudio(), extra_data, callback);
 }
 
 void CastRtpStream::GetStats(
     const base::Callback<void(scoped_ptr<base::DictionaryValue>)>& callback) {
-  VLOG(1) << "CastRtpStream::GetStats = "
-          << (IsAudio() ? "audio" : "video");
+  DVLOG(1) << "CastRtpStream::GetStats = "
+           << (IsAudio() ? "audio" : "video");
   cast_session_->GetStatsAndReset(IsAudio(), callback);
 }
 
@@ -594,12 +570,12 @@ bool CastRtpStream::IsAudio() const {
 }
 
 void CastRtpStream::DidEncounterError(const std::string& message) {
-  VLOG(1) << "CastRtpStream::DidEncounterError(" << message << ") = "
-          << (IsAudio() ? "audio" : "video");
+  DVLOG(1) << "CastRtpStream::DidEncounterError(" << message << ") = "
+           << (IsAudio() ? "audio" : "video");
   // Save the WeakPtr first because the error callback might delete this object.
   base::WeakPtr<CastRtpStream> ptr = weak_factory_.GetWeakPtr();
   error_callback_.Run(message);
-  content::RenderThread::Get()->GetMessageLoop()->PostTask(
+  content::RenderThread::Get()->GetTaskRunner()->PostTask(
       FROM_HERE,
       base::Bind(&CastRtpStream::Stop, ptr));
 }

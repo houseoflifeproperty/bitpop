@@ -71,8 +71,6 @@ cr.define('options', function() {
       };
       $('delete-profile-ok').onclick = function(event) {
         PageManager.closeOverlay();
-        if (BrowserOptions.getCurrentProfile().isSupervised)
-          return;
         chrome.send('deleteProfile', [self.profileInfo_.filePath]);
         options.SupervisedUserListData.resetPromise();
       };
@@ -97,18 +95,25 @@ cr.define('options', function() {
 
       $('create-profile-supervised-sign-in-link').onclick =
           function(event) {
-        // The signin process will open an overlay to configure sync, which
-        // would replace this overlay. It's smoother to close this one now.
-        // TODO(pamg): Move the sync-setup overlay to a higher layer so this one
-        // can stay open under it, after making sure that doesn't break anything
-        // else.
-        PageManager.closeOverlay();
+        // Without the new avatar menu, the signin process will open an overlay
+        // to configure sync, which would replace this overlay. It's smoother to
+        // close this one now.
+        // With the new avatar menu enabled, a sign-in flow in the avatar menu
+        // is triggered instead, which does not open any overlays, so there's no
+        // need to close this one.
+        if (!loadTimeData.getBoolean('newAvatarMenuEnabled')) {
+          // TODO(pamg): Move the sync-setup overlay to a higher layer so this
+          // one can stay open under it, after making sure that doesn't break
+          // anything else.
+          PageManager.closeOverlay();
+        }
         SyncSetupOverlay.startSignIn();
       };
 
       $('create-profile-supervised-sign-in-again-link').onclick =
           function(event) {
-        PageManager.closeOverlay();
+        if (!loadTimeData.getBoolean('newAvatarMenuEnabled'))
+          PageManager.closeOverlay();
         SyncSetupOverlay.showSetupUI();
       };
 
@@ -141,7 +146,7 @@ cr.define('options', function() {
       }
 
       var manageNameField = $('manage-profile-name');
-      // Supervised users cannot edit their names.
+      // Legacy supervised users cannot edit their names.
       if (manageNameField.disabled)
         $('manage-profile-ok').focus();
       else
@@ -211,8 +216,8 @@ cr.define('options', function() {
      * the user will use to choose their profile icon.
      * @param {string} mode A label that specifies the type of dialog box which
      *     is currently being viewed (i.e. 'create' or 'manage').
-     * @param {!Array.<string>} iconURLs An array of icon URLs.
-     * @param {Array.<string>} names An array of default names
+     * @param {!Array<string>} iconURLs An array of icon URLs.
+     * @param {Array<string>} names An array of default names
      *     corresponding to the icons.
      * @private
      */
@@ -375,7 +380,7 @@ cr.define('options', function() {
      * user. If yes, the user is prompted to import the existing supervised
      * user, and the create button is disabled.
      * If the received list is empty, hides the "import" link.
-     * @param {Array.<Object>} supervisedUsers The list of existing supervised
+     * @param {Array<Object>} supervisedUsers The list of existing supervised
      *     users.
      * @private
      */
@@ -418,7 +423,7 @@ cr.define('options', function() {
      * @private
      */
     onSigninError_: function() {
-      this.updateSignedInStatus_(this.signedInEmail_, true);
+      this.updateSignedInStatus(this.signedInEmail_, true);
     },
 
     /**
@@ -431,19 +436,10 @@ cr.define('options', function() {
     updateOkButton_: function(mode) {
       var oldName = this.profileInfo_.name;
       var newName = $(mode + '-profile-name').value;
-      var nameIsDuplicate = this.existingProfileNames_[newName] != undefined;
-      if (mode == 'manage' && oldName == newName)
-        nameIsDuplicate = false;
-      if (nameIsDuplicate) {
-        var errorHtml =
-            loadTimeData.getString('manageProfilesDuplicateNameError');
-        this.showErrorBubble_(errorHtml, mode, true);
-      } else {
-        this.hideErrorBubble_(mode);
+      this.hideErrorBubble_(mode);
 
-        var nameIsValid = $(mode + '-profile-name').validity.valid;
-        $(mode + '-profile-ok').disabled = !nameIsValid;
-      }
+      var nameIsValid = $(mode + '-profile-name').validity.valid;
+      $(mode + '-profile-ok').disabled = !nameIsValid;
     },
 
     /**
@@ -461,8 +457,16 @@ cr.define('options', function() {
         options.SupervisedUserListData.resetPromise();
     },
 
-    /** @private */
-    updateSignedInStatus_: assertNotReached,
+    /**
+     * Abstract method. Should be overriden in subclasses.
+     * @param {string} email
+     * @param {boolean} hasError
+     * @protected
+     */
+    updateSignedInStatus: function(email, hasError) {
+      // TODO: Fix triggering the assert, crbug.com/423267
+      // assertNotReached();
+    },
 
     /**
      * Called when the user clicks "OK" or hits enter. Creates the profile
@@ -530,17 +534,21 @@ cr.define('options', function() {
       $('manage-profile-overlay-manage').hidden = false;
       $('manage-profile-overlay-delete').hidden = true;
       $('manage-profile-overlay-disconnect-managed').hidden = true;
-      $('manage-profile-name').disabled = profileInfo.isSupervised;
+      $('manage-profile-name').disabled =
+          profileInfo.isSupervised && !profileInfo.isChild;
       this.hideErrorBubble_('manage');
     },
 
     /**
      * Display the "Manage Profile" dialog.
+     * @param {boolean=} opt_updateHistory If we should update the history after
+     *     showing the dialog (defaults to true).
      * @private
      */
-    showManageDialog_: function() {
+    showManageDialog_: function(opt_updateHistory) {
+      var updateHistory = opt_updateHistory !== false;
       this.prepareForManageDialog_();
-      PageManager.showPageByName('manageProfile');
+      PageManager.showPageByName('manageProfile', updateHistory);
     },
 
     /**
@@ -549,9 +557,6 @@ cr.define('options', function() {
      * @private
      */
     showDeleteDialog_: function(profileInfo) {
-      if (BrowserOptions.getCurrentProfile().isSupervised)
-        return;
-
       ManageProfileOverlay.setProfileInfo(profileInfo, 'manage');
       $('manage-profile-overlay-create').hidden = true;
       $('manage-profile-overlay-manage').hidden = true;
@@ -563,11 +568,12 @@ cr.define('options', function() {
           loadTimeData.getStringF('deleteProfileMessage',
                                   elide(profileInfo.name, /* maxLength */ 50));
       $('delete-supervised-profile-addendum').hidden =
-          !profileInfo.isSupervised;
+          !profileInfo.isSupervised || profileInfo.isChild;
 
       // Because this dialog isn't useful when refreshing or as part of the
       // history, don't create a history entry for it when showing.
       PageManager.showPageByName('manageProfile', false);
+      chrome.send('logDeleteUserDialogShown');
     },
 
     /**
@@ -766,6 +772,15 @@ cr.define('options', function() {
         PageManager.showPageByName('supervisedUserCreateConfirm', false);
         BrowserOptions.updateManagesSupervisedUsers(true);
       }
+    },
+
+    /**
+     * @param {string} email
+     * @param {boolean} hasError
+     * @override
+     */
+    updateSignedInStatus: function(email, hasError) {
+      this.updateSignedInStatus_(email, hasError);
     },
 
     /**

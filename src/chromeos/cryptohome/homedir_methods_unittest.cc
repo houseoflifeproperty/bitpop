@@ -46,11 +46,11 @@ const char kProviderData2Bytes[] = "data_2 bytes";
 class HomedirMethodsTest : public testing::Test {
  public:
   HomedirMethodsTest();
-  virtual ~HomedirMethodsTest();
+  ~HomedirMethodsTest() override;
 
   // testing::Test:
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   void RunProtobufMethodCallback(
       const chromeos::CryptohomeClient::ProtobufMethodCallback& callback);
@@ -88,7 +88,7 @@ void HomedirMethodsTest::SetUp() {
       new chromeos::MockCryptohomeClient);
   cryptohome_client_ = cryptohome_client.get();
   chromeos::DBusThreadManager::GetSetterForTesting()->SetCryptohomeClient(
-      cryptohome_client.PassAs<chromeos::CryptohomeClient>());
+      cryptohome_client.Pass());
   HomedirMethods::Initialize();
 }
 

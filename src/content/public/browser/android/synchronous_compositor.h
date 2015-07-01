@@ -8,8 +8,8 @@
 #include "base/memory/ref_counted.h"
 #include "content/common/content_export.h"
 #include "gpu/command_buffer/service/in_process_command_buffer.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 
 class SkCanvas;
 
@@ -31,34 +31,15 @@ namespace content {
 class SynchronousCompositorClient;
 class WebContents;
 
-struct CONTENT_EXPORT SynchronousCompositorMemoryPolicy {
-  // Memory limit for rendering and pre-rendering.
-  size_t bytes_limit;
-
-  // Limit of number of GL resources used for rendering and pre-rendering.
-  size_t num_resources_limit;
-
-  SynchronousCompositorMemoryPolicy();
-
-  bool operator==(const SynchronousCompositorMemoryPolicy& other) const;
-  bool operator!=(const SynchronousCompositorMemoryPolicy& other) const;
-};
-
 // Interface for embedders that wish to direct compositing operations
 // synchronously under their own control. Only meaningful when the
 // kEnableSyncrhonousRendererCompositor flag is specified.
 class CONTENT_EXPORT SynchronousCompositor {
  public:
   // Must be called once per WebContents instance. Will create the compositor
-  // instance as needed, but only if |client| is non-NULL.
+  // instance as needed, but only if |client| is non-nullptr.
   static void SetClientForWebContents(WebContents* contents,
                                       SynchronousCompositorClient* client);
-
-  // Allows changing or resetting the client to NULL (this must be used if
-  // the client is being deleted prior to the DidDestroyCompositor() call
-  // being received by the client). Ownership of |client| remains with
-  // the caller.
-  virtual void SetClient(SynchronousCompositorClient* client) = 0;
 
   static void SetGpuService(
       scoped_refptr<gpu::InProcessCommandBuffer::Service> service);
@@ -68,17 +49,6 @@ class CONTENT_EXPORT SynchronousCompositor {
   // between this record-full-layer behavior and normal record-around-viewport
   // behavior.
   static void SetRecordFullDocument(bool record_full_document);
-
-  // Synchronously initialize compositor for hardware draw. Can only be called
-  // while compositor is in software only mode, either after compositor is
-  // first created or after ReleaseHwDraw is called. It is invalid to
-  // DemandDrawHw before this returns true.
-  virtual bool InitializeHwDraw() = 0;
-
-  // Reverse of InitializeHwDraw above. Can only be called while hardware draw
-  // is already initialized. Brings compositor back to software only mode and
-  // releases all hardware resources.
-  virtual void ReleaseHwDraw() = 0;
 
   // "On demand" hardware draw. The content is first clipped to |damage_area|,
   // then transformed through |transform|, and finally clipped to |view_size|.
@@ -99,13 +69,17 @@ class CONTENT_EXPORT SynchronousCompositor {
   virtual bool DemandDrawSw(SkCanvas* canvas) = 0;
 
   // Set the memory limit policy of this compositor.
-  virtual void SetMemoryPolicy(
-      const SynchronousCompositorMemoryPolicy& policy) = 0;
+  virtual void SetMemoryPolicy(size_t bytes_limit) = 0;
 
   // Should be called by the embedder after the embedder had modified the
   // scroll offset of the root layer (as returned by
   // SynchronousCompositorClient::GetTotalRootLayerScrollOffset).
   virtual void DidChangeRootLayerScrollOffset() = 0;
+
+  // Called by the embedder to notify that the compositor is active. The
+  // compositor won't ask for vsyncs when it's inactive. NOTE: The compositor
+  // starts off as inactive and needs a SetActive(true) call to begin.
+  virtual void SetIsActive(bool is_active) = 0;
 
  protected:
   virtual ~SynchronousCompositor() {}

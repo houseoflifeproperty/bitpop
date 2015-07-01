@@ -72,6 +72,7 @@ FetchRequest::~FetchRequest()
 void FetchRequest::setCrossOriginAccessControl(SecurityOrigin* origin, StoredCredentials allowCredentials, CredentialRequest requested)
 {
     ASSERT(requested == ClientDidNotRequestCredentials || allowCredentials == AllowStoredCredentials);
+    m_resourceRequest.setFetchRequestMode(WebURLRequest::FetchRequestModeCORS);
     updateRequestForAccessControl(m_resourceRequest, origin, allowCredentials);
     m_options.allowCredentials = allowCredentials;
     m_options.corsEnabled = IsCORSEnabled;
@@ -87,6 +88,14 @@ void FetchRequest::setCrossOriginAccessControl(SecurityOrigin* origin, StoredCre
 void FetchRequest::setCrossOriginAccessControl(SecurityOrigin* origin, const AtomicString& crossOriginMode)
 {
     setCrossOriginAccessControl(origin, equalIgnoringCase(crossOriginMode, "use-credentials") ? AllowStoredCredentials : DoNotAllowStoredCredentials);
+}
+
+void FetchRequest::setResourceWidth(ResourceWidth resourceWidth)
+{
+    if (resourceWidth.isSet) {
+        m_resourceWidth.width = resourceWidth.width;
+        m_resourceWidth.isSet = true;
+    }
 }
 
 } // namespace blink

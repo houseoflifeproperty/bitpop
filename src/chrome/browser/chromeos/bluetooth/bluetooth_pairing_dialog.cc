@@ -11,7 +11,7 @@
 #include "chrome/grit/generated_resources.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 using content::WebContents;
 using content::WebUIMessageHandler;
@@ -86,8 +86,7 @@ void BluetoothPairingDialog::OnDialogClosed(const std::string& json_retval) {
 
 void BluetoothPairingDialog::OnCloseContents(WebContents* source,
                                              bool* out_close_dialog) {
-  if (out_close_dialog)
-    *out_close_dialog = true;
+  *out_close_dialog = true;
 }
 
 bool BluetoothPairingDialog::ShouldShowDialogTitle() const {

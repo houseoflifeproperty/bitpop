@@ -15,6 +15,7 @@
 #include "base/gtest_prod_util.h"
 #include "chrome/common/importer/importer_url_row.h"
 #include "chrome/utility/importer/importer.h"
+#include "components/favicon_base/favicon_usage_data.h"
 
 #if __OBJC__
 @class NSDictionary;
@@ -26,7 +27,6 @@ class NSString;
 
 class GURL;
 struct ImportedBookmarkEntry;
-struct ImportedFaviconUsage;
 
 namespace sql {
 class Connection;
@@ -40,9 +40,9 @@ class SafariImporter : public Importer {
   explicit SafariImporter(const base::FilePath& library_dir);
 
   // Importer:
-  virtual void StartImport(const importer::SourceProfile& source_profile,
-                           uint16 items,
-                           ImporterBridge* bridge) OVERRIDE;
+  void StartImport(const importer::SourceProfile& source_profile,
+                   uint16 items,
+                   ImporterBridge* bridge) override;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(SafariImporterTest, BookmarkImport);
@@ -51,7 +51,7 @@ class SafariImporter : public Importer {
   FRIEND_TEST_ALL_PREFIXES(SafariImporterTest, FaviconImport);
   FRIEND_TEST_ALL_PREFIXES(SafariImporterTest, HistoryImport);
 
-  virtual ~SafariImporter();
+  ~SafariImporter() override;
 
   // Multiple URLs can share the same favicon; this is a map
   // of URLs -> IconIDs that we load as a temporary step before
@@ -94,7 +94,7 @@ class SafariImporter : public Importer {
   // Loads and reencodes the individual favicons.
   void LoadFaviconData(sql::Connection* db,
                        const FaviconMap& favicon_map,
-                       std::vector<ImportedFaviconUsage>* favicons);
+                       favicon_base::FaviconUsageDataList* favicons);
 
   base::FilePath library_dir_;
 

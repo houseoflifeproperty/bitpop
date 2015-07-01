@@ -41,6 +41,9 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
     // Whether this screen is shown for the first time.
     firstShown_: true,
 
+    // Whether this screen is currently being shown.
+    showing_: false,
+
     /** @override */
     decorate: function() {
       login.PodRow.decorate($('pod-row'));
@@ -54,6 +57,12 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
     /** @override */
     onWindowResize: function() {
       $('pod-row').onWindowResize();
+
+      // Reposition the error bubble, if it is showing. Since we are just
+      // moving the bubble, the number of login attempts tried doesn't matter.
+      var errorBubble = $('bubble');
+      if (errorBubble && !errorBubble.hidden)
+        this.showErrorBubble(0, undefined  /* Reuses the existing message. */);
     },
 
     /**
@@ -98,6 +107,7 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
      * @param {string} data Screen init payload.
      */
     onBeforeShow: function(data) {
+      this.showing_ = true;
       chrome.send('loginUIStateChanged', ['account-picker', true]);
       $('login-header-bar').signinUIState = SIGNIN_UI_STATE.ACCOUNT_PICKER;
       chrome.send('hideCaptivePortal');
@@ -114,6 +124,12 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
      * Event handler invoked when the page is shown and ready.
      */
     onShow: function() {
+      if (!this.showing_) {
+        // This method may be called asynchronously when the pod row finishes
+        // initializing. However, at that point, the screen may have been hidden
+        // again already. If that happens, ignore the onShow() call.
+        return;
+      }
       chrome.send('getTouchViewState');
       if (!this.firstShown_) return;
       this.firstShown_ = false;
@@ -129,6 +145,7 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
      * Event handler that is invoked just before the frame is hidden.
      */
     onBeforeHide: function() {
+      this.showing_ = false;
       chrome.send('loginUIStateChanged', ['account-picker', false]);
       $('login-header-bar').signinUIState = SIGNIN_UI_STATE.HIDDEN;
       $('pod-row').handleHide();
@@ -150,8 +167,14 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
       // Show web authentication if this is not a supervised user.
       if (loginAttempts > MAX_LOGIN_ATTEMPTS_IN_POD &&
           !activatedPod.user.supervisedUser) {
+        chrome.send('maxIncorrectPasswordAttempts',
+            [activatedPod.user.emailAddress]);
         activatedPod.showSigninUI();
       } else {
+        if (loginAttempts == 1) {
+          chrome.send('firstIncorrectPasswordAttempt',
+              [activatedPod.user.emailAddress]);
+        }
         // We want bubble's arrow to point to the first letter of input.
         /** @const */ var BUBBLE_OFFSET = 7;
         /** @const */ var BUBBLE_PADDING = 4;
@@ -273,6 +296,7 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
      * @param {string} username Username of pod to add button
      * @param {!{id: !string,
      *           hardlockOnClick: boolean,
+     *           isTrialRun: boolean,
      *           tooltip: ({text: string, autoshow: boolean} | undefined)}} icon
      *     The icon parameters.
      */
@@ -348,4 +372,3 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
     }
   };
 });
-

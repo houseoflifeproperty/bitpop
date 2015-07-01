@@ -49,31 +49,25 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   // to move or resize beyond that edge.
   static const int kStickyDistancePixels;
 
-  virtual ~WorkspaceWindowResizer();
+  ~WorkspaceWindowResizer() override;
 
   static WorkspaceWindowResizer* Create(
       wm::WindowState* window_state,
       const std::vector<aura::Window*>& attached_windows);
 
   // WindowResizer:
-  virtual void Drag(const gfx::Point& location_in_parent,
-                    int event_flags) OVERRIDE;
-  virtual void CompleteDrag() OVERRIDE;
-  virtual void RevertDrag() OVERRIDE;
-
- private:
-  WorkspaceWindowResizer(wm::WindowState* window_state,
-                         const std::vector<aura::Window*>& attached_windows);
+  void Drag(const gfx::Point& location_in_parent, int event_flags) override;
+  void CompleteDrag() override;
+  void RevertDrag() override;
 
  private:
   friend class WorkspaceWindowResizerTest;
 
   // The edge to which the window should be snapped at the end of the drag.
-  enum SnapType {
-    SNAP_LEFT,
-    SNAP_RIGHT,
-    SNAP_NONE
-  };
+  enum SnapType { SNAP_LEFT, SNAP_RIGHT, SNAP_NONE };
+
+  WorkspaceWindowResizer(wm::WindowState* window_state,
+                         const std::vector<aura::Window*>& attached_windows);
 
   // Lays out the attached windows. |bounds| is the bounds of the main window.
   void LayoutAttachedWindows(gfx::Rect* bounds);

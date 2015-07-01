@@ -10,11 +10,12 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/debug/trace_event.h"
 #include "base/environment.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/path_service.h"
 #include "base/prefs/json_pref_store.h"
 #include "base/prefs/scoped_user_pref_update.h"
@@ -24,30 +25,27 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "base/trace_event/trace_event.h"
 #include "base/version.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/shortcuts_backend.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
-#include "chrome/browser/background/background_mode_manager.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/dom_distiller/profile_utils.h"
 #include "chrome/browser/domain_reliability/service_factory.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/net/net_pref_observer.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/net/pref_proxy_config_tracker.h"
 #include "chrome/browser/net/proxy_service_factory.h"
-#include "chrome/browser/net/spdyproxy/data_reduction_proxy_chrome_configurator.h"
-#include "chrome/browser/net/spdyproxy/data_reduction_proxy_chrome_settings.h"
-#include "chrome/browser/net/spdyproxy/data_reduction_proxy_chrome_settings_factory.h"
 #include "chrome/browser/net/ssl_config_service_manager.h"
+#include "chrome/browser/permissions/permission_manager.h"
+#include "chrome/browser/permissions/permission_manager_factory.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
@@ -64,16 +62,18 @@
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_metrics.h"
+#include "chrome/browser/push_messaging/push_messaging_service_factory.h"
+#include "chrome/browser/push_messaging/push_messaging_service_impl.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
-#include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
-#include "chrome/browser/services/gcm/push_messaging_service_impl.h"
 #include "chrome/browser/sessions/session_service_factory.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_ui_util.h"
 #include "chrome/browser/ssl/chrome_ssl_host_state_delegate.h"
 #include "chrome/browser/ssl/chrome_ssl_host_state_delegate_factory.h"
 #include "chrome/browser/torlauncher/torlauncher_service_factory.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
+#include "chrome/browser/ui/zoom/chrome_zoom_level_prefs.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
@@ -82,20 +82,19 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/chromium_strings.h"
 #include "components/bookmarks/browser/bookmark_model.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_params.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_statistics_prefs.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/domain_reliability/monitor.h"
 #include "components/domain_reliability/service.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/metrics/metrics_service.h"
 #include "components/pref_registry/pref_registry_syncable.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
+#include "components/ui/zoom/zoom_event_manager.h"
 #include "components/url_fixer/url_fixer.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/dom_storage_context.h"
-#include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/storage_partition.h"
@@ -117,12 +116,16 @@
 #include "components/user_manager/user_manager.h"
 #endif
 
+#if defined(ENABLE_BACKGROUND)
+#include "chrome/browser/background/background_mode_manager.h"
+#endif
+
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "chrome/browser/policy/schema_registry_service.h"
 #include "chrome/browser/policy/schema_registry_service_factory.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/login_utils.h"
+#include "chrome/browser/chromeos/login/session/user_session_manager.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
 #else
@@ -135,14 +138,16 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
+#include "components/guest_view/browser/guest_view_manager.h"
 #include "extensions/browser/extension_pref_store.h"
 #include "extensions/browser/extension_pref_value_map.h"
 #include "extensions/browser/extension_pref_value_map_factory.h"
 #include "extensions/browser/extension_system.h"
-#include "extensions/browser/guest_view/guest_view_manager.h"
 #endif
 
-#if defined(ENABLE_MANAGED_USERS)
+#if defined(ENABLE_SUPERVISED_USERS)
+#include "chrome/browser/content_settings/content_settings_supervised_provider.h"
+#include "chrome/browser/supervised_user/supervised_user_constants.h"
 #include "chrome/browser/supervised_user/supervised_user_settings_service.h"
 #include "chrome/browser/supervised_user/supervised_user_settings_service_factory.h"
 #endif
@@ -150,9 +155,9 @@
 using base::Time;
 using base::TimeDelta;
 using base::UserMetricsAction;
+using bookmarks::BookmarkModel;
 using content::BrowserThread;
 using content::DownloadManagerDelegate;
-using content::HostZoomMap;
 
 namespace {
 
@@ -266,10 +271,10 @@ PrefStore* CreateExtensionPrefStore(Profile* profile,
 Profile* Profile::CreateProfile(const base::FilePath& path,
                                 Delegate* delegate,
                                 CreateMode create_mode) {
-  TRACE_EVENT_BEGIN1("browser",
-                     "Profile::CreateProfile",
-                     "profile_path",
-                     path.value().c_str());
+  TRACE_EVENT1("browser,startup",
+               "Profile::CreateProfile",
+               "profile_path",
+               path.AsUTF8Unsafe());
 
   // Get sequenced task runner for making sure that file operations of
   // this profile (defined by |path|) are executed in expected order
@@ -282,9 +287,9 @@ Profile* Profile::CreateProfile(const base::FilePath& path,
     CreateProfileDirectory(sequenced_task_runner.get(), path);
   } else if (create_mode == CREATE_MODE_SYNCHRONOUS) {
     if (!base::PathExists(path)) {
-      // TODO(tc): http://b/1094718 Bad things happen if we can't write to the
-      // profile directory.  We should eventually be able to run in this
-      // situation.
+      // TODO(rogerta): http://crbug/160553 - Bad things happen if we can't
+      // write to the profile directory.  We should eventually be able to run in
+      // this situation.
       if (!base::CreateDirectory(path))
         return NULL;
     }
@@ -305,22 +310,12 @@ const char* const ProfileImpl::kPrefExitTypeNormal = "Normal";
 // static
 void ProfileImpl::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
-  registry->RegisterBooleanPref(
-      prefs::kSavingBrowserHistoryDisabled,
-      false,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(
-      prefs::kAllowDeletingBrowserHistory,
-      true,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(
-      prefs::kSigninAllowed,
-      true,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(
-      prefs::kForceSafeSearch,
-      false,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kSavingBrowserHistoryDisabled, false);
+  registry->RegisterBooleanPref(prefs::kAllowDeletingBrowserHistory, true);
+  registry->RegisterBooleanPref(prefs::kSigninAllowed, true);
+  registry->RegisterBooleanPref(prefs::kForceGoogleSafeSearch, false);
+  registry->RegisterBooleanPref(prefs::kForceYouTubeSafetyMode, false);
+  registry->RegisterBooleanPref(prefs::kRecordHistory, false);
   registry->RegisterIntegerPref(
       prefs::kProfileAvatarIndex,
       -1,
@@ -340,10 +335,7 @@ void ProfileImpl::RegisterProfilePrefs(
       prefs::kProfileUsingDefaultName,
       true,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterStringPref(
-      prefs::kSupervisedUserId,
-      std::string(),
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kSupervisedUserId, std::string());
   registry->RegisterStringPref(prefs::kProfileName,
                                std::string(),
                                user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
@@ -351,33 +343,15 @@ void ProfileImpl::RegisterProfilePrefs(
                                std::string(),
                                user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 #if defined(ENABLE_PRINTING)
-  registry->RegisterBooleanPref(
-      prefs::kPrintingEnabled,
-      true,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kPrintingEnabled, true);
 #endif
-  registry->RegisterBooleanPref(
-      prefs::kPrintPreviewDisabled,
-      false,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(
-      prefs::kForceEphemeralProfiles,
-      false,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kPrintPreviewDisabled, false);
+  registry->RegisterBooleanPref(prefs::kForceEphemeralProfiles, false);
 
   // Initialize the cache prefs.
-  registry->RegisterFilePathPref(
-      prefs::kDiskCacheDir,
-      base::FilePath(),
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(
-      prefs::kDiskCacheSize,
-      0,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(
-      prefs::kMediaCacheSize,
-      0,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterFilePathPref(prefs::kDiskCacheDir, base::FilePath());
+  registry->RegisterIntegerPref(prefs::kDiskCacheSize, 0);
+  registry->RegisterIntegerPref(prefs::kMediaCacheSize, 0);
 
   // Deprecated. Kept around for migration.
   registry->RegisterBooleanPref(
@@ -399,7 +373,7 @@ ProfileImpl::ProfileImpl(
       start_time_(Time::Now()),
       delegate_(delegate),
       predictor_(NULL) {
-  TRACE_EVENT0("browser", "ProfileImpl::ctor")
+  TRACE_EVENT0("browser,startup", "ProfileImpl::ctor")
   DCHECK(!path.empty()) << "Using an empty path will attempt to write " <<
                             "profile files to the root directory!";
 
@@ -409,9 +383,13 @@ ProfileImpl::ProfileImpl(
       &ProfileImpl::EnsureSessionServiceCreated);
 #endif
 
+  set_is_guest_profile(path == ProfileManager::GetGuestProfilePath());
+  set_is_system_profile(path == ProfileManager::GetSystemProfilePath());
+
   // Determine if prefetch is enabled for this profile.
   // If not profile_manager is present, it means we are in a unittest.
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
   predictor_ = chrome_browser_net::Predictor::CreatePredictor(
       !command_line->HasSwitch(switches::kDisablePreconnect),
       !command_line->HasSwitch(switches::kDnsPrefetchDisable),
@@ -441,7 +419,7 @@ ProfileImpl::ProfileImpl(
 #endif
 #endif
   profile_policy_connector_ =
-      policy::ProfilePolicyConnectorFactory::CreateForProfile(
+      policy::ProfilePolicyConnectorFactory::CreateForBrowserContext(
           this, force_immediate_policy_load);
 
   DCHECK(create_mode == CREATE_MODE_ASYNCHRONOUS ||
@@ -461,8 +439,8 @@ ProfileImpl::ProfileImpl(
   BrowserContextDependencyManager::GetInstance()->
       RegisterProfilePrefsForServices(this, pref_registry_.get());
 
-  SupervisedUserSettingsService* supervised_user_settings = NULL;
-#if defined(ENABLE_MANAGED_USERS)
+  SupervisedUserSettingsService* supervised_user_settings = nullptr;
+#if defined(ENABLE_SUPERVISED_USERS)
   supervised_user_settings =
       SupervisedUserSettingsServiceFactory::GetForProfile(this);
   supervised_user_settings->Init(
@@ -501,29 +479,23 @@ ProfileImpl::ProfileImpl(
     // (successfully or not).  Note that we can use base::Unretained
     // because the PrefService is owned by this class and lives on
     // the same thread.
-    prefs_->AddPrefInitObserver(base::Bind(&ProfileImpl::OnPrefsLoaded,
-                                           base::Unretained(this)));
+    prefs_->AddPrefInitObserver(base::Bind(
+        &ProfileImpl::OnPrefsLoaded, base::Unretained(this), create_mode));
   } else {
     // Prefs were loaded synchronously so we can continue directly.
-    OnPrefsLoaded(true);
+    OnPrefsLoaded(create_mode, true);
   }
 }
 
 void ProfileImpl::DoFinalInit() {
   TRACE_EVENT0("browser", "ProfileImpl::DoFinalInit")
+  SCOPED_UMA_HISTOGRAM_TIMER("Profile.ProfileImplDoFinalInit");
+
   PrefService* prefs = GetPrefs();
   pref_change_registrar_.Init(prefs);
   pref_change_registrar_.Add(
-      prefs::kGoogleServicesUsername,
-      base::Bind(&ProfileImpl::UpdateProfileUserNameCache,
-                 base::Unretained(this)));
-  pref_change_registrar_.Add(
       prefs::kSupervisedUserId,
       base::Bind(&ProfileImpl::UpdateProfileSupervisedUserIdCache,
-                 base::Unretained(this)));
-  pref_change_registrar_.Add(
-      prefs::kDefaultZoomLevel,
-      base::Bind(&ProfileImpl::OnDefaultZoomLevelChanged,
                  base::Unretained(this)));
 
   // Changes in the profile avatar.
@@ -565,10 +537,7 @@ void ProfileImpl::DoFinalInit() {
                                           BrowserThread::GetBlockingPool());
   CreateProfileDirectory(sequenced_task_runner.get(), base_cache_path_);
 
-  // Now that the profile is hooked up to receive pref change notifications to
-  // kGoogleServicesUsername, initialize components that depend on it to reflect
-  // the current value.
-  UpdateProfileUserNameCache();
+  // Initialize components that depend on the current value.
   UpdateProfileSupervisedUserIdCache();
   UpdateProfileIsEphemeralCache();
   GAIAInfoUpdateServiceFactory::GetForProfile(this);
@@ -577,6 +546,7 @@ void ProfileImpl::DoFinalInit() {
   ssl_config_service_manager_.reset(
       SSLConfigServiceManager::CreateDefaultManager(local_state));
 
+#if defined(ENABLE_BACKGROUND)
   // Initialize the BackgroundModeManager - this has to be done here before
   // InitExtensions() is called because it relies on receiving notifications
   // when extensions are loaded. BackgroundModeManager is not needed under
@@ -584,13 +554,15 @@ void ProfileImpl::DoFinalInit() {
   // or launch-on-startup support unless kKeepAliveForTest is set.
   bool init_background_mode_manager = true;
 #if defined(OS_CHROMEOS)
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kKeepAliveForTest))
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kKeepAliveForTest))
     init_background_mode_manager = false;
 #endif
   if (init_background_mode_manager) {
     if (g_browser_process->background_mode_manager())
       g_browser_process->background_mode_manager()->RegisterProfile(this);
   }
+#endif  // defined(ENABLE_BACKGROUND)
 
   base::FilePath cookie_path = GetPath();
   cookie_path = cookie_path.Append(chrome::kCookieFilename);
@@ -610,17 +582,13 @@ void ProfileImpl::DoFinalInit() {
   extensions_cookie_path =
       extensions_cookie_path.Append(chrome::kExtensionsCookieFilename);
 
-  base::FilePath infinite_cache_path = GetPath();
-  infinite_cache_path =
-      infinite_cache_path.Append(FILE_PATH_LITERAL("Infinite Cache"));
-
 #if defined(OS_ANDROID)
   SessionStartupPref::Type startup_pref_type =
       SessionStartupPref::GetDefaultStartupType();
 #else
   SessionStartupPref::Type startup_pref_type =
       StartupBrowserCreator::GetSessionStartupPref(
-          *CommandLine::ForCurrentProcess(), this).type;
+          *base::CommandLine::ForCurrentProcess(), this).type;
 #endif
   content::CookieStoreConfig::SessionCookieMode session_cookie_mode =
       content::CookieStoreConfig::PERSISTANT_SESSION_COOKIES;
@@ -629,70 +597,14 @@ void ProfileImpl::DoFinalInit() {
     session_cookie_mode = content::CookieStoreConfig::RESTORED_SESSION_COOKIES;
   }
 
-  InitHostZoomMap();
-
-  base::Callback<void(bool)> data_reduction_proxy_unavailable;
-  scoped_ptr<data_reduction_proxy::DataReductionProxyParams>
-      data_reduction_proxy_params;
-  scoped_ptr<DataReductionProxyChromeConfigurator> chrome_configurator;
-  scoped_ptr<data_reduction_proxy::DataReductionProxyStatisticsPrefs>
-      data_reduction_proxy_statistics_prefs;
-  DataReductionProxyChromeSettings* data_reduction_proxy_chrome_settings =
-      DataReductionProxyChromeSettingsFactory::GetForBrowserContext(this);
-  data_reduction_proxy_params =
-      data_reduction_proxy_chrome_settings->params()->Clone();
-  data_reduction_proxy_unavailable =
-      base::Bind(
-          &data_reduction_proxy::DataReductionProxySettings::SetUnreachable,
-          base::Unretained(data_reduction_proxy_chrome_settings));
-  // The configurator is used by DataReductionProxyChromeSettings and
-  // ProfileIOData. Ownership is passed to the latter via ProfileIOData::Handle,
-  // which is only destroyed after BrowserContextKeyedServices,
-  // including DataReductionProxyChromeSettings.
-  chrome_configurator.reset(
-      new DataReductionProxyChromeConfigurator(
-          prefs_.get(),
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
-  // Retain a raw pointer to use for initialization of data reduction proxy
-  // settings after ownership is passed.
-  DataReductionProxyChromeConfigurator*
-      data_reduction_proxy_chrome_configurator = chrome_configurator.get();
-#if defined(OS_ANDROID) || defined(OS_IOS)
-  // On mobile we write data reduction proxy prefs directly to the pref service.
-  // On desktop we store data reduction proxy prefs in memory, writing to disk
-  // every 60 minutes and on termination. Shutdown hooks must be added for
-  // Android and iOS in order for non-zero delays to be supported.
-  // (http://crbug.com/408264)
-  base::TimeDelta commit_delay = base::TimeDelta();
-#else
-  base::TimeDelta commit_delay = base::TimeDelta::FromMinutes(60);
-#endif
-  data_reduction_proxy_statistics_prefs =
-      scoped_ptr<data_reduction_proxy::DataReductionProxyStatisticsPrefs>(
-          new data_reduction_proxy::DataReductionProxyStatisticsPrefs(
-              g_browser_process->local_state(),
-              base::MessageLoopProxy::current(),
-              commit_delay));
-  data_reduction_proxy_chrome_settings->SetDataReductionProxyStatisticsPrefs(
-      data_reduction_proxy_statistics_prefs.get());
-
   // Make sure we initialize the ProfileIOData after everything else has been
   // initialized that we might be reading from the IO thread.
 
   io_data_.Init(cookie_path, channel_id_path, cache_path,
                 cache_max_size, media_cache_path, media_cache_max_size,
-                extensions_cookie_path, GetPath(), infinite_cache_path,
-                predictor_, session_cookie_mode, GetSpecialStoragePolicy(),
-                CreateDomainReliabilityMonitor(local_state),
-                data_reduction_proxy_unavailable,
-                chrome_configurator.Pass(),
-                data_reduction_proxy_params.Pass(),
-                data_reduction_proxy_statistics_prefs.Pass());
-  data_reduction_proxy_chrome_settings->InitDataReductionProxySettings(
-      data_reduction_proxy_chrome_configurator,
-      prefs_.get(),
-      g_browser_process->local_state(),
-      GetRequestContext());
+                extensions_cookie_path, GetPath(), predictor_,
+                session_cookie_mode, GetSpecialStoragePolicy(),
+                CreateDomainReliabilityMonitor(local_state));
 
 #if defined(ENABLE_PLUGINS)
   ChromePluginServiceFilter::GetInstance()->RegisterResourceContext(
@@ -710,19 +622,16 @@ void ProfileImpl::DoFinalInit() {
   content::BrowserContext::GetDefaultStoragePartition(this)->
       GetDOMStorageContext()->SetSaveSessionStorageOnDisk();
 
+  // TODO(wjmaclean): Remove this. crbug.com/420643
+  chrome::MigrateProfileZoomLevelPrefs(this);
+
   // The DomDistillerViewerSource is not a normal WebUI so it must be registered
   // as a URLDataSource early.
   RegisterDomDistillerViewerSource(this);
 
-  // Creation has been finished.
-  TRACE_EVENT_END1("browser",
-                   "Profile::CreateProfile",
-                   "profile_path",
-                   path_.value().c_str());
-
 #if defined(OS_CHROMEOS)
-  if (chromeos::LoginUtils::Get()->RestartToApplyPerSessionFlagsIfNeed(this,
-                                                                       true)) {
+  if (chromeos::UserSessionManager::GetInstance()
+          ->RestartToApplyPerSessionFlagsIfNeed(this, true)) {
     return;
   }
 #endif
@@ -732,11 +641,13 @@ void ProfileImpl::DoFinalInit() {
     delegate_->OnProfileCreated(this, true, IsNewProfile());
   }
 
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_PROFILE_CREATED,
-      content::Source<Profile>(this),
-      content::NotificationService::NoDetails());
-
+  {
+    SCOPED_UMA_HISTOGRAM_TIMER("Profile.NotifyProfileCreatedTime");
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_PROFILE_CREATED,
+        content::Source<Profile>(this),
+        content::NotificationService::NoDetails());
+  }
 #if !defined(OS_CHROMEOS)
   // Listen for bookmark model load, to bootstrap the sync service.
   // On CrOS sync service will be initialized after sign in.
@@ -744,58 +655,11 @@ void ProfileImpl::DoFinalInit() {
   model->AddObserver(new BookmarkModelLoadedObserver(this));
 #endif
 
-  gcm::PushMessagingServiceImpl::InitializeForProfile(this);
+  PushMessagingServiceImpl::InitializeForProfile(this);
 
 #if !defined(OS_ANDROID) && !defined(OS_CHROMEOS) && !defined(OS_IOS)
   signin_ui_util::InitializePrefsForProfile(this);
 #endif
-}
-
-void ProfileImpl::InitHostZoomMap() {
-  HostZoomMap* host_zoom_map = HostZoomMap::GetDefaultForBrowserContext(this);
-  host_zoom_map->SetDefaultZoomLevel(
-      prefs_->GetDouble(prefs::kDefaultZoomLevel));
-
-  const base::DictionaryValue* host_zoom_dictionary =
-      prefs_->GetDictionary(prefs::kPerHostZoomLevels);
-  // Careful: The returned value could be NULL if the pref has never been set.
-  if (host_zoom_dictionary != NULL) {
-    std::vector<std::string> keys_to_remove;
-    for (base::DictionaryValue::Iterator i(*host_zoom_dictionary); !i.IsAtEnd();
-         i.Advance()) {
-      const std::string& host(i.key());
-      double zoom_level = 0;
-
-      bool success = i.value().GetAsDouble(&zoom_level);
-      DCHECK(success);
-
-      // Filter out A) the empty host, B) zoom levels equal to the default; and
-      // remember them, so that we can later erase them from Prefs.
-      // Values of type A and B could have been stored due to crbug.com/364399.
-      // Values of type B could further have been stored before the default zoom
-      // level was set to its current value. In either case, SetZoomLevelForHost
-      // will ignore type B values, thus, to have consistency with HostZoomMap's
-      // internal state, these values must also be removed from Prefs.
-      if (host.empty() ||
-          content::ZoomValuesEqual(zoom_level,
-                                   host_zoom_map->GetDefaultZoomLevel())) {
-        keys_to_remove.push_back(host);
-        continue;
-      }
-
-      host_zoom_map->SetZoomLevelForHost(host, zoom_level);
-    }
-
-    DictionaryPrefUpdate update(prefs_.get(), prefs::kPerHostZoomLevels);
-    base::DictionaryValue* host_zoom_dictionary = update.Get();
-    for (std::vector<std::string>::const_iterator it = keys_to_remove.begin();
-         it != keys_to_remove.end(); ++it) {
-      host_zoom_dictionary->RemoveWithoutPathExpansion(*it, NULL);
-    }
-  }
-
-  zoom_subscription_ = host_zoom_map->AddZoomLevelChangedCallback(
-      base::Bind(&ProfileImpl::OnZoomLevelChanged, base::Unretained(this)));
 }
 
 base::FilePath ProfileImpl::last_selected_directory() {
@@ -838,9 +702,6 @@ ProfileImpl::~ProfileImpl() {
   BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(
       this);
 
-  if (top_sites_.get())
-    top_sites_->Shutdown();
-
   if (pref_proxy_config_tracker_)
     pref_proxy_config_tracker_->DetachFromPrefService();
 
@@ -852,12 +713,24 @@ ProfileImpl::~ProfileImpl() {
     SetExitType(EXIT_NORMAL);
 }
 
-std::string ProfileImpl::GetProfileName() {
-  return GetPrefs()->GetString(prefs::kGoogleServicesUsername);
+std::string ProfileImpl::GetProfileUserName() const {
+  const SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfileIfExists(this);
+  if (signin_manager)
+    return signin_manager->GetAuthenticatedUsername();
+
+  return std::string();
 }
 
 Profile::ProfileType ProfileImpl::GetProfileType() const {
   return REGULAR_PROFILE;
+}
+
+scoped_ptr<content::ZoomLevelDelegate>
+ProfileImpl::CreateZoomLevelDelegate(const base::FilePath& partition_path) {
+  return make_scoped_ptr(new chrome::ChromeZoomLevelPrefs(
+      GetPrefs(), GetPath(), partition_path,
+      ui_zoom::ZoomEventManager::GetForBrowserContext(this)->GetWeakPtr()));
 }
 
 base::FilePath ProfileImpl::GetPath() const {
@@ -906,6 +779,19 @@ bool ProfileImpl::IsSupervised() {
   return !GetPrefs()->GetString(prefs::kSupervisedUserId).empty();
 }
 
+bool ProfileImpl::IsChild() {
+#if defined(ENABLE_SUPERVISED_USERS)
+  return GetPrefs()->GetString(prefs::kSupervisedUserId) ==
+      supervised_users::kChildAccountSUID;
+#else
+  return false;
+#endif
+}
+
+bool ProfileImpl::IsLegacySupervised() {
+  return IsSupervised() && !IsChild();
+}
+
 ExtensionSpecialStoragePolicy*
     ProfileImpl::GetExtensionSpecialStoragePolicy() {
 #if defined(ENABLE_EXTENSIONS)
@@ -920,19 +806,13 @@ ExtensionSpecialStoragePolicy*
 #endif
 }
 
-void ProfileImpl::OnPrefsLoaded(bool success) {
-  TRACE_EVENT0("browser", "ProfileImpl::OnPrefsLoaded")
-  if (!success) {
-    if (delegate_)
-      delegate_->OnProfileCreated(this, false, false);
-    return;
-  }
-
-  // TODO(mirandac): remove migration code after 6 months (crbug.com/69995).
+void ProfileImpl::OnLocaleReady() {
+  TRACE_EVENT0("browser", "ProfileImpl::OnLocaleReady");
+  SCOPED_UMA_HISTOGRAM_TIMER("Profile.OnLocaleReadyTime");
+  // Migrate obsolete prefs.
   if (g_browser_process->local_state())
-    chrome::MigrateBrowserPrefs(this, g_browser_process->local_state());
-  // TODO(ivankr): remove cleanup code eventually (crbug.com/165672).
-  chrome::MigrateUserPrefs(this);
+    chrome::MigrateObsoleteBrowserPrefs(this, g_browser_process->local_state());
+  chrome::MigrateObsoleteProfilePrefs(this);
 
   // |kSessionExitType| was added after |kSessionExitedCleanly|. If the pref
   // value is empty fallback to checking for |kSessionExitedCleanly|.
@@ -952,17 +832,19 @@ void ProfileImpl::OnPrefsLoaded(bool success) {
   // TODO(sky): remove this in a couple of releases (m28ish).
   prefs_->SetBoolean(prefs::kSessionExitedCleanly, true);
 
-#if defined(OS_ANDROID) && defined(FULL_SAFE_BROWSING)
-  // Clear safe browsing setting in the case we need to roll back
-  // for users enrolled in Finch trial before.
-  if (!SafeBrowsingService::IsEnabledByFieldTrial())
-    prefs_->ClearPref(prefs::kSafeBrowsingEnabled);
+#if defined(SAFE_BROWSING_DB_REMOTE)
+  // Hardcode this pref on this build of Android until the UX is developed.
+  // http://crbug.com/481558
+  prefs_->SetBoolean(prefs::kSafeBrowsingEnabled, true);
 #endif
 
   g_browser_process->profile_manager()->InitProfileUserPrefs(this);
 
-  BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(
-      this);
+  {
+    SCOPED_UMA_HISTOGRAM_TIMER("Profile.CreateBrowserContextServicesTime");
+    BrowserContextDependencyManager::GetInstance()->
+      CreateBrowserContextServices(this);
+  }
 
   DCHECK(!net_pref_observer_);
   {
@@ -974,6 +856,28 @@ void ProfileImpl::OnPrefsLoaded(bool success) {
 
   ChromeVersionService::OnProfileLoaded(prefs_.get(), IsNewProfile());
   DoFinalInit();
+}
+
+void ProfileImpl::OnPrefsLoaded(CreateMode create_mode, bool success) {
+  TRACE_EVENT0("browser", "ProfileImpl::OnPrefsLoaded");
+  if (!success) {
+    if (delegate_)
+      delegate_->OnProfileCreated(this, false, false);
+    return;
+  }
+
+#if defined(OS_CHROMEOS)
+  if (create_mode == CREATE_MODE_SYNCHRONOUS) {
+    // Synchronous create mode implies that either it is restart after crash,
+    // or we are in tests. In both cases the first loaded locale is correct.
+    OnLocaleReady();
+  } else {
+    chromeos::UserSessionManager::GetInstance()->RespectLocalePreferenceWrapper(
+        this, base::Bind(&ProfileImpl::OnLocaleReady, base::Unretained(this)));
+  }
+#else
+  OnLocaleReady();
+#endif
 }
 
 bool ProfileImpl::WasCreatedByVersionOrLater(const std::string& version) {
@@ -997,10 +901,6 @@ void ProfileImpl::SetExitType(ExitType exit_type) {
   if (exit_type == EXIT_CRASHED || current_exit_type == EXIT_CRASHED) {
     prefs_->SetString(prefs::kSessionExitType,
                       ExitTypeToSessionTypePrefValue(exit_type));
-
-    // NOTE: If you change what thread this writes on, be sure and update
-    // chrome::SessionEnding().
-    prefs_->CommitPendingWrite();
   }
 }
 
@@ -1012,8 +912,18 @@ Profile::ExitType ProfileImpl::GetLastSessionExitType() {
 }
 
 PrefService* ProfileImpl::GetPrefs() {
+  return const_cast<PrefService*>(
+      static_cast<const ProfileImpl*>(this)->GetPrefs());
+}
+
+const PrefService* ProfileImpl::GetPrefs() const {
   DCHECK(prefs_);  // Should explicitly be initialized.
   return prefs_.get();
+}
+
+chrome::ChromeZoomLevelPrefs* ProfileImpl::GetZoomLevelPrefs() {
+  return static_cast<chrome::ChromeZoomLevelPrefs*>(
+      GetDefaultStoragePartition(this)->GetZoomLevelDelegate());
 }
 
 PrefService* ProfileImpl::GetOffTheRecordPrefs() {
@@ -1105,15 +1015,25 @@ net::SSLConfigService* ProfileImpl::GetSSLConfigService() {
 }
 
 HostContentSettingsMap* ProfileImpl::GetHostContentSettingsMap() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!host_content_settings_map_.get()) {
     host_content_settings_map_ = new HostContentSettingsMap(GetPrefs(), false);
+#if defined(ENABLE_SUPERVISED_USERS)
+  SupervisedUserSettingsService* supervised_user_settings =
+      SupervisedUserSettingsServiceFactory::GetForProfile(this);
+    scoped_ptr<content_settings::SupervisedProvider> supervised_provider(
+        new content_settings::SupervisedProvider(supervised_user_settings));
+    host_content_settings_map_->RegisterProvider(
+        HostContentSettingsMap::SUPERVISED_PROVIDER,
+        supervised_provider.Pass());
+#endif
   }
   return host_content_settings_map_.get();
 }
 
 content::BrowserPluginGuestManager* ProfileImpl::GetGuestManager() {
 #if defined(ENABLE_EXTENSIONS)
-  return extensions::GuestViewManager::FromBrowserContext(this);
+  return guest_view::GuestViewManager::FromBrowserContext(this);
 #else
   return NULL;
 #endif
@@ -1133,12 +1053,17 @@ storage::SpecialStoragePolicy* ProfileImpl::GetSpecialStoragePolicy() {
 }
 
 content::PushMessagingService* ProfileImpl::GetPushMessagingService() {
-  return gcm::GCMProfileServiceFactory::GetForProfile(
-      this)->push_messaging_service();
+  return PushMessagingServiceFactory::GetForProfile(this);
 }
 
 content::SSLHostStateDelegate* ProfileImpl::GetSSLHostStateDelegate() {
   return ChromeSSLHostStateDelegateFactory::GetForProfile(this);
+}
+
+// TODO(mlamouri): we should all these BrowserContext implementation to Profile
+// instead of repeating them inside all Profile implementations.
+content::PermissionManager* ProfileImpl::GetPermissionManager() {
+  return PermissionManagerFactory::GetForProfile(this);
 }
 
 bool ProfileImpl::IsSameProfile(Profile* profile) {
@@ -1150,38 +1075,6 @@ bool ProfileImpl::IsSameProfile(Profile* profile) {
 
 Time ProfileImpl::GetStartTime() const {
   return start_time_;
-}
-
-history::TopSites* ProfileImpl::GetTopSites() {
-  if (!top_sites_.get()) {
-    top_sites_ = history::TopSites::Create(
-        this, GetPath().Append(chrome::kTopSitesFilename));
-  }
-  return top_sites_.get();
-}
-
-history::TopSites* ProfileImpl::GetTopSitesWithoutCreating() {
-  return top_sites_.get();
-}
-
-void ProfileImpl::OnDefaultZoomLevelChanged() {
-  HostZoomMap::GetDefaultForBrowserContext(this)->SetDefaultZoomLevel(
-      pref_change_registrar_.prefs()->GetDouble(prefs::kDefaultZoomLevel));
-}
-
-void ProfileImpl::OnZoomLevelChanged(
-    const HostZoomMap::ZoomLevelChange& change) {
-
-  if (change.mode != HostZoomMap::ZOOM_CHANGED_FOR_HOST)
-    return;
-  HostZoomMap* host_zoom_map = HostZoomMap::GetDefaultForBrowserContext(this);
-  double level = change.zoom_level;
-  DictionaryPrefUpdate update(prefs_.get(), prefs::kPerHostZoomLevels);
-  base::DictionaryValue* host_zoom_dictionary = update.Get();
-  if (content::ZoomValuesEqual(level, host_zoom_map->GetDefaultZoomLevel()))
-    host_zoom_dictionary->RemoveWithoutPathExpansion(change.host, NULL);
-  else
-    host_zoom_dictionary->SetDoubleWithoutPathExpansion(change.host, level);
 }
 
 #if defined(ENABLE_SESSION_SERVICE)
@@ -1311,7 +1204,8 @@ void ProfileImpl::ClearNetworkingHistorySince(
 
 GURL ProfileImpl::GetHomePage() {
   // --homepage overrides any preferences.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kHomePage)) {
     // TODO(evanm): clean up usage of DIR_CURRENT.
     //   http://code.google.com/p/chromium/issues/detail?id=60630
@@ -1334,18 +1228,6 @@ GURL ProfileImpl::GetHomePage() {
   if (!home_page.is_valid())
     return GURL(chrome::kChromeUINewTabURL);
   return home_page;
-}
-
-void ProfileImpl::UpdateProfileUserNameCache() {
-  ProfileManager* profile_manager = g_browser_process->profile_manager();
-  ProfileInfoCache& cache = profile_manager->GetProfileInfoCache();
-  size_t index = cache.GetIndexOfProfileWithPath(GetPath());
-  if (index != std::string::npos) {
-    std::string user_name =
-        GetPrefs()->GetString(prefs::kGoogleServicesUsername);
-    cache.SetUserNameOfProfileAtIndex(index, base::UTF8ToUTF16(user_name));
-    ProfileMetrics::UpdateReportedProfilesStatistics(profile_manager);
-  }
 }
 
 void ProfileImpl::UpdateProfileSupervisedUserIdCache() {

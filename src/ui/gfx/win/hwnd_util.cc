@@ -6,11 +6,12 @@
 
 #include "base/i18n/rtl.h"
 #include "base/strings/string_util.h"
+#include "base/tracked_objects.h"
 #include "base/win/metro.h"
 #include "base/win/win_util.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace gfx {
 
@@ -112,7 +113,7 @@ void* SetWindowUserData(HWND hwnd, void* user_data) {
 
 void* GetWindowUserData(HWND hwnd) {
   DWORD process_id = 0;
-  DWORD thread_id = GetWindowThreadProcessId(hwnd, &process_id);
+  GetWindowThreadProcessId(hwnd, &process_id);
   // A window outside the current process needs to be ignored.
   if (process_id != ::GetCurrentProcessId())
     return NULL;
@@ -222,8 +223,15 @@ void ShowSystemMenuAtPoint(HWND window, const Point& point) {
   if (base::i18n::IsRTL())
     flags |= TPM_RIGHTALIGN;
   HMENU menu = GetSystemMenu(window, FALSE);
+
+  // Use task stopwatch to exclude the time while the context menu is open from
+  // the current task, if any.
+  tracked_objects::TaskStopwatch stopwatch;
+  stopwatch.Start();
   const int command =
       TrackPopupMenu(menu, flags, point.x(), point.y(), 0, window, NULL);
+  stopwatch.Stop();
+
   if (command)
     SendMessage(window, WM_SYSCOMMAND, command, 0);
 }

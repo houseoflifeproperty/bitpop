@@ -41,11 +41,8 @@ class ExtensionCommandsGlobalRegistry
   // profile.
   static ExtensionCommandsGlobalRegistry* Get(content::BrowserContext* context);
 
-  // Enables/Disables global shortcut handling in Chrome.
-  static void SetShortcutHandlingSuspended(bool suspended);
-
   explicit ExtensionCommandsGlobalRegistry(content::BrowserContext* context);
-  virtual ~ExtensionCommandsGlobalRegistry();
+  ~ExtensionCommandsGlobalRegistry() override;
 
   // Returns which non-global command registry is active (belonging to the
   // currently active window).
@@ -68,18 +65,18 @@ class ExtensionCommandsGlobalRegistry
   static const char* service_name() {
     return "ExtensionCommandsGlobalRegistry";
   }
+  static const bool kServiceRedirectedInIncognito = true;
 
   // Overridden from ExtensionKeybindingRegistry:
-  virtual void AddExtensionKeybinding(
-      const Extension* extension,
-      const std::string& command_name) OVERRIDE;
-  virtual void RemoveExtensionKeybindingImpl(
-      const ui::Accelerator& accelerator,
-      const std::string& command_name) OVERRIDE;
+  void AddExtensionKeybindings(const Extension* extension,
+                               const std::string& command_name) override;
+  void RemoveExtensionKeybindingImpl(const ui::Accelerator& accelerator,
+                                     const std::string& command_name) override;
+  void OnShortcutHandlingSuspended(bool suspended) override;
 
   // Called by the GlobalShortcutListener object when a shortcut this class has
   // registered for has been pressed.
-  virtual void OnKeyPressed(const ui::Accelerator& accelerator) OVERRIDE;
+  void OnKeyPressed(const ui::Accelerator& accelerator) override;
 
   // Weak pointer to our browser context. Not owned by us.
   content::BrowserContext* browser_context_;

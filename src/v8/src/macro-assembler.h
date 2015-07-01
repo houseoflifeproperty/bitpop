@@ -27,10 +27,8 @@ enum AllocationFlags {
   SIZE_IN_WORDS = 1 << 2,
   // Align the allocation to a multiple of kDoubleSize
   DOUBLE_ALIGNMENT = 1 << 3,
-  // Directly allocate in old pointer space
-  PRETENURE_OLD_POINTER_SPACE = 1 << 4,
-  // Directly allocate in old data space
-  PRETENURE_OLD_DATA_SPACE = 1 << 5
+  // Directly allocate in old space
+  PRETENURE = 1 << 4,
 };
 
 
@@ -64,6 +62,13 @@ const int kInvalidProtoDepth = -1;
 #include "src/arm/assembler-arm-inl.h"
 #include "src/code.h"                     // NOLINT, must be after assembler_*.h
 #include "src/arm/macro-assembler-arm.h"  // NOLINT
+#elif V8_TARGET_ARCH_PPC
+#include "src/ppc/constants-ppc.h"
+#include "src/assembler.h"          // NOLINT
+#include "src/ppc/assembler-ppc.h"  // NOLINT
+#include "src/ppc/assembler-ppc-inl.h"
+#include "src/code.h"  // NOLINT, must be after assembler_*.h
+#include "src/ppc/macro-assembler-ppc.h"
 #elif V8_TARGET_ARCH_MIPS
 #include "src/mips/constants-mips.h"
 #include "src/assembler.h"            // NOLINT
@@ -124,6 +129,74 @@ class FrameScope {
   bool old_has_frame_;
 };
 
+class FrameAndConstantPoolScope {
+ public:
+  FrameAndConstantPoolScope(MacroAssembler* masm, StackFrame::Type type)
+      : masm_(masm),
+        type_(type),
+        old_has_frame_(masm->has_frame()),
+        old_constant_pool_available_(FLAG_enable_ool_constant_pool &&
+                                     masm->is_ool_constant_pool_available()) {
+    masm->set_has_frame(true);
+    if (FLAG_enable_ool_constant_pool) {
+      masm->set_ool_constant_pool_available(true);
+    }
+    if (type_ != StackFrame::MANUAL && type_ != StackFrame::NONE) {
+      masm->EnterFrame(type, !old_constant_pool_available_);
+    }
+  }
+
+  ~FrameAndConstantPoolScope() {
+    masm_->LeaveFrame(type_);
+    masm_->set_has_frame(old_has_frame_);
+    if (FLAG_enable_ool_constant_pool) {
+      masm_->set_ool_constant_pool_available(old_constant_pool_available_);
+    }
+  }
+
+  // Normally we generate the leave-frame code when this object goes
+  // out of scope.  Sometimes we may need to generate the code somewhere else
+  // in addition.  Calling this will achieve that, but the object stays in
+  // scope, the MacroAssembler is still marked as being in a frame scope, and
+  // the code will be generated again when it goes out of scope.
+  void GenerateLeaveFrame() {
+    DCHECK(type_ != StackFrame::MANUAL && type_ != StackFrame::NONE);
+    masm_->LeaveFrame(type_);
+  }
+
+ private:
+  MacroAssembler* masm_;
+  StackFrame::Type type_;
+  bool old_has_frame_;
+  bool old_constant_pool_available_;
+
+  DISALLOW_IMPLICIT_CONSTRUCTORS(FrameAndConstantPoolScope);
+};
+
+// Class for scoping the the unavailability of constant pool access.
+class ConstantPoolUnavailableScope {
+ public:
+  explicit ConstantPoolUnavailableScope(MacroAssembler* masm)
+      : masm_(masm),
+        old_constant_pool_available_(FLAG_enable_ool_constant_pool &&
+                                     masm->is_ool_constant_pool_available()) {
+    if (FLAG_enable_ool_constant_pool) {
+      masm_->set_ool_constant_pool_available(false);
+    }
+  }
+  ~ConstantPoolUnavailableScope() {
+    if (FLAG_enable_ool_constant_pool) {
+      masm_->set_ool_constant_pool_available(old_constant_pool_available_);
+    }
+  }
+
+ private:
+  MacroAssembler* masm_;
+  int old_constant_pool_available_;
+
+  DISALLOW_IMPLICIT_CONSTRUCTORS(ConstantPoolUnavailableScope);
+};
+
 
 class AllowExternalCallThatCantCauseGC: public FrameScope {
  public:
@@ -176,11 +249,8 @@ class AllocationUtils {
  public:
   static ExternalReference GetAllocationTopReference(
       Isolate* isolate, AllocationFlags flags) {
-    if ((flags & PRETENURE_OLD_POINTER_SPACE) != 0) {
-      return ExternalReference::old_pointer_space_allocation_top_address(
-          isolate);
-    } else if ((flags & PRETENURE_OLD_DATA_SPACE) != 0) {
-      return ExternalReference::old_data_space_allocation_top_address(isolate);
+    if ((flags & PRETENURE) != 0) {
+      return ExternalReference::old_space_allocation_top_address(isolate);
     }
     return ExternalReference::new_space_allocation_top_address(isolate);
   }
@@ -188,12 +258,8 @@ class AllocationUtils {
 
   static ExternalReference GetAllocationLimitReference(
       Isolate* isolate, AllocationFlags flags) {
-    if ((flags & PRETENURE_OLD_POINTER_SPACE) != 0) {
-      return ExternalReference::old_pointer_space_allocation_limit_address(
-          isolate);
-    } else if ((flags & PRETENURE_OLD_DATA_SPACE) != 0) {
-      return ExternalReference::old_data_space_allocation_limit_address(
-          isolate);
+    if ((flags & PRETENURE) != 0) {
+      return ExternalReference::old_space_allocation_limit_address(isolate);
     }
     return ExternalReference::new_space_allocation_limit_address(isolate);
   }

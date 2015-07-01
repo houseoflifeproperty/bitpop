@@ -49,7 +49,7 @@ public:
     FloatSize() : m_width(0), m_height(0) { }
     FloatSize(float width, float height) : m_width(width), m_height(height) { }
     FloatSize(const IntSize& size) : m_width(size.width()), m_height(size.height()) { }
-    FloatSize(const LayoutSize&);
+    explicit FloatSize(const LayoutSize&);
 
     static FloatSize narrowPrecision(double width, double height);
 
@@ -77,6 +77,12 @@ public:
     {
         m_width *= scaleX;
         m_height *= scaleY;
+    }
+
+    void scaleAndFloor(float scale)
+    {
+        m_width = floorf(m_width * scale);
+        m_height = floorf(m_height * scale);
     }
 
     FloatSize expandedTo(const FloatSize& other) const
@@ -176,22 +182,22 @@ inline bool operator!=(const FloatSize& a, const FloatSize& b)
 
 inline IntSize roundedIntSize(const FloatSize& p)
 {
-    return IntSize(clampToInteger(roundf(p.width())), clampToInteger(roundf(p.height())));
+    return IntSize(clampTo<int>(roundf(p.width())), clampTo<int>(roundf(p.height())));
 }
 
 inline IntSize flooredIntSize(const FloatSize& p)
 {
-    return IntSize(clampToInteger(floorf(p.width())), clampToInteger(floorf(p.height())));
+    return IntSize(clampTo<int>(floorf(p.width())), clampTo<int>(floorf(p.height())));
 }
 
 inline IntSize expandedIntSize(const FloatSize& p)
 {
-    return IntSize(clampToInteger(ceilf(p.width())), clampToInteger(ceilf(p.height())));
+    return IntSize(clampTo<int>(ceilf(p.width())), clampTo<int>(ceilf(p.height())));
 }
 
 inline IntPoint flooredIntPoint(const FloatSize& p)
 {
-    return IntPoint(clampToInteger(floorf(p.width())), clampToInteger(floorf(p.height())));
+    return IntPoint(clampTo<int>(floorf(p.width())), clampTo<int>(floorf(p.height())));
 }
 
 } // namespace blink

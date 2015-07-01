@@ -54,16 +54,11 @@ AudioParameters::AudioParameters(Format format, ChannelLayout channel_layout,
       frames_per_buffer_(frames_per_buffer),
       channels_(channels),
       effects_(effects) {
-  if (channel_layout != CHANNEL_LAYOUT_DISCRETE)
-    DCHECK_EQ(channels, ChannelLayoutToChannelCount(channel_layout));
 }
 
 void AudioParameters::Reset(Format format, ChannelLayout channel_layout,
                             int channels, int sample_rate,
                             int bits_per_sample, int frames_per_buffer) {
-  if (channel_layout != CHANNEL_LAYOUT_DISCRETE)
-    DCHECK_EQ(channels, ChannelLayoutToChannelCount(channel_layout));
-
   format_ = format;
   channel_layout_ = channel_layout;
   channels_ = channels;
@@ -84,7 +79,20 @@ bool AudioParameters::IsValid() const {
          (bits_per_sample_ > 0) &&
          (bits_per_sample_ <= media::limits::kMaxBitsPerSample) &&
          (frames_per_buffer_ > 0) &&
-         (frames_per_buffer_ <= media::limits::kMaxSamplesPerPacket);
+         (frames_per_buffer_ <= media::limits::kMaxSamplesPerPacket) &&
+         (channel_layout_ == CHANNEL_LAYOUT_DISCRETE ||
+          channels_ == ChannelLayoutToChannelCount(channel_layout_));
+}
+
+std::string AudioParameters::AsHumanReadableString() const {
+  std::ostringstream s;
+  s << "format: " << format()
+    << " channels: " << channels()
+    << " channel_layout: " << channel_layout()
+    << " sample_rate: " << sample_rate()
+    << " bits_per_sample: " << bits_per_sample()
+    << " frames_per_buffer: " << frames_per_buffer();
+  return s.str();
 }
 
 int AudioParameters::GetBytesPerBuffer() const {
@@ -100,9 +108,9 @@ int AudioParameters::GetBytesPerFrame() const {
 }
 
 base::TimeDelta AudioParameters::GetBufferDuration() const {
-  return base::TimeDelta::FromMicroseconds(
+  return base::TimeDelta::FromMicroseconds(static_cast<int64>(
       frames_per_buffer_ * base::Time::kMicrosecondsPerSecond /
-      static_cast<float>(sample_rate_));
+      static_cast<float>(sample_rate_)));
 }
 
 bool AudioParameters::Equals(const AudioParameters& other) const {

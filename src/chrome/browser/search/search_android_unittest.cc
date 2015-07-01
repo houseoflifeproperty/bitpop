@@ -25,7 +25,7 @@ TEST(SearchTest, QueryExtractionEnabled) {
 
 class SearchUtilTest : public testing::Test {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     field_trial_list_.reset(new base::FieldTrialList(
         new metrics::SHA1EntropyProvider("42")));
     base::StatisticsRecorder::Initialize();
@@ -70,7 +70,7 @@ TEST_F(SearchUtilTest, ShouldPrefetchSearchResults_DisabledViaFieldTrials) {
 }
 
 TEST_F(SearchUtilTest, ShouldPrefetchSearchResults_EnabledViaCommandLine) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kPrefetchSearchResults);
   // Command-line enable should override Finch.
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(

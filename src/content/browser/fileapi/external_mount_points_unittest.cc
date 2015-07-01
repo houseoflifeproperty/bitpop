@@ -8,6 +8,7 @@
 
 #include "base/files/file_path.h"
 #include "storage/browser/fileapi/file_system_url.h"
+#include "storage/common/fileapi/file_system_mount_option.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #define FPL FILE_PATH_LITERAL
@@ -106,7 +107,7 @@ TEST(ExternalMountPointsTest, AddMountPoint) {
   };
 
   // Test adding mount points.
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
+  for (size_t i = 0; i < arraysize(kTestCases); ++i) {
     EXPECT_EQ(
         kTestCases[i].success,
         mount_points->RegisterFileSystem(kTestCases[i].name,
@@ -118,7 +119,7 @@ TEST(ExternalMountPointsTest, AddMountPoint) {
   }
 
   // Test that final mount point presence state is as expected.
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
+  for (size_t i = 0; i < arraysize(kTestCases); ++i) {
     base::FilePath found_path;
     EXPECT_EQ(kTestCases[i].registered_path != NULL,
               mount_points->GetRegisteredPath(kTestCases[i].name, &found_path))
@@ -214,7 +215,7 @@ TEST(ExternalMountPointsTest, GetVirtualPath) {
 #endif
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
+  for (size_t i = 0; i < arraysize(kTestCases); ++i) {
     // Initialize virtual path with a value.
     base::FilePath virtual_path(DRIVE FPL("/mount"));
     base::FilePath local_path(kTestCases[i].local_path);
@@ -345,7 +346,7 @@ TEST(ExternalMountPointsTest, CreateCrackedFileSystemURL) {
 #endif
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
+  for (size_t i = 0; i < arraysize(kTestCases); ++i) {
     FileSystemURL cracked = mount_points->CreateCrackedFileSystemURL(
         kTestOrigin,
         storage::kFileSystemTypeExternal,
@@ -439,7 +440,7 @@ TEST(ExternalMountPointsTest, CrackVirtualPath) {
 #endif
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
+  for (size_t i = 0; i < arraysize(kTestCases); ++i) {
     std::string cracked_name;
     storage::FileSystemType cracked_type;
     std::string cracked_id;
@@ -472,14 +473,13 @@ TEST(ExternalMountPointsTest, MountOption) {
       storage::ExternalMountPoints::CreateRefCounted());
 
   mount_points->RegisterFileSystem(
-      "nosync",
-      storage::kFileSystemTypeNativeLocal,
-      storage::FileSystemMountOption(storage::COPY_SYNC_OPTION_NO_SYNC),
+      "nosync", storage::kFileSystemTypeNativeLocal,
+      storage::FileSystemMountOption(
+          storage::FlushPolicy::NO_FLUSH_ON_COMPLETION),
       base::FilePath(DRIVE FPL("/nosync")));
   mount_points->RegisterFileSystem(
-      "sync",
-      storage::kFileSystemTypeNativeLocal,
-      storage::FileSystemMountOption(storage::COPY_SYNC_OPTION_SYNC),
+      "sync", storage::kFileSystemTypeNativeLocal,
+      storage::FileSystemMountOption(storage::FlushPolicy::FLUSH_ON_COMPLETION),
       base::FilePath(DRIVE FPL("/sync")));
 
   std::string name;
@@ -490,11 +490,12 @@ TEST(ExternalMountPointsTest, MountOption) {
   EXPECT_TRUE(mount_points->CrackVirtualPath(
       base::FilePath(FPL("nosync/file")), &name, &type, &cracked_id, &path,
       &option));
-  EXPECT_EQ(storage::COPY_SYNC_OPTION_NO_SYNC, option.copy_sync_option());
+  EXPECT_EQ(storage::FlushPolicy::NO_FLUSH_ON_COMPLETION,
+            option.flush_policy());
   EXPECT_TRUE(mount_points->CrackVirtualPath(
       base::FilePath(FPL("sync/file")), &name, &type, &cracked_id, &path,
       &option));
-  EXPECT_EQ(storage::COPY_SYNC_OPTION_SYNC, option.copy_sync_option());
+  EXPECT_EQ(storage::FlushPolicy::FLUSH_ON_COMPLETION, option.flush_policy());
 }
 
 }  // namespace content

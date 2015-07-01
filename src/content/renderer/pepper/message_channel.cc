@@ -15,7 +15,6 @@
 #include "content/renderer/pepper/pepper_try_catch.h"
 #include "content/renderer/pepper/plugin_module.h"
 #include "content/renderer/pepper/plugin_object.h"
-#include "content/renderer/pepper/v8_var_converter.h"
 #include "gin/arguments.h"
 #include "gin/converter.h"
 #include "gin/function_template.h"
@@ -93,7 +92,8 @@ MessageChannel* MessageChannel::Create(PepperPluginInstanceImpl* instance,
   v8::Context::Scope context_scope(instance->GetMainWorldContext());
   gin::Handle<MessageChannel> handle =
       gin::CreateHandle(instance->GetIsolate(), message_channel);
-  result->Reset(instance->GetIsolate(), handle.ToV8()->ToObject());
+  result->Reset(instance->GetIsolate(),
+                handle.ToV8()->ToObject(instance->GetIsolate()));
   return message_channel;
 }
 
@@ -121,9 +121,8 @@ void MessageChannel::PostMessageToJavaScript(PP_Var message_data) {
 
   v8::Context::Scope context_scope(context);
 
-  v8::Handle<v8::Value> v8_val;
-  if (!V8VarConverter(instance_->pp_instance())
-           .ToV8Value(message_data, context, &v8_val)) {
+  v8::Local<v8::Value> v8_val;
+  if (!var_converter_.ToV8Value(message_data, context, &v8_val)) {
     PpapiGlobals::Get()->LogWithSource(instance_->pp_instance(),
                                        PP_LOGLEVEL_ERROR,
                                        std::string(),
@@ -168,7 +167,7 @@ void MessageChannel::Start() {
   DrainCompletedPluginMessages();
 }
 
-void MessageChannel::SetPassthroughObject(v8::Handle<v8::Object> passthrough) {
+void MessageChannel::SetPassthroughObject(v8::Local<v8::Object> passthrough) {
   passthrough_object_.Reset(instance_->GetIsolate(), passthrough);
 }
 
@@ -187,6 +186,9 @@ MessageChannel::MessageChannel(PepperPluginInstanceImpl* instance)
       js_message_queue_state_(WAITING_TO_START),
       blocking_message_depth_(0),
       plugin_message_queue_state_(WAITING_TO_START),
+      var_converter_(instance->pp_instance(),
+                     V8VarConverter::kDisallowObjectVars),
+      template_cache_(instance->GetIsolate()),
       weak_ptr_factory_(this) {
 }
 
@@ -214,22 +216,21 @@ v8::Local<v8::Value> MessageChannel::GetNamedProperty(
   if (!instance_)
     return v8::Local<v8::Value>();
 
-  PepperTryCatchV8 try_catch(instance_, V8VarConverter::kDisallowObjectVars,
-                             isolate);
+  PepperTryCatchV8 try_catch(instance_, &var_converter_, isolate);
   if (identifier == kPostMessage) {
-    return gin::CreateFunctionTemplate(isolate,
-        base::Bind(&MessageChannel::PostMessageToNative,
-                   weak_ptr_factory_.GetWeakPtr()))->GetFunction();
+    return GetFunctionTemplate(isolate, identifier,
+                               &MessageChannel::PostMessageToNative)
+        ->GetFunction();
   } else if (identifier == kPostMessageAndAwaitResponse) {
-    return gin::CreateFunctionTemplate(isolate,
-        base::Bind(&MessageChannel::PostBlockingMessageToNative,
-                   weak_ptr_factory_.GetWeakPtr()))->GetFunction();
+    return GetFunctionTemplate(isolate, identifier,
+                               &MessageChannel::PostBlockingMessageToNative)
+        ->GetFunction();
   }
 
   std::map<std::string, ScopedPPVar>::const_iterator it =
       internal_named_properties_.find(identifier);
   if (it != internal_named_properties_.end()) {
-    v8::Handle<v8::Value> result = try_catch.ToV8(it->second.get());
+    v8::Local<v8::Value> result = try_catch.ToV8(it->second.get());
     if (try_catch.ThrowException())
       return v8::Local<v8::Value>();
     return result;
@@ -246,8 +247,7 @@ bool MessageChannel::SetNamedProperty(v8::Isolate* isolate,
                                       v8::Local<v8::Value> value) {
   if (!instance_)
     return false;
-  PepperTryCatchV8 try_catch(instance_, V8VarConverter::kDisallowObjectVars,
-                             isolate);
+  PepperTryCatchV8 try_catch(instance_, &var_converter_, isolate);
   if (identifier == kPostMessage ||
       identifier == kPostMessageAndAwaitResponse) {
     try_catch.ThrowException("Cannot set properties with the name postMessage"
@@ -284,7 +284,7 @@ void MessageChannel::PostMessageToNative(gin::Arguments* args) {
     return;
   }
 
-  v8::Handle<v8::Value> message_data;
+  v8::Local<v8::Value> message_data;
   if (!args->GetNext(&message_data)) {
     NOTREACHED();
   }
@@ -296,15 +296,14 @@ void MessageChannel::PostMessageToNative(gin::Arguments* args) {
 void MessageChannel::PostBlockingMessageToNative(gin::Arguments* args) {
   if (!instance_)
     return;
-  PepperTryCatchV8 try_catch(instance_, V8VarConverter::kDisallowObjectVars,
-                             args->isolate());
+  PepperTryCatchV8 try_catch(instance_, &var_converter_, args->isolate());
   if (args->Length() != 1) {
     try_catch.ThrowException(
         "postMessageAndAwaitResponse requires one argument");
     return;
   }
 
-  v8::Handle<v8::Value> message_data;
+  v8::Local<v8::Value> message_data;
   if (!args->GetNext(&message_data)) {
     NOTREACHED();
   }
@@ -346,7 +345,7 @@ void MessageChannel::PostBlockingMessageToNative(gin::Arguments* args) {
         "and PPP_MessageHandler.");
     return;
   }
-  v8::Handle<v8::Value> v8_result = try_catch.ToV8(pp_result.get());
+  v8::Local<v8::Value> v8_result = try_catch.ToV8(pp_result.get());
   if (try_catch.ThrowException())
     return;
 
@@ -389,16 +388,15 @@ PluginObject* MessageChannel::GetPluginObject(v8::Isolate* isolate) {
       v8::Local<v8::Object>::New(isolate, passthrough_object_));
 }
 
-void MessageChannel::EnqueuePluginMessage(v8::Handle<v8::Value> v8_value) {
+void MessageChannel::EnqueuePluginMessage(v8::Local<v8::Value> v8_value) {
   plugin_message_queue_.push_back(VarConversionResult());
-  // Convert NPVariantType_Object in to an appropriate PP_Var like Dictionary,
-  // Array, etc. Note NPVariantToVar would convert to an "Object" PP_Var,
-  // which we don't support for Messaging.
+  // Convert the v8 value in to an appropriate PP_Var like Dictionary,
+  // Array, etc. (We explicitly don't want an "Object" PP_Var, which we don't
+  // support for Messaging.)
   // TODO(raymes): Possibly change this to use TryCatch to do the conversion and
   // throw an exception if necessary.
-  V8VarConverter v8_var_converter(instance_->pp_instance());
   V8VarConverter::VarResult conversion_result =
-      v8_var_converter.FromV8Value(
+      var_converter_.FromV8Value(
           v8_value,
           v8::Isolate::GetCurrent()->GetCurrentContext(),
           base::Bind(&MessageChannel::FromV8ValueComplete,
@@ -469,6 +467,19 @@ void MessageChannel::UnregisterSyncMessageStatusObserver() {
     unregister_observer_callback_.Run();
     unregister_observer_callback_.Reset();
   }
+}
+
+v8::Local<v8::FunctionTemplate> MessageChannel::GetFunctionTemplate(
+    v8::Isolate* isolate,
+    const std::string& name,
+    void (MessageChannel::*memberFuncPtr)(gin::Arguments* args)) {
+  v8::Local<v8::FunctionTemplate> function_template = template_cache_.Get(name);
+  if (!function_template.IsEmpty())
+    return function_template;
+  function_template = gin::CreateFunctionTemplate(
+      isolate, base::Bind(memberFuncPtr, weak_ptr_factory_.GetWeakPtr()));
+  template_cache_.Set(name, function_template);
+  return function_template;
 }
 
 }  // namespace content

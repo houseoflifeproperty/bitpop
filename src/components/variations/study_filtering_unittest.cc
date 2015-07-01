@@ -138,7 +138,7 @@ TEST(VariationsStudyFilteringTest, CheckStudyLocale) {
     {"", true, true, true},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
+  for (size_t i = 0; i < arraysize(test_cases); ++i) {
     std::vector<std::string> filter_locales;
     Study_Filter filter;
     base::SplitString(test_cases[i].filter_locales, ',', &filter_locales);
@@ -218,7 +218,7 @@ TEST(VariationsStudyFilteringTest, CheckStudyStartDate) {
   // Start date not set should result in true.
   EXPECT_TRUE(internal::CheckStudyStartDate(filter, now));
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(start_test_cases); ++i) {
+  for (size_t i = 0; i < arraysize(start_test_cases); ++i) {
     filter.set_start_date(TimeToProtoTime(start_test_cases[i].start_date));
     const bool result = internal::CheckStudyStartDate(filter, now);
     EXPECT_EQ(start_test_cases[i].expected_result, result)
@@ -273,7 +273,7 @@ TEST(VariationsStudyFilteringTest, CheckStudyVersion) {
   // Min/max version not set should result in true.
   EXPECT_TRUE(internal::CheckStudyVersion(filter, base::Version("1.2.3")));
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(min_test_cases); ++i) {
+  for (size_t i = 0; i < arraysize(min_test_cases); ++i) {
     filter.set_min_version(min_test_cases[i].min_version);
     const bool result =
         internal::CheckStudyVersion(filter, Version(min_test_cases[i].version));
@@ -282,7 +282,7 @@ TEST(VariationsStudyFilteringTest, CheckStudyVersion) {
   }
   filter.clear_min_version();
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(max_test_cases); ++i) {
+  for (size_t i = 0; i < arraysize(max_test_cases); ++i) {
     filter.set_max_version(max_test_cases[i].max_version);
     const bool result =
         internal::CheckStudyVersion(filter, Version(max_test_cases[i].version));
@@ -291,8 +291,8 @@ TEST(VariationsStudyFilteringTest, CheckStudyVersion) {
   }
 
   // Check intersection semantics.
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(min_test_cases); ++i) {
-    for (size_t j = 0; j < ARRAYSIZE_UNSAFE(max_test_cases); ++j) {
+  for (size_t i = 0; i < arraysize(min_test_cases); ++i) {
+    for (size_t j = 0; j < arraysize(max_test_cases); ++j) {
       filter.set_min_version(min_test_cases[i].min_version);
       filter.set_max_version(max_test_cases[j].max_version);
 
@@ -353,7 +353,7 @@ TEST(VariationsStudyFilteringTest, CheckStudyHardwareClass) {
     // considered undefined.
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
+  for (size_t i = 0; i < arraysize(test_cases); ++i) {
     Study_Filter filter;
     std::vector<std::string> hardware_class;
     base::SplitString(test_cases[i].hardware_class, ',', &hardware_class);
@@ -369,6 +369,55 @@ TEST(VariationsStudyFilteringTest, CheckStudyHardwareClass) {
     EXPECT_EQ(test_cases[i].expected_result,
               internal::CheckStudyHardwareClass(
                   filter, test_cases[i].actual_hardware_class));
+  }
+}
+
+TEST(VariationsStudyFilteringTest, CheckStudyCountry) {
+  struct {
+    const char* country;
+    const char* exclude_country;
+    const char* actual_country;
+    bool expected_result;
+  } test_cases[] = {
+      // Neither filtered nor excluded set:
+      // True since empty is always a match.
+      {"", "", "us", true},
+      {"", "", "", true},
+
+      // Filtered set:
+      {"us", "", "us", true},
+      {"br,ca,us", "", "us", true},
+      {"br,ca,us", "", "in", false},
+      // Empty, which is what would happen if no country was returned from the
+      // server.
+      {"br,ca,us", "", "", false},
+
+      // Excluded set:
+      {"", "us", "us", false},
+      {"", "br,ca,us", "us", false},
+      {"", "br,ca,us", "in", true},
+      // Empty, which is what would happen if no country was returned from the
+      // server.
+      {"", "br,ca,us", "", true},
+
+      // Not testing when both are set as it should never occur and should be
+      // considered undefined.
+  };
+
+  for (const auto& test : test_cases) {
+    Study_Filter filter;
+    std::vector<std::string> countries;
+    base::SplitString(test.country, ',', &countries);
+    for (const std::string& country : countries)
+      filter.add_country(country);
+
+    std::vector<std::string> exclude_countries;
+    base::SplitString(test.exclude_country, ',', &exclude_countries);
+    for (const std::string& exclude_country : exclude_countries)
+      filter.add_exclude_country(exclude_country);
+
+    EXPECT_EQ(test.expected_result,
+              internal::CheckStudyCountry(filter, test.actual_country));
   }
 }
 
@@ -396,15 +445,67 @@ TEST(VariationsStudyFilteringTest, FilterAndValidateStudies) {
   AddExperiment("Default", 25, study3);
 
   std::vector<ProcessedStudy> processed_studies;
-  FilterAndValidateStudies(
-      seed, "en-CA", base::Time::Now(), base::Version("20.0.0.0"),
-      Study_Channel_STABLE, Study_FormFactor_DESKTOP, "", &processed_studies);
+  FilterAndValidateStudies(seed, "en-CA", base::Time::Now(),
+                           base::Version("20.0.0.0"), Study_Channel_STABLE,
+                           Study_FormFactor_DESKTOP, "", "",
+                           &processed_studies);
 
   // Check that only the first kTrial1Name study was kept.
   ASSERT_EQ(2U, processed_studies.size());
   EXPECT_EQ(kTrial1Name, processed_studies[0].study()->name());
   EXPECT_EQ(kGroup1Name, processed_studies[0].study()->experiment(0).name());
   EXPECT_EQ(kTrial3Name, processed_studies[1].study()->name());
+}
+
+TEST(VariationsStudyFilteringTest, FilterAndValidateStudiesWithCountry) {
+  const char kSessionCountry[] = "ca";
+  const char kPermanentCountry[] = "us";
+
+  struct {
+    Study_Consistency consistency;
+    const char* filter_country;
+    const char* filter_exclude_country;
+    bool expect_study_kept;
+  } test_cases[] = {
+      // Country-agnostic studies should be kept regardless of country.
+      {Study_Consistency_SESSION, nullptr, nullptr, true},
+      {Study_Consistency_PERMANENT, nullptr, nullptr, true},
+
+      // Session-consistency studies should obey the country code in the seed.
+      {Study_Consistency_SESSION, kSessionCountry, nullptr, true},
+      {Study_Consistency_SESSION, nullptr, kSessionCountry, false},
+      {Study_Consistency_SESSION, kPermanentCountry, nullptr, false},
+      {Study_Consistency_SESSION, nullptr, kPermanentCountry, true},
+
+      // Permanent-consistency studies should obey the permanent-consistency
+      // country code.
+      {Study_Consistency_PERMANENT, kPermanentCountry, nullptr, true},
+      {Study_Consistency_PERMANENT, nullptr, kPermanentCountry, false},
+      {Study_Consistency_PERMANENT, kSessionCountry, nullptr, false},
+      {Study_Consistency_PERMANENT, nullptr, kSessionCountry, true},
+  };
+
+  for (const auto& test : test_cases) {
+    VariationsSeed seed;
+    seed.set_country_code(kSessionCountry);
+    Study* study = seed.add_study();
+    study->set_name("study");
+    study->set_default_experiment_name("Default");
+    AddExperiment("Default", 100, study);
+    study->set_consistency(test.consistency);
+    if (test.filter_country)
+      study->mutable_filter()->add_country(test.filter_country);
+    if (test.filter_exclude_country)
+      study->mutable_filter()->add_exclude_country(test.filter_exclude_country);
+
+    std::vector<ProcessedStudy> processed_studies;
+    FilterAndValidateStudies(seed, "en-CA", base::Time::Now(),
+                             base::Version("20.0.0.0"), Study_Channel_STABLE,
+                             Study_FormFactor_DESKTOP, "", kPermanentCountry,
+                             &processed_studies);
+
+    EXPECT_EQ(test.expect_study_kept, !processed_studies.empty());
+  }
 }
 
 TEST(VariationsStudyFilteringTest, IsStudyExpired) {
@@ -424,7 +525,7 @@ TEST(VariationsStudyFilteringTest, IsStudyExpired) {
   // Expiry date not set should result in false.
   EXPECT_FALSE(internal::IsStudyExpired(study, now));
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(expiry_test_cases); ++i) {
+  for (size_t i = 0; i < arraysize(expiry_test_cases); ++i) {
     study.set_expiry_date(TimeToProtoTime(expiry_test_cases[i].expiry_date));
     const bool result = internal::IsStudyExpired(study, now);
     EXPECT_EQ(expiry_test_cases[i].expected_result, result)

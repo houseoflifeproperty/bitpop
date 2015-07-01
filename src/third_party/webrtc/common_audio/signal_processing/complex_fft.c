@@ -65,18 +65,16 @@ int WebRtcSpl_ComplexFFT(int16_t frfi[], int stages, int mode)
                 {
                     j = i + l;
 
-                    tr32 = WEBRTC_SPL_RSHIFT_W32((WEBRTC_SPL_MUL_16_16(wr, frfi[2 * j])
-                            - WEBRTC_SPL_MUL_16_16(wi, frfi[2 * j + 1])), 15);
+                    tr32 = (wr * frfi[2 * j] - wi * frfi[2 * j + 1]) >> 15;
 
-                    ti32 = WEBRTC_SPL_RSHIFT_W32((WEBRTC_SPL_MUL_16_16(wr, frfi[2 * j + 1])
-                            + WEBRTC_SPL_MUL_16_16(wi, frfi[2 * j])), 15);
+                    ti32 = (wr * frfi[2 * j + 1] + wi * frfi[2 * j]) >> 15;
 
                     qr32 = (int32_t)frfi[2 * i];
                     qi32 = (int32_t)frfi[2 * i + 1];
-                    frfi[2 * j] = (int16_t)WEBRTC_SPL_RSHIFT_W32(qr32 - tr32, 1);
-                    frfi[2 * j + 1] = (int16_t)WEBRTC_SPL_RSHIFT_W32(qi32 - ti32, 1);
-                    frfi[2 * i] = (int16_t)WEBRTC_SPL_RSHIFT_W32(qr32 + tr32, 1);
-                    frfi[2 * i + 1] = (int16_t)WEBRTC_SPL_RSHIFT_W32(qi32 + ti32, 1);
+                    frfi[2 * j] = (int16_t)((qr32 - tr32) >> 1);
+                    frfi[2 * j + 1] = (int16_t)((qi32 - ti32) >> 1);
+                    frfi[2 * i] = (int16_t)((qr32 + tr32) >> 1);
+                    frfi[2 * i + 1] = (int16_t)((qi32 + ti32) >> 1);
                 }
             }
 
@@ -128,27 +126,25 @@ int WebRtcSpl_ComplexFFT(int16_t frfi[], int stages, int mode)
                          [wri]"r"(wri),
                          [cfftrnd]"r"(CFFTRND));
 #else
-                    tr32 = WEBRTC_SPL_MUL_16_16(wr, frfi[2 * j])
-                            - WEBRTC_SPL_MUL_16_16(wi, frfi[2 * j + 1]) + CFFTRND;
+                    tr32 = wr * frfi[2 * j] - wi * frfi[2 * j + 1] + CFFTRND;
 
-                    ti32 = WEBRTC_SPL_MUL_16_16(wr, frfi[2 * j + 1])
-                            + WEBRTC_SPL_MUL_16_16(wi, frfi[2 * j]) + CFFTRND;
+                    ti32 = wr * frfi[2 * j + 1] + wi * frfi[2 * j] + CFFTRND;
 #endif
 
-                    tr32 = WEBRTC_SPL_RSHIFT_W32(tr32, 15 - CFFTSFT);
-                    ti32 = WEBRTC_SPL_RSHIFT_W32(ti32, 15 - CFFTSFT);
+                    tr32 >>= 15 - CFFTSFT;
+                    ti32 >>= 15 - CFFTSFT;
 
                     qr32 = ((int32_t)frfi[2 * i]) << CFFTSFT;
                     qi32 = ((int32_t)frfi[2 * i + 1]) << CFFTSFT;
 
-                    frfi[2 * j] = (int16_t)WEBRTC_SPL_RSHIFT_W32(
-                            (qr32 - tr32 + CFFTRND2), 1 + CFFTSFT);
-                    frfi[2 * j + 1] = (int16_t)WEBRTC_SPL_RSHIFT_W32(
-                            (qi32 - ti32 + CFFTRND2), 1 + CFFTSFT);
-                    frfi[2 * i] = (int16_t)WEBRTC_SPL_RSHIFT_W32(
-                            (qr32 + tr32 + CFFTRND2), 1 + CFFTSFT);
-                    frfi[2 * i + 1] = (int16_t)WEBRTC_SPL_RSHIFT_W32(
-                            (qi32 + ti32 + CFFTRND2), 1 + CFFTSFT);
+                    frfi[2 * j] = (int16_t)(
+                        (qr32 - tr32 + CFFTRND2) >> (1 + CFFTSFT));
+                    frfi[2 * j + 1] = (int16_t)(
+                        (qi32 - ti32 + CFFTRND2) >> (1 + CFFTSFT));
+                    frfi[2 * i] = (int16_t)(
+                        (qr32 + tr32 + CFFTRND2) >> (1 + CFFTSFT));
+                    frfi[2 * i + 1] = (int16_t)(
+                        (qi32 + ti32 + CFFTRND2) >> (1 + CFFTSFT));
                 }
             }
 
@@ -219,19 +215,16 @@ int WebRtcSpl_ComplexIFFT(int16_t frfi[], int stages, int mode)
                 {
                     j = i + l;
 
-                    tr32 = WEBRTC_SPL_RSHIFT_W32((WEBRTC_SPL_MUL_16_16_RSFT(wr, frfi[2 * j], 0)
-                            - WEBRTC_SPL_MUL_16_16_RSFT(wi, frfi[2 * j + 1], 0)), 15);
+                    tr32 = (wr * frfi[2 * j] - wi * frfi[2 * j + 1]) >> 15;
 
-                    ti32 = WEBRTC_SPL_RSHIFT_W32(
-                            (WEBRTC_SPL_MUL_16_16_RSFT(wr, frfi[2 * j + 1], 0)
-                                    + WEBRTC_SPL_MUL_16_16_RSFT(wi,frfi[2*j],0)), 15);
+                    ti32 = (wr * frfi[2 * j + 1] + wi * frfi[2 * j]) >> 15;
 
                     qr32 = (int32_t)frfi[2 * i];
                     qi32 = (int32_t)frfi[2 * i + 1];
-                    frfi[2 * j] = (int16_t)WEBRTC_SPL_RSHIFT_W32(qr32 - tr32, shift);
-                    frfi[2 * j + 1] = (int16_t)WEBRTC_SPL_RSHIFT_W32(qi32 - ti32, shift);
-                    frfi[2 * i] = (int16_t)WEBRTC_SPL_RSHIFT_W32(qr32 + tr32, shift);
-                    frfi[2 * i + 1] = (int16_t)WEBRTC_SPL_RSHIFT_W32(qi32 + ti32, shift);
+                    frfi[2 * j] = (int16_t)((qr32 - tr32) >> shift);
+                    frfi[2 * j + 1] = (int16_t)((qi32 - ti32) >> shift);
+                    frfi[2 * i] = (int16_t)((qr32 + tr32) >> shift);
+                    frfi[2 * i + 1] = (int16_t)((qi32 + ti32) >> shift);
                 }
             }
         } else
@@ -275,26 +268,24 @@ int WebRtcSpl_ComplexIFFT(int16_t frfi[], int stages, int mode)
                     );
 #else
 
-                    tr32 = WEBRTC_SPL_MUL_16_16(wr, frfi[2 * j])
-                            - WEBRTC_SPL_MUL_16_16(wi, frfi[2 * j + 1]) + CIFFTRND;
+                    tr32 = wr * frfi[2 * j] - wi * frfi[2 * j + 1] + CIFFTRND;
 
-                    ti32 = WEBRTC_SPL_MUL_16_16(wr, frfi[2 * j + 1])
-                            + WEBRTC_SPL_MUL_16_16(wi, frfi[2 * j]) + CIFFTRND;
+                    ti32 = wr * frfi[2 * j + 1] + wi * frfi[2 * j] + CIFFTRND;
 #endif
-                    tr32 = WEBRTC_SPL_RSHIFT_W32(tr32, 15 - CIFFTSFT);
-                    ti32 = WEBRTC_SPL_RSHIFT_W32(ti32, 15 - CIFFTSFT);
+                    tr32 >>= 15 - CIFFTSFT;
+                    ti32 >>= 15 - CIFFTSFT;
 
                     qr32 = ((int32_t)frfi[2 * i]) << CIFFTSFT;
                     qi32 = ((int32_t)frfi[2 * i + 1]) << CIFFTSFT;
 
-                    frfi[2 * j] = (int16_t)WEBRTC_SPL_RSHIFT_W32((qr32 - tr32+round2),
-                                                                       shift+CIFFTSFT);
-                    frfi[2 * j + 1] = (int16_t)WEBRTC_SPL_RSHIFT_W32(
-                            (qi32 - ti32 + round2), shift + CIFFTSFT);
-                    frfi[2 * i] = (int16_t)WEBRTC_SPL_RSHIFT_W32((qr32 + tr32 + round2),
-                                                                       shift + CIFFTSFT);
-                    frfi[2 * i + 1] = (int16_t)WEBRTC_SPL_RSHIFT_W32(
-                            (qi32 + ti32 + round2), shift + CIFFTSFT);
+                    frfi[2 * j] = (int16_t)(
+                        (qr32 - tr32 + round2) >> (shift + CIFFTSFT));
+                    frfi[2 * j + 1] = (int16_t)(
+                        (qi32 - ti32 + round2) >> (shift + CIFFTSFT));
+                    frfi[2 * i] = (int16_t)(
+                        (qr32 + tr32 + round2) >> (shift + CIFFTSFT));
+                    frfi[2 * i + 1] = (int16_t)(
+                        (qi32 + ti32 + round2) >> (shift + CIFFTSFT));
                 }
             }
 

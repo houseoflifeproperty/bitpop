@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_APPS_CHROME_NATIVE_APP_WINDOW_VIEWS_WIN_H_
 #define CHROME_BROWSER_UI_VIEWS_APPS_CHROME_NATIVE_APP_WINDOW_VIEWS_WIN_H_
 
-#include "chrome/browser/ui/views/apps/chrome_native_app_window_views.h"
+#include "chrome/browser/ui/views/apps/chrome_native_app_window_views_aura.h"
 
 namespace web_app {
 struct ShortcutInfo;
@@ -15,9 +15,10 @@ class GlassAppWindowFrameViewWin;
 
 // Windows-specific parts of the views-backed native shell window implementation
 // for packaged apps.
-class ChromeNativeAppWindowViewsWin : public ChromeNativeAppWindowViews {
+class ChromeNativeAppWindowViewsWin : public ChromeNativeAppWindowViewsAura {
  public:
   ChromeNativeAppWindowViewsWin();
+  ~ChromeNativeAppWindowViewsWin() override;
 
   GlassAppWindowFrameViewWin* glass_frame_view() {
     return glass_frame_view_;
@@ -34,18 +35,23 @@ class ChromeNativeAppWindowViewsWin : public ChromeNativeAppWindowViews {
   void EnsureCaptionStyleSet();
 
   // Overridden from ChromeNativeAppWindowViews:
-  virtual void OnBeforeWidgetInit(views::Widget::InitParams* init_params,
-                                  views::Widget* widget) OVERRIDE;
-  virtual void InitializeDefaultWindow(
-      const extensions::AppWindow::CreateParams& create_params) OVERRIDE;
-  virtual views::NonClientFrameView* CreateStandardDesktopAppFrame() OVERRIDE;
+  void OnBeforeWidgetInit(
+      const extensions::AppWindow::CreateParams& create_params,
+      views::Widget::InitParams* init_params,
+      views::Widget* widget) override;
+  void InitializeDefaultWindow(
+      const extensions::AppWindow::CreateParams& create_params) override;
+  views::NonClientFrameView* CreateStandardDesktopAppFrame() override;
 
   // Overridden from ui::BaseWindow:
-  virtual void Show() OVERRIDE;
-  virtual void Activate() OVERRIDE;
+  void Show() override;
+  void Activate() override;
+
+  // Overridden from views::WidgetDelegate:
+  bool CanMinimize() const override;
 
   // Overridden from extensions::NativeAppWindow:
-  virtual void UpdateShelfMenu() OVERRIDE;
+  void UpdateShelfMenu() override;
 
   // Populated if there is a glass frame, which provides special information
   // to the native widget implementation. This will be NULL if there is no
@@ -56,6 +62,9 @@ class ChromeNativeAppWindowViewsWin : public ChromeNativeAppWindowViews {
   // The Windows Application User Model ID identifying the app.
   // Not set for windows running inside Ash.
   base::string16 app_model_id_;
+
+  // Whether the InitParams indicated that this window should be translucent.
+  bool is_translucent_;
 
   base::WeakPtrFactory<ChromeNativeAppWindowViewsWin> weak_ptr_factory_;
 

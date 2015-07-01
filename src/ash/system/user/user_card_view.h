@@ -20,12 +20,12 @@ class UserCardView : public views::View {
   UserCardView(user::LoginStatus login_status,
                int max_width,
                int multiprofile_index);
-  virtual ~UserCardView();
+  ~UserCardView() override;
+
+  // views::View overrides.
+  void GetAccessibleState(ui::AXViewState* state) override;
 
  private:
-  // Creates the content for the retail logged in mode.
-  void AddRetailModeUserContent();
-
   // Creates the content for the public mode.
   void AddPublicModeUserContent(int max_width);
 

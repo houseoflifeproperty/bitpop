@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "sandbox/win/src/policy_low_level.h"
+
 #include <string>
 #include <map>
 
-#include "sandbox/win/src/policy_low_level.h"
 #include "base/basictypes.h"
 
 namespace {
@@ -30,6 +31,10 @@ namespace {
 }
 
 namespace sandbox {
+
+LowLevelPolicy::LowLevelPolicy(PolicyGlobal* policy_store)
+    : policy_store_(policy_store) {
+}
 
 // Adding a rule is nothing more than pushing it into an stl container. Done()
 // is called for the rule in case the code that made the rule in the first
@@ -274,8 +279,10 @@ bool PolicyRule::AddStringMatch(RuleType rule_type, int16 parameter,
   return true;
 }
 
-bool PolicyRule::AddNumberMatch(RuleType rule_type, int16 parameter,
-                                unsigned long number, RuleOp comparison_op) {
+bool PolicyRule::AddNumberMatch(RuleType rule_type,
+                                int16 parameter,
+                                uint32 number,
+                                RuleOp comparison_op) {
   if (done_) {
     // Do not allow to add more rules after generating the action opcode.
     return false;
@@ -287,7 +294,8 @@ bool PolicyRule::AddNumberMatch(RuleType rule_type, int16 parameter,
       return false;
     }
   } else if (AND == comparison_op) {
-    if (NULL == opcode_factory_->MakeOpUlongAndMatch(parameter, number, opts)) {
+    if (NULL == opcode_factory_->MakeOpNumberAndMatch(parameter, number,
+                                                      opts)) {
       return false;
     }
   }

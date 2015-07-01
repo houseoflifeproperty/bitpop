@@ -7,12 +7,16 @@
 
 #include "components/renderer_context_menu/context_menu_content_type.h"
 
+namespace extensions {
+class Extension;
+}
+
 class ContextMenuContentTypePlatformApp : public ContextMenuContentType {
  public:
-  virtual ~ContextMenuContentTypePlatformApp();
+  ~ContextMenuContentTypePlatformApp() override;
 
   // ContextMenuContentType overrides.
-  virtual bool SupportsGroup(int group) OVERRIDE;
+  bool SupportsGroup(int group) override;
 
  protected:
   ContextMenuContentTypePlatformApp(content::WebContents* web_contents,
@@ -20,6 +24,8 @@ class ContextMenuContentTypePlatformApp : public ContextMenuContentType {
 
  private:
   friend class ContextMenuContentTypeFactory;
+
+  const extensions::Extension* GetExtension() const;
 
   DISALLOW_COPY_AND_ASSIGN(ContextMenuContentTypePlatformApp);
 };

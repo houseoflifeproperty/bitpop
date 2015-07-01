@@ -9,14 +9,14 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/task/cancelable_task_tracker.h"
 #include "base/time/time.h"
-#include "chrome/browser/history/history_backend.h"
-#include "chrome/browser/history/history_db_task.h"
-#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/test/integration/multi_client_status_change_checker.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
+#include "components/history/core/browser/history_backend.h"
+#include "components/history/core/browser/history_db_task.h"
+#include "components/history/core/browser/history_service.h"
 #include "components/history/core/browser/history_types.h"
 
 using sync_datatype_helper::test;
@@ -27,16 +27,16 @@ class FlushHistoryDBQueueTask : public history::HistoryDBTask {
  public:
   explicit FlushHistoryDBQueueTask(base::WaitableEvent* event)
       : wait_event_(event) {}
-  virtual bool RunOnDBThread(history::HistoryBackend* backend,
-                             history::HistoryDatabase* db) OVERRIDE {
+  bool RunOnDBThread(history::HistoryBackend* backend,
+                     history::HistoryDatabase* db) override {
     wait_event_->Signal();
     return true;
   }
 
-  virtual void DoneRunOnMainThread() OVERRIDE {}
+  void DoneRunOnMainThread() override {}
 
  private:
-  virtual ~FlushHistoryDBQueueTask() {}
+  ~FlushHistoryDBQueueTask() override {}
 
   base::WaitableEvent* wait_event_;
 };
@@ -46,18 +46,18 @@ class GetTypedUrlsTask : public history::HistoryDBTask {
   GetTypedUrlsTask(history::URLRows* rows, base::WaitableEvent* event)
       : rows_(rows), wait_event_(event) {}
 
-  virtual bool RunOnDBThread(history::HistoryBackend* backend,
-                             history::HistoryDatabase* db) OVERRIDE {
+  bool RunOnDBThread(history::HistoryBackend* backend,
+                     history::HistoryDatabase* db) override {
     // Fetch the typed URLs.
     backend->GetAllTypedURLs(rows_);
     wait_event_->Signal();
     return true;
   }
 
-  virtual void DoneRunOnMainThread() OVERRIDE {}
+  void DoneRunOnMainThread() override {}
 
  private:
-  virtual ~GetTypedUrlsTask() {}
+  ~GetTypedUrlsTask() override {}
 
   history::URLRows* rows_;
   base::WaitableEvent* wait_event_;
@@ -71,18 +71,18 @@ class GetUrlTask : public history::HistoryDBTask {
              base::WaitableEvent* event)
       : url_(url), row_(row), wait_event_(event), found_(found) {}
 
-  virtual bool RunOnDBThread(history::HistoryBackend* backend,
-                             history::HistoryDatabase* db) OVERRIDE {
+  bool RunOnDBThread(history::HistoryBackend* backend,
+                     history::HistoryDatabase* db) override {
     // Fetch the typed URLs.
     *found_ = backend->GetURL(url_, row_);
     wait_event_->Signal();
     return true;
   }
 
-  virtual void DoneRunOnMainThread() OVERRIDE {}
+  void DoneRunOnMainThread() override {}
 
  private:
-  virtual ~GetUrlTask() {}
+  ~GetUrlTask() override {}
 
   GURL url_;
   history::URLRow* row_;
@@ -97,18 +97,18 @@ class GetVisitsTask : public history::HistoryDBTask {
                 base::WaitableEvent* event)
       : id_(id), visits_(visits), wait_event_(event) {}
 
-  virtual bool RunOnDBThread(history::HistoryBackend* backend,
-                             history::HistoryDatabase* db) OVERRIDE {
+  bool RunOnDBThread(history::HistoryBackend* backend,
+                     history::HistoryDatabase* db) override {
     // Fetch the visits.
     backend->GetVisitsForURL(id_, visits_);
     wait_event_->Signal();
     return true;
   }
 
-  virtual void DoneRunOnMainThread() OVERRIDE {}
+  void DoneRunOnMainThread() override {}
 
  private:
-  virtual ~GetVisitsTask() {}
+  ~GetVisitsTask() override {}
 
   history::URLID id_;
   history::VisitVector* visits_;
@@ -121,18 +121,18 @@ class RemoveVisitsTask : public history::HistoryDBTask {
                    base::WaitableEvent* event)
       : visits_(visits), wait_event_(event) {}
 
-  virtual bool RunOnDBThread(history::HistoryBackend* backend,
-                             history::HistoryDatabase* db) OVERRIDE {
+  bool RunOnDBThread(history::HistoryBackend* backend,
+                     history::HistoryDatabase* db) override {
     // Fetch the visits.
     backend->RemoveVisits(visits_);
     wait_event_->Signal();
     return true;
   }
 
-  virtual void DoneRunOnMainThread() OVERRIDE {}
+  void DoneRunOnMainThread() override {}
 
  private:
-  virtual ~RemoveVisitsTask() {}
+  ~RemoveVisitsTask() override {}
 
   const history::VisitVector& visits_;
   base::WaitableEvent* wait_event_;
@@ -142,8 +142,9 @@ class RemoveVisitsTask : public history::HistoryDBTask {
 // tasks.
 void WaitForHistoryDBThread(int index) {
   base::CancelableTaskTracker tracker;
-  HistoryService* service = HistoryServiceFactory::GetForProfileWithoutCreating(
-      test()->GetProfile(index));
+  history::HistoryService* service =
+      HistoryServiceFactory::GetForProfileWithoutCreating(
+          test()->GetProfile(index));
   base::WaitableEvent wait_event(true, false);
   service->ScheduleDBTask(
       scoped_ptr<history::HistoryDBTask>(
@@ -154,7 +155,7 @@ void WaitForHistoryDBThread(int index) {
 
 // Creates a URLRow in the specified HistoryService with the passed transition
 // type.
-void AddToHistory(HistoryService* service,
+void AddToHistory(history::HistoryService* service,
                   const GURL& url,
                   ui::PageTransition transition,
                   history::VisitSource source,
@@ -162,16 +163,16 @@ void AddToHistory(HistoryService* service,
   service->AddPage(url,
                    timestamp,
                    NULL, // scope
-                   1234, // page_id
+                   1234, // nav_entry_id
                    GURL(),  // referrer
                    history::RedirectList(),
                    transition,
                    source,
                    false);
-  service->SetPageTitle(url, base::ASCIIToUTF16(url.spec() + " - title"));
 }
 
-history::URLRows GetTypedUrlsFromHistoryService(HistoryService* service) {
+history::URLRows GetTypedUrlsFromHistoryService(
+    history::HistoryService* service) {
   base::CancelableTaskTracker tracker;
   history::URLRows rows;
   base::WaitableEvent wait_event(true, false);
@@ -183,8 +184,9 @@ history::URLRows GetTypedUrlsFromHistoryService(HistoryService* service) {
   return rows;
 }
 
-bool GetUrlFromHistoryService(HistoryService* service,
-                              const GURL& url, history::URLRow* row) {
+bool GetUrlFromHistoryService(history::HistoryService* service,
+                              const GURL& url,
+                              history::URLRow* row) {
   base::CancelableTaskTracker tracker;
   base::WaitableEvent wait_event(true, false);
   bool found = false;
@@ -196,8 +198,9 @@ bool GetUrlFromHistoryService(HistoryService* service,
   return found;
 }
 
-history::VisitVector GetVisitsFromHistoryService(HistoryService* service,
-                                                 history::URLID id) {
+history::VisitVector GetVisitsFromHistoryService(
+    history::HistoryService* service,
+    history::URLID id) {
   base::CancelableTaskTracker tracker;
   base::WaitableEvent wait_event(true, false);
   history::VisitVector visits;
@@ -209,7 +212,7 @@ history::VisitVector GetVisitsFromHistoryService(HistoryService* service,
   return visits;
 }
 
-void RemoveVisitsFromHistoryService(HistoryService* service,
+void RemoveVisitsFromHistoryService(history::HistoryService* service,
                                     const history::VisitVector& visits) {
   base::CancelableTaskTracker tracker;
   base::WaitableEvent wait_event(true, false);
@@ -227,26 +230,40 @@ static base::Time* timestamp = NULL;
 namespace typed_urls_helper {
 
 history::URLRows GetTypedUrlsFromClient(int index) {
-  HistoryService* service = HistoryServiceFactory::GetForProfileWithoutCreating(
-      test()->GetProfile(index));
+  history::HistoryService* service =
+      HistoryServiceFactory::GetForProfileWithoutCreating(
+          test()->GetProfile(index));
   return GetTypedUrlsFromHistoryService(service);
 }
 
 bool GetUrlFromClient(int index, const GURL& url, history::URLRow* row) {
-  HistoryService* service = HistoryServiceFactory::GetForProfileWithoutCreating(
-      test()->GetProfile(index));
+  history::HistoryService* service =
+      HistoryServiceFactory::GetForProfileWithoutCreating(
+          test()->GetProfile(index));
   return GetUrlFromHistoryService(service, url, row);
 }
 
 history::VisitVector GetVisitsFromClient(int index, history::URLID id) {
-  HistoryService* service = HistoryServiceFactory::GetForProfileWithoutCreating(
-      test()->GetProfile(index));
+  history::HistoryService* service =
+      HistoryServiceFactory::GetForProfileWithoutCreating(
+          test()->GetProfile(index));
   return GetVisitsFromHistoryService(service, id);
 }
 
+history::VisitVector GetVisitsForURLFromClient(int index, const GURL& url) {
+  history::HistoryService* service =
+      HistoryServiceFactory::GetForProfileWithoutCreating(
+          test()->GetProfile(index));
+  history::URLRow url_row;
+  if (!GetUrlFromHistoryService(service, url, &url_row))
+    return history::VisitVector();
+  return GetVisitsFromHistoryService(service, url_row.id());
+}
+
 void RemoveVisitsFromClient(int index, const history::VisitVector& visits) {
-  HistoryService* service = HistoryServiceFactory::GetForProfileWithoutCreating(
-      test()->GetProfile(index));
+  history::HistoryService* service =
+      HistoryServiceFactory::GetForProfileWithoutCreating(
+          test()->GetProfile(index));
   RemoveVisitsFromHistoryService(service, visits);
 }
 
@@ -285,13 +302,9 @@ void AddUrlToHistoryWithTimestamp(int index,
                source,
                timestamp);
   if (test()->use_verifier())
-    AddToHistory(
-        HistoryServiceFactory::GetForProfile(test()->verifier(),
-                                             Profile::IMPLICIT_ACCESS),
-        url,
-        transition,
-        source,
-        timestamp);
+    AddToHistory(HistoryServiceFactory::GetForProfile(
+                     test()->verifier(), ServiceAccessType::IMPLICIT_ACCESS),
+                 url, transition, source, timestamp);
 
   // Wait until the AddPage() request has completed so we know the change has
   // filtered down to the sync observers (don't need to wait for the
@@ -303,9 +316,8 @@ void DeleteUrlFromHistory(int index, const GURL& url) {
   HistoryServiceFactory::GetForProfileWithoutCreating(
       test()->GetProfile(index))->DeleteURL(url);
   if (test()->use_verifier())
-    HistoryServiceFactory::GetForProfile(test()->verifier(),
-                                         Profile::IMPLICIT_ACCESS)->
-        DeleteURL(url);
+    HistoryServiceFactory::GetForProfile(
+        test()->verifier(), ServiceAccessType::IMPLICIT_ACCESS)->DeleteURL(url);
   WaitForHistoryDBThread(index);
 }
 
@@ -314,8 +326,18 @@ void DeleteUrlsFromHistory(int index, const std::vector<GURL>& urls) {
       test()->GetProfile(index))->DeleteURLsForTest(urls);
   if (test()->use_verifier())
     HistoryServiceFactory::GetForProfile(test()->verifier(),
-                                         Profile::IMPLICIT_ACCESS)->
-        DeleteURLsForTest(urls);
+                                         ServiceAccessType::IMPLICIT_ACCESS)
+        ->DeleteURLsForTest(urls);
+  WaitForHistoryDBThread(index);
+}
+
+void SetPageTitle(int index, const GURL& url, const std::string& title) {
+  HistoryServiceFactory::GetForProfileWithoutCreating(test()->GetProfile(index))
+      ->SetPageTitle(url, base::UTF8ToUTF16(title));
+  if (test()->use_verifier())
+    HistoryServiceFactory::GetForProfile(test()->verifier(),
+                                         ServiceAccessType::IMPLICIT_ACCESS)
+        ->SetPageTitle(url, base::UTF8ToUTF16(title));
   WaitForHistoryDBThread(index);
 }
 
@@ -375,9 +397,9 @@ bool CheckURLRowsAreEqual(
 }
 
 bool CheckAllProfilesHaveSameURLsAsVerifier() {
-  HistoryService* verifier_service =
+  history::HistoryService* verifier_service =
       HistoryServiceFactory::GetForProfile(test()->verifier(),
-                                           Profile::IMPLICIT_ACCESS);
+                                           ServiceAccessType::IMPLICIT_ACCESS);
   history::URLRows verifier_urls =
       GetTypedUrlsFromHistoryService(verifier_service);
   for (int i = 0; i < test()->num_clients(); ++i) {
@@ -395,10 +417,10 @@ namespace {
 class ProfilesHaveSameURLsChecker : public MultiClientStatusChangeChecker {
  public:
   ProfilesHaveSameURLsChecker();
-  virtual ~ProfilesHaveSameURLsChecker();
+  ~ProfilesHaveSameURLsChecker() override;
 
-  virtual bool IsExitConditionSatisfied() OVERRIDE;
-  virtual std::string GetDebugMessage() const OVERRIDE;
+  bool IsExitConditionSatisfied() override;
+  std::string GetDebugMessage() const override;
 };
 
 ProfilesHaveSameURLsChecker::ProfilesHaveSameURLsChecker()

@@ -48,7 +48,7 @@ class TCPListenSocketTestAction {
       : action_(action),
         data_(data) {}
 
-  const std::string data() const { return data_; }
+  const std::string& data() const { return data_; }
   ActionType type() const { return action_; }
 
  private:
@@ -90,11 +90,12 @@ class TCPListenSocketTester :
   virtual bool Send(SocketDescriptor sock, const std::string& str);
 
   // StreamListenSocket::Delegate:
-  virtual void DidAccept(StreamListenSocket* server,
-                         scoped_ptr<StreamListenSocket> connection) OVERRIDE;
-  virtual void DidRead(StreamListenSocket* connection, const char* data,
-                       int len) OVERRIDE;
-  virtual void DidClose(StreamListenSocket* sock) OVERRIDE;
+  void DidAccept(StreamListenSocket* server,
+                 scoped_ptr<StreamListenSocket> connection) override;
+  void DidRead(StreamListenSocket* connection,
+               const char* data,
+               int len) override;
+  void DidClose(StreamListenSocket* sock) override;
 
   scoped_ptr<base::Thread> thread_;
   base::MessageLoopForIO* loop_;
@@ -111,7 +112,7 @@ class TCPListenSocketTester :
  private:
   friend class base::RefCountedThreadSafe<TCPListenSocketTester>;
 
-  virtual ~TCPListenSocketTester();
+  ~TCPListenSocketTester() override;
 
   virtual scoped_ptr<TCPListenSocket> DoListen();
 

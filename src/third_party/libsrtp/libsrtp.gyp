@@ -5,11 +5,14 @@
 {
   'variables': {
     'use_system_libsrtp%': 0,
+    'use_openssl': 1,
   },
   'target_defaults': {
     'defines': [
+      'HAVE_CONFIG_H',
       'HAVE_STDLIB_H',
       'HAVE_STRING_H',
+      'TESTAPP_SOURCE',
     ],
     'include_dirs': [
       './config',
@@ -17,6 +20,11 @@
       'srtp/crypto/include',
     ],
     'conditions': [
+      ['use_openssl==1', {
+        'defines': [
+          'OPENSSL',
+        ],
+      }],
       ['os_posix==1', {
         'defines': [
           'HAVE_INT16_T',
@@ -29,12 +37,15 @@
           'HAVE_STDINT_H',
           'HAVE_INTTYPES_H',
           'HAVE_NETINET_IN_H',
-          'INLINE=inline',
+          'HAVE_ARPA_INET_H',
+          'HAVE_UNISTD_H',
+        ],
+        'cflags': [
+          '-Wno-unused-variable',
         ],
       }],
       ['OS=="win"', {
         'defines': [
-          'INLINE=__inline',
           'HAVE_BYTESWAP_METHODS_H',
           # All Windows architectures are this way.
           'SIZEOF_UNSIGNED_LONG=4',
@@ -46,22 +57,18 @@
           'CPU_CISC',
         ],
       }],
-      ['target_arch=="arm" or target_arch=="armv7" or target_arch=="arm64"', {
+      ['target_arch=="arm" or target_arch=="arm64" \
+       or target_arch=="mipsel" or target_arch=="mips64el"', {
         'defines': [
-          # TODO(leozwang): CPU_RISC doesn't work properly on android/arm
-          # platform for unknown reasons, need to investigate the root cause
-          # of it. CPU_RISC is used for optimization only, and CPU_CISC should
-          # just work just fine, it has been tested on android/arm with srtp
-          # test applications and libjingle.
+          # TODO(leozwang): CPU_RISC doesn't work properly on android/arm and
+          # mips platforms for unknown reasons, need to investigate the root
+          # cause of it. CPU_RISC is used for optimization only, and CPU_CISC
+          # should just work just fine, it has been tested on android/arm with
+          # srtp test applications and libjingle.
           'CPU_CISC',
         ],
       }],
-      ['target_arch=="mipsel" or target_arch=="mips64el"', {
-        'defines': [
-          'CPU_RISC',
-        ],
-      }],
-      ['target_arch=="mipsel" or target_arch=="arm" or target_arch=="armv7" or target_arch=="ia32"', {
+      ['target_arch=="mipsel" or target_arch=="arm" or target_arch=="ia32"', {
         'defines': [
           # Define FORCE_64BIT_ALIGN to avoid alignment-related-crashes like
           # crbug/414919. Without this, aes_cbc_alloc will allocate an
@@ -91,12 +98,10 @@
             'HAVE_STDINT_H',
             'HAVE_INTTYPES_H',
             'HAVE_NETINET_IN_H',
-            'INLINE=inline',
           ],
         }],
         ['OS=="win"', {
           'defines': [
-            'INLINE=__inline',
             'HAVE_BYTESWAP_METHODS_H',
             # All Windows architectures are this way.
             'SIZEOF_UNSIGNED_LONG=4',
@@ -106,11 +111,6 @@
         ['target_arch=="x64" or target_arch=="ia32"', {
           'defines': [
             'CPU_CISC',
-          ],
-        }],
-        ['target_arch=="mipsel" or target_arch=="mips64el"', {
-          'defines': [
-            'CPU_RISC',
           ],
         }],
       ],
@@ -187,6 +187,28 @@
             'srtp/crypto/rng/ctr_prng.c',
             'srtp/crypto/rng/prng.c',
             'srtp/crypto/rng/rand_source.c',
+          ],
+          'conditions': [
+            ['use_openssl==1', {
+              'dependencies': [
+                '<(DEPTH)/third_party/boringssl/boringssl.gyp:boringssl',
+              ],
+              'sources!': [
+                'srtp/crypto/cipher/aes_cbc.c',
+                'srtp/crypto/cipher/aes_icm.c',
+                'srtp/crypto/hash/hmac.c',
+                'srtp/crypto/hash/sha1.c',
+                'srtp/crypto/rng/ctr_prng.c',
+                'srtp/crypto/rng/prng.c',
+              ],
+              'sources': [
+                'srtp/crypto/cipher/aes_gcm_ossl.c',
+                'srtp/crypto/cipher/aes_icm_ossl.c',
+                'srtp/crypto/hash/hmac_ossl.c',
+                'srtp/crypto/include/aes_gcm_ossl.h',
+                'srtp/crypto/include/aes_icm_ossl.h',
+              ],
+            }],
           ],
         }, # target libsrtp
         {
@@ -269,6 +291,15 @@
           ],
           'sources': [
             'srtp/crypto/test/cipher_driver.c',
+            'srtp/include/getopt_s.h',
+            'srtp/test/getopt_s.c',
+          ],
+          'conditions': [
+            ['use_openssl==1', {
+              'dependencies': [
+                '<(DEPTH)/third_party/boringssl/boringssl.gyp:boringssl',
+              ],
+            }],
           ],
         },
         {
@@ -309,6 +340,8 @@
           ],
           'sources': [
             'srtp/crypto/test/kernel_driver.c',
+            'srtp/include/getopt_s.h',
+            'srtp/test/getopt_s.c',
           ],
         },
         {
@@ -329,6 +362,20 @@
           ],
           'sources': [
             'srtp/crypto/test/rand_gen.c',
+            'srtp/include/getopt_s.h',
+            'srtp/test/getopt_s.c',
+          ],
+        },
+        {
+          'target_name': 'srtp_test_rand_gen_soak',
+          'type': 'executable',
+          'dependencies': [
+            'libsrtp',
+          ],
+          'sources': [
+            'srtp/crypto/test/rand_gen_soak.c',
+            'srtp/include/getopt_s.h',
+            'srtp/test/getopt_s.c',
           ],
         },
         {
@@ -357,6 +404,7 @@
             'srtp_test_kernel_driver',
             'srtp_test_aes_calc',
             'srtp_test_rand_gen',
+            'srtp_test_rand_gen_soak',
             'srtp_test_env',
           ],
         },

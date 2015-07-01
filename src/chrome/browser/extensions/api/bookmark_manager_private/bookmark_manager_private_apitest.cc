@@ -20,6 +20,9 @@
 #include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "components/user_prefs/user_prefs.h"
 
+using bookmarks::BookmarkModel;
+using bookmarks::BookmarkNode;
+
 // Times out on win syzyasan, http://crbug.com/166026
 #if defined(SYZYASAN)
 #define MAYBE_BookmarkManager DISABLED_BookmarkManager
@@ -32,7 +35,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_BookmarkManager) {
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile);
   ChromeBookmarkClient* client =
       ChromeBookmarkClientFactory::GetForProfile(profile);
-  test::WaitForBookmarkModelToLoad(model);
+  bookmarks::test::WaitForBookmarkModelToLoad(model);
 
   base::ListValue list;
   base::DictionaryValue* node = new base::DictionaryValue();
@@ -56,7 +59,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, BookmarkManagerEditDisabled) {
   // Provide some testing data here, since bookmark editing will be disabled
   // within the extension.
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile);
-  test::WaitForBookmarkModelToLoad(model);
+  bookmarks::test::WaitForBookmarkModelToLoad(model);
   const BookmarkNode* bar = model->bookmark_bar_node();
   const BookmarkNode* folder =
       model->AddFolder(bar, 0, base::ASCIIToUTF16("Folder"));

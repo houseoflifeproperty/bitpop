@@ -60,10 +60,10 @@ class PolicyProviderAndroidTestFixture {
 class PolicyProviderAndroidTest : public ::testing::Test {
  protected:
   PolicyProviderAndroidTest();
-  virtual ~PolicyProviderAndroidTest();
+  ~PolicyProviderAndroidTest() override;
 
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(PolicyProviderAndroidTest);

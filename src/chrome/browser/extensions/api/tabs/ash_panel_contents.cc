@@ -33,22 +33,22 @@ using extensions::NativeAppWindow;
 class AshPanelWindowController : public extensions::WindowController {
  public:
   AshPanelWindowController(AppWindow* window, Profile* profile);
-  virtual ~AshPanelWindowController();
+  ~AshPanelWindowController() override;
 
   void NativeWindowChanged();
 
   // Overridden from extensions::WindowController.
-  virtual int GetWindowId() const OVERRIDE;
-  virtual std::string GetWindowTypeText() const OVERRIDE;
-  virtual base::DictionaryValue* CreateWindowValueWithTabs(
-      const extensions::Extension* extension) const OVERRIDE;
-  virtual base::DictionaryValue* CreateTabValue(
-      const extensions::Extension* extension, int tab_index) const OVERRIDE;
-  virtual bool CanClose(Reason* reason) const OVERRIDE;
-  virtual void SetFullscreenMode(bool is_fullscreen,
-                                 const GURL& extension_url) const OVERRIDE;
-  virtual bool IsVisibleToExtension(
-      const extensions::Extension* extension) const OVERRIDE;
+  int GetWindowId() const override;
+  std::string GetWindowTypeText() const override;
+  base::DictionaryValue* CreateWindowValueWithTabs(
+      const extensions::Extension* extension) const override;
+  base::DictionaryValue* CreateTabValue(const extensions::Extension* extension,
+                                        int tab_index) const override;
+  bool CanClose(Reason* reason) const override;
+  void SetFullscreenMode(bool is_fullscreen,
+                         const GURL& extension_url) const override;
+  bool IsVisibleToExtension(
+      const extensions::Extension* extension) const override;
 
  private:
   AppWindow* app_window_;  // Weak pointer; this is owned by app_window_
@@ -176,15 +176,15 @@ void AshPanelContents::Initialize(content::BrowserContext* context,
           context, content::SiteInstance::CreateForURL(context, url_))));
 
   // Needed to give the web contents a Window ID. Extension APIs expect web
-  // contents to have a Window ID. Also required for FaviconTabHelper to
-  // correctly set the window icon and title.
+  // contents to have a Window ID. Also required for FaviconDriver to correctly
+  // set the window icon and title.
   SessionTabHelper::CreateForWebContents(web_contents_.get());
   SessionTabHelper::FromWebContents(web_contents_.get())->SetWindowID(
       host_->session_id());
 
   // Responsible for loading favicons for the Launcher, which uses different
-  // logic than the FaviconTabHelper associated with web_contents_
-  // (instantiated in AppWindow::Init())
+  // logic than the FaviconDriver associated with web_contents_ (instantiated in
+  // AppWindow::Init())
   launcher_favicon_loader_.reset(
       new LauncherFaviconLoader(this, web_contents_.get()));
 

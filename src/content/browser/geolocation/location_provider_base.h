@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_BROWSER_GEOLOCATION_LOCATION_PROVIDER_H_
-#define CONTENT_BROWSER_GEOLOCATION_LOCATION_PROVIDER_H_
+#ifndef CONTENT_BROWSER_GEOLOCATION_LOCATION_PROVIDER_BASE_H_
+#define CONTENT_BROWSER_GEOLOCATION_LOCATION_PROVIDER_BASE_H_
 
 #include "content/common/content_export.h"
 #include "content/public/browser/location_provider.h"
@@ -14,15 +14,15 @@ class CONTENT_EXPORT LocationProviderBase
     : NON_EXPORTED_BASE(public LocationProvider) {
  public:
   LocationProviderBase();
-  virtual ~LocationProviderBase();
+  ~LocationProviderBase() override;
 
  protected:
   void NotifyCallback(const Geoposition& position);
 
   // Overridden from LocationProvider:
-  virtual void SetUpdateCallback(
-      const LocationProviderUpdateCallback& callback) OVERRIDE;
-  virtual void RequestRefresh() OVERRIDE;
+  void SetUpdateCallback(
+      const LocationProviderUpdateCallback& callback) override;
+  void RequestRefresh() override;
 
  private:
   LocationProviderUpdateCallback callback_;
@@ -32,4 +32,4 @@ class CONTENT_EXPORT LocationProviderBase
 
 }  // namespace content
 
-#endif  // CONTENT_BROWSER_GEOLOCATION_LOCATION_PROVIDER_H_
+#endif  // CONTENT_BROWSER_GEOLOCATION_LOCATION_PROVIDER_BASE_H_

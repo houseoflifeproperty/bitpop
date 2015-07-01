@@ -32,8 +32,8 @@
 #include "core/dom/NodeRareData.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementRareData.h"
-#include "core/page/Page.h"
-#include "core/rendering/RenderObject.h"
+#include "core/frame/FrameHost.h"
+#include "core/layout/LayoutObject.h"
 #include "platform/heap/Handle.h"
 
 namespace blink {
@@ -44,13 +44,10 @@ struct SameSizeAsNodeRareData {
     unsigned m_bitfields;
 };
 
-COMPILE_ASSERT(sizeof(NodeRareData) == sizeof(SameSizeAsNodeRareData), NodeRareDataShouldStaySmall);
+static_assert(sizeof(NodeRareData) == sizeof(SameSizeAsNodeRareData), "NodeRareData should stay small");
 
-void NodeRareData::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(NodeRareData)
 {
-#if ENABLE(OILPAN)
-    visitor->trace(m_renderer);
-#endif
     visitor->trace(m_mutationObserverData);
     // Do not keep empty NodeListsNodeData objects around.
     if (m_nodeLists && m_nodeLists->isEmpty())
@@ -59,7 +56,7 @@ void NodeRareData::traceAfterDispatch(Visitor* visitor)
         visitor->trace(m_nodeLists);
 }
 
-void NodeRareData::trace(Visitor* visitor)
+DEFINE_TRACE(NodeRareData)
 {
     if (m_isElementRareData)
         static_cast<ElementRareData*>(this)->traceAfterDispatch(visitor);
@@ -69,7 +66,7 @@ void NodeRareData::trace(Visitor* visitor)
 
 void NodeRareData::finalizeGarbageCollectedObject()
 {
-    RELEASE_ASSERT(!renderer());
+    RELEASE_ASSERT(!layoutObject());
     if (m_isElementRareData)
         static_cast<ElementRareData*>(this)->~ElementRareData();
     else
@@ -77,6 +74,6 @@ void NodeRareData::finalizeGarbageCollectedObject()
 }
 
 // Ensure the 10 bits reserved for the m_connectedFrameCount cannot overflow
-COMPILE_ASSERT(Page::maxNumberOfFrames < (1 << NodeRareData::ConnectedFrameCountBits), Frame_limit_should_fit_in_rare_data_count);
+static_assert(FrameHost::maxNumberOfFrames < (1 << NodeRareData::ConnectedFrameCountBits), "Frame limit should fit in rare data count");
 
 } // namespace blink

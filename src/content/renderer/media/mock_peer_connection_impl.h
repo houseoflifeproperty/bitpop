@@ -21,67 +21,61 @@ class MockStreamCollection;
 
 class MockPeerConnectionImpl : public webrtc::PeerConnectionInterface {
  public:
-  explicit MockPeerConnectionImpl(MockPeerConnectionDependencyFactory* factory);
+  explicit MockPeerConnectionImpl(MockPeerConnectionDependencyFactory* factory,
+                                  webrtc::PeerConnectionObserver* observer);
 
   // PeerConnectionInterface implementation.
-  virtual rtc::scoped_refptr<webrtc::StreamCollectionInterface>
-      local_streams() OVERRIDE;
-  virtual rtc::scoped_refptr<webrtc::StreamCollectionInterface>
-      remote_streams() OVERRIDE;
-  virtual bool AddStream(
-      webrtc::MediaStreamInterface* local_stream,
-      const webrtc::MediaConstraintsInterface* constraints) OVERRIDE;
-  virtual void RemoveStream(
-      webrtc::MediaStreamInterface* local_stream) OVERRIDE;
-  virtual rtc::scoped_refptr<webrtc::DtmfSenderInterface>
-      CreateDtmfSender(webrtc::AudioTrackInterface* track) OVERRIDE;
-  virtual rtc::scoped_refptr<webrtc::DataChannelInterface>
+  rtc::scoped_refptr<webrtc::StreamCollectionInterface>
+      local_streams() override;
+  rtc::scoped_refptr<webrtc::StreamCollectionInterface>
+      remote_streams() override;
+  bool AddStream(
+      webrtc::MediaStreamInterface* local_stream) override;
+  void RemoveStream(
+      webrtc::MediaStreamInterface* local_stream) override;
+  rtc::scoped_refptr<webrtc::DtmfSenderInterface>
+      CreateDtmfSender(webrtc::AudioTrackInterface* track) override;
+  rtc::scoped_refptr<webrtc::DataChannelInterface>
       CreateDataChannel(const std::string& label,
-                        const webrtc::DataChannelInit* config) OVERRIDE;
-
-  virtual bool GetStats(webrtc::StatsObserver* observer,
-                        webrtc::MediaStreamTrackInterface* track) {
-    return false;
-  }
-  virtual bool GetStats(webrtc::StatsObserver* observer,
-                        webrtc::MediaStreamTrackInterface* track,
-                        StatsOutputLevel level) OVERRIDE;
+                        const webrtc::DataChannelInit* config) override;
+  bool GetStats(webrtc::StatsObserver* observer,
+                webrtc::MediaStreamTrackInterface* track,
+                StatsOutputLevel level) override;
 
   // Set Call this function to make sure next call to GetStats fail.
   void SetGetStatsResult(bool result) { getstats_result_ = result; }
 
-  virtual SignalingState signaling_state() OVERRIDE {
+  SignalingState signaling_state() override {
     NOTIMPLEMENTED();
     return PeerConnectionInterface::kStable;
   }
-  virtual IceState ice_state() OVERRIDE {
+  IceState ice_state() override {
     NOTIMPLEMENTED();
     return PeerConnectionInterface::kIceNew;
   }
-  virtual IceConnectionState ice_connection_state() OVERRIDE {
+  IceConnectionState ice_connection_state() override {
     NOTIMPLEMENTED();
     return PeerConnectionInterface::kIceConnectionNew;
   }
-  virtual IceGatheringState ice_gathering_state() OVERRIDE {
+  IceGatheringState ice_gathering_state() override {
     NOTIMPLEMENTED();
     return PeerConnectionInterface::kIceGatheringNew;
   }
-  virtual void Close() OVERRIDE {
+  void Close() override {
     NOTIMPLEMENTED();
   }
 
-  virtual const webrtc::SessionDescriptionInterface* local_description()
-      const OVERRIDE;
-  virtual const webrtc::SessionDescriptionInterface* remote_description()
-      const OVERRIDE;
+  const webrtc::SessionDescriptionInterface* local_description() const override;
+  const webrtc::SessionDescriptionInterface* remote_description()
+      const override;
 
   // JSEP01 APIs
-  virtual void CreateOffer(
+  void CreateOffer(
       webrtc::CreateSessionDescriptionObserver* observer,
-      const webrtc::MediaConstraintsInterface* constraints) OVERRIDE;
-  virtual void CreateAnswer(
+      const webrtc::MediaConstraintsInterface* constraints) override;
+  void CreateAnswer(
       webrtc::CreateSessionDescriptionObserver* observer,
-      const webrtc::MediaConstraintsInterface* constraints) OVERRIDE;
+      const webrtc::MediaConstraintsInterface* constraints) override;
   MOCK_METHOD2(SetLocalDescription,
                void(webrtc::SetSessionDescriptionObserver* observer,
                     webrtc::SessionDescriptionInterface* desc));
@@ -94,12 +88,10 @@ class MockPeerConnectionImpl : public webrtc::PeerConnectionInterface {
   void SetRemoteDescriptionWorker(
       webrtc::SetSessionDescriptionObserver* observer,
       webrtc::SessionDescriptionInterface* desc);
-  virtual bool UpdateIce(
-      const IceServers& configuration,
-      const webrtc::MediaConstraintsInterface* constraints) OVERRIDE;
-  virtual bool AddIceCandidate(
-      const webrtc::IceCandidateInterface* candidate) OVERRIDE;
-  virtual void RegisterUMAObserver(webrtc::UMAObserver* observer) OVERRIDE;
+  bool UpdateIce(const IceServers& configuration,
+                 const webrtc::MediaConstraintsInterface* constraints) override;
+  bool AddIceCandidate(const webrtc::IceCandidateInterface* candidate) override;
+  void RegisterUMAObserver(webrtc::UMAObserver* observer) override;
 
   void AddRemoteStream(webrtc::MediaStreamInterface* stream);
 
@@ -112,6 +104,9 @@ class MockPeerConnectionImpl : public webrtc::PeerConnectionInterface {
   const std::string& ice_sdp() const { return ice_sdp_; }
   webrtc::SessionDescriptionInterface* created_session_description() const {
     return created_sessiondescription_.get();
+  }
+  webrtc::PeerConnectionObserver* observer() {
+    return observer_;
   }
   static const char kDummyOffer[];
   static const char kDummyAnswer[];
@@ -136,6 +131,7 @@ class MockPeerConnectionImpl : public webrtc::PeerConnectionInterface {
   std::string sdp_mid_;
   int sdp_mline_index_;
   std::string ice_sdp_;
+  webrtc::PeerConnectionObserver* observer_;
 
   DISALLOW_COPY_AND_ASSIGN(MockPeerConnectionImpl);
 };

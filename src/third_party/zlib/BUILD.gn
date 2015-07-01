@@ -6,6 +6,28 @@ config("zlib_config") {
   include_dirs = [ "." ]
 }
 
+static_library("zlib_x86_simd") {
+  if (!is_ios && (current_cpu == "x86" || current_cpu == "x64")) {
+    sources = [
+      "crc_folding.c",
+      "fill_window_sse.c",
+    ]
+    if (!is_win || is_clang) {
+      cflags = [
+        "-msse4.2",
+        "-mpclmul",
+      ]
+    }
+  } else {
+    sources = [
+      "simd_stub.c",
+    ]
+  }
+
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  configs += [ "//build/config/compiler:no_chromium_code" ]
+}
+
 static_library("zlib") {
   if (!is_win) {
     # Don't stomp on "libzlib" on other platforms.
@@ -36,16 +58,24 @@ static_library("zlib") {
     "trees.c",
     "trees.h",
     "uncompr.c",
+    "x86.h",
     "zconf.h",
     "zlib.h",
     "zutil.c",
     "zutil.h",
   ]
 
+  if (!is_ios && (current_cpu == "x86" || current_cpu == "x64")) {
+    sources += [ "x86.c" ]
+  }
+
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]
 
   public_configs = [ ":zlib_config" ]
+  deps = [
+    ":zlib_x86_simd",
+  ]
 }
 
 static_library("minizip") {
@@ -77,7 +107,9 @@ static_library("minizip") {
     cflags = [ "-Wno-parentheses-equality" ]
   }
 
-  deps = [ ":zlib" ]
+  deps = [
+    ":zlib",
+  ]
 
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]

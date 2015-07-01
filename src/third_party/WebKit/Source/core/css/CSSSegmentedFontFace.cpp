@@ -48,8 +48,8 @@ CSSSegmentedFontFace::~CSSSegmentedFontFace()
 {
     pruneTable();
 #if !ENABLE(OILPAN)
-    for (FontFaceList::iterator it = m_fontFaces.begin(); it != m_fontFaces.end(); ++it)
-        (*it)->cssFontFace()->clearSegmentedFontFace();
+    for (const auto& fontFace : m_fontFaces)
+        fontFace->cssFontFace()->clearSegmentedFontFace();
 #endif
 }
 
@@ -65,8 +65,8 @@ void CSSSegmentedFontFace::pruneTable()
 bool CSSSegmentedFontFace::isValid() const
 {
     // Valid if at least one font face is valid.
-    for (FontFaceList::const_iterator it = m_fontFaces.begin(); it != m_fontFaces.end(); ++it) {
-        if ((*it)->cssFontFace()->isValid())
+    for (const auto& fontFace : m_fontFaces) {
+        if (fontFace->cssFontFace()->isValid())
             return true;
     }
     return false;
@@ -150,12 +150,6 @@ PassRefPtr<FontData> CSSSegmentedFontFace::getFontData(const FontDescription& fo
             continue;
         if (RefPtr<SimpleFontData> faceFontData = (*it)->cssFontFace()->getFontData(requestedFontDescription)) {
             ASSERT(!faceFontData->isSegmented());
-#if ENABLE(SVG_FONTS)
-            // For SVG Fonts that specify that they only support the "normal" variant, we will assume they are incapable
-            // of small-caps synthesis and just ignore the font face.
-            if (faceFontData->isSVGFont() && desiredTraits.variant() == FontVariantSmallCaps && m_traits.variant() == FontVariantNormal)
-                continue;
-#endif
             appendFontData(fontData.get(), faceFontData.release(), (*it)->cssFontFace()->ranges());
         }
     }
@@ -163,24 +157,6 @@ PassRefPtr<FontData> CSSSegmentedFontFace::getFontData(const FontDescription& fo
         return fontData; // No release, we have a reference to an object in the cache which should retain the ref count it has.
 
     return nullptr;
-}
-
-bool CSSSegmentedFontFace::isLoading() const
-{
-    for (FontFaceList::const_iterator it = m_fontFaces.begin(); it != m_fontFaces.end(); ++it) {
-        if ((*it)->loadStatus() == FontFace::Loading)
-            return true;
-    }
-    return false;
-}
-
-bool CSSSegmentedFontFace::isLoaded() const
-{
-    for (FontFaceList::const_iterator it = m_fontFaces.begin(); it != m_fontFaces.end(); ++it) {
-        if ((*it)->loadStatus() != FontFace::Loaded)
-            return false;
-    }
-    return true;
 }
 
 void CSSSegmentedFontFace::willUseFontData(const FontDescription& fontDescription, UChar32 character)
@@ -195,22 +171,22 @@ void CSSSegmentedFontFace::willUseFontData(const FontDescription& fontDescriptio
 
 bool CSSSegmentedFontFace::checkFont(const String& text) const
 {
-    for (FontFaceList::const_iterator it = m_fontFaces.begin(); it != m_fontFaces.end(); ++it) {
-        if ((*it)->loadStatus() != FontFace::Loaded && (*it)->cssFontFace()->ranges().intersectsWith(text))
+    for (const auto& fontFace : m_fontFaces) {
+        if (fontFace->loadStatus() != FontFace::Loaded && fontFace->cssFontFace()->ranges().intersectsWith(text))
             return false;
     }
     return true;
 }
 
-void CSSSegmentedFontFace::match(const String& text, WillBeHeapVector<RefPtrWillBeMember<FontFace> >& faces) const
+void CSSSegmentedFontFace::match(const String& text, WillBeHeapVector<RefPtrWillBeMember<FontFace>>& faces) const
 {
-    for (FontFaceList::const_iterator it = m_fontFaces.begin(); it != m_fontFaces.end(); ++it) {
-        if ((*it)->cssFontFace()->ranges().intersectsWith(text))
-            faces.append(*it);
+    for (const auto& fontFace : m_fontFaces) {
+        if (fontFace->cssFontFace()->ranges().intersectsWith(text))
+            faces.append(fontFace);
     }
 }
 
-void CSSSegmentedFontFace::trace(Visitor* visitor)
+DEFINE_TRACE(CSSSegmentedFontFace)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_fontSelector);

@@ -35,7 +35,7 @@
 #include <algorithm>
 #include "platform/scroll/ScrollableArea.h"
 #include "wtf/CurrentTime.h"
-#include "wtf/PassOwnPtr.h"
+#include "wtf/PassRefPtr.h"
 
 #include "platform/TraceEvent.h"
 
@@ -45,11 +45,11 @@ const double kFrameRate = 60;
 const double kTickTime = 1 / kFrameRate;
 const double kMinimumTimerInterval = .001;
 
-PassOwnPtr<ScrollAnimator> ScrollAnimator::create(ScrollableArea* scrollableArea)
+PassRefPtr<ScrollAnimator> ScrollAnimator::create(ScrollableArea* scrollableArea)
 {
     if (scrollableArea && scrollableArea->scrollAnimatorEnabled())
-        return adoptPtr(new ScrollAnimatorNone(scrollableArea));
-    return adoptPtr(new ScrollAnimator(scrollableArea));
+        return adoptRef(new ScrollAnimatorNone(scrollableArea));
+    return adoptRef(new ScrollAnimator(scrollableArea));
 }
 
 ScrollAnimatorNone::Parameters::Parameters()
@@ -190,7 +190,7 @@ double ScrollAnimatorNone::PerAxisData::releaseArea(Curve curve, double startT, 
     return endValue - startValue;
 }
 
-ScrollAnimatorNone::PerAxisData::PerAxisData(ScrollAnimatorNone* parent, float* currentPosition, int visibleLength)
+ScrollAnimatorNone::PerAxisData::PerAxisData(float* currentPosition, int visibleLength)
     : m_currentPosition(currentPosition)
     , m_visibleLength(visibleLength)
 {
@@ -365,8 +365,8 @@ void ScrollAnimatorNone::PerAxisData::updateVisibleLength(int visibleLength)
 
 ScrollAnimatorNone::ScrollAnimatorNone(ScrollableArea* scrollableArea)
     : ScrollAnimator(scrollableArea)
-    , m_horizontalData(this, &m_currentPosX, scrollableArea->visibleWidth())
-    , m_verticalData(this, &m_currentPosY, scrollableArea->visibleHeight())
+    , m_horizontalData(&m_currentPosX, scrollableArea->visibleWidth())
+    , m_verticalData(&m_currentPosY, scrollableArea->visibleHeight())
     , m_startTime(0)
     , m_animationActive(false)
 {
@@ -394,7 +394,7 @@ ScrollAnimatorNone::Parameters ScrollAnimatorNone::parametersForScrollGranularit
     return Parameters();
 }
 
-bool ScrollAnimatorNone::scroll(ScrollbarOrientation orientation, ScrollGranularity granularity, float step, float delta)
+ScrollResultOneDimensional ScrollAnimatorNone::scroll(ScrollbarOrientation orientation, ScrollGranularity granularity, float step, float delta)
 {
     if (!m_scrollableArea->scrollAnimatorEnabled())
         return ScrollAnimator::scroll(orientation, granularity, step, delta);
@@ -428,8 +428,9 @@ bool ScrollAnimatorNone::scroll(ScrollbarOrientation orientation, ScrollGranular
         m_startTime = data.m_startTime;
         animationWillStart();
         animationTimerFired();
+        scrollableArea()->registerForAnimation();
     }
-    return needToScroll;
+    return ScrollResultOneDimensional(needToScroll);
 }
 
 void ScrollAnimatorNone::scrollToOffsetWithoutAnimation(const FloatPoint& offset)
@@ -458,6 +459,16 @@ void ScrollAnimatorNone::serviceScrollAnimations()
 {
     if (m_animationActive)
         animationTimerFired();
+}
+
+bool ScrollAnimatorNone::hasRunningAnimation() const
+{
+    return m_animationActive;
+}
+
+void ScrollAnimatorNone::updateAfterLayout()
+{
+    updateVisibleLengths();
 }
 
 void ScrollAnimatorNone::willEndLiveResize()

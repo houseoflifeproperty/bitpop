@@ -6,21 +6,12 @@
 #define DeviceLightEvent_h
 
 #include "modules/EventModules.h"
+#include "modules/device_light/DeviceLightEventInit.h"
 #include "platform/heap/Handle.h"
 
 namespace blink {
 
-struct DeviceLightEventInit : public EventInit {
-    DeviceLightEventInit()
-        : value(std::numeric_limits<double>::infinity())
-    {
-        bubbles = true;
-    };
-
-    double value;
-};
-
-class DeviceLightEvent FINAL : public Event {
+class DeviceLightEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~DeviceLightEvent();
@@ -40,7 +31,7 @@ public:
 
     double value() const { return m_value; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
 private:
     DeviceLightEvent();

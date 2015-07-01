@@ -1,5 +1,5 @@
-<!DOCTYPE HTML>
-<html i18n-values="dir:textdirection;">
+<!doctype html>
+<html i18n-values="dir:textdirection;lang:language">
 <head>
 <meta charset="utf-8">
 <if expr="is_android or is_ios">
@@ -27,6 +27,7 @@
 <link rel="stylesheet" href="other_devices.css">
 </if>
 
+<script src="chrome://resources/js/action_link.js"></script>
 <script src="chrome://resources/js/assert.js"></script>
 <script src="chrome://resources/js/event_tracker.js"></script>
 <script src="chrome://resources/js/util.js"></script>
@@ -34,6 +35,7 @@
 <script src="chrome://resources/js/cr/ui.js"></script>
 <script src="chrome://resources/js/cr/ui/command.js"></script>
 <script src="chrome://resources/js/cr/ui/focus_manager.js"></script>
+<script src="chrome://resources/js/cr/ui/focus_outline_manager.js"></script>
 <script src="chrome://resources/js/cr/ui/focus_row.js"></script>
 <script src="chrome://resources/js/cr/ui/focus_grid.js"></script>
 <script src="chrome://resources/js/cr/ui/menu_item.js"></script>
@@ -59,11 +61,10 @@
 </head>
 
 <if expr="not is_android and not is_ios">
-<body class="uber-frame"
-    i18n-values=".style.fontFamily:fontfamily;.style.fontSize:fontsize">
+<body class="uber-frame">
 </if>
 <if expr="is_android or is_ios">
-<body i18n-values=".style.fontFamily:fontfamily">
+<body>
 </if>
 
 <if expr="not is_android and not is_ios">
@@ -78,41 +79,29 @@
       <h1 i18n-content="history"></h1>
       <div id="search-form" class="search-field-container">
         <input type="search" id="search-field"
-               i18n-values="aria-label:searchButton" required>
+               i18n-values="aria-label:searchButton">
         <input type="submit" id="search-button"
-               i18n-values="value:searchButton">
+               i18n-values="value:searchButton" aria-controls="results-header">
       </div>
       <div id="filter-controls" hidden>
-        <button id="range-today" i18n-content="rangeToday"
-                i18n-values="aria-label:rangeToday" disabled></button>
-        <button id="range-previous" i18n-values="aria-label:rangePrevious"
-                disabled></button>
-        <button id="range-next" i18n-values="aria-label:rangeNext" disabled>
-        </button>
-        <div id="display-filter-controls">
-          <div class="display-filter-button">
-            <label for="timeframe-filter-all">
-              <input id="timeframe-filter-all" type="radio"
-                  name="timeframe-filter" value="0" checked>
-              <span i18n-content="rangeAllTime" class="first-button-component">
-              </span>
-            </label>
-          </div>
-          <div class="display-filter-button">
-            <label for="timeframe-filter-week">
-              <input id="timeframe-filter-week" type="radio"
-                  name="timeframe-filter" value="1">
-              <span i18n-content="rangeWeek"></span>
-            </label>
-          </div>
-          <div class="display-filter-button">
-            <label for="timeframe-filter-month">
-              <input id="timeframe-filter-month" type="radio"
-                  name="timeframe-filter" value="2">
-              <span i18n-content="rangeMonth" class="last-button-component">
-              </span>
-            </label>
-          </div>
+        <div id="range-controls">
+          <button id="range-today" i18n-content="rangeToday"
+                  i18n-values="aria-label:rangeToday" disabled></button>
+          <button id="range-previous" i18n-values="aria-label:rangePrevious"
+                  disabled></button>
+          <button id="range-next" i18n-values="aria-label:rangeNext" disabled>
+          </button>
+        </div>
+        <div id="timeframe-controls">
+          <input type="radio" name="timeframe-filter" value="0" checked
+              i18n-values="aria-label:rangeAllTime"
+              aria-controls="results-header">
+          <input type="radio" name="timeframe-filter" value="1"
+              i18n-values="aria-label:rangeWeek"
+              aria-controls="results-header">
+          <input type="radio" name="timeframe-filter" value="2"
+              i18n-values="aria-label:rangeMonth"
+              aria-controls="results-header">
         </div>
       </div>
     </header>
@@ -129,7 +118,9 @@
       <div id="notification-bar" hidden></div>
     </div>
 
-    <div id="results-display"></div>
+    <div id="results-display">
+      <h3 id="results-header" aria-live="polite"></h3>
+    </div>
     <div id="loading-spinner" hidden>
       <span id="loading">
         <div id="spinner" class="inline-spinner"></div>
@@ -137,23 +128,21 @@
       </span>
     </div>
     <div id="results-pagination">
-      <button id="newest-button" class="link-button" i18n-content="newest"
-          hidden>
-      </button>
-      <button id="newer-button" class="link-button" i18n-content="newer" hidden>
-      </button>
-      <button id="older-button" class="link-button" i18n-content="older" hidden>
-      </button>
+      <a is="action-link" id="newest-button" i18n-content="newest" hidden></a>
+      <a is="action-link" id="newer-button" i18n-content="newer" hidden></a>
+      <a is="action-link" id="older-button" i18n-content="older" hidden></a>
     </div>
   </div>
 </div>
 
-<menu id="action-menu" hidden>
+<command id="remove-visit-command"></command>
+<cr-menu id="action-menu" hidden>
   <button id="more-from-site" i18n-content="moreFromSite"></button>
-  <button id="remove-visit" i18n-content="removeFromHistory"></button>
-</menu>
+  <button id="remove-visit" i18n-content="removeFromHistory"
+      command="#remove-visit-command"></button>
+</cr-menu>
 
 <script src="chrome://history-frame/strings.js"></script>
-<script src="chrome://resources/js/i18n_template2.js"></script>
+<script src="chrome://resources/js/i18n_template.js"></script>
 </body>
 </html>

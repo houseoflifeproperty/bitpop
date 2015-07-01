@@ -37,9 +37,9 @@ const char kUnregisteredAppID[] = "app_id unregistered";
 class ListChangesTaskTest : public testing::Test {
  public:
   ListChangesTaskTest() {}
-  virtual ~ListChangesTaskTest() {}
+  ~ListChangesTaskTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(database_dir_.CreateUniqueTempDir());
     in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
 
@@ -59,15 +59,16 @@ class ListChangesTaskTest : public testing::Test {
     sync_task_manager_.reset(new SyncTaskManager(
         base::WeakPtr<SyncTaskManager::Client>(),
         10 /* maximum_background_task */,
-        base::ThreadTaskRunnerHandle::Get()));
+        base::ThreadTaskRunnerHandle::Get(),
+        nullptr /* worker_pool */));
     sync_task_manager_->Initialize(SYNC_STATUS_OK);
 
-    context_.reset(new SyncEngineContext(
-        fake_drive_service.PassAs<drive::DriveServiceInterface>(),
-        drive_uploader.Pass(),
-        NULL,
-        base::ThreadTaskRunnerHandle::Get(),
-        base::ThreadTaskRunnerHandle::Get()));
+    context_.reset(new SyncEngineContext(fake_drive_service.Pass(),
+                                         drive_uploader.Pass(),
+                                         nullptr /* task_logger */,
+                                         base::ThreadTaskRunnerHandle::Get(),
+                                         base::ThreadTaskRunnerHandle::Get(),
+                                         nullptr /* worker_pool */));
 
     SetUpRemoteFolders();
 
@@ -75,7 +76,7 @@ class ListChangesTaskTest : public testing::Test {
     RegisterApp(kAppID);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     sync_task_manager_.reset();
     context_.reset();
     base::RunLoop().RunUntilIdle();

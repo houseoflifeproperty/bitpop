@@ -8,6 +8,7 @@
 
 #include "base/win/windows_version.h"
 #include "sandbox/win/src/nt_internals.h"
+#include "sandbox/win/src/restricted_token_utils.h"
 #include "sandbox/win/src/win_utils.h"
 
 namespace {
@@ -59,6 +60,13 @@ bool ApplyProcessMitigationsToCurrentProcess(MitigationFlags flags) {
     }
   }
 
+  if (version >= base::win::VERSION_WIN7 &&
+      (flags & MITIGATION_HARDEN_TOKEN_IL_POLICY)) {
+      DWORD error = HardenProcessIntegrityLevelPolicy();
+      if ((error != ERROR_SUCCESS) && (error != ERROR_ACCESS_DENIED))
+        return false;
+  }
+
 #if !defined(_WIN64)  // DEP is always enabled on 64-bit.
   if (flags & MITIGATION_DEP) {
     DWORD dep_flags = PROCESS_DEP_ENABLE;
@@ -79,10 +87,10 @@ bool ApplyProcessMitigationsToCurrentProcess(MitigationFlags flags) {
     } else {
       // We're on XP sp2, so use the less standard approach.
       // For reference: http://www.uninformed.org/?v=2&a=4
-      const int MEM_EXECUTE_OPTION_ENABLE = 1;
-      const int MEM_EXECUTE_OPTION_DISABLE = 2;
-      const int MEM_EXECUTE_OPTION_ATL7_THUNK_EMULATION = 4;
-      const int MEM_EXECUTE_OPTION_PERMANENT = 8;
+      static const int MEM_EXECUTE_OPTION_ENABLE = 1;
+      static const int MEM_EXECUTE_OPTION_DISABLE = 2;
+      static const int MEM_EXECUTE_OPTION_ATL7_THUNK_EMULATION = 4;
+      static const int MEM_EXECUTE_OPTION_PERMANENT = 8;
 
       NtSetInformationProcessFunction set_information_process = NULL;
       ResolveNTFunctionPtr("NtSetInformationProcess",
@@ -309,7 +317,8 @@ bool CanSetProcessMitigationsPostStartup(MitigationFlags flags) {
                      MITIGATION_BOTTOM_UP_ASLR |
                      MITIGATION_STRICT_HANDLE_CHECKS |
                      MITIGATION_EXTENSION_DLL_DISABLE |
-                     MITIGATION_DLL_SEARCH_ORDER));
+                     MITIGATION_DLL_SEARCH_ORDER |
+                     MITIGATION_HARDEN_TOKEN_IL_POLICY));
 }
 
 bool CanSetProcessMitigationsPreStartup(MitigationFlags flags) {

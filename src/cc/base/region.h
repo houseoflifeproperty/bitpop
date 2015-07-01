@@ -10,12 +10,12 @@
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
 #include "third_party/skia/include/core/SkRegion.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/skia_util.h"
 
 namespace base {
 class Value;
-namespace debug {
+namespace trace_event {
 class TracedValue;
 }
 }
@@ -63,7 +63,7 @@ class CC_EXPORT Region {
 
   std::string ToString() const;
   scoped_ptr<base::Value> AsValue() const;
-  void AsValueInto(base::debug::TracedValue* array) const;
+  void AsValueInto(base::trace_event::TracedValue* array) const;
 
   class CC_EXPORT Iterator {
    public:

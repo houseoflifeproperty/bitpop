@@ -32,12 +32,12 @@ namespace blink {
 
 class WebDeviceOrientationData;
 
-class DeviceOrientationData FINAL : public GarbageCollected<DeviceOrientationData> {
+class DeviceOrientationData final : public GarbageCollected<DeviceOrientationData> {
 public:
     static DeviceOrientationData* create();
     static DeviceOrientationData* create(bool canProvideAlpha, double alpha, bool canProvideBeta, double beta, bool canProvideGamma, double gamma, bool canProvideAbsolute = false, bool absolute = false);
     static DeviceOrientationData* create(const WebDeviceOrientationData&);
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
     double alpha() const;
     double beta() const;

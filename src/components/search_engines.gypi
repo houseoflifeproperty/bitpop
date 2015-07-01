@@ -20,6 +20,7 @@
         'component_metrics_proto',
         'components_strings.gyp:components_strings',
         'google_core_browser',
+        'history_core_browser',
         'keyed_service_core',
         'policy',
         'pref_registry',
@@ -27,6 +28,9 @@
         'search_engines/prepopulated_engines.gyp:prepopulated_engines',
         'url_fixer',
         'webdata_common',
+      ],
+      'export_dependent_settings': [
+        'component_metrics_proto',
       ],
       'include_dirs': [
         '..',

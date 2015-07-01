@@ -12,13 +12,13 @@
 namespace ui {
 namespace internal {
 
-class UI_BASE_EXPORT DummyInputMethodDelegate : public InputMethodDelegate {
+class UI_BASE_IME_EXPORT DummyInputMethodDelegate : public InputMethodDelegate {
  public:
   DummyInputMethodDelegate();
-  virtual ~DummyInputMethodDelegate();
+  ~DummyInputMethodDelegate() override;
 
   // Overridden from InputMethodDelegate:
-  virtual bool DispatchKeyEventPostIME(const ui::KeyEvent& key_event) OVERRIDE;
+  bool DispatchKeyEventPostIME(const ui::KeyEvent& key_event) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DummyInputMethodDelegate);

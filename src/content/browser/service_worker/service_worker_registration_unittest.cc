@@ -22,19 +22,22 @@ class ServiceWorkerRegistrationTest : public testing::Test {
   ServiceWorkerRegistrationTest()
       : io_thread_(BrowserThread::IO, &message_loop_) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
+    scoped_ptr<ServiceWorkerDatabaseTaskManager> database_task_manager(
+        new MockServiceWorkerDatabaseTaskManager(
+            base::ThreadTaskRunnerHandle::Get()));
     context_.reset(
         new ServiceWorkerContextCore(base::FilePath(),
+                                     database_task_manager.Pass(),
                                      base::ThreadTaskRunnerHandle::Get(),
-                                     base::ThreadTaskRunnerHandle::Get(),
-                                     base::ThreadTaskRunnerHandle::Get(),
+                                     NULL,
                                      NULL,
                                      NULL,
                                      NULL));
     context_ptr_ = context_->AsWeakPtr();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     context_.reset();
     base::RunLoop().RunUntilIdle();
   }
@@ -47,27 +50,21 @@ class ServiceWorkerRegistrationTest : public testing::Test {
         observed_registration_->RemoveListener(this);
     }
 
-    virtual void OnVersionAttributesChanged(
+    void OnVersionAttributesChanged(
         ServiceWorkerRegistration* registration,
         ChangedVersionAttributesMask changed_mask,
-        const ServiceWorkerRegistrationInfo& info) OVERRIDE {
+        const ServiceWorkerRegistrationInfo& info) override {
       observed_registration_ = registration;
       observed_changed_mask_ = changed_mask;
       observed_info_ = info;
     }
 
-    virtual void OnRegistrationFailed(
-        ServiceWorkerRegistration* registration) OVERRIDE {
+    void OnRegistrationFailed(
+        ServiceWorkerRegistration* registration) override {
       NOTREACHED();
     }
 
-    virtual void OnRegistrationFinishedUninstalling(
-        ServiceWorkerRegistration* registration) OVERRIDE {
-      NOTREACHED();
-    }
-
-    virtual void OnUpdateFound(
-        ServiceWorkerRegistration* registration) OVERRIDE {
+    void OnUpdateFound(ServiceWorkerRegistration* registration) override {
       NOTREACHED();
     }
 
@@ -108,7 +105,7 @@ TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
 
   RegistrationListener listener;
   registration->AddListener(&listener);
-  registration->SetActiveVersion(version_1.get());
+  registration->SetActiveVersion(version_1);
 
   EXPECT_EQ(version_1.get(), registration->active_version());
   EXPECT_EQ(registration, listener.observed_registration_);
@@ -117,12 +114,13 @@ TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
   EXPECT_EQ(kScope, listener.observed_info_.pattern);
   EXPECT_EQ(version_1_id, listener.observed_info_.active_version.version_id);
   EXPECT_EQ(kScript, listener.observed_info_.active_version.script_url);
-  EXPECT_TRUE(listener.observed_info_.installing_version.is_null);
-  EXPECT_TRUE(listener.observed_info_.waiting_version.is_null);
-  EXPECT_TRUE(listener.observed_info_.controlling_version.is_null);
+  EXPECT_EQ(listener.observed_info_.installing_version.version_id,
+            kInvalidServiceWorkerVersionId);
+  EXPECT_EQ(listener.observed_info_.waiting_version.version_id,
+            kInvalidServiceWorkerVersionId);
   listener.Reset();
 
-  registration->SetInstallingVersion(version_2.get());
+  registration->SetInstallingVersion(version_2);
 
   EXPECT_EQ(version_2.get(), registration->installing_version());
   EXPECT_EQ(ChangedVersionAttributesMask::INSTALLING_VERSION,
@@ -130,11 +128,11 @@ TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
   EXPECT_EQ(version_1_id, listener.observed_info_.active_version.version_id);
   EXPECT_EQ(version_2_id,
             listener.observed_info_.installing_version.version_id);
-  EXPECT_TRUE(listener.observed_info_.waiting_version.is_null);
-  EXPECT_TRUE(listener.observed_info_.controlling_version.is_null);
+  EXPECT_EQ(listener.observed_info_.waiting_version.version_id,
+            kInvalidServiceWorkerVersionId);
   listener.Reset();
 
-  registration->SetWaitingVersion(version_2.get());
+  registration->SetWaitingVersion(version_2);
 
   EXPECT_EQ(version_2.get(), registration->waiting_version());
   EXPECT_FALSE(registration->installing_version());
@@ -142,8 +140,8 @@ TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
   EXPECT_TRUE(listener.observed_changed_mask_.installing_changed());
   EXPECT_EQ(version_1_id, listener.observed_info_.active_version.version_id);
   EXPECT_EQ(version_2_id, listener.observed_info_.waiting_version.version_id);
-  EXPECT_TRUE(listener.observed_info_.installing_version.is_null);
-  EXPECT_TRUE(listener.observed_info_.controlling_version.is_null);
+  EXPECT_EQ(listener.observed_info_.installing_version.version_id,
+            kInvalidServiceWorkerVersionId);
   listener.Reset();
 
   registration->UnsetVersion(version_2.get());
@@ -152,25 +150,25 @@ TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
   EXPECT_EQ(ChangedVersionAttributesMask::WAITING_VERSION,
             listener.observed_changed_mask_.changed());
   EXPECT_EQ(version_1_id, listener.observed_info_.active_version.version_id);
-  EXPECT_TRUE(listener.observed_info_.waiting_version.is_null);
-  EXPECT_TRUE(listener.observed_info_.installing_version.is_null);
-  EXPECT_TRUE(listener.observed_info_.controlling_version.is_null);
+  EXPECT_EQ(listener.observed_info_.waiting_version.version_id,
+            kInvalidServiceWorkerVersionId);
+  EXPECT_EQ(listener.observed_info_.installing_version.version_id,
+            kInvalidServiceWorkerVersionId);
 }
 
 TEST_F(ServiceWorkerRegistrationTest, FailedRegistrationNoCrash) {
   const GURL kScope("http://www.example.not/");
   int64 kRegistrationId = 1L;
-  int kProviderId = 1;
   scoped_refptr<ServiceWorkerRegistration> registration =
       new ServiceWorkerRegistration(
           kScope,
           kRegistrationId,
           context_ptr_);
   scoped_ptr<ServiceWorkerRegistrationHandle> handle(
-      new ServiceWorkerRegistrationHandle(context_ptr_,
-                                          NULL,
-                                          kProviderId,
-                                          registration.get()));
+      new ServiceWorkerRegistrationHandle(
+          context_ptr_,
+          base::WeakPtr<ServiceWorkerProviderHost>(),
+          registration.get()));
   registration->NotifyRegistrationFailed();
   // Don't crash when handle gets destructed.
 }

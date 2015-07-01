@@ -21,32 +21,43 @@ class CastTransportSenderIPC
     : public media::cast::CastTransportSender {
  public:
   CastTransportSenderIPC(
+      const net::IPEndPoint& local_end_point,
       const net::IPEndPoint& remote_end_point,
       scoped_ptr<base::DictionaryValue> options,
+      const media::cast::PacketReceiverCallback& packet_callback,
       const media::cast::CastTransportStatusCallback& status_cb,
       const media::cast::BulkRawEventsCallback& raw_events_cb);
 
-  virtual ~CastTransportSenderIPC();
+  ~CastTransportSenderIPC() override;
 
   // media::cast::CastTransportSender implementation.
-  virtual void InitializeAudio(
+  void InitializeAudio(
       const media::cast::CastTransportRtpConfig& config,
       const media::cast::RtcpCastMessageCallback& cast_message_cb,
-      const media::cast::RtcpRttCallback& rtt_cb) OVERRIDE;
-  virtual void InitializeVideo(
+      const media::cast::RtcpRttCallback& rtt_cb) override;
+  void InitializeVideo(
       const media::cast::CastTransportRtpConfig& config,
       const media::cast::RtcpCastMessageCallback& cast_message_cb,
-      const media::cast::RtcpRttCallback& rtt_cb) OVERRIDE;
-  virtual void InsertFrame(uint32 ssrc,
-      const media::cast::EncodedFrame& frame) OVERRIDE;
-  virtual void SendSenderReport(
+      const media::cast::RtcpRttCallback& rtt_cb) override;
+  void InsertFrame(uint32 ssrc,
+                   const media::cast::EncodedFrame& frame) override;
+  void SendSenderReport(uint32 ssrc,
+                        base::TimeTicks current_time,
+                        uint32 current_time_as_rtp_timestamp) override;
+  void CancelSendingFrames(uint32 ssrc,
+                           const std::vector<uint32>& frame_ids) override;
+  void ResendFrameForKickstart(uint32 ssrc, uint32 frame_id) override;
+  void AddValidSsrc(uint32 ssrc) override;
+  void SendRtcpFromRtpReceiver(
       uint32 ssrc,
-      base::TimeTicks current_time,
-      uint32 current_time_as_rtp_timestamp) OVERRIDE;
-  virtual void CancelSendingFrames(
-      uint32 ssrc,
-      const std::vector<uint32>& frame_ids) OVERRIDE;
-  virtual void ResendFrameForKickstart(uint32 ssrc, uint32 frame_id) OVERRIDE;
+      uint32 sender_ssrc,
+      const media::cast::RtcpTimeData& time_data,
+      const media::cast::RtcpCastMessage* cast_message,
+      base::TimeDelta target_delay,
+      const media::cast::ReceiverRtcpEventSubscriber::RtcpEvents*
+      rtcp_events,
+      const media::cast::RtpReceiverStatistics* rtp_receiver_statistics)
+      override;
 
   void OnNotifyStatusChange(
       media::cast::CastTransportStatus status);
@@ -55,6 +66,7 @@ class CastTransportSenderIPC
   void OnRtt(uint32 ssrc, base::TimeDelta rtt);
   void OnRtcpCastMessage(uint32 ssrc,
                          const media::cast::RtcpCastMessage& cast_message);
+  void OnReceivedPacket(const media::cast::Packet& packet);
 
  private:
   struct ClientCallbacks {

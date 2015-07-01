@@ -6,15 +6,16 @@
 
 #include <unistd.h>
 
+#include <cmath>
+
 #include "base/android/event_log.h"
 #include "base/android/jni_android.h"
-#include "base/float_util.h"
+#include "base/android/jni_string.h"
 #include "content/browser/android/java/gin_java_script_to_java_types_coercion.h"
 #include "content/browser/android/java/java_method.h"
 #include "content/browser/android/java/jni_helper.h"
 #include "content/common/android/gin_java_bridge_value.h"
 #include "content/public/browser/browser_thread.h"
-#include "third_party/WebKit/public/platform/WebString.h"
 
 using base::android::AttachCurrentThread;
 using base::android::ScopedJavaLocalRef;
@@ -25,15 +26,6 @@ namespace {
 
 // See frameworks/base/core/java/android/webkit/EventLogTags.logtags
 const int kObjectGetClassInvocationAttemptLogTag = 70151;
-
-// This is an intermediate solution until we fix http://crbug.com/391492.
-std::string ConvertJavaStringToUTF8(JNIEnv* env, jstring str) {
-  const jchar* chars = env->GetStringChars(str, NULL);
-  DCHECK(chars);
-  blink::WebString utf16(chars, env->GetStringLength(str));
-  env->ReleaseStringChars(str, chars);
-  return utf16.utf8();
-}
 
 }  // namespace
 
@@ -265,7 +257,7 @@ void GinJavaMethodInvocationHelper::InvokeMethod(jobject object,
       float result = object
                          ? env->CallFloatMethodA(object, id, parameters)
                          : env->CallStaticFloatMethodA(clazz, id, parameters);
-      if (base::IsFinite(result)) {
+      if (std::isfinite(result)) {
         result_wrapper.AppendDouble(result);
       } else {
         result_wrapper.Append(
@@ -277,7 +269,7 @@ void GinJavaMethodInvocationHelper::InvokeMethod(jobject object,
       double result = object
                           ? env->CallDoubleMethodA(object, id, parameters)
                           : env->CallStaticDoubleMethodA(clazz, id, parameters);
-      if (base::IsFinite(result)) {
+      if (std::isfinite(result)) {
         result_wrapper.AppendDouble(result);
       } else {
         result_wrapper.Append(
@@ -320,7 +312,7 @@ void GinJavaMethodInvocationHelper::InvokeMethod(jobject object,
         break;
       }
       result_wrapper.AppendString(
-          ConvertJavaStringToUTF8(env, scoped_java_string.obj()));
+          base::android::ConvertJavaStringToUTF8(scoped_java_string));
       break;
     }
     case JavaType::TypeObject: {

@@ -18,6 +18,7 @@
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_mock.h"
+#include "ui/gl/gl_version_info.h"
 
 using ::testing::_;
 using ::testing::DoAll;
@@ -34,6 +35,24 @@ using ::testing::StrictMock;
 namespace gpu {
 namespace gles2 {
 
+namespace {
+
+template<typename T>
+T ConstructShaderVariable(
+    GLenum type, GLint array_size, GLenum precision,
+    bool static_use, const std::string& name) {
+  T var;
+  var.type = type;
+  var.arraySize = array_size;
+  var.precision = precision;
+  var.staticUse = static_use;
+  var.name = name;
+  var.mappedName = name;  // No name hashing.
+  return var;
+}
+
+}  // namespace anonymous
+
 // GCC requires these declarations, but MSVC requires they not be present
 #ifndef COMPILER_MSVC
 const GLuint TestHelper::kServiceBlackTexture2dId;
@@ -49,6 +68,8 @@ const GLint TestHelper::kMaxSamples;
 const GLint TestHelper::kMaxRenderbufferSize;
 const GLint TestHelper::kMaxTextureSize;
 const GLint TestHelper::kMaxCubeMapTextureSize;
+const GLint TestHelper::kMaxRectangleTextureSize;
+const GLint TestHelper::kMax3DTextureSize;
 const GLint TestHelper::kNumVertexAttribs;
 const GLint TestHelper::kNumTextureUnits;
 const GLint TestHelper::kMaxTextureImageUnits;
@@ -60,6 +81,8 @@ const GLint TestHelper::kMaxVaryingFloats;
 const GLint TestHelper::kMaxVertexUniformVectors;
 const GLint TestHelper::kMaxVertexUniformComponents;
 #endif
+
+std::vector<std::string> TestHelper::split_extensions_;
 
 void TestHelper::SetupTextureInitializationExpectations(
     ::gfx::MockGLInterface* gl,
@@ -251,14 +274,14 @@ void TestHelper::SetupContextGroupInitExpectations(
 
   SetupFeatureInfoInitExpectationsWithGLVersion(gl, extensions, "", gl_version);
 
-  std::string l_version(base::StringToLowerASCII(std::string(gl_version)));
-  bool is_es3 = (l_version.substr(0, 12) == "opengl es 3.");
+  gfx::GLVersionInfo gl_info(gl_version, "", extensions);
 
   EXPECT_CALL(*gl, GetIntegerv(GL_MAX_RENDERBUFFER_SIZE, _))
       .WillOnce(SetArgumentPointee<1>(kMaxRenderbufferSize))
       .RetiresOnSaturation();
   if (strstr(extensions, "GL_EXT_framebuffer_multisample") ||
-      strstr(extensions, "GL_EXT_multisampled_render_to_texture") || is_es3) {
+      strstr(extensions, "GL_EXT_multisampled_render_to_texture") ||
+      gl_info.is_es3) {
     EXPECT_CALL(*gl, GetIntegerv(GL_MAX_SAMPLES, _))
         .WillOnce(SetArgumentPointee<1>(kMaxSamples))
         .RetiresOnSaturation();
@@ -279,21 +302,44 @@ void TestHelper::SetupContextGroupInitExpectations(
   EXPECT_CALL(*gl, GetIntegerv(GL_MAX_CUBE_MAP_TEXTURE_SIZE, _))
       .WillOnce(SetArgumentPointee<1>(kMaxCubeMapTextureSize))
       .RetiresOnSaturation();
+  if (gl_info.IsES3Capable()) {
+    EXPECT_CALL(*gl, GetIntegerv(GL_MAX_3D_TEXTURE_SIZE, _))
+        .WillOnce(SetArgumentPointee<1>(kMax3DTextureSize))
+        .RetiresOnSaturation();
+  }
+  if (strstr(extensions, "GL_ARB_texture_rectangle")) {
+    EXPECT_CALL(*gl, GetIntegerv(GL_MAX_RECTANGLE_TEXTURE_SIZE, _))
+        .WillOnce(SetArgumentPointee<1>(kMaxRectangleTextureSize))
+        .RetiresOnSaturation();
+  }
   EXPECT_CALL(*gl, GetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, _))
       .WillOnce(SetArgumentPointee<1>(kMaxTextureImageUnits))
       .RetiresOnSaturation();
   EXPECT_CALL(*gl, GetIntegerv(GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS, _))
       .WillOnce(SetArgumentPointee<1>(kMaxVertexTextureImageUnits))
       .RetiresOnSaturation();
-  EXPECT_CALL(*gl, GetIntegerv(GL_MAX_FRAGMENT_UNIFORM_COMPONENTS, _))
-      .WillOnce(SetArgumentPointee<1>(kMaxFragmentUniformComponents))
-      .RetiresOnSaturation();
-  EXPECT_CALL(*gl, GetIntegerv(GL_MAX_VARYING_FLOATS, _))
-      .WillOnce(SetArgumentPointee<1>(kMaxVaryingFloats))
-      .RetiresOnSaturation();
-  EXPECT_CALL(*gl, GetIntegerv(GL_MAX_VERTEX_UNIFORM_COMPONENTS, _))
-      .WillOnce(SetArgumentPointee<1>(kMaxVertexUniformComponents))
-      .RetiresOnSaturation();
+
+  if (gl_info.is_es) {
+    EXPECT_CALL(*gl, GetIntegerv(GL_MAX_FRAGMENT_UNIFORM_VECTORS, _))
+        .WillOnce(SetArgumentPointee<1>(kMaxFragmentUniformVectors))
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, GetIntegerv(GL_MAX_VARYING_VECTORS, _))
+        .WillOnce(SetArgumentPointee<1>(kMaxVaryingVectors))
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, GetIntegerv(GL_MAX_VERTEX_UNIFORM_VECTORS, _))
+        .WillOnce(SetArgumentPointee<1>(kMaxVertexUniformVectors))
+        .RetiresOnSaturation();
+  } else {
+    EXPECT_CALL(*gl, GetIntegerv(GL_MAX_FRAGMENT_UNIFORM_COMPONENTS, _))
+        .WillOnce(SetArgumentPointee<1>(kMaxFragmentUniformComponents))
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, GetIntegerv(GL_MAX_VARYING_FLOATS, _))
+        .WillOnce(SetArgumentPointee<1>(kMaxVaryingFloats))
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, GetIntegerv(GL_MAX_VERTEX_UNIFORM_COMPONENTS, _))
+        .WillOnce(SetArgumentPointee<1>(kMaxVertexUniformComponents))
+        .RetiresOnSaturation();
+  }
 
   bool use_default_textures = bind_generates_resource;
   SetupTextureManagerInitExpectations(gl, extensions, use_default_textures);
@@ -311,36 +357,55 @@ void TestHelper::SetupFeatureInfoInitExpectationsWithGLVersion(
      const char* gl_version) {
   InSequence sequence;
 
-  EXPECT_CALL(*gl, GetString(GL_EXTENSIONS))
-      .WillOnce(Return(reinterpret_cast<const uint8*>(extensions)))
-      .RetiresOnSaturation();
-  EXPECT_CALL(*gl, GetString(GL_RENDERER))
-      .WillOnce(Return(reinterpret_cast<const uint8*>(gl_renderer)))
-      .RetiresOnSaturation();
   EXPECT_CALL(*gl, GetString(GL_VERSION))
       .WillOnce(Return(reinterpret_cast<const uint8*>(gl_version)))
       .RetiresOnSaturation();
 
-  std::string l_version(base::StringToLowerASCII(std::string(gl_version)));
-  bool is_es3 = (l_version.substr(0, 12) == "opengl es 3.");
+  // Persistent storage is needed for the split extension string.
+  split_extensions_.clear();
+  if (extensions) {
+    Tokenize(extensions, " ", &split_extensions_);
+  }
+
+  gfx::GLVersionInfo gl_info(gl_version, gl_renderer, extensions);
+  if (!gl_info.is_es && gl_info.major_version >= 3) {
+    EXPECT_CALL(*gl, GetIntegerv(GL_NUM_EXTENSIONS, _))
+        .WillOnce(SetArgumentPointee<1>(split_extensions_.size()))
+        .RetiresOnSaturation();
+    for (size_t ii = 0; ii < split_extensions_.size(); ++ii) {
+      EXPECT_CALL(*gl, GetStringi(GL_EXTENSIONS, ii))
+          .WillOnce(Return(reinterpret_cast<const uint8*>(
+              split_extensions_[ii].c_str())))
+          .RetiresOnSaturation();
+    }
+  } else {
+    EXPECT_CALL(*gl, GetString(GL_EXTENSIONS))
+        .WillOnce(Return(reinterpret_cast<const uint8*>(extensions)))
+        .RetiresOnSaturation();
+  }
+
+  EXPECT_CALL(*gl, GetString(GL_RENDERER))
+      .WillOnce(Return(reinterpret_cast<const uint8*>(gl_renderer)))
+      .RetiresOnSaturation();
 
   if (strstr(extensions, "GL_ARB_texture_float") ||
-      (is_es3 && strstr(extensions, "GL_EXT_color_buffer_float"))) {
-    static const GLuint gl_ids[] = {101, 102};
+      (gl_info.is_es3 && strstr(extensions, "GL_EXT_color_buffer_float"))) {
+    static const GLuint tx_ids[] = {101, 102};
+    static const GLuint fb_ids[] = {103, 104};
     const GLsizei width = 16;
     EXPECT_CALL(*gl, GetIntegerv(GL_FRAMEBUFFER_BINDING, _))
-        .WillOnce(SetArgumentPointee<1>(gl_ids[0]))
+        .WillOnce(SetArgumentPointee<1>(fb_ids[0]))
         .RetiresOnSaturation();
     EXPECT_CALL(*gl, GetIntegerv(GL_TEXTURE_BINDING_2D, _))
-        .WillOnce(SetArgumentPointee<1>(gl_ids[0]))
+        .WillOnce(SetArgumentPointee<1>(tx_ids[0]))
         .RetiresOnSaturation();
     EXPECT_CALL(*gl, GenTextures(1, _))
-        .WillOnce(SetArrayArgument<1>(gl_ids + 1, gl_ids + 2))
+        .WillOnce(SetArrayArgument<1>(tx_ids + 1, tx_ids + 2))
         .RetiresOnSaturation();
     EXPECT_CALL(*gl, GenFramebuffersEXT(1, _))
-        .WillOnce(SetArrayArgument<1>(gl_ids + 1, gl_ids + 2))
+        .WillOnce(SetArrayArgument<1>(fb_ids + 1, fb_ids + 2))
         .RetiresOnSaturation();
-    EXPECT_CALL(*gl, BindTexture(GL_TEXTURE_2D, gl_ids[1]))
+    EXPECT_CALL(*gl, BindTexture(GL_TEXTURE_2D, tx_ids[1]))
         .Times(1)
         .RetiresOnSaturation();
     EXPECT_CALL(*gl, TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
@@ -351,11 +416,11 @@ void TestHelper::SetupFeatureInfoInitExpectationsWithGLVersion(
         GL_RGBA, GL_FLOAT, _))
         .Times(1)
         .RetiresOnSaturation();
-    EXPECT_CALL(*gl, BindFramebufferEXT(GL_FRAMEBUFFER, gl_ids[1]))
+    EXPECT_CALL(*gl, BindFramebufferEXT(GL_FRAMEBUFFER, fb_ids[1]))
         .Times(1)
         .RetiresOnSaturation();
     EXPECT_CALL(*gl, FramebufferTexture2DEXT(GL_FRAMEBUFFER,
-        GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gl_ids[1], 0))
+        GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tx_ids[1], 0))
         .Times(1)
         .RetiresOnSaturation();
     EXPECT_CALL(*gl, CheckFramebufferStatusEXT(GL_FRAMEBUFFER))
@@ -365,7 +430,7 @@ void TestHelper::SetupFeatureInfoInitExpectationsWithGLVersion(
         GL_RGB, GL_FLOAT, _))
         .Times(1)
         .RetiresOnSaturation();
-    if (is_es3) {
+    if (gl_info.is_es3) {
       EXPECT_CALL(*gl, CheckFramebufferStatusEXT(GL_FRAMEBUFFER))
           .WillOnce(Return(GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT))
           .RetiresOnSaturation();
@@ -380,13 +445,77 @@ void TestHelper::SetupFeatureInfoInitExpectationsWithGLVersion(
     EXPECT_CALL(*gl, DeleteTextures(1, _))
         .Times(1)
         .RetiresOnSaturation();
-    EXPECT_CALL(*gl, BindFramebufferEXT(GL_FRAMEBUFFER, gl_ids[0]))
+    EXPECT_CALL(*gl, BindFramebufferEXT(GL_FRAMEBUFFER, fb_ids[0]))
         .Times(1)
         .RetiresOnSaturation();
-    EXPECT_CALL(*gl, BindTexture(GL_TEXTURE_2D, gl_ids[0]))
+    EXPECT_CALL(*gl, BindTexture(GL_TEXTURE_2D, tx_ids[0]))
         .Times(1)
         .RetiresOnSaturation();
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
+    EXPECT_CALL(*gl, GetError())
+        .WillOnce(Return(GL_NO_ERROR))
+        .RetiresOnSaturation();
+#endif
+  }
+
+  if (strstr(extensions, "GL_EXT_draw_buffers") ||
+      strstr(extensions, "GL_ARB_draw_buffers") ||
+      (gl_info.is_es3 && strstr(extensions, "GL_NV_draw_buffers"))) {
+    EXPECT_CALL(*gl, GetIntegerv(GL_MAX_COLOR_ATTACHMENTS_EXT, _))
+        .WillOnce(SetArgumentPointee<1>(8))
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, GetIntegerv(GL_MAX_DRAW_BUFFERS_ARB, _))
+        .WillOnce(SetArgumentPointee<1>(8))
+        .RetiresOnSaturation();
+  }
+
+  if (gl_info.is_es3 || strstr(extensions, "GL_EXT_texture_rg") ||
+      (strstr(extensions, "GL_ARB_texture_rg"))) {
+    static const GLuint tx_ids[] = {101, 102};
+    static const GLuint fb_ids[] = {103, 104};
+    const GLsizei width = 1;
+    EXPECT_CALL(*gl, GetIntegerv(GL_FRAMEBUFFER_BINDING, _))
+        .WillOnce(SetArgumentPointee<1>(fb_ids[0]))
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, GetIntegerv(GL_TEXTURE_BINDING_2D, _))
+        .WillOnce(SetArgumentPointee<1>(tx_ids[0]))
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, GenTextures(1, _))
+        .WillOnce(SetArrayArgument<1>(tx_ids + 1, tx_ids + 2))
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, BindTexture(GL_TEXTURE_2D, tx_ids[1]))
+        .Times(1)
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, TexImage2D(GL_TEXTURE_2D, 0, _, width, width, 0,
+        GL_RED_EXT, GL_UNSIGNED_BYTE, _))
+        .Times(1)
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, GenFramebuffersEXT(1, _))
+        .WillOnce(SetArrayArgument<1>(fb_ids + 1, fb_ids + 2))
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, BindFramebufferEXT(GL_FRAMEBUFFER, fb_ids[1]))
+        .Times(1)
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, FramebufferTexture2DEXT(GL_FRAMEBUFFER,
+        GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tx_ids[1], 0))
+        .Times(1)
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, CheckFramebufferStatusEXT(GL_FRAMEBUFFER))
+        .WillOnce(Return(GL_FRAMEBUFFER_COMPLETE))
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, DeleteFramebuffersEXT(1, _))
+        .Times(1)
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, DeleteTextures(1, _))
+        .Times(1)
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, BindFramebufferEXT(GL_FRAMEBUFFER, fb_ids[0]))
+        .Times(1)
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, BindTexture(GL_TEXTURE_2D, tx_ids[0]))
+        .Times(1)
+        .RetiresOnSaturation();
+#if DCHECK_IS_ON()
     EXPECT_CALL(*gl, GetError())
         .WillOnce(Return(GL_NO_ERROR))
         .RetiresOnSaturation();
@@ -549,10 +678,7 @@ void TestHelper::SetupProgramSuccessExpectations(
   for (int pass = 0; pass < 2; ++pass) {
     for (size_t ii = 0; ii < num_uniforms; ++ii) {
       const UniformInfo& info = uniforms[ii];
-      if (ProgramManager::IsInvalidPrefix(info.name, strlen(info.name))) {
-        continue;
-      }
-      if (pass == 0) {
+      if (pass == 0 && info.real_location != -1) {
         EXPECT_CALL(*gl, GetUniformLocation(service_id, StrEq(info.name)))
             .WillOnce(Return(info.real_location))
             .RetiresOnSaturation();
@@ -648,10 +774,11 @@ void TestHelper::SetShaderStates(
       bool expected_valid,
       const std::string* const expected_log_info,
       const std::string* const expected_translated_source,
-      const ShaderTranslatorInterface::VariableMap* const expected_attrib_map,
-      const ShaderTranslatorInterface::VariableMap* const expected_uniform_map,
-      const ShaderTranslatorInterface::VariableMap* const expected_varying_map,
-      const ShaderTranslatorInterface::NameMap* const expected_name_map) {
+      const int* const expected_shader_version,
+      const AttributeMap* const expected_attrib_map,
+      const UniformMap* const expected_uniform_map,
+      const VaryingMap* const expected_varying_map,
+      const NameMap* const expected_name_map) {
   const std::string empty_log_info;
   const std::string* log_info = (expected_log_info && !expected_valid) ?
       expected_log_info : &empty_log_info;
@@ -659,37 +786,39 @@ void TestHelper::SetShaderStates(
   const std::string* translated_source =
       (expected_translated_source && expected_valid) ?
           expected_translated_source : &empty_translated_source;
-  const ShaderTranslatorInterface::VariableMap empty_attrib_map;
-  const ShaderTranslatorInterface::VariableMap* attrib_map =
-      (expected_attrib_map && expected_valid) ?
-          expected_attrib_map : &empty_attrib_map;
-  const ShaderTranslatorInterface::VariableMap empty_uniform_map;
-  const ShaderTranslatorInterface::VariableMap* uniform_map =
-      (expected_uniform_map && expected_valid) ?
-          expected_uniform_map : &empty_uniform_map;
-  const ShaderTranslatorInterface::VariableMap empty_varying_map;
-  const ShaderTranslatorInterface::VariableMap* varying_map =
-      (expected_varying_map && expected_valid) ?
-          expected_varying_map : &empty_varying_map;
-  const ShaderTranslatorInterface::NameMap empty_name_map;
-  const ShaderTranslatorInterface::NameMap* name_map =
-      (expected_name_map && expected_valid) ?
-          expected_name_map : &empty_name_map;
+  int default_shader_version = 100;
+  const int* shader_version = (expected_shader_version && expected_valid) ?
+      expected_shader_version : &default_shader_version;
+  const AttributeMap empty_attrib_map;
+  const AttributeMap* attrib_map = (expected_attrib_map && expected_valid) ?
+      expected_attrib_map : &empty_attrib_map;
+  const UniformMap empty_uniform_map;
+  const UniformMap* uniform_map = (expected_uniform_map && expected_valid) ?
+      expected_uniform_map : &empty_uniform_map;
+  const VaryingMap empty_varying_map;
+  const VaryingMap* varying_map = (expected_varying_map && expected_valid) ?
+      expected_varying_map : &empty_varying_map;
+  const NameMap empty_name_map;
+  const NameMap* name_map = (expected_name_map && expected_valid) ?
+      expected_name_map : &empty_name_map;
 
-  MockShaderTranslator translator;
-  EXPECT_CALL(translator, Translate(_,
-                                    NotNull(),  // log_info
-                                    NotNull(),  // translated_source
-                                    NotNull(),  // attrib_map
-                                    NotNull(),  // uniform_map
-                                    NotNull(),  // varying_map
-                                    NotNull()))  // name_map
+  MockShaderTranslator* mock_translator = new MockShaderTranslator;
+  scoped_refptr<ShaderTranslatorInterface> translator(mock_translator);
+  EXPECT_CALL(*mock_translator, Translate(_,
+                                          NotNull(),  // log_info
+                                          NotNull(),  // translated_source
+                                          NotNull(),  // shader_version
+                                          NotNull(),  // attrib_map
+                                          NotNull(),  // uniform_map
+                                          NotNull(),  // varying_map
+                                          NotNull()))  // name_map
       .WillOnce(DoAll(SetArgumentPointee<1>(*log_info),
                       SetArgumentPointee<2>(*translated_source),
-                      SetArgumentPointee<3>(*attrib_map),
-                      SetArgumentPointee<4>(*uniform_map),
-                      SetArgumentPointee<5>(*varying_map),
-                      SetArgumentPointee<6>(*name_map),
+                      SetArgumentPointee<3>(*shader_version),
+                      SetArgumentPointee<4>(*attrib_map),
+                      SetArgumentPointee<5>(*uniform_map),
+                      SetArgumentPointee<6>(*varying_map),
+                      SetArgumentPointee<7>(*name_map),
                       Return(expected_valid)))
       .RetiresOnSaturation();
   if (expected_valid) {
@@ -705,13 +834,38 @@ void TestHelper::SetShaderStates(
         .WillOnce(SetArgumentPointee<2>(GL_TRUE))
         .RetiresOnSaturation();
   }
-  shader->DoCompile(&translator, Shader::kGL);
+  shader->RequestCompile(translator, Shader::kGL);
+  shader->DoCompile();
 }
 
 // static
 void TestHelper::SetShaderStates(
       ::gfx::MockGLInterface* gl, Shader* shader, bool valid) {
-  SetShaderStates(gl, shader, valid, NULL, NULL, NULL, NULL, NULL, NULL);
+  SetShaderStates(gl, shader, valid, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+}
+
+// static
+sh::Attribute TestHelper::ConstructAttribute(
+    GLenum type, GLint array_size, GLenum precision,
+    bool static_use, const std::string& name) {
+  return ConstructShaderVariable<sh::Attribute>(
+      type, array_size, precision, static_use, name);
+}
+
+// static
+sh::Uniform TestHelper::ConstructUniform(
+    GLenum type, GLint array_size, GLenum precision,
+    bool static_use, const std::string& name) {
+  return ConstructShaderVariable<sh::Uniform>(
+      type, array_size, precision, static_use, name);
+}
+
+// static
+sh::Varying TestHelper::ConstructVarying(
+    GLenum type, GLint array_size, GLenum precision,
+    bool static_use, const std::string& name) {
+  return ConstructShaderVariable<sh::Varying>(
+      type, array_size, precision, static_use, name);
 }
 
 ScopedGLImplementationSetter::ScopedGLImplementationSetter(

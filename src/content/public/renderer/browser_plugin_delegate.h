@@ -8,6 +8,17 @@
 #include <string>
 
 #include "content/common/content_export.h"
+#include "ipc/ipc_message.h"
+
+namespace gfx {
+class Size;
+}
+
+namespace v8 {
+class Isolate;
+class Object;
+template<typename T> class Local;
+}  // namespace v8
 
 namespace content {
 
@@ -18,9 +29,11 @@ class RenderFrame;
 // behavior of the plugin.
 class CONTENT_EXPORT BrowserPluginDelegate {
  public:
-  BrowserPluginDelegate(RenderFrame* render_frame,
-                        const std::string& mime_type) {}
   virtual ~BrowserPluginDelegate() {}
+
+  // Called when the BrowserPlugin's geometry has been computed for the first
+  // time.
+  virtual void Ready() {}
 
   // Called when plugin document has finished loading.
   virtual void DidFinishLoading() {}
@@ -31,6 +44,16 @@ class CONTENT_EXPORT BrowserPluginDelegate {
   // Sets the instance ID that idenfies the plugin within current render
   // process.
   virtual void SetElementInstanceID(int element_instance_id) {}
+
+  // Called when the plugin resizes.
+  virtual void DidResizeElement(const gfx::Size& new_size) {}
+
+  // Called when a message is received.  Returns true iff the message was
+  // handled.
+  virtual bool OnMessageReceived(const IPC::Message& message);
+
+  // Return a scriptable object for the plugin.
+  virtual v8::Local<v8::Object> V8ScriptableObject(v8::Isolate* isolate);
 };
 
 }  // namespace content

@@ -39,16 +39,16 @@ class ReadFile : public Operation {
       int64 offset,
       int length,
       const ProvidedFileSystemInterface::ReadChunkReceivedCallback& callback);
-  virtual ~ReadFile();
+  ~ReadFile() override;
 
   // Operation overrides.
-  virtual bool Execute(int request_id) OVERRIDE;
-  virtual void OnSuccess(int request_id,
-                         scoped_ptr<RequestValue> result,
-                         bool has_more) OVERRIDE;
-  virtual void OnError(int request_id,
-                       scoped_ptr<RequestValue> result,
-                       base::File::Error error) OVERRIDE;
+  bool Execute(int request_id) override;
+  void OnSuccess(int request_id,
+                 scoped_ptr<RequestValue> result,
+                 bool has_more) override;
+  void OnError(int request_id,
+               scoped_ptr<RequestValue> result,
+               base::File::Error error) override;
 
  private:
   int file_handle_;

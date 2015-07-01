@@ -15,7 +15,7 @@
 #include "base/timer/timer.h"
 #include "content/public/common/top_controls_state.h"
 #include "content/public/renderer/render_view_observer.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 #include "url/gurl.h"
 
 class ContentSettingsObserver;
@@ -49,16 +49,16 @@ class ChromeRenderViewObserver : public content::RenderViewObserver {
       content::RenderView* render_view,
       web_cache::WebCacheRenderProcessObserver*
           web_cache_render_process_observer);
-  virtual ~ChromeRenderViewObserver();
+  ~ChromeRenderViewObserver() override;
 
  private:
   // RenderViewObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void DidStartLoading() OVERRIDE;
-  virtual void DidStopLoading() OVERRIDE;
-  virtual void DidCommitProvisionalLoad(blink::WebLocalFrame* frame,
-                                        bool is_new_navigation) OVERRIDE;
-  virtual void Navigate(const GURL& url) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void DidStartLoading() override;
+  void DidStopLoading() override;
+  void DidCommitProvisionalLoad(blink::WebLocalFrame* frame,
+                                bool is_new_navigation) override;
+  void Navigate(const GURL& url) override;
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
   void OnWebUIJavaScript(const base::string16& javascript);

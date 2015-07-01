@@ -52,6 +52,8 @@ class CONTENT_EXPORT SensorManagerAndroid {
       DeviceOrientationHardwareBuffer* buffer);
   void StopFetchingDeviceOrientationData();
 
+  void Shutdown();
+
  protected:
   enum EventType {
     // These constants should match DEVICE_ORIENTATION, DEVICE_MOTION and
@@ -68,6 +70,16 @@ class CONTENT_EXPORT SensorManagerAndroid {
   virtual bool Start(EventType event_type);
   virtual void Stop(EventType event_type);
   virtual int GetNumberActiveDeviceMotionSensors();
+
+  void StartFetchingLightDataOnUI(DeviceLightHardwareBuffer* buffer);
+  void StopFetchingLightDataOnUI();
+
+  void StartFetchingMotionDataOnUI(DeviceMotionHardwareBuffer* buffer);
+  void StopFetchingMotionDataOnUI();
+
+  void StartFetchingOrientationDataOnUI(
+      DeviceOrientationHardwareBuffer* buffer);
+  void StopFetchingOrientationDataOnUI();
 
  private:
   friend struct DefaultSingletonTraits<SensorManagerAndroid>;
@@ -86,6 +98,7 @@ class CONTENT_EXPORT SensorManagerAndroid {
   void ClearInternalMotionBuffers();
 
   void SetOrientationBufferReadyStatus(bool ready);
+  bool isUsingBackupSensorsForOrientation();
 
   // The Java provider of sensors info.
   base::android::ScopedJavaGlobalRef<jobject> device_sensors_;
@@ -101,6 +114,9 @@ class CONTENT_EXPORT SensorManagerAndroid {
   base::Lock light_buffer_lock_;
   base::Lock motion_buffer_lock_;
   base::Lock orientation_buffer_lock_;
+
+  bool is_using_backup_sensors_for_orientation_;
+  bool is_shutdown_;
 
   DISALLOW_COPY_AND_ASSIGN(SensorManagerAndroid);
 };

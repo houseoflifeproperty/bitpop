@@ -6,12 +6,23 @@
 #define CHROME_BROWSER_CHROME_NOTIFICATION_TYPES_H_
 
 #include "build/build_config.h"
+
+#if defined(ENABLE_EXTENSIONS)
 #include "extensions/browser/notification_types.h"
+#else
+#include "content/public/browser/notification_types.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#define PREVIOUS_END extensions::NOTIFICATION_EXTENSIONS_END
+#else
+#define PREVIOUS_END content::NOTIFICATION_CONTENT_END
+#endif
 
 namespace chrome {
 
 enum NotificationType {
-  NOTIFICATION_CHROME_START = extensions::NOTIFICATION_EXTENSIONS_END,
+  NOTIFICATION_CHROME_START = PREVIOUS_END,
 
   // Browser-window ----------------------------------------------------------
 
@@ -113,12 +124,6 @@ enum NotificationType {
   // handler.  Use APP_TERMINATING for such needs.
   NOTIFICATION_CLOSE_ALL_BROWSERS_REQUEST,
 
-  // Application-modal dialogs -----------------------------------------------
-
-  // Sent after an application-modal dialog has been shown. The source
-  // is the dialog.
-  NOTIFICATION_APP_MODAL_DIALOG_SHOWN,
-
   // This message is sent when a new InfoBar has been added to an
   // InfoBarService.  The source is a Source<InfoBarService> with a pointer to
   // the InfoBarService the InfoBar was added to.  The details is a
@@ -131,16 +136,12 @@ enum NotificationType {
   // Details<InfoBar::RemovedDetails>.
   NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
 
-  // Used to fire notifications about how long various events took to
-  // complete.  E.g., this is used to get more fine grained timings from the
-  // new tab page.  The source is a WebContents and the details is a
-  // MetricEventDurationDetails.
-  NOTIFICATION_METRIC_EVENT_DURATION,
-
+#if defined(ENABLE_EXTENSIONS)
   // This notification is sent when extensions::TabHelper::SetExtensionApp is
   // invoked. The source is the extensions::TabHelper SetExtensionApp was
   // invoked on.
   NOTIFICATION_TAB_CONTENTS_APPLICATION_EXTENSION_CHANGED,
+#endif
 
   // Tabs --------------------------------------------------------------------
 
@@ -227,50 +228,6 @@ enum NotificationType {
   // the LoginHandler that should be cancelled.
   NOTIFICATION_AUTH_CANCELLED,
 
-  // History -----------------------------------------------------------------
-
-  // Sent when a history service has finished loading. The source is the
-  // profile that the history service belongs to, and the details is the
-  // HistoryService.
-  NOTIFICATION_HISTORY_LOADED,
-
-  // Sent when a URL has been added or modified. This is used by the in-memory
-  // URL database and the InMemoryURLIndex (both used by autocomplete) to track
-  // changes to the main history system.
-  //
-  // The source is the profile owning the history service that changed, and
-  // the details is history::URLsModifiedDetails that lists the modified or
-  // added URLs.
-  NOTIFICATION_HISTORY_URLS_MODIFIED,
-
-  // Sent when the user visits a URL.
-  //
-  // The source is the profile owning the history service that changed, and
-  // the details is history::URLVisitedDetails.
-  NOTIFICATION_HISTORY_URL_VISITED,
-
-  // Sent when one or more URLs are deleted.
-  //
-  // The source is the profile owning the history service that changed, and
-  // the details is history::URLsDeletedDetails that lists the deleted URLs.
-  NOTIFICATION_HISTORY_URLS_DELETED,
-
-  // Sent when a keyword search term is updated. The source is the Profile and
-  // the details is history::KeywordSearchUpdatedDetails.
-  NOTIFICATION_HISTORY_KEYWORD_SEARCH_TERM_UPDATED,
-
-  // Sent when a keyword search term is deleted. The source is the Profile and
-  // the details is history::KeywordSearchDeletedDetails.
-  NOTIFICATION_HISTORY_KEYWORD_SEARCH_TERM_DELETED,
-
-  // Sent by FaviconTabHelper when a tab's favicon has been successfully
-  // updated. The details are a bool indicating whether the
-  // NavigationEntry's favicon URL has changed since the previous
-  // NOTIFICATION_FAVICON_UPDATED notification. The details are true if
-  // there was no previous NOTIFICATION_FAVICON_UPDATED notification for the
-  // current NavigationEntry.
-  NOTIFICATION_FAVICON_UPDATED,
-
   // Profiles -----------------------------------------------------------------
 
   // Sent after a Profile has been created. This notification is sent both for
@@ -296,17 +253,6 @@ enum NotificationType {
   // Sent after the URLRequestContextGetter for a Profile has been initialized.
   // The details are none and the source is a Profile*.
   NOTIFICATION_PROFILE_URL_REQUEST_CONTEXT_GETTER_INITIALIZED,
-
-  // TopSites ----------------------------------------------------------------
-
-  // Sent by TopSites when it finishes loading. The source is the profile the
-  // details the TopSites.
-  NOTIFICATION_TOP_SITES_LOADED,
-
-  // Sent by TopSites when the either one of the most visited urls changed, or
-  // one of the images changes. The source is the TopSites, the details not
-  // used.
-  NOTIFICATION_TOP_SITES_CHANGED,
 
   // Task Manager ------------------------------------------------------------
 
@@ -584,11 +530,6 @@ enum NotificationType {
   // which was installed.
   NOTIFICATION_APP_INSTALLED_TO_NTP,
 
-  // Similar to NOTIFICATION_APP_INSTALLED_TO_NTP but used to notify ash AppList
-  // about installed app. Source is the profile in which the app is installed
-  // and Details is the string ID of the extension.
-  NOTIFICATION_APP_INSTALLED_TO_APPLIST,
-
 #if defined(USE_ASH)
   // Sent when wallpaper show animation has finished.
   NOTIFICATION_WALLPAPER_ANIMATION_FINISHED,
@@ -606,13 +547,6 @@ enum NotificationType {
   // Protocol Handler Registry -----------------------------------------------
   // Sent when a ProtocolHandlerRegistry is changed. The source is the profile.
   NOTIFICATION_PROTOCOL_HANDLER_REGISTRY_CHANGED,
-
-  // Sent when the cached profile info has changed.
-  NOTIFICATION_PROFILE_CACHED_INFO_CHANGED,
-
-  // Sent when the cached profile has finished writing a profile picture to
-  // disk.
-  NOTIFICATION_PROFILE_CACHE_PICTURE_SAVED,
 
   // Sent when the browser enters or exits fullscreen mode.
   NOTIFICATION_FULLSCREEN_CHANGED,
@@ -664,25 +598,10 @@ enum NotificationType {
   // all error UIs should update.
   NOTIFICATION_GLOBAL_ERRORS_CHANGED,
 
-  // BrowsingDataRemover ----------------------------------------------------
-  // Sent on the UI thread after BrowsingDataRemover has removed browsing data
-  // but before it has notified its explicit observers. The source is a
-  // Source<Profile> containing the profile in which browsing data was removed,
-  // and the detail is a BrowsingDataRemover::NotificationDetail containing the
-  // removal mask and the start of the removal timeframe with which
-  // BrowsingDataRemove::Remove was called.
-  NOTIFICATION_BROWSING_DATA_REMOVED,
-
   // The user accepted or dismissed a SSL client authentication request.
   // The source is a Source<net::HttpNetworkSession>.  Details is a
   // (std::pair<net::SSLCertRequestInfo*, net::X509Certificate*>).
   NOTIFICATION_SSL_CLIENT_AUTH_CERT_SELECTED,
-
-  // Session Restore --------------------------------------------------------
-
-  // Sent when synchronous (startup) session restore completes. No details or
-  // source.
-  NOTIFICATION_SESSION_RESTORE_DONE,
 
   // Note:-
   // Currently only Content and Chrome define and use notifications.

@@ -22,6 +22,7 @@ enum Codec {
   CODEC_UNKNOWN,
   CODEC_AUDIO_OPUS,
   CODEC_AUDIO_PCM16,
+  CODEC_AUDIO_AAC,
   CODEC_VIDEO_FAKE,
   CODEC_VIDEO_VP8,
   CODEC_VIDEO_H264,
@@ -126,6 +127,8 @@ typedef scoped_refptr<base::RefCountedData<Packet> > PacketRef;
 typedef std::vector<PacketRef> PacketList;
 
 typedef base::Callback<void(scoped_ptr<Packet> packet)> PacketReceiverCallback;
+typedef base::Callback<bool(scoped_ptr<Packet> packet)>
+    PacketReceiverCallbackWithStatus;
 
 class PacketSender {
  public:

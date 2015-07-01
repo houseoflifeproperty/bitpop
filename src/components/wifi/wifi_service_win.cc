@@ -174,57 +174,59 @@ namespace wifi {
 class WiFiServiceImpl : public WiFiService {
  public:
   WiFiServiceImpl();
-  virtual ~WiFiServiceImpl();
+  ~WiFiServiceImpl() override;
 
   // WiFiService interface implementation.
-  virtual void Initialize(
-      scoped_refptr<base::SequencedTaskRunner> task_runner) OVERRIDE;
+  void Initialize(
+      scoped_refptr<base::SequencedTaskRunner> task_runner) override;
 
-  virtual void UnInitialize() OVERRIDE;
+  void UnInitialize() override;
 
-  virtual void GetProperties(const std::string& network_guid,
-                             base::DictionaryValue* properties,
-                             std::string* error) OVERRIDE;
+  void GetProperties(const std::string& network_guid,
+                     base::DictionaryValue* properties,
+                     std::string* error) override;
 
-  virtual void GetManagedProperties(const std::string& network_guid,
-                                    base::DictionaryValue* managed_properties,
-                                    std::string* error) OVERRIDE;
+  void GetManagedProperties(const std::string& network_guid,
+                            base::DictionaryValue* managed_properties,
+                            std::string* error) override;
 
-  virtual void GetState(const std::string& network_guid,
-                        base::DictionaryValue* properties,
-                        std::string* error) OVERRIDE;
+  void GetState(const std::string& network_guid,
+                base::DictionaryValue* properties,
+                std::string* error) override;
 
-  virtual void SetProperties(const std::string& network_guid,
-                             scoped_ptr<base::DictionaryValue> properties,
-                             std::string* error) OVERRIDE;
+  void SetProperties(const std::string& network_guid,
+                     scoped_ptr<base::DictionaryValue> properties,
+                     std::string* error) override;
 
-  virtual void CreateNetwork(bool shared,
-                             scoped_ptr<base::DictionaryValue> properties,
-                             std::string* network_guid,
-                             std::string* error) OVERRIDE;
+  void CreateNetwork(bool shared,
+                     scoped_ptr<base::DictionaryValue> properties,
+                     std::string* network_guid,
+                     std::string* error) override;
 
-  virtual void GetVisibleNetworks(const std::string& network_type,
-                                  base::ListValue* network_list,
-                                  bool include_details) OVERRIDE;
+  void GetVisibleNetworks(const std::string& network_type,
+                          base::ListValue* network_list,
+                          bool include_details) override;
 
-  virtual void RequestNetworkScan() OVERRIDE;
+  void RequestNetworkScan() override;
 
-  virtual void StartConnect(const std::string& network_guid,
-                            std::string* error) OVERRIDE;
+  void StartConnect(const std::string& network_guid,
+                    std::string* error) override;
 
-  virtual void StartDisconnect(const std::string& network_guid,
-                               std::string* error) OVERRIDE;
+  void StartDisconnect(const std::string& network_guid,
+                       std::string* error) override;
 
-  virtual void GetKeyFromSystem(const std::string& network_guid,
-                                std::string* key_data,
-                                std::string* error) OVERRIDE;
+  void GetKeyFromSystem(const std::string& network_guid,
+                        std::string* key_data,
+                        std::string* error) override;
 
-  virtual void SetEventObservers(
+  void SetEventObservers(
       scoped_refptr<base::MessageLoopProxy> message_loop_proxy,
       const NetworkGuidListCallback& networks_changed_observer,
-      const NetworkGuidListCallback& network_list_changed_observer) OVERRIDE;
+      const NetworkGuidListCallback& network_list_changed_observer) override;
 
-  virtual void RequestConnectedNetworkUpdate() OVERRIDE {}
+  void RequestConnectedNetworkUpdate() override {}
+
+  void GetConnectedNetworkSSID(std::string* ssid, std::string* error) override;
 
  private:
   typedef int32 EncryptionType;
@@ -356,6 +358,11 @@ class WiFiServiceImpl : public WiFiService {
   // Get properties of the network currently used (connected or in transition)
   // by interface. Populate |current_properties| on success.
   DWORD GetCurrentProperties(NetworkProperties* current_properties);
+
+  // Get the SSID of the network currently used (connected or in transition)
+  // by interface. Populate |ssid| on success. This is a stripped down version
+  // of GetCurrentProperties that doesn't use the BSS list;
+  DWORD GetCurrentSSID(std::string* ssid);
 
   // Connect to network |network_guid| using previosly stored profile if exists,
   // or just network sid. If |frequency| is not |kFrequencyUnknown| then
@@ -806,6 +813,18 @@ void WiFiServiceImpl::SetEventObservers(
   }
 }
 
+void WiFiServiceImpl::GetConnectedNetworkSSID(std::string* ssid,
+                                              std::string* error) {
+  DWORD error_code = EnsureInitialized();
+  if (CheckError(error_code, kErrorWiFiService, error))
+    return;
+  std::string current_ssid;
+  error_code = GetCurrentSSID(&current_ssid);
+  if (CheckError(error_code, kErrorWiFiService, error))
+    return;
+  *ssid = current_ssid;
+}
+
 void WiFiServiceImpl::OnWlanNotificationCallback(
     PWLAN_NOTIFICATION_DATA wlan_notification_data,
     PVOID context) {
@@ -815,7 +834,7 @@ void WiFiServiceImpl::OnWlanNotificationCallback(
 
 void WiFiServiceImpl::OnWlanNotification(
     PWLAN_NOTIFICATION_DATA wlan_notification_data) {
-  if (message_loop_proxy_ == NULL)
+  if (message_loop_proxy_.get() == NULL)
     return;
   switch (wlan_notification_data->NotificationCode) {
     case wlan_notification_acm_disconnected:
@@ -1462,6 +1481,37 @@ DWORD WiFiServiceImpl::GetCurrentProperties(NetworkProperties* properties) {
   return error;
 }
 
+
+DWORD WiFiServiceImpl::GetCurrentSSID(std::string* ssid) {
+  if (client_ == NULL) {
+    NOTREACHED();
+    return ERROR_NOINTERFACE;
+  }
+  DWORD error = ERROR_SUCCESS;
+  DWORD data_size = 0;
+  PWLAN_CONNECTION_ATTRIBUTES wlan_connection_attributes = NULL;
+  error = WlanQueryInterface_function_(
+      client_,
+      &interface_guid_,
+      wlan_intf_opcode_current_connection,
+      NULL,
+      &data_size,
+      reinterpret_cast<PVOID*>(&wlan_connection_attributes),
+      NULL);
+  if (error == ERROR_SUCCESS &&
+      wlan_connection_attributes != NULL) {
+    WLAN_ASSOCIATION_ATTRIBUTES& connected_wlan =
+        wlan_connection_attributes->wlanAssociationAttributes;
+    *ssid = GUIDFromSSID(connected_wlan.dot11Ssid);
+  }
+
+  // Clean up.
+  if (wlan_connection_attributes != NULL)
+    WlanFreeMemory_function_(wlan_connection_attributes);
+
+  return error;
+}
+
 Frequency WiFiServiceImpl::GetFrequencyToConnect(
     const std::string& network_guid) const {
   // Check whether desired frequency is set in |connect_properties_|.
@@ -1708,7 +1758,6 @@ DWORD WiFiServiceImpl::SetProfile(bool shared,
 }
 
 bool WiFiServiceImpl::HaveProfile(const std::string& network_guid) {
-  DWORD error = ERROR_SUCCESS;
   std::string profile_xml;
   return GetProfile(network_guid, false, &profile_xml) == ERROR_SUCCESS;
 }

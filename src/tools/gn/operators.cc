@@ -36,20 +36,19 @@ void AppendFilteredSourcesToValue(const Scope* scope,
     return;
   }
 
-  const std::vector<Value>& source_list = source.list_value();
   if (!filter || filter->is_empty()) {
     // No filter, append everything.
-    for (size_t i = 0; i < source_list.size(); i++)
-      dest->list_value().push_back(source_list[i]);
+    for (const auto& source_entry : source.list_value())
+      dest->list_value().push_back(source_entry);
     return;
   }
 
   // Note: don't reserve() the dest vector here since that actually hurts
   // the allocation pattern when the build script is doing multiple small
   // additions.
-  for (size_t i = 0; i < source_list.size(); i++) {
-    if (!filter->MatchesValue(source_list[i]))
-      dest->list_value().push_back(source_list[i]);
+  for (const auto& source_entry : source.list_value()) {
+    if (!filter->MatchesValue(source_entry))
+      dest->list_value().push_back(source_entry);
   }
 }
 
@@ -99,10 +98,10 @@ void RemoveMatchesFromList(const BinaryOpNode* op_node,
     }
 
     case Value::LIST:  // Filter out each individual thing.
-      for (size_t i = 0; i < to_remove.list_value().size(); i++) {
+      for (const auto& elem : to_remove.list_value()) {
         // TODO(brettw) if the nested item is a list, we may want to search
         // for the literal list rather than remote the items in it.
-        RemoveMatchesFromList(op_node, list, to_remove.list_value()[i], err);
+        RemoveMatchesFromList(op_node, list, elem, err);
         if (err->has_error())
           return;
       }
@@ -228,8 +227,8 @@ void ValuePlusEquals(const Scope* scope,
             AppendFilteredSourcesToValue(scope, right, left);
           } else {
             // Normal list concat.
-            for (size_t i = 0; i < right.list_value().size(); i++)
-              left->list_value().push_back(right.list_value()[i]);
+            for (const auto& value : right.list_value())
+              left->list_value().push_back(value);
           }
           return;
 
@@ -491,42 +490,6 @@ Value ExecuteAnd(Scope* scope,
 }  // namespace
 
 // ----------------------------------------------------------------------------
-
-bool IsUnaryOperator(const Token& token) {
-  return token.type() == Token::BANG;
-}
-
-bool IsBinaryOperator(const Token& token) {
-  return token.type() == Token::EQUAL ||
-         token.type() == Token::PLUS ||
-         token.type() == Token::MINUS ||
-         token.type() == Token::PLUS_EQUALS ||
-         token.type() == Token::MINUS_EQUALS ||
-         token.type() == Token::EQUAL_EQUAL ||
-         token.type() == Token::NOT_EQUAL ||
-         token.type() == Token::LESS_EQUAL ||
-         token.type() == Token::GREATER_EQUAL ||
-         token.type() == Token::LESS_THAN ||
-         token.type() == Token::GREATER_THAN ||
-         token.type() == Token::BOOLEAN_AND ||
-         token.type() == Token::BOOLEAN_OR;
-}
-
-bool IsFunctionCallArgBeginScoper(const Token& token) {
-  return token.type() == Token::LEFT_PAREN;
-}
-
-bool IsFunctionCallArgEndScoper(const Token& token) {
-  return token.type() == Token::RIGHT_PAREN;
-}
-
-bool IsScopeBeginScoper(const Token& token) {
-  return token.type() == Token::LEFT_BRACE;
-}
-
-bool IsScopeEndScoper(const Token& token) {
-  return token.type() == Token::RIGHT_BRACE;
-}
 
 Value ExecuteUnaryOperator(Scope* scope,
                            const UnaryOpNode* op_node,

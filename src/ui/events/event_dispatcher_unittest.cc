@@ -18,7 +18,7 @@ namespace {
 class TestTarget : public EventTarget {
  public:
   TestTarget() : parent_(NULL), valid_(true) {}
-  virtual ~TestTarget() {}
+  ~TestTarget() override {}
 
   void set_parent(TestTarget* parent) { parent_ = parent; }
 
@@ -38,21 +38,15 @@ class TestTarget : public EventTarget {
 
  private:
   // Overridden from EventTarget:
-  virtual bool CanAcceptEvent(const ui::Event& event) OVERRIDE {
-    return true;
+  bool CanAcceptEvent(const ui::Event& event) override { return true; }
+
+  EventTarget* GetParentTarget() override { return parent_; }
+
+  scoped_ptr<EventTargetIterator> GetChildIterator() const override {
+    return nullptr;
   }
 
-  virtual EventTarget* GetParentTarget() OVERRIDE {
-    return parent_;
-  }
-
-  virtual scoped_ptr<EventTargetIterator> GetChildIterator() const OVERRIDE {
-    return scoped_ptr<EventTargetIterator>();
-  }
-
-  virtual EventTargeter* GetEventTargeter() OVERRIDE {
-    return NULL;
-  }
+  EventTargeter* GetEventTargeter() override { return NULL; }
 
   TestTarget* parent_;
   std::vector<int> handler_list_;
@@ -71,7 +65,7 @@ class TestEventHandler : public EventHandler {
         received_pre_target_(false) {
   }
 
-  virtual ~TestEventHandler() {}
+  ~TestEventHandler() override {}
 
   virtual void ReceivedEvent(Event* event) {
     static_cast<TestTarget*>(event->target())->AddHandlerId(id_);
@@ -94,7 +88,7 @@ class TestEventHandler : public EventHandler {
 
  private:
   // Overridden from EventHandler:
-  virtual void OnEvent(Event* event) OVERRIDE {
+  void OnEvent(Event* event) override {
     ui::EventHandler::OnEvent(event);
     ReceivedEvent(event);
     SetStatusOnEvent(event);
@@ -123,7 +117,7 @@ class NonCancelableEvent : public Event {
     set_cancelable(false);
   }
 
-  virtual ~NonCancelableEvent() {}
+  ~NonCancelableEvent() override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NonCancelableEvent);
@@ -138,10 +132,10 @@ class EventHandlerDestroyDispatcherDelegate : public TestEventHandler {
         dispatcher_delegate_(delegate) {
   }
 
-  virtual ~EventHandlerDestroyDispatcherDelegate() {}
+  ~EventHandlerDestroyDispatcherDelegate() override {}
 
  private:
-  virtual void ReceivedEvent(Event* event) OVERRIDE {
+  void ReceivedEvent(Event* event) override {
     TestEventHandler::ReceivedEvent(event);
     delete dispatcher_delegate_;
   }
@@ -155,10 +149,10 @@ class EventHandlerDestroyDispatcherDelegate : public TestEventHandler {
 class InvalidateTargetEventHandler : public TestEventHandler {
  public:
   explicit InvalidateTargetEventHandler(int id) : TestEventHandler(id) {}
-  virtual ~InvalidateTargetEventHandler() {}
+  ~InvalidateTargetEventHandler() override {}
 
  private:
-  virtual void ReceivedEvent(Event* event) OVERRIDE {
+  void ReceivedEvent(Event* event) override {
    TestEventHandler::ReceivedEvent(event);
    TestTarget* target = static_cast<TestTarget*>(event->target());
    target->set_valid(false);
@@ -177,16 +171,14 @@ class EventHandlerDestroyer : public TestEventHandler {
         dispatcher_delegate_(NULL) {
   }
 
-  virtual ~EventHandlerDestroyer() {
-    CHECK(!to_destroy_);
-  }
+  ~EventHandlerDestroyer() override { CHECK(!to_destroy_); }
 
   void set_dispatcher_delegate(EventDispatcherDelegate* dispatcher_delegate) {
     dispatcher_delegate_ = dispatcher_delegate;
   }
 
  private:
-  virtual void ReceivedEvent(Event* event) OVERRIDE {
+  void ReceivedEvent(Event* event) override {
     TestEventHandler::ReceivedEvent(event);
     delete to_destroy_;
     to_destroy_ = NULL;
@@ -207,7 +199,7 @@ class TestEventDispatcher : public EventDispatcherDelegate {
  public:
   TestEventDispatcher() {}
 
-  virtual ~TestEventDispatcher() {}
+  ~TestEventDispatcher() override {}
 
   EventDispatchDetails ProcessEvent(EventTarget* target, Event* event) {
     return DispatchEvent(target, event);
@@ -215,7 +207,7 @@ class TestEventDispatcher : public EventDispatcherDelegate {
 
  private:
   // Overridden from EventDispatcherDelegate:
-  virtual bool CanDispatchToTarget(EventTarget* target) OVERRIDE {
+  bool CanDispatchToTarget(EventTarget* target) override {
     TestTarget* test_target = static_cast<TestTarget*>(target);
     return test_target->valid();
   }
@@ -255,8 +247,8 @@ TEST(EventDispatcherTest, EventDispatchOrder) {
   h7.set_expect_post_target(true);
   h8.set_expect_post_target(true);
 
-  MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4),
-                   gfx::Point(3, 4), 0, 0);
+  MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4), gfx::Point(3, 4),
+                   ui::EventTimeForNow(), 0, 0);
   Event::DispatcherApi event_mod(&mouse);
   dispatcher.ProcessEvent(&child, &mouse);
   EXPECT_FALSE(mouse.stopped_propagation());
@@ -329,8 +321,8 @@ TEST(EventDispatcherTest, EventDispatchPhase) {
   handler.set_expect_pre_target(true);
   handler.set_expect_post_target(true);
 
-  MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4),
-                   gfx::Point(3, 4), 0, 0);
+  MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4), gfx::Point(3, 4),
+                   ui::EventTimeForNow(), 0, 0);
   Event::DispatcherApi event_mod(&mouse);
   dispatcher.ProcessEvent(&target, &mouse);
   EXPECT_EQ(ER_UNHANDLED, mouse.result());
@@ -361,8 +353,8 @@ TEST(EventDispatcherTest, EventDispatcherDestroyedDuringDispatch) {
     // destroyed the dispatcher.
     h2.set_expect_pre_target(false);
 
-    MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4),
-                     gfx::Point(3, 4), 0, 0);
+    MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4), gfx::Point(3, 4),
+                     ui::EventTimeForNow(), 0, 0);
     EventDispatchDetails details = dispatcher->ProcessEvent(&target, &mouse);
     EXPECT_TRUE(details.dispatcher_destroyed);
     EXPECT_EQ(ER_CONSUMED, mouse.result());
@@ -413,8 +405,8 @@ TEST(EventDispatcherTest, EventDispatcherDestroyedDuringDispatch) {
     // destroyed the dispatcher.
     h2.set_expect_post_target(false);
 
-    MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4),
-                     gfx::Point(3, 4), 0, 0);
+    MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4), gfx::Point(3, 4),
+                     ui::EventTimeForNow(), 0, 0);
     EventDispatchDetails details = dispatcher->ProcessEvent(&target, &mouse);
     EXPECT_TRUE(details.dispatcher_destroyed);
     EXPECT_EQ(ER_CONSUMED, mouse.result());
@@ -467,8 +459,8 @@ TEST(EventDispatcherTest, EventDispatcherInvalidateTarget) {
   // |h3| should not receive events as the target will be invalidated.
   h3.set_expect_pre_target(false);
 
-  MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4), gfx::Point(3, 4), 0,
-                   0);
+  MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4), gfx::Point(3, 4),
+                   ui::EventTimeForNow(), 0, 0);
   EventDispatchDetails details = dispatcher.ProcessEvent(&target, &mouse);
   EXPECT_FALSE(details.dispatcher_destroyed);
   EXPECT_TRUE(details.target_destroyed);
@@ -510,8 +502,8 @@ TEST(EventDispatcherTest, EventHandlerDestroyedDuringDispatch) {
     // destroyed it.
     h3->set_expect_pre_target(false);
 
-    MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4), gfx::Point(3, 4), 0,
-                     0);
+    MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4), gfx::Point(3, 4),
+                     ui::EventTimeForNow(), 0, 0);
     EventDispatchDetails details = dispatcher.ProcessEvent(&target, &mouse);
     EXPECT_FALSE(details.dispatcher_destroyed);
     EXPECT_FALSE(details.target_destroyed);
@@ -568,8 +560,8 @@ TEST(EventDispatcherTest, EventHandlerAndDispatcherDestroyedDuringDispatch) {
     // it.
     h3->set_expect_pre_target(false);
 
-    MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4), gfx::Point(3, 4), 0,
-                     0);
+    MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4), gfx::Point(3, 4),
+                     ui::EventTimeForNow(), 0, 0);
     EventDispatchDetails details = dispatcher->ProcessEvent(&target, &mouse);
     EXPECT_TRUE(details.dispatcher_destroyed);
     EXPECT_TRUE(mouse.stopped_propagation());

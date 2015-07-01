@@ -94,7 +94,7 @@ class EventRouter : public content::NotificationObserver,
   // incognito context. |extension_prefs| may be NULL in tests.
   EventRouter(content::BrowserContext* browser_context,
               ExtensionPrefs* extension_prefs);
-  virtual ~EventRouter();
+  ~EventRouter() override;
 
   // Add or remove an extension as an event listener for |event_name|.
   //
@@ -203,21 +203,21 @@ class EventRouter : public content::NotificationObserver,
       IPC::Sender* ipc_sender,
       void* browser_context_id,
       const std::string& extension_id,
+      int event_id,
       const std::string& event_name,
       base::ListValue* event_args,
       UserGestureState user_gesture,
       const extensions::EventFilteringInfo& info);
 
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
   // ExtensionRegistryObserver implementation.
-  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
-                                 const Extension* extension) OVERRIDE;
-  virtual void OnExtensionUnloaded(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+  void OnExtensionLoaded(content::BrowserContext* browser_context,
+                         const Extension* extension) override;
+  void OnExtensionUnloaded(content::BrowserContext* browser_context,
+                           const Extension* extension,
+                           UnloadedExtensionInfo::Reason reason) override;
 
   // Returns true if the given listener map contains a event listeners for
   // the given event. If |extension_id| is non-empty, we also check that that
@@ -278,22 +278,25 @@ class EventRouter : public content::NotificationObserver,
   const base::DictionaryValue* GetFilteredEvents(
       const std::string& extension_id);
 
-  // Track of the number of dispatched events that have not yet sent an
-  // ACK from the renderer.
+  // Track the dispatched events that have not yet sent an ACK from the
+  // renderer.
   void IncrementInFlightEvents(content::BrowserContext* context,
-                               const Extension* extension);
+                               const Extension* extension,
+                               int event_id,
+                               const std::string& event_name);
 
   // static
-  static void IncrementInFlightEventsOnUI(
-      void* browser_context_id,
-      const std::string& extension_id);
+  static void IncrementInFlightEventsOnUI(void* browser_context_id,
+                                          const std::string& extension_id,
+                                          int event_id,
+                                          const std::string& event_name);
 
   void DispatchPendingEvent(const linked_ptr<Event>& event,
                             ExtensionHost* host);
 
   // Implementation of EventListenerMap::Delegate.
-  virtual void OnListenerAdded(const EventListener* listener) OVERRIDE;
-  virtual void OnListenerRemoved(const EventListener* listener) OVERRIDE;
+  void OnListenerAdded(const EventListener* listener) override;
+  void OnListenerRemoved(const EventListener* listener) override;
 
   content::BrowserContext* browser_context_;
 
@@ -316,7 +319,9 @@ class EventRouter : public content::NotificationObserver,
 };
 
 struct Event {
-  typedef base::Callback<void(content::BrowserContext*,
+  // This callback should return true if the event should be dispatched to the
+  // given context and extension, and false otherwise.
+  typedef base::Callback<bool(content::BrowserContext*,
                               const Extension*,
                               base::ListValue*)> WillDispatchCallback;
 

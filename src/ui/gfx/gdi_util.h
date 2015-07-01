@@ -5,11 +5,11 @@
 #ifndef UI_GFX_GDI_UTIL_H_
 #define UI_GFX_GDI_UTIL_H_
 
-#include <vector>
 #include <windows.h>
+#include <vector>
 
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/gfx_export.h"
-#include "ui/gfx/rect.h"
 #include "ui/gfx/path.h"
 
 namespace gfx {
@@ -17,11 +17,6 @@ namespace gfx {
 // Creates a BITMAPINFOHEADER structure given the bitmap's size.
 GFX_EXPORT void CreateBitmapHeader(int width, int height,
                                    BITMAPINFOHEADER* hdr);
-
-// Creates a BITMAPINFOHEADER structure given the bitmap's size and
-// color depth in bits per pixel.
-void CreateBitmapHeaderWithColorDepth(int width, int height, int color_depth,
-                                      BITMAPINFOHEADER* hdr);
 
 // Creates a BITMAPV4HEADER structure given the bitmap's size.  You probably
 // only need to use BMP V4 if you need transparency (alpha channel). This
@@ -40,10 +35,10 @@ GFX_EXPORT void SubtractRectanglesFromRegion(
 GFX_EXPORT HRGN ConvertPathToHRGN(const gfx::Path& path);
 
 // Calculate scale to fit an entire page on DC.
-GFX_EXPORT double CalculatePageScale(HDC dc, int page_width, int page_height);
+GFX_EXPORT float CalculatePageScale(HDC dc, int page_width, int page_height);
 
 // Apply scaling to the DC.
-GFX_EXPORT bool ScaleDC(HDC dc, double scale_factor);
+GFX_EXPORT bool ScaleDC(HDC dc, float scale_factor);
 
 GFX_EXPORT void StretchDIBits(HDC hdc,
                               int dest_x, int dest_y, int dest_w, int dest_h,

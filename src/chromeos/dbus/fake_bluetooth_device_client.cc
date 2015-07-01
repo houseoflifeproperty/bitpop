@@ -10,12 +10,9 @@
 #include <sys/socket.h>
 
 #include <algorithm>
-#include <map>
 #include <string>
 #include <utility>
-#include <vector>
 
-#include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
@@ -32,7 +29,6 @@
 #include "chromeos/dbus/fake_bluetooth_profile_manager_client.h"
 #include "chromeos/dbus/fake_bluetooth_profile_service_provider.h"
 #include "dbus/file_descriptor.h"
-#include "dbus/object_path.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace {
@@ -43,6 +39,9 @@ const int kSimulationIntervalMs = 750;
 // Minimum and maximum bounds for randomly generated RSSI values.
 const int kMinRSSI = -90;
 const int kMaxRSSI = -30;
+
+// The default value of connection info properties from GetConnInfo().
+const int kUnkownPower = 127;
 
 
 void SimulatedProfileSocket(int fd) {
@@ -182,6 +181,15 @@ const char FakeBluetoothDeviceClient::kLowEnergyName[] =
 const uint32 FakeBluetoothDeviceClient::kLowEnergyClass =
     0x000918;  // Major class "Health", Minor class "Heart/Pulse Rate Monitor."
 
+const char FakeBluetoothDeviceClient::kPairedUnconnectableDevicePath[] =
+    "/fake/hci0/devD";
+const char FakeBluetoothDeviceClient::kPairedUnconnectableDeviceAddress[] =
+    "20:7D:74:00:00:04";
+const char FakeBluetoothDeviceClient::kPairedUnconnectableDeviceName[] =
+    "Paired Unconnectable Device";
+const uint32 FakeBluetoothDeviceClient::kPairedUnconnectableDeviceClass =
+    0x000104;
+
 FakeBluetoothDeviceClient::Properties::Properties(
     const PropertyChangedCallback& callback)
     : BluetoothDeviceClient::Properties(
@@ -221,7 +229,9 @@ FakeBluetoothDeviceClient::FakeBluetoothDeviceClient()
       discovery_simulation_step_(0),
       incoming_pairing_simulation_step_(0),
       pairing_cancelled_(false),
-      connection_monitor_started_(false) {
+      connection_rssi_(kUnkownPower),
+      transmit_power_(kUnkownPower),
+      max_transmit_power_(kUnkownPower) {
   Properties* properties = new Properties(base::Bind(
       &FakeBluetoothDeviceClient::OnPropertyChanged,
       base::Unretained(this),
@@ -244,6 +254,26 @@ FakeBluetoothDeviceClient::FakeBluetoothDeviceClient()
 
   properties_map_[dbus::ObjectPath(kPairedDevicePath)] = properties;
   device_list_.push_back(dbus::ObjectPath(kPairedDevicePath));
+
+  properties = new Properties(base::Bind(
+      &FakeBluetoothDeviceClient::OnPropertyChanged, base::Unretained(this),
+      dbus::ObjectPath(kPairedUnconnectableDevicePath)));
+  properties->address.ReplaceValue(kPairedUnconnectableDeviceAddress);
+  properties->bluetooth_class.ReplaceValue(kPairedUnconnectableDeviceClass);
+  properties->name.ReplaceValue("Fake Device 2 (Unconnectable)");
+  properties->alias.ReplaceValue(kPairedUnconnectableDeviceName);
+  properties->paired.ReplaceValue(true);
+  properties->trusted.ReplaceValue(true);
+  properties->adapter.ReplaceValue(
+      dbus::ObjectPath(FakeBluetoothAdapterClient::kAdapterPath));
+
+  properties->uuids.ReplaceValue(uuids);
+
+  properties->modalias.ReplaceValue("usb:v05ACp030Dd0306");
+
+  properties_map_[dbus::ObjectPath(kPairedUnconnectableDevicePath)] =
+      properties;
+  device_list_.push_back(dbus::ObjectPath(kPairedUnconnectableDevicePath));
 }
 
 FakeBluetoothDeviceClient::~FakeBluetoothDeviceClient() {
@@ -299,7 +329,9 @@ void FakeBluetoothDeviceClient::Connect(
     error_callback.Run(bluetooth_device::kErrorFailed, "Not paired");
     return;
   } else if (properties->paired.value() == true &&
-             object_path == dbus::ObjectPath(kUnconnectableDevicePath)) {
+             (object_path == dbus::ObjectPath(kUnconnectableDevicePath) ||
+              object_path ==
+                  dbus::ObjectPath(kPairedUnconnectableDevicePath))) {
     // Must not be paired
     error_callback.Run(bluetooth_device::kErrorFailed,
                        "Connection fails while paired");
@@ -360,6 +392,11 @@ void FakeBluetoothDeviceClient::ConnectProfile(
       fake_bluetooth_profile_manager_client->GetProfileServiceProvider(uuid);
   if (profile_service_provider == NULL) {
     error_callback.Run(kNoResponseError, "Missing profile");
+    return;
+  }
+
+  if (object_path == dbus::ObjectPath(kPairedUnconnectableDevicePath)) {
+    error_callback.Run(bluetooth_device::kErrorFailed, "unconnectable");
     return;
   }
 
@@ -461,21 +498,17 @@ void FakeBluetoothDeviceClient::CancelPairing(
   callback.Run();
 }
 
-void FakeBluetoothDeviceClient::StartConnectionMonitor(
+void FakeBluetoothDeviceClient::GetConnInfo(
     const dbus::ObjectPath& object_path,
-    const base::Closure& callback,
+    const ConnInfoCallback& callback,
     const ErrorCallback& error_callback) {
-  VLOG(1) << "StartConnectionMonitor: " << object_path.value();
-  connection_monitor_started_ = true;
-  callback.Run();
-}
+  Properties* properties = GetProperties(object_path);
+  if (!properties->connected.value()) {
+    error_callback.Run("org.bluez.Error.NotConnected", "Not Connected");
+    return;
+  }
 
-void FakeBluetoothDeviceClient::StopConnectionMonitor(
-    const dbus::ObjectPath& object_path,
-    const base::Closure& callback,
-    const ErrorCallback& error_callback) {
-  connection_monitor_started_ = false;
-  callback.Run();
+  callback.Run(connection_rssi_, transmit_power_, max_transmit_power_);
 }
 
 void FakeBluetoothDeviceClient::BeginDiscoverySimulation(
@@ -1017,6 +1050,15 @@ void FakeBluetoothDeviceClient::UpdateDeviceRSSI(
   Properties* properties = iter->second;
   DCHECK(properties);
   properties->rssi.ReplaceValue(rssi);
+}
+
+void FakeBluetoothDeviceClient::UpdateConnectionInfo(
+    uint16 connection_rssi,
+    uint16 transmit_power,
+    uint16 max_transmit_power) {
+  connection_rssi_ = connection_rssi;
+  transmit_power_ = transmit_power;
+  max_transmit_power_ = max_transmit_power;
 }
 
 void FakeBluetoothDeviceClient::PinCodeCallback(

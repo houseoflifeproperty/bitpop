@@ -15,6 +15,7 @@
 #include "base/threading/non_thread_safe.h"
 #include "base/time/time.h"
 #include "net/base/net_export.h"
+#include "net/base/net_util.h"
 #include "net/base/network_change_notifier.h"
 #include "net/dns/host_cache.h"
 #include "net/dns/host_resolver.h"
@@ -111,7 +112,7 @@ class NET_EXPORT HostResolverImpl
   // If any completion callbacks are pending when the resolver is destroyed,
   // the host resolutions are cancelled, and the completion callbacks will not
   // be called.
-  virtual ~HostResolverImpl();
+  ~HostResolverImpl() override;
 
   // Configures maximum number of Jobs in the queue. Exposed for testing.
   // Only allowed when the queue is empty.
@@ -124,21 +125,21 @@ class NET_EXPORT HostResolverImpl
   void SetDnsClient(scoped_ptr<DnsClient> dns_client);
 
   // HostResolver methods:
-  virtual int Resolve(const RequestInfo& info,
-                      RequestPriority priority,
-                      AddressList* addresses,
-                      const CompletionCallback& callback,
-                      RequestHandle* out_req,
-                      const BoundNetLog& source_net_log) OVERRIDE;
-  virtual int ResolveFromCache(const RequestInfo& info,
-                               AddressList* addresses,
-                               const BoundNetLog& source_net_log) OVERRIDE;
-  virtual void CancelRequest(RequestHandle req) OVERRIDE;
-  virtual void SetDefaultAddressFamily(AddressFamily address_family) OVERRIDE;
-  virtual AddressFamily GetDefaultAddressFamily() const OVERRIDE;
-  virtual void SetDnsClientEnabled(bool enabled) OVERRIDE;
-  virtual HostCache* GetHostCache() OVERRIDE;
-  virtual base::Value* GetDnsConfigAsValue() const OVERRIDE;
+  int Resolve(const RequestInfo& info,
+              RequestPriority priority,
+              AddressList* addresses,
+              const CompletionCallback& callback,
+              RequestHandle* out_req,
+              const BoundNetLog& source_net_log) override;
+  int ResolveFromCache(const RequestInfo& info,
+                       AddressList* addresses,
+                       const BoundNetLog& source_net_log) override;
+  void CancelRequest(RequestHandle req) override;
+  void SetDefaultAddressFamily(AddressFamily address_family) override;
+  AddressFamily GetDefaultAddressFamily() const override;
+  void SetDnsClientEnabled(bool enabled) override;
+  HostCache* GetHostCache() override;
+  base::Value* GetDnsConfigAsValue() const override;
 
   void set_proc_params_for_test(const ProcTaskParams& proc_params) {
     proc_params_ = proc_params;
@@ -165,6 +166,7 @@ class NET_EXPORT HostResolverImpl
   // incompatible, ERR_DNS_CACHE_MISS if entry was not found in cache and HOSTS.
   int ResolveHelper(const Key& key,
                     const RequestInfo& info,
+                    const IPAddressNumber* ip_address,
                     AddressList* addresses,
                     const BoundNetLog& request_net_log);
 
@@ -172,6 +174,7 @@ class NET_EXPORT HostResolverImpl
   // succeeds, returns false otherwise.
   bool ResolveAsIP(const Key& key,
                    const RequestInfo& info,
+                   const IPAddressNumber* ip_address,
                    int* net_error,
                    AddressList* addresses);
 
@@ -196,7 +199,13 @@ class NET_EXPORT HostResolverImpl
   // "effective" address family by inheriting the resolver's default address
   // family when the request leaves it unspecified.
   Key GetEffectiveKeyForRequest(const RequestInfo& info,
-                                const BoundNetLog& net_log) const;
+                                const IPAddressNumber* ip_number,
+                                const BoundNetLog& net_log);
+
+  // Probes IPv6 support and returns true if IPv6 support is enabled.
+  // Results are cached, i.e. when called repeatedly this method returns result
+  // from the first probe for some time before probing again.
+  bool IsIPv6Reachable(const BoundNetLog& net_log);
 
   // Records the result in cache if cache is present.
   void CacheResult(const Key& key,
@@ -220,10 +229,13 @@ class NET_EXPORT HostResolverImpl
   void TryServingAllJobsFromHosts();
 
   // NetworkChangeNotifier::IPAddressObserver:
-  virtual void OnIPAddressChanged() OVERRIDE;
+  void OnIPAddressChanged() override;
 
   // NetworkChangeNotifier::DNSObserver:
-  virtual void OnDNSChanged() OVERRIDE;
+  void OnDNSChanged() override;
+  void OnInitialDNSConfigRead() override;
+
+  void UpdateDNSConfig(bool config_changed);
 
   // True if have a DnsClient with a valid DnsConfig.
   bool HaveDnsConfig() const;
@@ -276,6 +288,9 @@ class NET_EXPORT HostResolverImpl
   // True if DnsConfigService detected that system configuration depends on
   // local IPv6 connectivity. Disables probing.
   bool use_local_ipv6_;
+
+  base::TimeTicks last_ipv6_probe_time_;
+  bool last_ipv6_probe_result_;
 
   // True iff ProcTask has successfully resolved a hostname known to have IPv6
   // addresses using ADDRESS_FAMILY_UNSPECIFIED. Reset on IP address change.

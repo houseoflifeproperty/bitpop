@@ -6,6 +6,7 @@
 
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/thread_task_runner_handle.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/safe_browsing/protocol_manager_helper.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
@@ -46,18 +47,18 @@ class BlacklistRequestContextGetter : public net::URLRequestContextGetter {
                             base::Bind(callback, context_getter));
   }
 
-  virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE {
+  net::URLRequestContext* GetURLRequestContext() override {
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
     return url_request_context_.get();
   }
 
-  virtual scoped_refptr<base::SingleThreadTaskRunner> GetNetworkTaskRunner()
-      const OVERRIDE {
+  scoped_refptr<base::SingleThreadTaskRunner> GetNetworkTaskRunner()
+      const override {
     return network_task_runner_;
   }
 
  protected:
-  virtual ~BlacklistRequestContextGetter() {
+  ~BlacklistRequestContextGetter() override {
     url_request_context_->AssertNoURLRequests();
   }
 
@@ -88,7 +89,7 @@ void BlacklistStateFetcher::Request(const std::string& id,
       SetSafeBrowsingConfig(
           g_browser_process->safe_browsing_service()->GetProtocolConfig());
     } else {
-      base::MessageLoopProxy::current()->PostTask(
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE, base::Bind(callback, BLACKLISTED_UNKNOWN));
       return;
     }
@@ -139,10 +140,9 @@ void BlacklistStateFetcher::SendRequest(const std::string& id) {
   request.SerializeToString(&request_str);
 
   GURL request_url = RequestUrl();
-  net::URLFetcher* fetcher = net::URLFetcher::Create(url_fetcher_id_++,
-                                                     request_url,
-                                                     net::URLFetcher::POST,
-                                                     this);
+  net::URLFetcher* fetcher =
+      net::URLFetcher::Create(url_fetcher_id_++, request_url,
+                              net::URLFetcher::POST, this).release();
   requests_[fetcher] = id;
   fetcher->SetAutomaticallyRetryOn5xx(false);  // Don't retry on error.
   fetcher->SetRequestContext(url_request_context_getter_.get());

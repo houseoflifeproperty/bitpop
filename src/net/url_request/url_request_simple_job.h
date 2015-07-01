@@ -7,10 +7,16 @@
 
 #include <string>
 
+#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/strings/string_piece.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
 #include "net/url_request/url_range_request_job.h"
+
+namespace base {
+class RefCountedMemory;
+}
 
 namespace net {
 
@@ -20,17 +26,16 @@ class NET_EXPORT URLRequestSimpleJob : public URLRangeRequestJob {
  public:
   URLRequestSimpleJob(URLRequest* request, NetworkDelegate* network_delegate);
 
-  virtual void Start() OVERRIDE;
-  virtual bool ReadRawData(IOBuffer* buf,
-                           int buf_size,
-                           int *bytes_read) OVERRIDE;
-  virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
-  virtual bool GetCharset(std::string* charset) OVERRIDE;
+  void Start() override;
+  bool ReadRawData(IOBuffer* buf, int buf_size, int* bytes_read) override;
+  bool GetMimeType(std::string* mime_type) const override;
+  bool GetCharset(std::string* charset) override;
 
  protected:
-  virtual ~URLRequestSimpleJob();
+  ~URLRequestSimpleJob() override;
 
-  // Subclasses must override the way response data is determined.
+  // Subclasses must override either GetData or GetRefCountedData to define the
+  // way response data is determined.
   // The return value should be:
   //  - OK if data is obtained;
   //  - ERR_IO_PENDING if async processing is needed to finish obtaining data.
@@ -43,19 +48,31 @@ class NET_EXPORT URLRequestSimpleJob : public URLRangeRequestJob {
   virtual int GetData(std::string* mime_type,
                       std::string* charset,
                       std::string* data,
-                      const CompletionCallback& callback) const = 0;
+                      const CompletionCallback& callback) const;
 
- protected:
+  // Similar to GetData(), except |*data| can share ownership of the bytes
+  // instead of copying them into a std::string.
+  virtual int GetRefCountedData(std::string* mime_type,
+                                std::string* charset,
+                                scoped_refptr<base::RefCountedMemory>* data,
+                                const CompletionCallback& callback) const;
+
+  // Returns the task runner used by ReadRawData. This method is virtual so
+  // that it can be overridden in tests.
+  virtual base::TaskRunner* GetTaskRunner() const;
+
   void StartAsync();
 
  private:
   void OnGetDataCompleted(int result);
+  void OnReadCompleted(int bytes_read);
 
   HttpByteRange byte_range_;
   std::string mime_type_;
   std::string charset_;
-  std::string data_;
-  int data_offset_;
+  scoped_refptr<base::RefCountedMemory> data_;
+  int64 next_data_offset_;
+  scoped_refptr<base::TaskRunner> task_runner_;
   base::WeakPtrFactory<URLRequestSimpleJob> weak_factory_;
 };
 

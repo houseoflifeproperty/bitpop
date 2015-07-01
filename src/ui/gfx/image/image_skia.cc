@@ -12,11 +12,11 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/non_thread_safe.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/image/image_skia_source.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/switches.h"
 
@@ -54,6 +54,19 @@ class Matcher {
  private:
   float scale_;
 };
+
+ImageSkiaRep ScaleImageSkiaRep(const ImageSkiaRep& rep, float target_scale) {
+  if (rep.is_null() || rep.scale() == target_scale)
+    return rep;
+
+  gfx::Size scaled_size = ToCeiledSize(
+      gfx::ScaleSize(rep.pixel_size(), target_scale / rep.scale()));
+  return ImageSkiaRep(skia::ImageOperations::Resize(
+      rep.sk_bitmap(),
+      skia::ImageOperations::RESIZE_LANCZOS3,
+      scaled_size.width(),
+      scaled_size.height()), target_scale);
+}
 
 }  // namespace
 
@@ -175,7 +188,7 @@ class ImageSkiaStorage : public base::RefCountedThreadSafe<ImageSkiaStorage>,
 
       ImageSkiaRep image;
       float resource_scale = scale;
-      if (ImageSkia::IsDSFScalingInImageSkiaEnabled() && g_supported_scales) {
+      if (g_supported_scales) {
         if (g_supported_scales->back() <= scale) {
           resource_scale = g_supported_scales->back();
         } else {
@@ -188,31 +201,18 @@ class ImageSkiaStorage : public base::RefCountedThreadSafe<ImageSkiaStorage>,
           }
         }
       }
-      if (ImageSkia::IsDSFScalingInImageSkiaEnabled() &&
-          scale != resource_scale) {
+      if (scale != resource_scale) {
         std::vector<ImageSkiaRep>::iterator iter = FindRepresentation(
             resource_scale, fetch_new_image);
-
         DCHECK(iter != image_reps_.end());
-
-        if (!iter->unscaled()) {
-          SkBitmap scaled_image;
-          gfx::Size unscaled_size(iter->pixel_width(), iter->pixel_height());
-          gfx::Size scaled_size = ToCeiledSize(
-              gfx::ScaleSize(unscaled_size, scale / iter->scale()));
-
-          image = ImageSkiaRep(skia::ImageOperations::Resize(
-              iter->sk_bitmap(),
-              skia::ImageOperations::RESIZE_LANCZOS3,
-              scaled_size.width(),
-              scaled_size.height()), scale);
-          DCHECK_EQ(image.pixel_width(), scaled_size.width());
-          DCHECK_EQ(image.pixel_height(), scaled_size.height());
-        } else {
-          image = *iter;
-        }
+        image = iter->unscaled() ? (*iter) : ScaleImageSkiaRep(*iter, scale);
       } else {
         image = source_->GetImageForScale(scale);
+        // Image may be missing for the specified scale in some cases, such like
+        // looking up 2x resources but the 2x resource pack is missing. Falls
+        // back to 1x and re-scale it.
+        if (image.is_null() && scale != 1.0f)
+          image = ScaleImageSkiaRep(source_->GetImageForScale(1.0f), scale);
       }
 
       // If the source returned the new image, store it.
@@ -317,16 +317,10 @@ ImageSkia ImageSkia::CreateFrom1xBitmap(const SkBitmap& bitmap) {
   return ImageSkia(ImageSkiaRep(bitmap, 0.0f));
 }
 
-bool ImageSkia::IsDSFScalingInImageSkiaEnabled() {
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  return !command_line->HasSwitch(
-      switches::kDisableArbitraryScaleFactorInImageSkia);
-}
-
 scoped_ptr<ImageSkia> ImageSkia::DeepCopy() const {
   ImageSkia* copy = new ImageSkia;
   if (isNull())
-    return scoped_ptr<ImageSkia>(copy);
+    return make_scoped_ptr(copy);
 
   CHECK(CanRead());
 
@@ -339,7 +333,7 @@ scoped_ptr<ImageSkia> ImageSkia::DeepCopy() const {
   // thread so that other thread can use this.
   if (!copy->isNull())
     copy->storage_->DetachFromThread();
-  return scoped_ptr<ImageSkia>(copy);
+  return make_scoped_ptr(copy);
 }
 
 bool ImageSkia::BackedBySameObjectAs(const gfx::ImageSkia& other) const {
@@ -472,11 +466,11 @@ void ImageSkia::Init(const ImageSkiaRep& image_rep) {
   storage_->image_reps().push_back(image_rep);
 }
 
-SkBitmap& ImageSkia::GetBitmap() const {
+const SkBitmap& ImageSkia::GetBitmap() const {
   if (isNull()) {
     // Callers expect a ImageSkiaRep even if it is |isNull()|.
     // TODO(pkotwicz): Fix this.
-    return NullImageRep().mutable_sk_bitmap();
+    return NullImageRep().sk_bitmap();
   }
 
   // TODO(oshima): This made a few tests flaky on Windows.
@@ -487,8 +481,8 @@ SkBitmap& ImageSkia::GetBitmap() const {
 
   ImageSkiaReps::iterator it = storage_->FindRepresentation(1.0f, true);
   if (it != storage_->image_reps().end())
-    return it->mutable_sk_bitmap();
-  return NullImageRep().mutable_sk_bitmap();
+    return it->sk_bitmap();
+  return NullImageRep().sk_bitmap();
 }
 
 bool ImageSkia::CanRead() const {

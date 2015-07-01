@@ -25,7 +25,7 @@ class TabIconView : public views::MenuButton {
 
   TabIconView(chrome::TabIconViewModel* model,
               views::MenuButtonListener* menu_button_listener);
-  virtual ~TabIconView();
+  ~TabIconView() override;
 
   // Invoke whenever the tab state changes or the throbber should update.
   void Update();
@@ -33,20 +33,14 @@ class TabIconView : public views::MenuButton {
   // Set the throbber to the light style (for use on dark backgrounds).
   void set_is_light(bool is_light) { is_light_ = is_light; }
 
-  // Overridden from View
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-
  private:
+  // views::MenuButton:
+  gfx::Size GetPreferredSize() const override;
+  const char* GetClassName() const override;
+  void OnPaint(gfx::Canvas* canvas) override;
+
   void PaintThrobber(gfx::Canvas* canvas);
   void PaintFavicon(gfx::Canvas* canvas, const gfx::ImageSkia& image);
-  void PaintIcon(gfx::Canvas* canvas,
-                 const gfx::ImageSkia& image,
-                 int src_x,
-                 int src_y,
-                 int src_w,
-                 int src_h,
-                 bool filter);
 
   // Our model.
   chrome::TabIconViewModel* model_;

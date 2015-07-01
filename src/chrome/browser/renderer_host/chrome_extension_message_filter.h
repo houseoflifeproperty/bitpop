@@ -17,6 +17,7 @@ class Profile;
 struct ExtensionHostMsg_APIActionOrEvent_Params;
 struct ExtensionHostMsg_DOMAction_Params;
 struct ExtensionMsg_ExternalConnectionInfo;
+struct ExtensionMsg_TabTargetConnectionInfo;
 
 namespace base {
 class FilePath;
@@ -35,17 +36,16 @@ class ChromeExtensionMessageFilter : public content::BrowserMessageFilter,
   ChromeExtensionMessageFilter(int render_process_id, Profile* profile);
 
   // content::BrowserMessageFilter methods:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OverrideThreadForMessage(
-      const IPC::Message& message,
-      content::BrowserThread::ID* thread) OVERRIDE;
-  virtual void OnDestruct() const OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OverrideThreadForMessage(const IPC::Message& message,
+                                content::BrowserThread::ID* thread) override;
+  void OnDestruct() const override;
 
  private:
   friend class content::BrowserThread;
   friend class base::DeleteHelper<ChromeExtensionMessageFilter>;
 
-  virtual ~ChromeExtensionMessageFilter();
+  ~ChromeExtensionMessageFilter() override;
 
   // TODO(jamescook): Move these functions into the extensions module. Ideally
   // this would be in extensions::ExtensionMessageFilter but that will require
@@ -71,20 +71,19 @@ class ChromeExtensionMessageFilter : public content::BrowserMessageFilter,
                                         int receiver_port_id,
                                         const std::string& source_extension_id,
                                         const std::string& native_app_name);
-  void OnOpenChannelToTab(int routing_id, int tab_id,
+  void OnOpenChannelToTab(int routing_id,
+                          const ExtensionMsg_TabTargetConnectionInfo& info,
                           const std::string& extension_id,
                           const std::string& channel_name, int* port_id);
-  void OpenChannelToTabOnUIThread(int source_process_id, int source_routing_id,
-                                  int receiver_port_id,
-                                  int tab_id, const std::string& extension_id,
-                                  const std::string& channel_name);
+  void OpenChannelToTabOnUIThread(
+      int source_process_id, int source_routing_id, int receiver_port_id,
+      const ExtensionMsg_TabTargetConnectionInfo& info,
+      const std::string& extension_id, const std::string& channel_name);
   void OnPostMessage(int port_id, const extensions::Message& message);
   void OnGetExtMessageBundle(const std::string& extension_id,
                              IPC::Message* reply_msg);
   void OnGetExtMessageBundleOnBlockingPool(
-      const base::FilePath& extension_path,
       const std::string& extension_id,
-      const std::string& default_locale,
       IPC::Message* reply_msg);
   void OnExtensionCloseChannel(int port_id, const std::string& error_message);
   void OnAddAPIActionToExtensionActivityLog(
@@ -101,9 +100,9 @@ class ChromeExtensionMessageFilter : public content::BrowserMessageFilter,
       const ExtensionHostMsg_APIActionOrEvent_Params& params);
 
   // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   const int render_process_id_;
 

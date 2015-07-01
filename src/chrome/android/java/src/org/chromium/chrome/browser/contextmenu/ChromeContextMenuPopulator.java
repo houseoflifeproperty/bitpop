@@ -6,7 +6,6 @@ package org.chromium.chrome.browser.contextmenu;
 
 import android.content.Context;
 import android.net.MailTo;
-import android.os.Build;
 import android.text.TextUtils;
 import android.view.ContextMenu;
 import android.view.MenuInflater;
@@ -40,8 +39,9 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
 
     @Override
     public void buildContextMenu(ContextMenu menu, Context context, ContextMenuParams params) {
-        if (!TextUtils.isEmpty(params.getLinkUrl()) && !params.getLinkUrl().equals(BLANK_URL))
-                menu.setHeaderTitle(params.getLinkUrl());
+        if (!TextUtils.isEmpty(params.getLinkUrl()) && !params.getLinkUrl().equals(BLANK_URL)) {
+            menu.setHeaderTitle(params.getLinkUrl());
+        }
 
         if (mMenuInflater == null) mMenuInflater = new MenuInflater(context);
 
@@ -87,21 +87,19 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
             }
             final TemplateUrlService templateUrlServiceInstance = TemplateUrlService.getInstance();
             final boolean isSearchByImageAvailable =
-                    UrlUtilities.isDownloadableScheme(params.getSrcUrl()) &&
-                            templateUrlServiceInstance.isLoaded() &&
-                            templateUrlServiceInstance.isSearchByImageAvailable() &&
-                            templateUrlServiceInstance.getDefaultSearchEngineTemplateUrl() != null;
+                    UrlUtilities.isDownloadableScheme(params.getSrcUrl())
+                            && templateUrlServiceInstance.isLoaded()
+                            && templateUrlServiceInstance.isSearchByImageAvailable()
+                            && templateUrlServiceInstance.getDefaultSearchEngineTemplateUrl()
+                                    != null;
 
             menu.findItem(R.id.contextmenu_search_by_image).setVisible(isSearchByImageAvailable);
             if (isSearchByImageAvailable) {
                 menu.findItem(R.id.contextmenu_search_by_image).setTitle(
                         context.getString(R.string.contextmenu_search_web_for_image,
-                                TemplateUrlService.getInstance().
-                                        getDefaultSearchEngineTemplateUrl().getShortName()));
+                                TemplateUrlService.getInstance()
+                                        .getDefaultSearchEngineTemplateUrl().getShortName()));
             }
-
-            menu.findItem(R.id.contextmenu_copy_image).setVisible(
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN);
         }
     }
 
@@ -113,8 +111,8 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
             mDelegate.onOpenInNewIncognitoTab(params.getLinkUrl());
         } else if (itemId == R.id.contextmenu_open_image) {
             mDelegate.onOpenImageUrl(params.getSrcUrl(), params.getReferrer());
-        } else if (itemId == R.id.contextmenu_open_image_in_new_tab ||
-                itemId == R.id.contextmenu_open_original_image_in_new_tab) {
+        } else if (itemId == R.id.contextmenu_open_image_in_new_tab
+                || itemId == R.id.contextmenu_open_original_image_in_new_tab) {
             mDelegate.onOpenImageInNewTab(params.getSrcUrl(), params.getReferrer());
         } else if (itemId == R.id.contextmenu_copy_link_address_text) {
             mDelegate.onSaveToClipboard(params.getUnfilteredLinkUrl(), true);
@@ -122,8 +120,8 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
             mDelegate.onSaveToClipboard(MailTo.parse(params.getLinkUrl()).getTo(), false);
         } else if (itemId == R.id.contextmenu_copy_link_text) {
             mDelegate.onSaveToClipboard(params.getLinkText(), false);
-        } else if (itemId == R.id.contextmenu_save_image ||
-                itemId == R.id.contextmenu_save_video) {
+        } else if (itemId == R.id.contextmenu_save_image
+                || itemId == R.id.contextmenu_save_video) {
             if (mDelegate.startDownload(params.getSrcUrl(), false)) {
                 helper.startContextMenuDownload(false);
             }

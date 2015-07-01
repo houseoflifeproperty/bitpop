@@ -24,13 +24,13 @@
 #include "content/public/test/mock_blob_url_request_context.h"
 #include "content/public/test/mock_special_storage_policy.h"
 #include "content/public/test/test_file_system_options.h"
+#include "storage/browser/blob/shareable_file_reference.h"
 #include "storage/browser/fileapi/external_mount_points.h"
 #include "storage/browser/fileapi/file_system_backend.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/fileapi/file_system_operation_context.h"
 #include "storage/browser/fileapi/file_system_operation_runner.h"
 #include "storage/browser/quota/quota_manager.h"
-#include "storage/common/blob/shareable_file_reference.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::File;
@@ -92,8 +92,8 @@ void EnsureRunningOn(base::SingleThreadTaskRunner* runner) {
 void VerifySameTaskRunner(
     base::SingleThreadTaskRunner* runner1,
     base::SingleThreadTaskRunner* runner2) {
-  ASSERT_TRUE(runner1 != NULL);
-  ASSERT_TRUE(runner2 != NULL);
+  ASSERT_TRUE(runner1 != nullptr);
+  ASSERT_TRUE(runner2 != nullptr);
   runner1->PostTask(FROM_HERE,
                     base::Bind(&EnsureRunningOn, make_scoped_refptr(runner2)));
 }
@@ -255,7 +255,7 @@ void CannedSyncableFileSystem::SetUp(QuotaMode quota_mode) {
       file_task_runner_.get(),
       storage::ExternalMountPoints::CreateRefCounted().get(),
       storage_policy.get(),
-      quota_manager_.get() ? quota_manager_->proxy() : NULL,
+      quota_manager_.get() ? quota_manager_->proxy() : nullptr,
       additional_backends.Pass(),
       std::vector<storage::URLRequestAutoMountHandler>(),
       data_dir_.path(),
@@ -265,8 +265,8 @@ void CannedSyncableFileSystem::SetUp(QuotaMode quota_mode) {
 }
 
 void CannedSyncableFileSystem::TearDown() {
-  quota_manager_ = NULL;
-  file_system_context_ = NULL;
+  quota_manager_ = nullptr;
+  file_system_context_ = nullptr;
 
   // Make sure we give some more time to finish tasks on other threads.
   EnsureLastTaskRuns(io_task_runner_.get());
@@ -550,13 +550,13 @@ FileSystemOperationRunner* CannedSyncableFileSystem::operation_runner() {
 }
 
 void CannedSyncableFileSystem::OnSyncEnabled(const FileSystemURL& url) {
-  sync_status_observers_->Notify(&LocalFileSyncStatus::Observer::OnSyncEnabled,
-                                 url);
+  sync_status_observers_->Notify(
+      FROM_HERE, &LocalFileSyncStatus::Observer::OnSyncEnabled, url);
 }
 
 void CannedSyncableFileSystem::OnWriteEnabled(const FileSystemURL& url) {
-  sync_status_observers_->Notify(&LocalFileSyncStatus::Observer::OnWriteEnabled,
-                                 url);
+  sync_status_observers_->Notify(
+      FROM_HERE, &LocalFileSyncStatus::Observer::OnWriteEnabled, url);
 }
 
 void CannedSyncableFileSystem::DoOpenFileSystem(

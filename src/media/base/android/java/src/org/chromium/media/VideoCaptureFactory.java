@@ -6,6 +6,7 @@ package org.chromium.media;
 
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.os.Build;
 import android.util.Log;
 
 import org.chromium.base.CalledByNative;
@@ -21,44 +22,27 @@ import org.chromium.media.VideoCapture;
  * cameras have |id| above the standard ones. Video Capture objects allocated
  * via createVideoCapture() are explicitly owned by the caller.
  * ChromiumCameraInfo is an internal class with some static methods needed from
- * the native side to enumerate devices and collect their names and info. It
- * takes into account the mentioned special devices.
+ * the rest of the class to manipulate the |id|s of normal and special devices.
  **/
 @JNINamespace("media")
 @SuppressWarnings("deprecation")
 class VideoCaptureFactory {
 
-    static class CamParams {
-        final int mId;
-        final String mName;
-        final int mWidth;
-        final int mHeight;
-
-        CamParams(int id, String name, int width, int height) {
-            mId = id;
-            mName = name;
-            mWidth = width;
-            mHeight = height;
-        }
-    }
-
+    // Internal class to encapsulate camera device id manipulations.
     static class ChromiumCameraInfo {
-        private final int mId;
-        private final android.hardware.Camera.CameraInfo mCameraInfo;
         // Special devices have more cameras than usual. Those devices are
         // identified by model & device. Currently only the Tango is supported.
         // Note that these devices have no Camera.CameraInfo.
         private static final String[][] SPECIAL_DEVICE_LIST = {
             {"Peanut", "peanut"},
         };
-        private static final String TAG = "ChromiumCameraInfo";
-
         private static int sNumberOfSystemCameras = -1;
+        private static final String TAG = "ChromiumCameraInfo";
 
         private static boolean isSpecialDevice() {
             for (String[] device : SPECIAL_DEVICE_LIST) {
-                if (device[0].contentEquals(android.os.Build.MODEL) &&
-                        device[1].contentEquals(android.os.Build.DEVICE)) {
+                if (device[0].contentEquals(android.os.Build.MODEL)
+                        && device[1].contentEquals(android.os.Build.DEVICE)) {
                     return true;
                 }
             }
@@ -74,106 +58,95 @@ class VideoCaptureFactory {
             return id - sNumberOfSystemCameras;
         }
 
-        private ChromiumCameraInfo(int index) {
-            mId = index;
-            mCameraInfo = isSpecialCamera(index) ? null : getCameraInfo(mId);
-        }
-
-        @CalledByNative("ChromiumCameraInfo")
         private static int getNumberOfCameras(Context appContext) {
-            // Camera.getNumberOfCammeras() will not fail without permission, but the
-            // following operation on camera will do. Without permission isn't fatal
-            // error in WebView, specially for those application which has no purpose
-            // to use camera, but happens to load page required it.
-            // So, we output a warning log and pretend system have no camera at all.
+            // getNumberOfCameras() would not fail due to lack of permission, but the
+            // following operations on camera would. "No permission" isn't a fatal
+            // error in WebView, specially for those applications which have no purpose
+            // to use a camera, but "load page" requires it. So, output a warning log
+            // and carry on pretending the system has no camera(s).
             if (sNumberOfSystemCameras == -1) {
-                if (PackageManager.PERMISSION_GRANTED ==
-                        appContext.getPackageManager().checkPermission(
+                if (PackageManager.PERMISSION_GRANTED
+                        == appContext.getPackageManager().checkPermission(
                                 "android.permission.CAMERA", appContext.getPackageName())) {
-                    sNumberOfSystemCameras = android.hardware.Camera.getNumberOfCameras();
+                    if (isLReleaseOrLater()) {
+                        sNumberOfSystemCameras =
+                                VideoCaptureCamera2.getNumberOfCameras(appContext);
+                    } else {
+                        sNumberOfSystemCameras = VideoCaptureAndroid.getNumberOfCameras();
+                        if (isSpecialDevice()) {
+                            Log.d(TAG, "Special device: " + android.os.Build.MODEL);
+                            sNumberOfSystemCameras += VideoCaptureTango.numberOfCameras();
+                        }
+                    }
                 } else {
                     sNumberOfSystemCameras = 0;
                     Log.w(TAG, "Missing android.permission.CAMERA permission, "
-                            + "no system camera available.");
+                                  + "no system camera available.");
                 }
             }
-            if (isSpecialDevice()) {
-                Log.d(TAG, "Special device: " + android.os.Build.MODEL);
-                return sNumberOfSystemCameras +
-                       VideoCaptureTango.numberOfCameras();
-            } else {
-                return sNumberOfSystemCameras;
-            }
+            return sNumberOfSystemCameras;
         }
+    }
 
-        @CalledByNative("ChromiumCameraInfo")
-        private static ChromiumCameraInfo getAt(int index) {
-            return new ChromiumCameraInfo(index);
-        }
-
-        @CalledByNative("ChromiumCameraInfo")
-        private int getId() {
-            return mId;
-        }
-
-        @CalledByNative("ChromiumCameraInfo")
-        private String getDeviceName() {
-            if (isSpecialCamera(mId)) {
-                return VideoCaptureTango.getCamParams(toSpecialCameraId(mId)).mName;
-            } else {
-                if (mCameraInfo == null) {
-                    return "";
-                }
-                Log.d(TAG, "Camera enumerated: " + (mCameraInfo.facing ==
-                        android.hardware.Camera.CameraInfo.CAMERA_FACING_FRONT ? "front" :
-                        "back"));
-                return "camera " + mId + ", facing " + (mCameraInfo.facing ==
-                        android.hardware.Camera.CameraInfo.CAMERA_FACING_FRONT ? "front" :
-                        "back");
-            }
-        }
-
-        @CalledByNative("ChromiumCameraInfo")
-        private int getOrientation() {
-            if (isSpecialCamera(mId)) {
-                return android.hardware.Camera.CameraInfo.CAMERA_FACING_BACK;
-            } else {
-                return (mCameraInfo == null ? 0 : mCameraInfo.orientation);
-            }
-        }
-
-        private android.hardware.Camera.CameraInfo getCameraInfo(int id) {
-            android.hardware.Camera.CameraInfo cameraInfo =
-                    new android.hardware.Camera.CameraInfo();
-            try {
-                android.hardware.Camera.getCameraInfo(id, cameraInfo);
-            } catch (RuntimeException ex) {
-                Log.e(TAG, "getCameraInfo: android.hardware.Camera.getCameraInfo: " + ex);
-                return null;
-            }
-            return cameraInfo;
-        }
+    private static boolean isLReleaseOrLater() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP;
     }
 
     // Factory methods.
     @CalledByNative
     static VideoCapture createVideoCapture(
             Context context, int id, long nativeVideoCaptureDeviceAndroid) {
-      if (ChromiumCameraInfo.isSpecialCamera(id)) {
-          return new VideoCaptureTango(context, ChromiumCameraInfo.toSpecialCameraId(id),
-                  nativeVideoCaptureDeviceAndroid);
-      } else {
-          return new VideoCaptureAndroid(context, id,
-                  nativeVideoCaptureDeviceAndroid);
-      }
+        if (isLReleaseOrLater() && !VideoCaptureCamera2.isLegacyDevice(context, id)) {
+            return new VideoCaptureCamera2(context,
+                                           id,
+                                           nativeVideoCaptureDeviceAndroid);
+        }
+        if (!ChromiumCameraInfo.isSpecialCamera(id)) {
+            return new VideoCaptureAndroid(context,
+                                           id,
+                                           nativeVideoCaptureDeviceAndroid);
+        }
+        return new VideoCaptureTango(context,
+                                     ChromiumCameraInfo.toSpecialCameraId(id),
+                                     nativeVideoCaptureDeviceAndroid);
     }
 
     @CalledByNative
-    static VideoCapture.CaptureFormat[] getDeviceSupportedFormats(int id) {
-        return ChromiumCameraInfo.isSpecialCamera(id) ?
-                VideoCaptureTango.getDeviceSupportedFormats(
-                        ChromiumCameraInfo.toSpecialCameraId(id)) :
-                VideoCaptureAndroid.getDeviceSupportedFormats(id);
+    static int getNumberOfCameras(Context appContext) {
+        return ChromiumCameraInfo.getNumberOfCameras(appContext);
+    }
+
+    @CalledByNative
+    static int getCaptureApiType(int id, Context appContext) {
+        if (isLReleaseOrLater()) {
+            return VideoCaptureCamera2.getCaptureApiType(id, appContext);
+        } else if (ChromiumCameraInfo.isSpecialCamera(id)) {
+            return VideoCaptureTango.getCaptureApiType(
+                    ChromiumCameraInfo.toSpecialCameraId(id));
+        } else {
+            return VideoCaptureAndroid.getCaptureApiType(id);
+        }
+    }
+
+    @CalledByNative
+    static String getDeviceName(int id, Context appContext) {
+        if (isLReleaseOrLater() && !VideoCaptureCamera2.isLegacyDevice(appContext, id)) {
+            return VideoCaptureCamera2.getName(id, appContext);
+        }
+        return (ChromiumCameraInfo.isSpecialCamera(id))
+                ? VideoCaptureTango.getName(ChromiumCameraInfo.toSpecialCameraId(id))
+                : VideoCaptureAndroid.getName(id);
+    }
+
+    @CalledByNative
+    static VideoCapture.CaptureFormat[] getDeviceSupportedFormats(Context appContext, int id) {
+        if (isLReleaseOrLater() && !VideoCaptureCamera2.isLegacyDevice(appContext, id)) {
+            return VideoCaptureCamera2.getDeviceSupportedFormats(appContext, id);
+        }
+        return ChromiumCameraInfo.isSpecialCamera(id)
+                ? VideoCaptureTango.getDeviceSupportedFormats(
+                        ChromiumCameraInfo.toSpecialCameraId(id))
+                : VideoCaptureAndroid.getDeviceSupportedFormats(id);
     }
 
     @CalledByNative

@@ -9,18 +9,8 @@
 #include "content/public/common/url_constants.h"
 #include "third_party/WebKit/public/web/WebContextMenuData.h"
 
-#if defined(ENABLE_EXTENSIONS)
-#include "extensions/browser/extension_system.h"
-#include "extensions/browser/process_manager.h"
-#include "extensions/common/extension.h"
-#endif
-
 using blink::WebContextMenuData;
 using content::WebContents;
-
-#if defined(ENABLE_EXTENSIONS)
-using extensions::Extension;
-#endif
 
 namespace {
 
@@ -47,19 +37,6 @@ ContextMenuContentType::ContextMenuContentType(
 
 ContextMenuContentType::~ContextMenuContentType() {
 }
-
-#if defined(ENABLE_EXTENSIONS)
-const Extension* ContextMenuContentType::GetExtension() const {
-  extensions::ExtensionSystem* system = extensions::ExtensionSystem::Get(
-      source_web_contents_->GetBrowserContext());
-  // There is no process manager in some tests.
-  if (!system->process_manager())
-    return NULL;
-
-  return system->process_manager()->GetExtensionForRenderViewHost(
-      source_web_contents_->GetRenderViewHost());
-}
-#endif
 
 bool ContextMenuContentType::SupportsGroup(int group) {
   const bool has_selection = !params_.selection_text.empty();
@@ -178,7 +155,7 @@ bool ContextMenuContentType::SupportsGroupInternal(int group) {
       return false;
 
     case ITEM_GROUP_PRINT_PREVIEW:
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
       return true;
 #else
       return false;

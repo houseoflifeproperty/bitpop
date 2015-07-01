@@ -8,6 +8,7 @@
 #include <set>
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/files/file_util.h"
 #include "base/i18n/case_conversion.h"
 #include "base/strings/utf_string_conversions.h"
@@ -22,6 +23,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/common/extensions/api/file_browser_handlers/file_browser_handler.h"
 #include "chrome/common/extensions/api/file_manager_private.h"
+#include "chromeos/chromeos_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/render_process_host.h"
@@ -29,11 +31,13 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_host.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extension_util.h"
 #include "extensions/browser/lazy_background_task_queue.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/manifest_handlers/background_info.h"
+#include "extensions/common/url_pattern.h"
 #include "net/base/escape.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/fileapi/file_system_url.h"
@@ -61,9 +65,10 @@ int ExtractProcessFromExtensionId(Profile* profile,
   GURL extension_url =
       Extension::GetBaseURLFromExtensionId(extension_id);
   extensions::ProcessManager* manager =
-    extensions::ExtensionSystem::Get(profile)->process_manager();
+      extensions::ProcessManager::Get(profile);
 
-  SiteInstance* site_instance = manager->GetSiteInstanceForURL(extension_url);
+  scoped_refptr<SiteInstance> site_instance =
+      manager->GetSiteInstanceForURL(extension_url);
   if (!site_instance || !site_instance->HasProcess())
     return -1;
   content::RenderProcessHost* process = site_instance->GetProcess();
@@ -100,10 +105,10 @@ std::string EscapedUtf8ToLower(const std::string& str) {
 FileBrowserHandlerList FindFileBrowserHandlersForURL(
     Profile* profile,
     const GURL& selected_file_url) {
-  ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile)->extension_service();
-  // In unit-tests, we may not have an ExtensionService.
-  if (!service)
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(profile);
+  // In unit-tests, we may not have an ExtensionRegistry.
+  if (!registry)
     return FileBrowserHandlerList();
 
   // We need case-insensitive matching, and pattern in the handler is already
@@ -111,10 +116,8 @@ FileBrowserHandlerList FindFileBrowserHandlersForURL(
   const GURL lowercase_url(EscapedUtf8ToLower(selected_file_url.spec()));
 
   FileBrowserHandlerList results;
-  for (extensions::ExtensionSet::const_iterator iter =
-           service->extensions()->begin();
-       iter != service->extensions()->end(); ++iter) {
-    const Extension* extension = iter->get();
+  for (const scoped_refptr<const Extension>& extension :
+       registry->enabled_extensions()) {
     if (profile->IsOffTheRecord() &&
         !extensions::util::IsIncognitoEnabled(extension->id(), profile))
       continue;
@@ -122,7 +125,7 @@ FileBrowserHandlerList FindFileBrowserHandlersForURL(
       continue;
 
     FileBrowserHandler::List* handler_list =
-        FileBrowserHandler::GetHandlers(extension);
+        FileBrowserHandler::GetHandlers(extension.get());
     if (!handler_list)
       continue;
     for (FileBrowserHandler::List::const_iterator handler_iter =
@@ -132,8 +135,18 @@ FileBrowserHandlerList FindFileBrowserHandlersForURL(
       const FileBrowserHandler* handler = handler_iter->get();
       if (!handler->MatchesURL(lowercase_url))
         continue;
-
-      results.push_back(handler_iter->get());
+      // Filter out Files app from handling ZIP files via a handler, as it's
+      // now handled by new ZIP unpacker extension based on File System Provider
+      // API.
+      const URLPattern zip_pattern(URLPattern::SCHEME_EXTENSION,
+                                   "chrome-extension://*/*.zip");
+      if (handler->extension_id() == kFileManagerAppId &&
+          zip_pattern.MatchesURL(selected_file_url) &&
+          !base::CommandLine::ForCurrentProcess()->HasSwitch(
+              chromeos::switches::kDisableNewZIPUnpacker)) {
+        continue;
+      }
+      results.push_back(handler);
     }
   }
   return results;

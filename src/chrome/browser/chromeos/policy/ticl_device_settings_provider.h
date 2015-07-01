@@ -16,10 +16,10 @@ namespace policy {
 class TiclDeviceSettingsProvider : public invalidation::TiclSettingsProvider {
  public:
   TiclDeviceSettingsProvider();
-  virtual ~TiclDeviceSettingsProvider();
+  ~TiclDeviceSettingsProvider() override;
 
   // TiclInvalidationServiceSettingsProvider:
-  virtual bool UseGCMChannel() const OVERRIDE;
+  bool UseGCMChannel() const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TiclDeviceSettingsProvider);

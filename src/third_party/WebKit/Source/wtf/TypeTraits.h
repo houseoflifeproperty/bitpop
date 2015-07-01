@@ -29,7 +29,7 @@ namespace WTF {
     // The following are provided in this file:
     //
     //   IsInteger<T>::value
-    //   IsPod<T>::value, see the definition for a note about its limitations
+    //   IsPod<T>::value
     //   IsConvertibleToInteger<T>::value
     //
     //   IsArray<T>::value
@@ -43,7 +43,7 @@ namespace WTF {
     //   RemoveConstVolatile<T>::Type
     //   RemoveExtent<T>::Type
     //
-    //   COMPILE_ASSERT's in TypeTraits.cpp illustrate their usage and what they do.
+    //   static_assert's in TypeTraits.cpp illustrate their usage and what they do.
 
     template<bool Predicate, class T = void> struct EnableIf;
     template<class T> struct EnableIf<true, T> { typedef T Type; };
@@ -72,6 +72,26 @@ namespace WTF {
 
     template<typename T> struct IsArithmetic        { static const bool value = IsInteger<T>::value || IsFloatingPoint<T>::value; };
 
+    template<typename T> struct IsPointer {
+        static const bool value = false;
+    };
+
+    template<typename P> struct IsPointer<const P*> {
+        static const bool value = true;
+    };
+
+    template<typename P> struct IsPointer<P*> {
+        static const bool value = true;
+    };
+
+    template<typename T> struct IsEnum {
+        static const bool value = __is_enum(T);
+    };
+
+    template<typename T> struct IsScalar {
+        static const bool value = IsEnum<T>::value || IsArithmetic<T>::value || IsPointer<T>::value;
+    };
+
     template<typename T> struct IsWeak              { static const bool value = false; };
 
     enum WeakHandlingFlag {
@@ -79,10 +99,25 @@ namespace WTF {
         WeakHandlingInCollections
     };
 
-    // IsPod is misnamed as it doesn't cover all plain old data (pod) types.
-    // Specifically, it doesn't allow for enums or for structs.
-    template <typename T> struct IsPod              { static const bool value = IsArithmetic<T>::value; };
-    template <typename P> struct IsPod<P*>          { static const bool value = true; };
+    template <typename T> struct IsPod {
+        static const bool value = __is_pod(T);
+    };
+
+    template <typename T> struct IsTriviallyCopyAssignable {
+        static const bool value = __has_trivial_assign(T);
+    };
+
+    template <typename T> struct IsTriviallyMoveAssignable {
+        static const bool value = __has_trivial_assign(T);
+    };
+
+    template <typename T> struct IsTriviallyDefaultConstructible {
+        static const bool value = __has_trivial_constructor(T);
+    };
+
+    template <typename T> struct IsTriviallyDestructible {
+        static const bool value = __has_trivial_destructor(T);
+    };
 
     template<typename T> class IsConvertibleToInteger {
         // Avoid "possible loss of data" warning when using Microsoft's C++ compiler
@@ -158,13 +193,13 @@ namespace WTF {
         static const bool value = sizeof(subclassCheck(t)) == sizeof(YesType);
     };
 
-    template <typename T, template<class V> class U> class IsSubclassOfTemplate {
+    template <typename T, template<typename... V> class U> class IsSubclassOfTemplate {
         typedef char YesType;
         struct NoType {
             char padding[8];
         };
 
-        template<typename W> static YesType subclassCheck(U<W>*);
+        template<typename... W> static YesType subclassCheck(U<W...>*);
         static NoType subclassCheck(...);
         static T* t;
     public:
@@ -191,32 +226,6 @@ namespace WTF {
         };
 
         template<typename Y, size_t Z, typename A> static YesType subclassCheck(U<Y, Z, A>*);
-        static NoType subclassCheck(...);
-        static T* t;
-    public:
-        static const bool value = sizeof(subclassCheck(t)) == sizeof(YesType);
-    };
-
-    template <typename T, template<class A, class B, class C> class U> class IsSubclassOfTemplate3 {
-        typedef char YesType;
-        struct NoType {
-            char padding[8];
-        };
-
-        template<typename D, typename E, typename F> static YesType subclassCheck(U<D, E, F>*);
-        static NoType subclassCheck(...);
-        static T* t;
-    public:
-        static const bool value = sizeof(subclassCheck(t)) == sizeof(YesType);
-    };
-
-    template <typename T, template<class A, class B, class C, class D, class E> class U> class IsSubclassOfTemplate5 {
-        typedef char YesType;
-        struct NoType {
-            char padding[8];
-        };
-
-        template<typename F, typename G, typename H, typename I, typename J> static YesType subclassCheck(U<F, G, H, I, J>*);
         static NoType subclassCheck(...);
         static T* t;
     public:
@@ -293,20 +302,11 @@ namespace WTF {
 
 namespace blink {
 
-class JSONValue;
+class Visitor;
 
 } // namespace blink
 
 namespace WTF {
-
-    // FIXME: Disable pointer conversion checking against JSONValue.
-    // The current CodeGeneratorInspector.py generates code which upcasts to JSONValue from undefined types.
-    template<typename From> class IsPointerConvertible<From, blink::JSONValue> {
-    public:
-        enum {
-            Value = true
-        };
-    };
 
 template<typename T>
 class NeedsTracing {
@@ -314,18 +314,15 @@ class NeedsTracing {
     typedef struct NoType {
         char padding[8];
     } NoType;
-#if COMPILER(MSVC)
-    template<typename V> static YesType checkHasTraceMethod(char[&V::trace != 0]);
-#else
-    template<size_t> struct HasMethod;
-    template<typename V> static YesType checkHasTraceMethod(HasMethod<sizeof(&V::trace)>*);
-#endif // COMPILER(MSVC)
+
+    // Note that this also checks if a superclass of V has a trace method.
+    template<typename V> static YesType checkHasTraceMethod(V* v, blink::Visitor* p = 0, typename EnableIf<IsSameType<decltype(v->trace(p)), void>::value>::Type* g = 0);
     template<typename V> static NoType checkHasTraceMethod(...);
 public:
     // We add sizeof(T) to both sides here, because we want it to fail for
     // incomplete types. Otherwise it just assumes that incomplete types do not
     // have a trace method, which may not be true.
-    static const bool value = sizeof(YesType) + sizeof(T) == sizeof(checkHasTraceMethod<T>(0)) + sizeof(T);
+    static const bool value = sizeof(YesType) + sizeof(T) == sizeof(checkHasTraceMethod<T>(nullptr)) + sizeof(T);
 };
 
 // Convenience template wrapping the NeedsTracingLazily template in
@@ -337,7 +334,7 @@ public:
 };
 
 template<typename T, typename U>
-struct NeedsTracing<std::pair<T, U> > {
+struct NeedsTracing<std::pair<T, U>> {
     static const bool value = NeedsTracing<T>::value || NeedsTracing<U>::value || IsWeak<T>::value || IsWeak<U>::value;
 };
 

@@ -29,5 +29,7 @@
     RaisesException=Constructor,
     NoInterfaceObject,
 ] interface OfflineAudioContext : AudioContext {
-
+    // Offline rendering
+    attribute EventHandler oncomplete;
+    [CallWith=ScriptState,ImplementedAs=startOfflineRendering] Promise<AudioBuffer> startRendering();
 };

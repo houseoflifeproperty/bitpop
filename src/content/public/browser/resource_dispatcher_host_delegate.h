@@ -11,6 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
 #include "content/public/common/resource_type.h"
+#include "ui/base/page_transition_types.h"
 
 class GURL;
 template <class T> class ScopedVector;
@@ -30,9 +31,9 @@ class AppCacheService;
 class ResourceContext;
 class ResourceDispatcherHostLoginDelegate;
 class ResourceThrottle;
-class StreamHandle;
 struct Referrer;
 struct ResourceResponse;
+struct StreamInfo;
 
 // Interface that the embedder provides to ResourceDispatcherHost to allow
 // observing and modifying requests.
@@ -74,7 +75,10 @@ class CONTENT_EXPORT ResourceDispatcherHostDelegate {
   // guarantee that the app successfully handled it.
   virtual bool HandleExternalProtocol(const GURL& url,
                                       int child_id,
-                                      int route_id);
+                                      int route_id,
+                                      bool is_main_frame,
+                                      ui::PageTransition page_transition,
+                                      bool has_user_gesture);
 
   // Returns true if we should force the given resource to be downloaded.
   // Otherwise, the content layer decides.
@@ -100,7 +104,7 @@ class CONTENT_EXPORT ResourceDispatcherHostDelegate {
   // Informs the delegate that a Stream was created. The Stream can be read from
   // the blob URL of the Stream, but can only be read once.
   virtual void OnStreamCreated(net::URLRequest* request,
-                               scoped_ptr<content::StreamHandle> stream);
+                               scoped_ptr<content::StreamInfo> stream);
 
   // Informs the delegate that a response has started.
   virtual void OnResponseStarted(net::URLRequest* request,

@@ -22,6 +22,7 @@
 #define S_IRALL (S_IRUSR | S_IRGRP | S_IROTH)
 #define S_IWALL (S_IWUSR | S_IWGRP | S_IWOTH)
 #define S_IXALL (S_IXUSR | S_IXGRP | S_IXOTH)
+#define S_MODEBITS 07777
 
 namespace nacl_io {
 
@@ -126,12 +127,20 @@ class Node : public sdk_util::RefObject {
   virtual void Link();
   virtual void Unlink();
 
+  // Update the a/m/c time in stat_.
+  enum {
+    UPDATE_ATIME = 1,
+    UPDATE_MTIME = 2,
+    UPDATE_CTIME = 4,
+  };
+  void UpdateTime(int update_bits);
+
  protected:
   struct stat stat_;
   sdk_util::SimpleLock node_lock_;
 
   // We use a pointer directly to avoid cycles in the ref count.
-  // TODO(noelallen) We should change this so it's unnecessary for the node
+  // TODO(bradnelson) We should change this so it's unnecessary for the node
   // to track it's parent.  When a node is unlinked, the filesystem should do
   // any cleanup it needs.
   Filesystem* filesystem_;

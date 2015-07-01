@@ -12,7 +12,6 @@
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/test/base/ui_test_utils.h"
 #include "chromeos/chromeos_switches.h"
 #include "content/public/browser/notification_service.h"
 
@@ -28,7 +27,8 @@ void WizardInProcessBrowserTest::SetUp() {
   InProcessBrowserTest::SetUp();
 }
 
-void WizardInProcessBrowserTest::SetUpCommandLine(CommandLine* command_line) {
+void WizardInProcessBrowserTest::SetUpCommandLine(
+    base::CommandLine* command_line) {
   command_line->AppendSwitch(::switches::kNoStartupWindow);
   command_line->AppendSwitch(switches::kLoginManager);
 }

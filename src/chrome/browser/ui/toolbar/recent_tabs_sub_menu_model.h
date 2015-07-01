@@ -9,15 +9,15 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/task/cancelable_task_tracker.h"
-#include "chrome/browser/favicon/favicon_service.h"
+#include "base/timer/elapsed_timer.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_observer.h"
 #include "chrome/browser/sync/glue/synced_session.h"
+#include "components/favicon/core/favicon_service.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/models/simple_menu_model.h"
 
 class Browser;
-struct SessionTab;
 
 namespace browser_sync {
 class OpenTabsUIDelegate;
@@ -29,6 +29,10 @@ struct FaviconImageResult;
 
 namespace gfx {
 class Image;
+}
+
+namespace sessions {
+struct SessionTab;
 }
 
 namespace ui {
@@ -56,16 +60,15 @@ class RecentTabsSubMenuModel : public ui::SimpleMenuModel,
   RecentTabsSubMenuModel(ui::AcceleratorProvider* accelerator_provider,
                          Browser* browser,
                          browser_sync::OpenTabsUIDelegate* open_tabs_delegate);
-  virtual ~RecentTabsSubMenuModel();
+  ~RecentTabsSubMenuModel() override;
 
   // Overridden from ui::SimpleMenuModel::Delegate:
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
-  virtual bool GetAcceleratorForCommandId(
-      int command_id,
-      ui::Accelerator* accelerator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
-  virtual const gfx::FontList* GetLabelFontListAt(int index) const OVERRIDE;
+  bool IsCommandIdChecked(int command_id) const override;
+  bool IsCommandIdEnabled(int command_id) const override;
+  bool GetAcceleratorForCommandId(int command_id,
+                                  ui::Accelerator* accelerator) override;
+  void ExecuteCommand(int command_id, int event_flags) override;
+  const gfx::FontList* GetLabelFontListAt(int index) const override;
 
   int GetMaxWidthForItemAtIndex(int item_index) const;
   bool GetURLAndTitleForItemAtIndex(int index,
@@ -102,7 +105,7 @@ class RecentTabsSubMenuModel : public ui::SimpleMenuModel,
 
   // Build the tab item for other devices with parameters needed to restore it.
   void BuildOtherDevicesTabItem(const std::string& session_tag,
-                                const SessionTab& tab);
+                                const sessions::SessionTab& tab);
 
   // Add the favicon for the device section header.
   void AddDeviceFavicon(int index_in_menu,
@@ -131,8 +134,8 @@ class RecentTabsSubMenuModel : public ui::SimpleMenuModel,
   browser_sync::OpenTabsUIDelegate* GetOpenTabsUIDelegate();
 
   // Overridden from TabRestoreServiceObserver:
-  virtual void TabRestoreServiceChanged(TabRestoreService* service) OVERRIDE;
-  virtual void TabRestoreServiceDestroyed(TabRestoreService* service) OVERRIDE;
+  void TabRestoreServiceChanged(TabRestoreService* service) override;
+  void TabRestoreServiceDestroyed(TabRestoreService* service) override;
 
   Browser* browser_;  // Weak.
 
@@ -166,6 +169,9 @@ class RecentTabsSubMenuModel : public ui::SimpleMenuModel,
 
   base::CancelableTaskTracker local_tab_cancelable_task_tracker_;
   base::CancelableTaskTracker other_devices_tab_cancelable_task_tracker_;
+
+  // Time the menu is open for until a recent tab is selected.
+  base::ElapsedTimer menu_opened_timer_;
 
   base::WeakPtrFactory<RecentTabsSubMenuModel> weak_ptr_factory_;
 

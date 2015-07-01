@@ -29,11 +29,11 @@
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/geometry/safe_integer_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_source.h"
-#include "ui/gfx/safe_integer_conversions.h"
 #include "ui/gfx/screen.h"
-#include "ui/gfx/size_conversions.h"
 #include "ui/strings/grit/app_locale_settings.h"
 
 #if defined(OS_ANDROID)
@@ -41,12 +41,10 @@
 #endif
 
 #if defined(OS_CHROMEOS)
-#include "ui/base/l10n/l10n_util.h"
-#include "ui/gfx/platform_font_pango.h"
+#include "ui/gfx/platform_font_linux.h"
 #endif
 
 #if defined(OS_WIN)
-#include "ui/base/win/dpi_setup.h"
 #include "ui/gfx/win/dpi.h"
 #endif
 
@@ -74,23 +72,6 @@ const char kPakFileSuffix[] = ".pak";
 #endif
 
 ResourceBundle* g_shared_instance_ = NULL;
-
-void InitDefaultFontList() {
-#if defined(OS_CHROMEOS) && defined(USE_PANGO)
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  std::string font_family = base::UTF16ToUTF8(
-      rb.GetLocalizedString(IDS_UI_FONT_FAMILY_CROS));
-  gfx::FontList::SetDefaultFontDescription(font_family);
-
-  // TODO(yukishiino): Remove SetDefaultFontDescription() once the migration to
-  // the font list is done.  We will no longer need SetDefaultFontDescription()
-  // after every client gets started using a FontList instead of a Font.
-  gfx::PlatformFontPango::SetDefaultFontDescription(font_family);
-#else
-  // Use a single default font as the default font list.
-  gfx::FontList::SetDefaultFontDescription(std::string());
-#endif
-}
 
 #if defined(OS_ANDROID)
 // Returns the scale factor closest to |scale| from the full list of factors.
@@ -124,10 +105,10 @@ class ResourceBundle::ResourceBundleImageSource : public gfx::ImageSkiaSource {
  public:
   ResourceBundleImageSource(ResourceBundle* rb, int resource_id)
       : rb_(rb), resource_id_(resource_id) {}
-  virtual ~ResourceBundleImageSource() {}
+  ~ResourceBundleImageSource() override {}
 
   // gfx::ImageSkiaSource overrides:
-  virtual gfx::ImageSkiaRep GetImageForScale(float scale) OVERRIDE {
+  gfx::ImageSkiaRep GetImageForScale(float scale) override {
     SkBitmap image;
     bool fell_back_to_1x = false;
     ScaleFactor scale_factor = GetSupportedScaleFactor(scale);
@@ -171,7 +152,7 @@ std::string ResourceBundle::InitSharedInstanceWithLocale(
   if (load_resources == LOAD_COMMON_RESOURCES)
     g_shared_instance_->LoadCommonResources();
   std::string result = g_shared_instance_->LoadLocaleResources(pref_locale);
-  InitDefaultFontList();
+  g_shared_instance_->InitDefaultFontList();
   return result;
 }
 
@@ -186,7 +167,7 @@ void ResourceBundle::InitSharedInstanceWithPakFileRegion(
     return;
   }
   g_shared_instance_->locale_resources_data_.reset(data_pack.release());
-  InitDefaultFontList();
+  g_shared_instance_->InitDefaultFontList();
 }
 
 // static
@@ -194,7 +175,7 @@ void ResourceBundle::InitSharedInstanceWithPakPath(const base::FilePath& path) {
   InitSharedInstance(NULL);
   g_shared_instance_->LoadTestResources(path, path);
 
-  InitDefaultFontList();
+  g_shared_instance_->InitDefaultFontList();
 }
 
 // static
@@ -462,15 +443,19 @@ base::StringPiece ResourceBundle::GetRawDataResourceForScale(
   if (scale_factor != ui::SCALE_FACTOR_100P) {
     for (size_t i = 0; i < data_packs_.size(); i++) {
       if (data_packs_[i]->GetScaleFactor() == scale_factor &&
-          data_packs_[i]->GetStringPiece(resource_id, &data))
+          data_packs_[i]->GetStringPiece(static_cast<uint16>(resource_id),
+                                         &data))
         return data;
     }
   }
+
   for (size_t i = 0; i < data_packs_.size(); i++) {
     if ((data_packs_[i]->GetScaleFactor() == ui::SCALE_FACTOR_100P ||
          data_packs_[i]->GetScaleFactor() == ui::SCALE_FACTOR_200P ||
+         data_packs_[i]->GetScaleFactor() == ui::SCALE_FACTOR_300P ||
          data_packs_[i]->GetScaleFactor() == ui::SCALE_FACTOR_NONE) &&
-        data_packs_[i]->GetStringPiece(resource_id, &data))
+        data_packs_[i]->GetStringPiece(static_cast<uint16>(resource_id),
+                                       &data))
       return data;
   }
 
@@ -499,7 +484,8 @@ base::string16 ResourceBundle::GetLocalizedString(int message_id) {
   }
 
   base::StringPiece data;
-  if (!locale_resources_data_->GetStringPiece(message_id, &data)) {
+  if (!locale_resources_data_->GetStringPiece(static_cast<uint16>(message_id),
+                                              &data)) {
     // Fall back on the main data pack (shouldn't be any strings here except in
     // unittests).
     data = GetRawDataResource(message_id);
@@ -557,6 +543,7 @@ const gfx::Font& ResourceBundle::GetFont(FontStyle style) {
 
 void ResourceBundle::ReloadFonts() {
   base::AutoLock lock_scope(*images_and_fonts_lock_);
+  InitDefaultFontList();
   base_font_list_.reset();
   LoadFontsIfNecessary();
 }
@@ -627,14 +614,12 @@ void ResourceBundle::InitSharedInstance(Delegate* delegate) {
   supported_scale_factors.push_back(SCALE_FACTOR_200P);
 #elif defined(OS_WIN)
   bool default_to_100P = true;
-  if (gfx::IsHighDPIEnabled()) {
-    // On Windows if the dpi scale is greater than 1.25 on high dpi machines
-    // downscaling from 200 percent looks better than scaling up from 100
-    // percent.
-    if (gfx::GetDPIScale() > 1.25) {
-      supported_scale_factors.push_back(SCALE_FACTOR_200P);
-      default_to_100P = false;
-    }
+  // On Windows if the dpi scale is greater than 1.25 on high dpi machines
+  // downscaling from 200 percent looks better than scaling up from 100
+  // percent.
+  if (gfx::GetDPIScale() > 1.25) {
+    supported_scale_factors.push_back(SCALE_FACTOR_200P);
+    default_to_100P = false;
   }
   if (default_to_100P)
     supported_scale_factors.push_back(SCALE_FACTOR_100P);
@@ -643,10 +628,7 @@ void ResourceBundle::InitSharedInstance(Delegate* delegate) {
 #if defined(OS_WIN)
   // Must be called _after_ supported scale factors are set since it
   // uses them.
-  // Don't initialize the device scale factor if it has already been
-  // initialized.
-  if (!gfx::win::IsDeviceScaleFactorSet())
-    ui::win::InitDeviceScaleFactor();
+  gfx::InitDeviceScaleFactor(gfx::GetDPIScale());
 #endif
 }
 
@@ -680,11 +662,30 @@ void ResourceBundle::AddDataPackFromPathInternal(const base::FilePath& path,
 }
 
 void ResourceBundle::AddDataPack(DataPack* data_pack) {
+#if DCHECK_IS_ON()
+  data_pack->CheckForDuplicateResources(data_packs_);
+#endif
   data_packs_.push_back(data_pack);
 
   if (GetScaleForScaleFactor(data_pack->GetScaleFactor()) >
       GetScaleForScaleFactor(max_scale_factor_))
     max_scale_factor_ = data_pack->GetScaleFactor();
+}
+
+void ResourceBundle::InitDefaultFontList() {
+#if defined(OS_CHROMEOS)
+  std::string font_family = base::UTF16ToUTF8(
+      GetLocalizedString(IDS_UI_FONT_FAMILY_CROS));
+  gfx::FontList::SetDefaultFontDescription(font_family);
+
+  // TODO(yukishiino): Remove SetDefaultFontDescription() once the migration to
+  // the font list is done.  We will no longer need SetDefaultFontDescription()
+  // after every client gets started using a FontList instead of a Font.
+  gfx::PlatformFontLinux::SetDefaultFontDescription(font_family);
+#else
+  // Use a single default font as the default font list.
+  gfx::FontList::SetDefaultFontDescription(std::string());
+#endif
 }
 
 void ResourceBundle::LoadFontsIfNecessary() {
@@ -753,8 +754,8 @@ scoped_ptr<gfx::FontList> ResourceBundle::GetFontListFromDelegate(
   DCHECK(delegate_);
   scoped_ptr<gfx::Font> font = delegate_->GetFont(style);
   if (font.get())
-    return scoped_ptr<gfx::FontList>(new gfx::FontList(*font));
-  return scoped_ptr<gfx::FontList>();
+    return make_scoped_ptr(new gfx::FontList(*font));
+  return nullptr;
 }
 
 bool ResourceBundle::LoadBitmap(const ResourceHandle& data_handle,
@@ -763,7 +764,7 @@ bool ResourceBundle::LoadBitmap(const ResourceHandle& data_handle,
                                 bool* fell_back_to_1x) const {
   DCHECK(fell_back_to_1x);
   scoped_refptr<base::RefCountedMemory> memory(
-      data_handle.GetStaticMemory(resource_id));
+      data_handle.GetStaticMemory(static_cast<uint16>(resource_id)));
   if (!memory.get())
     return false;
 

@@ -7,55 +7,43 @@
 
 #include "base/macros.h"
 #include "components/history/core/browser/history_client.h"
-#include "components/history/core/browser/top_sites_observer.h"
 
-class BookmarkModel;
 class Profile;
 
-namespace history {
-class TopSites;
+namespace bookmarks {
+class BookmarkModel;
 }
 
 // This class implements history::HistoryClient to abstract operations that
 // depend on Chrome environment.
-class ChromeHistoryClient : public history::HistoryClient,
-                            public history::TopSitesObserver {
+class ChromeHistoryClient : public history::HistoryClient {
  public:
-  explicit ChromeHistoryClient(BookmarkModel* bookmark_model,
-                               Profile* profile,
-                               history::TopSites* top_sites);
-  virtual ~ChromeHistoryClient();
+  explicit ChromeHistoryClient(bookmarks::BookmarkModel* bookmark_model);
+  ~ChromeHistoryClient() override;
 
   // history::HistoryClient:
-  virtual void BlockUntilBookmarksLoaded() OVERRIDE;
-  virtual bool IsBookmarked(const GURL& url) OVERRIDE;
-  virtual void GetBookmarks(
-      std::vector<history::URLAndTitle>* bookmarks) OVERRIDE;
-  virtual void NotifyProfileError(sql::InitStatus init_status) OVERRIDE;
-  virtual bool ShouldReportDatabaseError() OVERRIDE;
+  void BlockUntilBookmarksLoaded() override;
+  bool IsBookmarked(const GURL& url) override;
+  void GetBookmarks(std::vector<history::URLAndTitle>* bookmarks) override;
+  bool CanAddURL(const GURL& url) override;
+  void NotifyProfileError(sql::InitStatus init_status) override;
+  bool ShouldReportDatabaseError() override;
+#if defined(OS_ANDROID)
+  void OnHistoryBackendInitialized(
+      history::HistoryBackend* history_backend,
+      history::HistoryDatabase* history_database,
+      history::ThumbnailDatabase* thumbnail_database,
+      const base::FilePath& history_dir) override;
+  void OnHistoryBackendDestroyed(history::HistoryBackend* history_backend,
+                                 const base::FilePath& history_dir) override;
+#endif
 
   // KeyedService:
-  virtual void Shutdown() OVERRIDE;
-
-  // TopSitesObserver:
-  virtual void TopSitesLoaded(history::TopSites* top_sites) OVERRIDE;
-  virtual void TopSitesChanged(history::TopSites* top_sites) OVERRIDE;
+  void Shutdown() override;
 
  private:
   // The BookmarkModel, this should outlive ChromeHistoryClient.
-  BookmarkModel* bookmark_model_;
-  Profile* profile_;
-  // The TopSites object is owned by the Profile (see
-  // chrome/browser/profiles/profile_impl.h)
-  // and lazily constructed by the  getter.
-  // ChromeHistoryClient is a KeyedService linked to the Profile lifetime by the
-  // ChromeHistoryClientFactory (which is a BrowserContextKeyedServiceFactory).
-  // Before the Profile is destroyed, all the KeyedService Shutdown methods are
-  // called, and the Profile is fully constructed before any of the KeyedService
-  // can  be constructed. The TopSites does not use the HistoryService nor the
-  // HistoryClient during construction (it uses it later, but supports getting
-  // an NULL  pointer).
-  history::TopSites* top_sites_;
+  bookmarks::BookmarkModel* bookmark_model_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeHistoryClient);
 };

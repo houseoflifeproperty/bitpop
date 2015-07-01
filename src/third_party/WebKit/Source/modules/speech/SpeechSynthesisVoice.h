@@ -33,7 +33,7 @@
 
 namespace blink {
 
-class SpeechSynthesisVoice FINAL : public GarbageCollected<SpeechSynthesisVoice>, public ScriptWrappable {
+class SpeechSynthesisVoice final : public GarbageCollected<SpeechSynthesisVoice>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static SpeechSynthesisVoice* create(PlatformSpeechSynthesisVoice*);
@@ -46,7 +46,7 @@ public:
 
     PlatformSpeechSynthesisVoice* platformVoice() const { return m_platformVoice; }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     explicit SpeechSynthesisVoice(PlatformSpeechSynthesisVoice*);

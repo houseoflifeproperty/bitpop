@@ -12,6 +12,7 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/power_monitor/power_monitor.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/rand_util.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
@@ -19,7 +20,6 @@
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/media/capture/web_contents_capture_util.h"
 #include "content/browser/renderer_host/media/audio_input_device_manager.h"
-#include "content/browser/renderer_host/media/device_request_message_filter.h"
 #include "content/browser/renderer_host/media/media_capture_devices_impl.h"
 #include "content/browser/renderer_host/media/media_stream_requester.h"
 #include "content/browser/renderer_host/media/media_stream_ui_proxy.h"
@@ -94,7 +94,7 @@ void ParseStreamType(const StreamOptions& options,
        if (audio_stream_source == kMediaStreamSourceTab) {
          *audio_type = content::MEDIA_TAB_AUDIO_CAPTURE;
        } else if (audio_stream_source == kMediaStreamSourceSystem) {
-         *audio_type = content::MEDIA_LOOPBACK_AUDIO_CAPTURE;
+         *audio_type = content::MEDIA_DESKTOP_AUDIO_CAPTURE;
        }
      } else {
        // This is normal audio device capture.
@@ -132,6 +132,27 @@ void FilterAudioEffects(const StreamOptions& options, int* effects) {
   if (options.GetFirstAudioConstraintByName(
           kMediaStreamAudioDucking, &value, NULL) && value == "false") {
     *effects &= ~media::AudioParameters::DUCKING;
+  }
+}
+
+// Unlike other effects, hotword is off by default, so turn it on if it's
+// requested and available.
+void EnableHotwordEffect(const StreamOptions& options, int* effects) {
+  DCHECK(effects);
+  std::string value;
+  if (options.GetFirstAudioConstraintByName(
+          kMediaStreamAudioHotword, &value, NULL) && value == "true") {
+#if defined(OS_CHROMEOS)
+    chromeos::AudioDeviceList devices;
+    chromeos::CrasAudioHandler::Get()->GetAudioDevices(&devices);
+    // Only enable if a hotword device exists.
+    for (size_t i = 0; i < devices.size(); ++i) {
+      if (devices[i].type == chromeos::AUDIO_TYPE_AOKR) {
+        DCHECK(devices[i].is_input);
+        *effects |= media::AudioParameters::HOTWORD;
+      }
+    }
+#endif
   }
 }
 
@@ -218,7 +239,9 @@ class MediaStreamManager::DeviceRequest {
         salt_callback(salt_callback),
         state_(NUM_MEDIA_TYPES, MEDIA_REQUEST_STATE_NOT_REQUESTED),
         audio_type_(MEDIA_NO_SERVICE),
-        video_type_(MEDIA_NO_SERVICE) {
+        video_type_(MEDIA_NO_SERVICE),
+        target_process_id_(-1),
+        target_frame_id_(-1) {
   }
 
   ~DeviceRequest() {}
@@ -244,6 +267,8 @@ class MediaStreamManager::DeviceRequest {
   void CreateUIRequest(const std::string& requested_audio_device_id,
                        const std::string& requested_video_device_id) {
     DCHECK(!ui_request_);
+    target_process_id_ = requesting_process_id;
+    target_frame_id_ = requesting_frame_id;
     ui_request_.reset(new MediaStreamRequest(requesting_process_id,
                                              requesting_frame_id,
                                              page_request_id,
@@ -259,9 +284,10 @@ class MediaStreamManager::DeviceRequest {
   // Creates a tab capture specific MediaStreamRequest object that is used by
   // this request when UI is asked for permission and device selection.
   void CreateTabCaptureUIRequest(int target_render_process_id,
-                                 int target_render_frame_id,
-                                 const std::string& tab_capture_id) {
+                                 int target_render_frame_id) {
     DCHECK(!ui_request_);
+    target_process_id_ = target_render_process_id;
+    target_frame_id_ = target_render_frame_id;
     ui_request_.reset(new MediaStreamRequest(target_render_process_id,
                                              target_render_frame_id,
                                              page_request_id,
@@ -272,10 +298,12 @@ class MediaStreamManager::DeviceRequest {
                                              "",
                                              audio_type_,
                                              video_type_));
-    ui_request_->tab_capture_device_id = tab_capture_id;
   }
 
-  const MediaStreamRequest* UIRequest() const { return ui_request_.get(); }
+  bool HasUIRequest() const { return ui_request_.get() != nullptr; }
+  scoped_ptr<MediaStreamRequest> DetachUIRequest() {
+    return ui_request_.Pass();
+  }
 
   // Update the request state and notify observers.
   void SetState(MediaStreamType stream_type, MediaRequestState new_state) {
@@ -293,14 +321,8 @@ class MediaStreamManager::DeviceRequest {
     if (!media_observer)
       return;
 
-    // If |ui_request_| doesn't exist, it means that the request has not yet
-    // been setup fully and there are no valid observers.
-    if (!ui_request_)
-      return;
-
     media_observer->OnMediaRequestStateChanged(
-        ui_request_->render_process_id, ui_request_->render_frame_id,
-        ui_request_->page_request_id, ui_request_->security_origin,
+        target_process_id_, target_frame_id_, page_request_id, security_origin,
         stream_type, new_state);
   }
 
@@ -345,11 +367,15 @@ class MediaStreamManager::DeviceRequest {
 
   scoped_ptr<MediaStreamUIProxy> ui_proxy;
 
+  std::string tab_capture_device_id;
+
  private:
   std::vector<MediaRequestState> state_;
   scoped_ptr<MediaStreamRequest> ui_request_;
   MediaStreamType audio_type_;
   MediaStreamType video_type_;
+  int target_process_id_;
+  int target_frame_id_;
 };
 
 MediaStreamManager::EnumerationCache::EnumerationCache()
@@ -361,6 +387,9 @@ MediaStreamManager::EnumerationCache::~EnumerationCache() {
 
 MediaStreamManager::MediaStreamManager()
     : audio_manager_(NULL),
+#if defined(OS_WIN)
+      video_capture_thread_("VideoCaptureThread"),
+#endif
       monitoring_started_(false),
 #if defined(OS_CHROMEOS)
       has_checked_keyboard_mic_(false),
@@ -370,6 +399,9 @@ MediaStreamManager::MediaStreamManager()
 
 MediaStreamManager::MediaStreamManager(media::AudioManager* audio_manager)
     : audio_manager_(audio_manager),
+#if defined(OS_WIN)
+      video_capture_thread_("VideoCaptureThread"),
+#endif
       monitoring_started_(false),
 #if defined(OS_CHROMEOS)
       has_checked_keyboard_mic_(false),
@@ -468,7 +500,7 @@ void MediaStreamManager::GenerateStream(MediaStreamRequester* requester,
                                         bool user_gesture) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DVLOG(1) << "GenerateStream()";
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kUseFakeUIForMediaStream)) {
     UseFakeUI(scoped_ptr<FakeMediaStreamUIProxy>());
   }
@@ -962,10 +994,25 @@ void MediaStreamManager::StartMonitoring() {
 #if defined(OS_MACOSX)
 void MediaStreamManager::StartMonitoringOnUIThread() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  // TODO(erikchen): Remove ScopedTracker below once crbug.com/458404 is fixed.
+  tracked_objects::ScopedTracker tracking_profile1(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "458404 MediaStreamManager::GetBrowserMainLoop"));
   BrowserMainLoop* browser_main_loop = content::BrowserMainLoop::GetInstance();
   if (browser_main_loop) {
-    browser_main_loop->device_monitor_mac()
-        ->StartMonitoring(audio_manager_->GetWorkerTaskRunner());
+    // TODO(erikchen): Remove ScopedTracker below once crbug.com/458404 is
+    // fixed.
+    tracked_objects::ScopedTracker tracking_profile2(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "458404 MediaStreamManager::GetWorkerTaskRunner"));
+    const scoped_refptr<base::SingleThreadTaskRunner> task_runner =
+        audio_manager_->GetWorkerTaskRunner();
+    // TODO(erikchen): Remove ScopedTracker below once crbug.com/458404 is
+    // fixed.
+    tracked_objects::ScopedTracker tracking_profile3(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "458404 MediaStreamManager::DeviceMonitorMac::StartMonitoring"));
+    browser_main_loop->device_monitor_mac()->StartMonitoring(task_runner);
   }
 }
 #endif
@@ -1085,7 +1132,7 @@ void MediaStreamManager::StartEnumeration(DeviceRequest* request) {
   // Start enumeration for devices of all requested device types.
   const MediaStreamType streams[] = { request->audio_type(),
                                       request->video_type() };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(streams); ++i) {
+  for (size_t i = 0; i < arraysize(streams); ++i) {
     if (streams[i] == MEDIA_NO_SERVICE)
       continue;
     request->SetState(streams[i], MEDIA_REQUEST_STATE_REQUESTED);
@@ -1137,7 +1184,7 @@ void MediaStreamManager::DeleteRequest(const std::string& label) {
 void MediaStreamManager::PostRequestToUI(const std::string& label,
                                          DeviceRequest* request) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  DCHECK(request->UIRequest());
+  DCHECK(request->HasUIRequest());
   DVLOG(1) << "PostRequestToUI({label= " << label << "})";
 
   const MediaStreamType audio_type = request->audio_type();
@@ -1177,7 +1224,7 @@ void MediaStreamManager::PostRequestToUI(const std::string& label,
   }
 
   request->ui_proxy->RequestAccess(
-      *request->UIRequest(),
+      request->DetachUIRequest(),
       base::Bind(&MediaStreamManager::HandleAccessRequestResponse,
                  base::Unretained(this), label));
 }
@@ -1314,10 +1361,10 @@ bool MediaStreamManager::SetupTabCaptureRequest(DeviceRequest* request) {
        request->video_type() != MEDIA_NO_SERVICE)) {
     return false;
   }
+  request->tab_capture_device_id = capture_device_id;
 
   request->CreateTabCaptureUIRequest(target_render_process_id,
-                                     target_render_frame_id,
-                                     capture_device_id);
+                                     target_render_frame_id);
 
   DVLOG(3) << "SetupTabCaptureRequest "
            << ", {capture_device_id = " << capture_device_id <<  "}"
@@ -1328,7 +1375,7 @@ bool MediaStreamManager::SetupTabCaptureRequest(DeviceRequest* request) {
 }
 
 bool MediaStreamManager::SetupScreenCaptureRequest(DeviceRequest* request) {
-  DCHECK(request->audio_type() == MEDIA_LOOPBACK_AUDIO_CAPTURE ||
+  DCHECK(request->audio_type() == MEDIA_DESKTOP_AUDIO_CAPTURE ||
          request->video_type() == MEDIA_DESKTOP_VIDEO_CAPTURE);
 
   // For screen capture we only support two valid combinations:
@@ -1336,7 +1383,7 @@ bool MediaStreamManager::SetupScreenCaptureRequest(DeviceRequest* request) {
   // (2) screen video capture with loopback audio capture.
   if (request->video_type() != MEDIA_DESKTOP_VIDEO_CAPTURE ||
       (request->audio_type() != MEDIA_NO_SERVICE &&
-       request->audio_type() != MEDIA_LOOPBACK_AUDIO_CAPTURE)) {
+       request->audio_type() != MEDIA_DESKTOP_AUDIO_CAPTURE)) {
     LOG(ERROR) << "Invalid screen capture request.";
     return false;
   }
@@ -1407,6 +1454,8 @@ bool MediaStreamManager::FindExistingRequestedDeviceInfo(
           // is set to and not what the capabilities are.
           FilterAudioEffects(request->options,
               &existing_device_info->device.input.effects);
+          EnableHotwordEffect(request->options,
+                              &existing_device_info->device.input.effects);
           *existing_request_state = request->state(device_it->device.type);
           return true;
         }
@@ -1574,29 +1623,58 @@ void MediaStreamManager::FinalizeMediaAccessRequest(
 }
 
 void MediaStreamManager::InitializeDeviceManagersOnIOThread() {
+  // TODO(dalecurtis): Remove ScopedTracker below once crbug.com/457525 is
+  // fixed.
+  tracked_objects::ScopedTracker tracking_profile1(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "457525 MediaStreamManager::InitializeDeviceManagersOnIOThread 1"));
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (device_task_runner_.get())
     return;
 
   device_task_runner_ = audio_manager_->GetWorkerTaskRunner();
 
+  // TODO(dalecurtis): Remove ScopedTracker below once crbug.com/457525 is
+  // fixed.
+  tracked_objects::ScopedTracker tracking_profile2(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "457525 MediaStreamManager::InitializeDeviceManagersOnIOThread 2"));
   audio_input_device_manager_ = new AudioInputDeviceManager(audio_manager_);
   audio_input_device_manager_->Register(this, device_task_runner_);
 
+  // TODO(dalecurtis): Remove ScopedTracker below once crbug.com/457525 is
+  // fixed.
+  tracked_objects::ScopedTracker tracking_profile3(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "457525 MediaStreamManager::InitializeDeviceManagersOnIOThread 3"));
   // We want to be notified of IO message loop destruction to delete the thread
   // and the device managers.
   io_loop_ = base::MessageLoop::current();
   io_loop_->AddDestructionObserver(this);
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kUseFakeDeviceForMediaStream)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kUseFakeDeviceForMediaStream)) {
     audio_input_device_manager()->UseFakeDevice();
   }
 
+  // TODO(dalecurtis): Remove ScopedTracker below once crbug.com/457525 is
+  // fixed.
+  tracked_objects::ScopedTracker tracking_profile4(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "457525 MediaStreamManager::InitializeDeviceManagersOnIOThread 4"));
   video_capture_manager_ =
       new VideoCaptureManager(media::VideoCaptureDeviceFactory::CreateFactory(
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI)));
+#if defined(OS_WIN)
+  // Use an STA Video Capture Thread to try to avoid crashes on enumeration of
+  // buggy third party Direct Show modules, http://crbug.com/428958.
+  video_capture_thread_.init_com_with_mta(false);
+  CHECK(video_capture_thread_.Start());
+  video_capture_manager_->Register(this,
+                                   video_capture_thread_.message_loop_proxy());
+#else
   video_capture_manager_->Register(this, device_task_runner_);
+#endif
 }
 
 void MediaStreamManager::Opened(MediaStreamType stream_type,
@@ -1637,6 +1715,8 @@ void MediaStreamManager::Opened(MediaStreamType stream_type,
             // request asks for.
             FilterAudioEffects(request->options,
                 &device_it->device.input.effects);
+            EnableHotwordEffect(request->options,
+                                &device_it->device.input.effects);
 
             device_it->device.matched_output = info->device.matched_output;
           }
@@ -1874,7 +1954,7 @@ void MediaStreamManager::HandleAccessRequestResponse(
 
     if (device_info.device.type == content::MEDIA_TAB_VIDEO_CAPTURE ||
         device_info.device.type == content::MEDIA_TAB_AUDIO_CAPTURE) {
-      device_info.device.id = request->UIRequest()->tab_capture_device_id;
+      device_info.device.id = request->tab_capture_device_id;
 
       // Initialize the sample_rate and channel_layout here since for audio
       // mirroring, we don't go through EnumerateDevices where these are usually

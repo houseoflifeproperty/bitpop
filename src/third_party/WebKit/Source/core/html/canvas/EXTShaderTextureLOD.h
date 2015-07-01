@@ -5,13 +5,12 @@
 #ifndef EXTShaderTextureLOD_h
 #define EXTShaderTextureLOD_h
 
-#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
 #include "wtf/PassRefPtr.h"
 
 namespace blink {
 
-class EXTShaderTextureLOD FINAL : public WebGLExtension, public ScriptWrappable {
+class EXTShaderTextureLOD final : public WebGLExtension {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<EXTShaderTextureLOD> create(WebGLRenderingContextBase*);
@@ -19,7 +18,7 @@ public:
     static const char* extensionName();
 
     virtual ~EXTShaderTextureLOD();
-    virtual WebGLExtensionName name() const OVERRIDE;
+    virtual WebGLExtensionName name() const override;
 
 private:
     explicit EXTShaderTextureLOD(WebGLRenderingContextBase*);

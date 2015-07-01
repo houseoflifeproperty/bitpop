@@ -114,26 +114,14 @@ void OmniboxFieldTrial::ActivateDynamicTrials() {
 }
 
 int OmniboxFieldTrial::GetDisabledProviderTypes() {
-  // Make sure that Autocomplete dynamic field trials are activated.  It's OK to
-  // call this method multiple times.
-  ActivateDynamicTrials();
-
-  // Look for group names in form of "DisabledProviders_<mask>" where "mask"
-  // is a bitmap of disabled provider types (AutocompleteProvider::Type).
-  int provider_types = 0;
-  for (int i = 0; i < kMaxAutocompleteDynamicFieldTrials; ++i) {
-    std::string group_name = base::FieldTrialList::FindFullName(
-        DynamicFieldTrialName(i));
-    const char kDisabledProviders[] = "DisabledProviders_";
-    if (!StartsWithASCII(group_name, kDisabledProviders, true))
-      continue;
-    int types = 0;
-    if (!base::StringToInt(base::StringPiece(
-            group_name.substr(strlen(kDisabledProviders))), &types))
-      continue;
-    provider_types |= types;
+  const std::string& types_string = variations::GetVariationParamValue(
+      kBundledExperimentFieldTrialName,
+      kDisableProvidersRule);
+  int types = 0;
+  if (types_string.empty() || !base::StringToInt(types_string, &types)) {
+    return 0;
   }
-  return provider_types;
+  return types;
 }
 
 void OmniboxFieldTrial::GetActiveSuggestFieldTrialHashes(
@@ -175,9 +163,16 @@ bool OmniboxFieldTrial::InZeroSuggestFieldTrial() {
 }
 
 bool OmniboxFieldTrial::InZeroSuggestMostVisitedFieldTrial() {
-  return variations::GetVariationParamValue(
+  return InZeroSuggestMostVisitedWithoutSerpFieldTrial() ||
+      variations::GetVariationParamValue(
       kBundledExperimentFieldTrialName,
       kZeroSuggestVariantRule) == "MostVisited";
+}
+
+bool OmniboxFieldTrial::InZeroSuggestMostVisitedWithoutSerpFieldTrial() {
+  return variations::GetVariationParamValue(
+      kBundledExperimentFieldTrialName,
+      kZeroSuggestVariantRule) == "MostVisitedWithoutSERP";
 }
 
 bool OmniboxFieldTrial::InZeroSuggestAfterTypingFieldTrial() {
@@ -306,14 +301,8 @@ bool OmniboxFieldTrial::HQPAllowMatchInSchemeValue() {
       kHQPAllowMatchInSchemeRule) == "true";
 }
 
-bool OmniboxFieldTrial::DisableInlining() {
-  return variations::GetVariationParamValue(
-      kBundledExperimentFieldTrialName,
-      kDisableInliningRule) == "true";
-}
-
 bool OmniboxFieldTrial::EnableAnswersInSuggest() {
-  const CommandLine* cl = CommandLine::ForCurrentProcess();
+  const base::CommandLine* cl = base::CommandLine::ForCurrentProcess();
   if (cl->HasSwitch(switches::kDisableAnswersInSuggest))
     return false;
   if (cl->HasSwitch(switches::kEnableAnswersInSuggest))
@@ -324,20 +313,80 @@ bool OmniboxFieldTrial::EnableAnswersInSuggest() {
       kAnswersInSuggestRule) == "true";
 }
 
-bool OmniboxFieldTrial::AddUWYTMatchEvenIfPromotedURLs() {
+bool OmniboxFieldTrial::DisableResultsCaching() {
   return variations::GetVariationParamValue(
       kBundledExperimentFieldTrialName,
-      kAddUWYTMatchEvenIfPromotedURLsRule) == "true";
+      kDisableResultsCachingRule) == "true";
 }
 
-bool OmniboxFieldTrial::DisplayHintTextWhenPossible() {
+void OmniboxFieldTrial::GetSuggestPollingStrategy(bool* from_last_keystroke,
+                                                  int* polling_delay_ms) {
+  *from_last_keystroke = variations::GetVariationParamValue(
+      kBundledExperimentFieldTrialName,
+      kMeasureSuggestPollingDelayFromLastKeystrokeRule) == "true";
+
+  const std::string& polling_delay_string = variations::GetVariationParamValue(
+      kBundledExperimentFieldTrialName,
+      kSuggestPollingDelayMsRule);
+  if (polling_delay_string.empty() ||
+      !base::StringToInt(polling_delay_string, polling_delay_ms) ||
+      (*polling_delay_ms <= 0)) {
+    *polling_delay_ms = kDefaultMinimumTimeBetweenSuggestQueriesMs;
+  }
+}
+
+bool OmniboxFieldTrial::HQPExperimentalScoringEnabled() {
   return variations::GetVariationParamValue(
       kBundledExperimentFieldTrialName,
-      kDisplayHintTextWhenPossibleRule) == "true";
+      kHQPExperimentalScoringEnabledParam) == "true";
+}
+
+std::string OmniboxFieldTrial::HQPExperimentalScoringBuckets() {
+  if (!HQPExperimentalScoringEnabled())
+    return "";
+
+  return variations::GetVariationParamValue(
+      kBundledExperimentFieldTrialName,
+      kHQPExperimentalScoringBucketsParam);
+}
+
+float OmniboxFieldTrial::HQPExperimentalTopicalityThreshold() {
+  if (!HQPExperimentalScoringEnabled())
+    return -1;
+
+  std::string topicality_threhold_str =
+    variations::GetVariationParamValue(
+        kBundledExperimentFieldTrialName,
+        kHQPExperimentalScoringTopicalityThresholdParam);
+
+  double topicality_threshold;
+  if (!base::StringToDouble(topicality_threhold_str, &topicality_threshold))
+    return -1;
+
+  return static_cast<float>(topicality_threshold);
+}
+
+bool OmniboxFieldTrial::HQPFixFrequencyScoringBugs() {
+  return variations::GetVariationParamValue(
+      kBundledExperimentFieldTrialName,
+      kHQPFixFrequencyScoringBugsRule) == "true";
+}
+
+size_t OmniboxFieldTrial::HQPNumTitleWordsToAllow() {
+  // The value of the rule is a string that encodes an integer (actually
+  // size_t) containing the number of words.
+  size_t num_title_words;
+  if (!base::StringToSizeT(
+          variations::GetVariationParamValue(kBundledExperimentFieldTrialName,
+                                             kHQPNumTitleWordsRule),
+          &num_title_words))
+    return 10;
+  return num_title_words;
 }
 
 const char OmniboxFieldTrial::kBundledExperimentFieldTrialName[] =
     "OmniboxBundledExperimentV1";
+const char OmniboxFieldTrial::kDisableProvidersRule[] = "DisableProviders";
 const char OmniboxFieldTrial::kShortcutsScoringMaxRelevanceRule[] =
     "ShortcutsScoringMaxRelevance";
 const char OmniboxFieldTrial::kSearchHistoryRule[] = "SearchHistory";
@@ -349,12 +398,17 @@ const char OmniboxFieldTrial::kHQPAllowMatchInSchemeRule[] =
     "HQPAllowMatchInScheme";
 const char OmniboxFieldTrial::kZeroSuggestRule[] = "ZeroSuggest";
 const char OmniboxFieldTrial::kZeroSuggestVariantRule[] = "ZeroSuggestVariant";
-const char OmniboxFieldTrial::kDisableInliningRule[] = "DisableInlining";
 const char OmniboxFieldTrial::kAnswersInSuggestRule[] = "AnswersInSuggest";
-const char OmniboxFieldTrial::kAddUWYTMatchEvenIfPromotedURLsRule[] =
-    "AddUWYTMatchEvenIfPromotedURLs";
-const char OmniboxFieldTrial::kDisplayHintTextWhenPossibleRule[] =
-    "DisplayHintTextWhenPossible";
+const char OmniboxFieldTrial::kDisableResultsCachingRule[] =
+    "DisableResultsCaching";
+const char
+OmniboxFieldTrial::kMeasureSuggestPollingDelayFromLastKeystrokeRule[] =
+    "MeasureSuggestPollingDelayFromLastKeystroke";
+const char OmniboxFieldTrial::kSuggestPollingDelayMsRule[] =
+    "SuggestPollingDelayMs";
+const char OmniboxFieldTrial::kHQPFixFrequencyScoringBugsRule[] =
+    "HQPFixFrequencyScoringBugs";
+const char OmniboxFieldTrial::kHQPNumTitleWordsRule[] = "HQPNumTitleWords";
 
 const char OmniboxFieldTrial::kHUPNewScoringEnabledParam[] =
     "HUPExperimentalScoringEnabled";
@@ -370,6 +424,17 @@ const char OmniboxFieldTrial::kHUPNewScoringVisitedCountHalfLifeTimeParam[] =
     "VisitedCountHalfLifeTime";
 const char OmniboxFieldTrial::kHUPNewScoringVisitedCountScoreBucketsParam[] =
     "VisitedCountScoreBuckets";
+
+const char OmniboxFieldTrial::kHQPExperimentalScoringEnabledParam[] =
+    "HQPExperimentalScoringEnabled";
+const char OmniboxFieldTrial::kHQPExperimentalScoringBucketsParam[] =
+    "HQPExperimentalScoringBuckets";
+const char
+    OmniboxFieldTrial::kHQPExperimentalScoringTopicalityThresholdParam[] =
+      "HQPExperimentalScoringTopicalityThreshold";
+
+// static
+int OmniboxFieldTrial::kDefaultMinimumTimeBetweenSuggestQueriesMs = 100;
 
 // Background and implementation details:
 //

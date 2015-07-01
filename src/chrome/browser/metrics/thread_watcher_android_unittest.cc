@@ -38,7 +38,8 @@ void NotifyApplicationStateChange(base::android::ApplicationState state) {
 
 }  // namespace
 
-TEST(ThreadWatcherAndroidTest, ApplicationStatusNotification) {
+// This test is flaky: http://crbug.com/485091.
+TEST(ThreadWatcherAndroidTest, DISABLED_ApplicationStatusNotification) {
   // Do not delay the ThreadWatcherList initialization for this test.
   ThreadWatcherList::g_initialize_delay_seconds = 0;
 
@@ -55,7 +56,7 @@ TEST(ThreadWatcherAndroidTest, ApplicationStatusNotification) {
   // Register, and notify the application has just started,
   // and ensure the thread watcher list is created.
   ThreadWatcherAndroid::RegisterApplicationStatusListener();
-  ThreadWatcherList::StartWatchingAll(*CommandLine::ForCurrentProcess());
+  ThreadWatcherList::StartWatchingAll(*base::CommandLine::ForCurrentProcess());
   NotifyApplicationStateChange(
       base::android::APPLICATION_STATE_HAS_RUNNING_ACTIVITIES);
   EXPECT_TRUE(ThreadWatcherList::g_thread_watcher_list_);

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,16 +10,28 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
+#include "components/audio_modem/public/modem.h"
+#include "components/audio_modem/test/stub_whispernet_client.h"
+#include "components/copresence/copresence_state_impl.h"
 #include "components/copresence/handlers/directive_handler.h"
 #include "components/copresence/proto/data.pb.h"
 #include "components/copresence/proto/enums.pb.h"
 #include "components/copresence/proto/rpcs.pb.h"
+#include "components/copresence/test/fake_directive_handler.h"
 #include "net/http/http_status_code.h"
-#include "testing/gtest/include/gtest/gtest.h"
+#include "testing/gmock/include/gmock/gmock.h"
 
 using google::protobuf::MessageLite;
 using google::protobuf::RepeatedPtrField;
+
+using testing::ElementsAre;
+using testing::Property;
+using testing::SizeIs;
+
+using audio_modem::AudioToken;
+using audio_modem::WhispernetClient;
 
 namespace copresence {
 
@@ -27,92 +39,115 @@ namespace {
 
 const char kChromeVersion[] = "Chrome Version String";
 
-void CreateSubscribedMessage(const std::vector<std::string>& subscription_ids,
-                             const std::string& message_string,
-                             SubscribedMessage* message_proto) {
-  message_proto->mutable_published_message()->set_payload(message_string);
-  for (std::vector<std::string>::const_iterator subscription_id =
-           subscription_ids.begin();
-       subscription_id != subscription_ids.end();
-       ++subscription_id) {
-    message_proto->add_subscription_id(*subscription_id);
-  }
-}
-
-// TODO(ckehoe): Make DirectiveHandler an interface.
-class FakeDirectiveHandler : public DirectiveHandler {
- public:
-  FakeDirectiveHandler() {}
-  virtual ~FakeDirectiveHandler() {}
-
-  const std::vector<Directive>& added_directives() const {
-    return added_directives_;
-  }
-
-  virtual void Initialize(
-      const AudioRecorder::DecodeSamplesCallback& decode_cb,
-      const AudioDirectiveHandler::EncodeTokenCallback& encode_cb) OVERRIDE {}
-
-  virtual void AddDirective(const Directive& directive) OVERRIDE {
-    added_directives_.push_back(directive);
-  }
-
-  virtual void RemoveDirectives(const std::string& op_id) OVERRIDE {
-    // TODO(ckehoe): Add a parallel implementation when prod has one.
-  }
-
- private:
-  std::vector<Directive> added_directives_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeDirectiveHandler);
-};
+void IgnoreMessages(
+    const RepeatedPtrField<SubscribedMessage>& /* messages */) {}
 
 }  // namespace
 
 class RpcHandlerTest : public testing::Test, public CopresenceDelegate {
  public:
-  RpcHandlerTest() : rpc_handler_(this), status_(SUCCESS), api_key_("API key") {
-    rpc_handler_.server_post_callback_ =
-        base::Bind(&RpcHandlerTest::CaptureHttpPost, base::Unretained(this));
-    rpc_handler_.device_id_ = "Device ID";
+  RpcHandlerTest()
+      : whispernet_client_(new audio_modem::StubWhispernetClient),
+        // TODO(ckehoe): Use a FakeCopresenceState here
+        // and test that it gets called correctly.
+        rpc_handler_(this,
+                     &directive_handler_,
+                     nullptr,
+                     nullptr,
+                     base::Bind(&IgnoreMessages),
+                     base::Bind(&RpcHandlerTest::CaptureHttpPost,
+                                base::Unretained(this))),
+        status_(SUCCESS) {}
+
+  // CopresenceDelegate implementation
+
+  void HandleMessages(const std::string& /* app_id */,
+                      const std::string& subscription_id,
+                      const std::vector<Message>& messages) override {
+    NOTREACHED();
   }
 
-  void CaptureHttpPost(
-      net::URLRequestContextGetter* url_context_getter,
-      const std::string& rpc_name,
-      scoped_ptr<MessageLite> request_proto,
-      const RpcHandler::PostCleanupCallback& response_callback) {
-    rpc_name_ = rpc_name;
-    request_proto_ = request_proto.Pass();
+  void HandleStatusUpdate(CopresenceStatus /* status */) override {
+    NOTREACHED();
   }
 
-  void CaptureStatus(CopresenceStatus status) {
-    status_ = status;
+  net::URLRequestContextGetter* GetRequestContext() const override {
+    return nullptr;
   }
 
-  inline const ReportRequest* GetReportSent() {
-    return static_cast<ReportRequest*>(request_proto_.get());
+  const std::string GetPlatformVersionString() const override {
+    return kChromeVersion;
   }
 
-  const TokenTechnology& GetTokenTechnologyFromReport() {
-    return GetReportSent()->update_signals_request().state().capabilities()
-        .token_technology(0);
+  const std::string GetAPIKey(const std::string& app_id) const override {
+    return app_id + " API Key";
   }
 
-  const RepeatedPtrField<PublishedMessage>& GetMessagesPublished() {
-    return GetReportSent()->manage_messages_request().message_to_publish();
+  WhispernetClient* GetWhispernetClient() override {
+    return whispernet_client_.get();
   }
 
-  const RepeatedPtrField<Subscription>& GetSubscriptionsSent() {
-    return GetReportSent()->manage_subscriptions_request().subscription();
+  // TODO(ckehoe): Add GCM tests.
+  gcm::GCMDriver* GetGCMDriver() override {
+    return nullptr;
   }
 
-  void SetDeviceId(const std::string& device_id) {
-    rpc_handler_.device_id_ = device_id;
+  const std::string GetDeviceId(bool authenticated) override {
+    return device_id_by_auth_state_[authenticated];
   }
 
-  const std::string& GetDeviceId() {
-    return rpc_handler_.device_id_;
+  void SaveDeviceId(bool authenticated, const std::string& device_id) override {
+    device_id_by_auth_state_[authenticated] = device_id;
+  }
+
+ protected:
+
+  // Send test input to RpcHandler
+
+  void RegisterDevice(bool authenticated) {
+    rpc_handler_.RegisterDevice(authenticated);
+  }
+
+  void SendRegisterResponse(bool authenticated,
+                            const std::string& device_id) {
+    RegisterDeviceResponse response;
+    response.set_registered_device_id(device_id);
+    response.mutable_header()->mutable_status()->set_code(OK);
+
+    std::string serialized_response;
+    response.SerializeToString(&serialized_response);
+    rpc_handler_.RegisterResponseHandler(
+        authenticated, false, nullptr, net::HTTP_OK, serialized_response);
+  }
+
+  void SendReport(scoped_ptr<ReportRequest> request,
+                  const std::string& app_id,
+                  const std::string& auth_token) {
+    rpc_handler_.SendReportRequest(
+      request.Pass(), app_id, auth_token, StatusCallback());
+  }
+
+  void SendReportResponse(int status_code,
+                          scoped_ptr<ReportResponse> response) {
+    response->mutable_header()->mutable_status()->set_code(OK);
+
+    std::string serialized_response;
+    response->SerializeToString(&serialized_response);
+    rpc_handler_.ReportResponseHandler(
+        base::Bind(&RpcHandlerTest::CaptureStatus, base::Unretained(this)),
+        nullptr,
+        status_code,
+        serialized_response);
+  }
+
+  // Read and modify RpcHandler state
+
+  void SetAuthToken(const std::string& auth_token) {
+    rpc_handler_.auth_token_ = auth_token;
+  }
+
+  const ScopedVector<RpcHandler::PendingRequest>& request_queue() const {
+    return rpc_handler_.pending_requests_queue_;
   }
 
   void AddInvalidToken(const std::string& token) {
@@ -123,80 +158,132 @@ class RpcHandlerTest : public testing::Test, public CopresenceDelegate {
     return rpc_handler_.invalid_audio_token_cache_.HasKey(token);
   }
 
-  FakeDirectiveHandler* InstallFakeDirectiveHandler() {
-    FakeDirectiveHandler* handler = new FakeDirectiveHandler;
-    rpc_handler_.directive_handler_.reset(handler);
-    return handler;
-  }
-
-  void InvokeReportResponseHandler(int status_code,
-                                   const std::string& response) {
-    rpc_handler_.ReportResponseHandler(
-        base::Bind(&RpcHandlerTest::CaptureStatus, base::Unretained(this)),
-        NULL,
-        status_code,
-        response);
-  }
-
-  // CopresenceDelegate implementation
-
-  virtual void HandleMessages(
-      const std::string& app_id,
-      const std::string& subscription_id,
-      const std::vector<Message>& messages) OVERRIDE {
-    // app_id is unused for now, pending a server fix.
-    messages_by_subscription_[subscription_id] = messages;
-  }
-
-  virtual net::URLRequestContextGetter* GetRequestContext() const OVERRIDE {
-    return NULL;
-  }
-
-  virtual const std::string GetPlatformVersionString() const OVERRIDE {
-    return kChromeVersion;
-  }
-
-  virtual const std::string GetAPIKey() const OVERRIDE {
-    return api_key_;
-  }
-
-  virtual WhispernetClient* GetWhispernetClient() OVERRIDE {
-    return NULL;
-  }
-
- protected:
   // For rpc_handler_.invalid_audio_token_cache_
   base::MessageLoop message_loop_;
 
+  scoped_ptr<WhispernetClient> whispernet_client_;
+  FakeDirectiveHandler directive_handler_;
   RpcHandler rpc_handler_;
-  CopresenceStatus status_;
-  std::string api_key_;
 
+  std::map<bool, std::string> device_id_by_auth_state_;
+
+  CopresenceStatus status_;
   std::string rpc_name_;
-  scoped_ptr<MessageLite> request_proto_;
-  std::map<std::string, std::vector<Message>> messages_by_subscription_;
+  std::string api_key_;
+  std::string auth_token_;
+  ScopedVector<MessageLite> request_protos_;
+
+ private:
+  void CaptureHttpPost(
+      net::URLRequestContextGetter* url_context_getter,
+      const std::string& rpc_name,
+      const std::string& api_key,
+      const std::string& auth_token,
+      scoped_ptr<MessageLite> request_proto,
+      const RpcHandler::PostCleanupCallback& response_callback) {
+    rpc_name_ = rpc_name;
+    api_key_ = api_key;
+    auth_token_ = auth_token;
+    request_protos_.push_back(request_proto.release());
+  }
+
+  void CaptureStatus(CopresenceStatus status) {
+    status_ = status;
+  }
 };
 
-TEST_F(RpcHandlerTest, Initialize) {
-  SetDeviceId("");
-  rpc_handler_.Initialize(RpcHandler::SuccessCallback());
-  RegisterDeviceRequest* registration =
-      static_cast<RegisterDeviceRequest*>(request_proto_.get());
-  Identity identity = registration->device_identifiers().registrant();
-  EXPECT_EQ(CHROME, identity.type());
-  EXPECT_FALSE(identity.chrome_id().empty());
+TEST_F(RpcHandlerTest, RegisterDevice) {
+  RegisterDevice(false);
+  EXPECT_THAT(request_protos_, SizeIs(1));
+  const RegisterDeviceRequest* registration =
+      static_cast<RegisterDeviceRequest*>(request_protos_[0]);
+  EXPECT_EQ(CHROME, registration->device_identifiers().registrant().type());
+
+  SetAuthToken("Register auth");
+  RegisterDevice(true);
+  EXPECT_THAT(request_protos_, SizeIs(2));
+  registration = static_cast<RegisterDeviceRequest*>(request_protos_[1]);
+  EXPECT_FALSE(registration->has_device_identifiers());
+}
+
+TEST_F(RpcHandlerTest, RequestQueuing) {
+  // Send a report.
+  ReportRequest* report = new ReportRequest;
+  report->mutable_manage_messages_request()->add_id_to_unpublish("unpublish");
+  SendReport(make_scoped_ptr(report), "Q App ID", "Q Auth Token");
+  EXPECT_THAT(request_queue(), SizeIs(1));
+  EXPECT_TRUE(request_queue()[0]->authenticated);
+
+  // Check for registration request.
+  EXPECT_THAT(request_protos_, SizeIs(1));
+  const RegisterDeviceRequest* registration =
+      static_cast<RegisterDeviceRequest*>(request_protos_[0]);
+  EXPECT_FALSE(registration->device_identifiers().has_registrant());
+  EXPECT_EQ("Q Auth Token", auth_token_);
+
+  // Send a second report.
+  report = new ReportRequest;
+  report->mutable_manage_subscriptions_request()->add_id_to_unsubscribe(
+      "unsubscribe");
+  SendReport(make_scoped_ptr(report), "Q App ID", "Q Auth Token");
+  EXPECT_THAT(request_protos_, SizeIs(1));
+  EXPECT_THAT(request_queue(), SizeIs(2));
+  EXPECT_TRUE(request_queue()[1]->authenticated);
+
+  // Send an anonymous report.
+  report = new ReportRequest;
+  report->mutable_update_signals_request()->add_token_observation()
+      ->set_token_id("Q Audio Token");
+  SendReport(make_scoped_ptr(report), "Q App ID", "");
+  EXPECT_THAT(request_queue(), SizeIs(3));
+  EXPECT_FALSE(request_queue()[2]->authenticated);
+
+  // Check for another registration request.
+  EXPECT_THAT(request_protos_, SizeIs(2));
+  registration = static_cast<RegisterDeviceRequest*>(request_protos_[1]);
+  EXPECT_TRUE(registration->device_identifiers().has_registrant());
+  EXPECT_EQ("", auth_token_);
+
+  // Respond to the first registration.
+  SendRegisterResponse(true, "Q Auth Device ID");
+  EXPECT_EQ("Q Auth Device ID", device_id_by_auth_state_[true]);
+
+  // Check that queued reports are sent.
+  EXPECT_THAT(request_protos_, SizeIs(4));
+  EXPECT_THAT(request_queue(), SizeIs(1));
+  EXPECT_THAT(directive_handler_.removed_directives(),
+              ElementsAre("unpublish", "unsubscribe"));
+  report = static_cast<ReportRequest*>(request_protos_[2]);
+  EXPECT_EQ("unpublish", report->manage_messages_request().id_to_unpublish(0));
+  report = static_cast<ReportRequest*>(request_protos_[3]);
+  EXPECT_EQ("unsubscribe",
+            report->manage_subscriptions_request().id_to_unsubscribe(0));
+
+  // Respond to the second registration.
+  SendRegisterResponse(false, "Q Anonymous Device ID");
+  EXPECT_EQ("Q Anonymous Device ID", device_id_by_auth_state_[false]);
+
+  // Check for last report.
+  EXPECT_THAT(request_protos_, SizeIs(5));
+  EXPECT_TRUE(request_queue().empty());
+  report = static_cast<ReportRequest*>(request_protos_[4]);
+  EXPECT_EQ("Q Audio Token",
+            report->update_signals_request().token_observation(0).token_id());
 }
 
 TEST_F(RpcHandlerTest, CreateRequestHeader) {
-  SetDeviceId("CreateRequestHeader Device ID");
-  rpc_handler_.SendReportRequest(make_scoped_ptr(new ReportRequest),
-                                 "CreateRequestHeader App ID",
-                                 StatusCallback());
+  device_id_by_auth_state_[true] = "CreateRequestHeader Device ID";
+  SendReport(make_scoped_ptr(new ReportRequest),
+             "CreateRequestHeader App",
+             "CreateRequestHeader Auth Token");
+
   EXPECT_EQ(RpcHandler::kReportRequestRpcName, rpc_name_);
-  ReportRequest* report = static_cast<ReportRequest*>(request_proto_.get());
+  EXPECT_EQ("CreateRequestHeader App API Key", api_key_);
+  EXPECT_EQ("CreateRequestHeader Auth Token", auth_token_);
+  const ReportRequest* report = static_cast<ReportRequest*>(request_protos_[0]);
   EXPECT_EQ(kChromeVersion,
             report->header().framework_version().version_name());
-  EXPECT_EQ("CreateRequestHeader App ID",
+  EXPECT_EQ("CreateRequestHeader App",
             report->header().client_version().client());
   EXPECT_EQ("CreateRequestHeader Device ID",
             report->header().registered_device_id());
@@ -207,79 +294,54 @@ TEST_F(RpcHandlerTest, CreateRequestHeader) {
 TEST_F(RpcHandlerTest, ReportTokens) {
   std::vector<AudioToken> test_tokens;
   test_tokens.push_back(AudioToken("token 1", false));
-  test_tokens.push_back(AudioToken("token 2", true));
-  test_tokens.push_back(AudioToken("token 3", false));
+  test_tokens.push_back(AudioToken("token 2", false));
+  test_tokens.push_back(AudioToken("token 3", true));
   AddInvalidToken("token 2");
+
+  device_id_by_auth_state_[false] = "ReportTokens Anonymous Device";
+  device_id_by_auth_state_[true] = "ReportTokens Auth Device";
+  SetAuthToken("ReportTokens Auth");
 
   rpc_handler_.ReportTokens(test_tokens);
   EXPECT_EQ(RpcHandler::kReportRequestRpcName, rpc_name_);
-  ReportRequest* report = static_cast<ReportRequest*>(request_proto_.get());
-  google::protobuf::RepeatedPtrField<TokenObservation> tokens_sent =
+  EXPECT_EQ(" API Key", api_key_);
+  EXPECT_THAT(request_protos_, SizeIs(2));
+  const ReportRequest* report = static_cast<ReportRequest*>(request_protos_[0]);
+  RepeatedPtrField<TokenObservation> tokens_sent =
       report->update_signals_request().token_observation();
-  ASSERT_EQ(2, tokens_sent.size());
-  EXPECT_EQ("token 1", tokens_sent.Get(0).token_id());
-  EXPECT_EQ("token 3", tokens_sent.Get(1).token_id());
+  EXPECT_THAT(tokens_sent, ElementsAre(
+      Property(&TokenObservation::token_id, "token 1"),
+      Property(&TokenObservation::token_id, "token 3"),
+      Property(&TokenObservation::token_id, "current audible"),
+      Property(&TokenObservation::token_id, "current inaudible")));
 }
 
 TEST_F(RpcHandlerTest, ReportResponseHandler) {
   // Fail on HTTP status != 200.
-  ReportResponse empty_response;
-  empty_response.mutable_header()->mutable_status()->set_code(OK);
-  std::string serialized_empty_response;
-  ASSERT_TRUE(empty_response.SerializeToString(&serialized_empty_response));
+  scoped_ptr<ReportResponse> response(new ReportResponse);
   status_ = SUCCESS;
-  InvokeReportResponseHandler(net::HTTP_BAD_REQUEST, serialized_empty_response);
+  SendReportResponse(net::HTTP_BAD_REQUEST, response.Pass());
   EXPECT_EQ(FAIL, status_);
 
-  std::vector<std::string> subscription_1(1, "Subscription 1");
-  std::vector<std::string> subscription_2(1, "Subscription 2");
-  std::vector<std::string> both_subscriptions;
-  both_subscriptions.push_back("Subscription 1");
-  both_subscriptions.push_back("Subscription 2");
-
-  ReportResponse test_response;
-  test_response.mutable_header()->mutable_status()->set_code(OK);
+  // Construct a test ReportResponse.
+  response.reset(new ReportResponse);
+  response->mutable_header()->mutable_status()->set_code(OK);
   UpdateSignalsResponse* update_response =
-      test_response.mutable_update_signals_response();
+      response->mutable_update_signals_response();
   update_response->set_status(util::error::OK);
   Token* invalid_token = update_response->add_token();
   invalid_token->set_id("bad token");
   invalid_token->set_status(INVALID);
-  CreateSubscribedMessage(
-      subscription_1, "Message A", update_response->add_message());
-  CreateSubscribedMessage(
-      subscription_2, "Message B", update_response->add_message());
-  CreateSubscribedMessage(
-      both_subscriptions, "Message C", update_response->add_message());
   update_response->add_directive()->set_subscription_id("Subscription 1");
   update_response->add_directive()->set_subscription_id("Subscription 2");
 
-  messages_by_subscription_.clear();
-  FakeDirectiveHandler* directive_handler = InstallFakeDirectiveHandler();
-  std::string serialized_proto;
-  ASSERT_TRUE(test_response.SerializeToString(&serialized_proto));
+  // Check processing.
   status_ = FAIL;
-  InvokeReportResponseHandler(net::HTTP_OK, serialized_proto);
-
+  SendReportResponse(net::HTTP_OK, response.Pass());
   EXPECT_EQ(SUCCESS, status_);
   EXPECT_TRUE(TokenIsInvalid("bad token"));
-  ASSERT_EQ(2U, messages_by_subscription_.size());
-  ASSERT_EQ(2U, messages_by_subscription_["Subscription 1"].size());
-  ASSERT_EQ(2U, messages_by_subscription_["Subscription 2"].size());
-  EXPECT_EQ("Message A",
-            messages_by_subscription_["Subscription 1"][0].payload());
-  EXPECT_EQ("Message B",
-            messages_by_subscription_["Subscription 2"][0].payload());
-  EXPECT_EQ("Message C",
-            messages_by_subscription_["Subscription 1"][1].payload());
-  EXPECT_EQ("Message C",
-            messages_by_subscription_["Subscription 2"][1].payload());
-
-  ASSERT_EQ(2U, directive_handler->added_directives().size());
-  EXPECT_EQ("Subscription 1",
-            directive_handler->added_directives()[0].subscription_id());
-  EXPECT_EQ("Subscription 2",
-            directive_handler->added_directives()[1].subscription_id());
+  EXPECT_THAT(directive_handler_.added_directives(),
+              ElementsAre("Subscription 1", "Subscription 2"));
 }
 
 }  // namespace copresence

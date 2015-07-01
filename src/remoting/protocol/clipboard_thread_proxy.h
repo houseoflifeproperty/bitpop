@@ -12,16 +12,12 @@
 #include "base/task_runner.h"
 #include "remoting/protocol/clipboard_stub.h"
 
-namespace base {
-class MessageLoopProxy;
-}  // namespace base
-
 namespace remoting {
 namespace protocol {
 
 class ClipboardThreadProxy : public ClipboardStub {
  public:
-  virtual ~ClipboardThreadProxy();
+  ~ClipboardThreadProxy() override;
 
   // Constructs a proxy for |clipboard_stub| which will trampoline invocations
   // to |clipboard_stub_task_runner|.
@@ -30,7 +26,7 @@ class ClipboardThreadProxy : public ClipboardStub {
       scoped_refptr<base::TaskRunner> clipboard_stub_task_runner);
 
   // ClipboardStub implementation.
-  virtual void InjectClipboardEvent(const ClipboardEvent& event) OVERRIDE;
+  void InjectClipboardEvent(const ClipboardEvent& event) override;
 
  private:
   // Injects a clipboard event into a stub, if the given weak pointer to the

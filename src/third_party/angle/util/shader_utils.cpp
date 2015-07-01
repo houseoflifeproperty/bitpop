@@ -22,7 +22,7 @@ static std::string ReadFileToString(const std::string &source)
     std::string result;
 
     stream.seekg(0, std::ios::end);
-    result.reserve(stream.tellg());
+    result.reserve(static_cast<unsigned int>(stream.tellg()));
     stream.seekg(0, std::ios::beg);
 
     result.assign((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
@@ -47,9 +47,9 @@ GLuint CompileShader(GLenum type, const std::string &source)
         glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &infoLogLength);
 
         std::vector<GLchar> infoLog(infoLogLength);
-        glGetShaderInfoLog(shader, infoLog.size(), NULL, infoLog.data());
+        glGetShaderInfoLog(shader, infoLog.size(), NULL, &infoLog[0]);
 
-        std::cerr << "shader compilation failed: " << infoLog.data();
+        std::cerr << "shader compilation failed: " << &infoLog[0];
 
         glDeleteShader(shader);
         shader = 0;
@@ -101,9 +101,9 @@ GLuint CompileProgram(const std::string &vsSource, const std::string &fsSource)
         glGetProgramiv(program, GL_INFO_LOG_LENGTH, &infoLogLength);
 
         std::vector<GLchar> infoLog(infoLogLength);
-        glGetProgramInfoLog(program, infoLog.size(), NULL, infoLog.data());
+        glGetProgramInfoLog(program, infoLog.size(), NULL, &infoLog[0]);
 
-        std::cerr << "program link failed: " << infoLog.data();
+        std::cerr << "program link failed: " << &infoLog[0];
 
         glDeleteProgram(program);
         return 0;

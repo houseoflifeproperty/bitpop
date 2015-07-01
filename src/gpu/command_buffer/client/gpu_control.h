@@ -15,6 +15,12 @@
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/gpu_export.h"
 
+extern "C" typedef struct _ClientBuffer* ClientBuffer;
+
+namespace base {
+class Lock;
+}
+
 namespace gfx {
 class GpuMemoryBuffer;
 }
@@ -29,17 +35,22 @@ class GPU_EXPORT GpuControl {
 
   virtual Capabilities GetCapabilities() = 0;
 
-  // Create a gpu memory buffer of the given dimensions and format. Returns
-  // its ID or -1 on error.
-  virtual gfx::GpuMemoryBuffer* CreateGpuMemoryBuffer(
-      size_t width,
-      size_t height,
-      unsigned internalformat,
-      unsigned usage,
-      int32_t* id) = 0;
+  // Create an image for a client buffer with the given dimensions and
+  // format. Returns its ID or -1 on error.
+  virtual int32_t CreateImage(ClientBuffer buffer,
+                              size_t width,
+                              size_t height,
+                              unsigned internalformat) = 0;
 
-  // Destroy a gpu memory buffer. The ID must be positive.
-  virtual void DestroyGpuMemoryBuffer(int32_t id) = 0;
+  // Destroy an image. The ID must be positive.
+  virtual void DestroyImage(int32_t id) = 0;
+
+  // Create a gpu memory buffer backed image with the given dimensions and
+  // format for |usage|. Returns its ID or -1 on error.
+  virtual int32_t CreateGpuMemoryBufferImage(size_t width,
+                                             size_t height,
+                                             unsigned internalformat,
+                                             unsigned usage) = 0;
 
   // Inserts a sync point, returning its ID. Sync point IDs are global and can
   // be used for cross-context synchronization.
@@ -64,12 +75,15 @@ class GPU_EXPORT GpuControl {
 
   virtual void SetSurfaceVisible(bool visible) = 0;
 
-  // Invokes the callback once the context has been flushed.
-  virtual void Echo(const base::Closure& callback) = 0;
-
   // Attaches an external stream to the texture given by |texture_id| and
   // returns a stream identifier.
   virtual uint32_t CreateStreamTexture(uint32_t texture_id) = 0;
+
+  // Sets a lock this will be held on every callback from the GPU
+  // implementation. This lock must be set and must be held on every call into
+  // the GPU implementation if it is to be used from multiple threads. This
+  // may not be supported with all implementations.
+  virtual void SetLock(base::Lock*) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GpuControl);

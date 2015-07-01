@@ -31,6 +31,8 @@
 #ifndef WorkerThreadStartupData_h
 #define WorkerThreadStartupData_h
 
+#include "bindings/core/v8/V8CacheOptions.h"
+#include "core/CoreExport.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerThread.h"
@@ -43,13 +45,13 @@ namespace blink {
 
 class WorkerClients;
 
-class WorkerThreadStartupData FINAL : public NoBaseWillBeGarbageCollectedFinalized<WorkerThreadStartupData> {
+class CORE_EXPORT WorkerThreadStartupData final {
     WTF_MAKE_NONCOPYABLE(WorkerThreadStartupData);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED(WorkerThreadStartupData);
 public:
-    static PassOwnPtrWillBeRawPtr<WorkerThreadStartupData> create(const KURL& scriptURL, const String& userAgent, const String& sourceCode, WorkerThreadStartMode startMode, const String& contentSecurityPolicy, ContentSecurityPolicyHeaderType contentSecurityPolicyType, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
+    static PassOwnPtr<WorkerThreadStartupData> create(const KURL& scriptURL, const String& userAgent, const String& sourceCode, PassOwnPtr<Vector<char>> cachedMetaData, WorkerThreadStartMode startMode, const String& contentSecurityPolicy, ContentSecurityPolicyHeaderType contentSecurityPolicyType, const SecurityOrigin* starterOrigin, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients, V8CacheOptions v8CacheOptions = V8CacheOptionsDefault)
     {
-        return adoptPtrWillBeNoop(new WorkerThreadStartupData(scriptURL, userAgent, sourceCode, startMode, contentSecurityPolicy, contentSecurityPolicyType, workerClients));
+        return adoptPtr(new WorkerThreadStartupData(scriptURL, userAgent, sourceCode, cachedMetaData, startMode, contentSecurityPolicy, contentSecurityPolicyType, starterOrigin, workerClients, v8CacheOptions));
     }
 
     ~WorkerThreadStartupData();
@@ -57,15 +59,39 @@ public:
     KURL m_scriptURL;
     String m_userAgent;
     String m_sourceCode;
+    OwnPtr<Vector<char>> m_cachedMetaData;
     WorkerThreadStartMode m_startMode;
     String m_contentSecurityPolicy;
     ContentSecurityPolicyHeaderType m_contentSecurityPolicyType;
-    OwnPtrWillBeMember<WorkerClients> m_workerClients;
 
-    void trace(Visitor*);
+    // The SecurityOrigin of the Document creating a Worker may have
+    // been configured with extra policy privileges when it was created
+    // (e.g., enforce path-based file:// origins.)
+    // To ensure that these are transferred to the origin of a new worker
+    // global scope, supply the Document's SecurityOrigin as the
+    // 'starter origin'.
+    //
+    // Ownership of this optional starter origin remain with the caller,
+    // and is assumed to stay alive until the new Worker thread has been
+    // initialized.
+    //
+    // See SecurityOrigin::transferPrivilegesFrom() for details on what
+    // privileges are transferred.
+    const SecurityOrigin* m_starterOrigin;
+
+    // This object is created and initialized on the thread creating
+    // a new worker context, but ownership of it and this WorkerThreadStartupData
+    // structure is passed along to the new worker thread, where it is finalized.
+    //
+    // Hence, CrossThreadPersistent<> is required to allow finalization
+    // to happen on a thread different than the thread creating the
+    // persistent reference.
+    OwnPtrWillBeCrossThreadPersistent<WorkerClients> m_workerClients;
+
+    V8CacheOptions m_v8CacheOptions;
 
 private:
-    WorkerThreadStartupData(const KURL& scriptURL, const String& userAgent, const String& sourceCode, WorkerThreadStartMode, const String& contentSecurityPolicy, ContentSecurityPolicyHeaderType contentSecurityPolicyType, PassOwnPtrWillBeRawPtr<WorkerClients>);
+    WorkerThreadStartupData(const KURL& scriptURL, const String& userAgent, const String& sourceCode, PassOwnPtr<Vector<char>> cachedMetaData, WorkerThreadStartMode, const String& contentSecurityPolicy, ContentSecurityPolicyHeaderType contentSecurityPolicyType, const SecurityOrigin*, PassOwnPtrWillBeRawPtr<WorkerClients>, V8CacheOptions);
 };
 
 } // namespace blink

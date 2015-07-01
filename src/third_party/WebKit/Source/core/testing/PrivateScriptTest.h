@@ -12,24 +12,24 @@
 
 namespace blink {
 
-class LocalFrame;
+class Document;
 
 class PrivateScriptTest : public GarbageCollectedFinalized<PrivateScriptTest>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PrivateScriptTest* create(LocalFrame* frame)
+    static PrivateScriptTest* create(Document* document)
     {
-        return new PrivateScriptTest(frame);
+        return new PrivateScriptTest(document);
     }
 
     int addIntegerImplementedInCPPForPrivateScriptOnly(int value1, int value2);
     String stringAttributeImplementedInCPPForPrivateScriptOnly();
     void setStringAttributeImplementedInCPPForPrivateScriptOnly(String);
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
-    explicit PrivateScriptTest(LocalFrame*);
+    explicit PrivateScriptTest(Document*);
 
     String m_stringAttributeImplementedInCPPForPrivateSriptOnly;
 };

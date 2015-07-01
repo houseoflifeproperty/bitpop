@@ -5,6 +5,7 @@
 #ifndef RecordingImageBufferSurface_h
 #define RecordingImageBufferSurface_h
 
+#include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBufferSurface.h"
 #include "public/platform/WebThread.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -20,45 +21,65 @@ namespace blink {
 
 class ImageBuffer;
 
-class PLATFORM_EXPORT RecordingImageBufferSurface : public ImageBufferSurface {
-    WTF_MAKE_NONCOPYABLE(RecordingImageBufferSurface); WTF_MAKE_FAST_ALLOCATED;
+class RecordingImageBufferFallbackSurfaceFactory {
 public:
-    RecordingImageBufferSurface(const IntSize&, OpacityMode = NonOpaque);
+    virtual PassOwnPtr<ImageBufferSurface> createSurface(const IntSize&, OpacityMode) = 0;
+    virtual ~RecordingImageBufferFallbackSurfaceFactory() { }
+};
+
+class PLATFORM_EXPORT RecordingImageBufferSurface : public ImageBufferSurface {
+    WTF_MAKE_NONCOPYABLE(RecordingImageBufferSurface); WTF_MAKE_FAST_ALLOCATED(RecordingImageBufferSurface);
+public:
+    RecordingImageBufferSurface(const IntSize&, PassOwnPtr<RecordingImageBufferFallbackSurfaceFactory> fallbackFactory, OpacityMode = NonOpaque);
     virtual ~RecordingImageBufferSurface();
 
     // Implementation of ImageBufferSurface interfaces
-    virtual SkCanvas* canvas() const OVERRIDE;
-    virtual PassRefPtr<SkPicture> getPicture() OVERRIDE;
-    virtual bool isValid() const OVERRIDE { return true; }
-    virtual void willAccessPixels() OVERRIDE;
-    virtual void finalizeFrame(const FloatRect&) OVERRIDE;
-    virtual void didClearCanvas() OVERRIDE;
-    virtual void setImageBuffer(ImageBuffer*) OVERRIDE;
+    SkCanvas* canvas() const override;
+    PassRefPtr<SkPicture> getPicture() override;
+    void willDrawVideo() override;
+    void didDraw(const FloatRect&) override;
+    bool isValid() const override { return true; }
+    bool isRecording() const override { return !m_fallbackSurface; }
+    void willAccessPixels() override;
+    void willOverwriteCanvas() override;
+    void finalizeFrame(const FloatRect&) override;
+    void setImageBuffer(ImageBuffer*) override;
+    PassRefPtr<SkImage> newImageSnapshot() const override;
+    void draw(GraphicsContext*, const FloatRect& destRect, const FloatRect& srcRect, SkXfermode::Mode, bool needsCopy) override;
+    bool isExpensiveToPaint() override;
+    void setHasExpensiveOp() override { m_currentFrameHasExpensiveOp = true; }
+
+    // Passthroughs to fallback surface
+    const SkBitmap& bitmap() override;
+    bool restore() override;
+    WebLayer* layer() const override;
+    bool isAccelerated() const override;
+    Platform3DObject getBackingTexture() const override;
+    bool cachedBitmapEnabled() const override;
+    const SkBitmap& cachedBitmap() const override;
+    void invalidateCachedBitmap() override;
+    void updateCachedBitmapIfNeeded() override;
+    void setIsHidden(bool) override;
 
 private:
-    struct StateRec {
-    public:
-        SkMatrix m_ctm;
-        // FIXME: handle transferring non-rectangular clip to the new frame, crbug.com/392614
-        SkIRect m_clip;
-    };
-    typedef LinkedStack<StateRec> StateStack;
     friend class ::RecordingImageBufferSurfaceTest; // for unit testing
     void fallBackToRasterCanvas();
     bool initializeCurrentFrame();
     bool finalizeFrameInternal();
-
-    // saves current clip and transform matrix of canvas
-    bool saveState(SkCanvas*, StateStack*);
-    // we should make sure that we can transfer state in saveState
-    void setCurrentState(SkCanvas*, StateStack*);
+    int approximateOpCount();
 
     OwnPtr<SkPictureRecorder> m_currentFrame;
     RefPtr<SkPicture> m_previousFrame;
-    OwnPtr<SkCanvas> m_rasterCanvas;
+    OwnPtr<ImageBufferSurface> m_fallbackSurface;
     ImageBuffer* m_imageBuffer;
     int m_initialSaveCount;
+    int m_currentFramePixelCount;
+    int m_previousFramePixelCount;
     bool m_frameWasCleared;
+    bool m_didRecordDrawCommandsInCurrentFrame;
+    bool m_currentFrameHasExpensiveOp;
+    bool m_previousFrameHasExpensiveOp;
+    OwnPtr<RecordingImageBufferFallbackSurfaceFactory> m_fallbackFactory;
 };
 
 } // namespace blink

@@ -13,7 +13,9 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/base.gyp:base_i18n',
         '../net/net.gyp:net',
+        '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
         '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
@@ -60,6 +62,9 @@
       ],
       'conditions': [
         ['OS == "android"', {
+          # In GN, this android-specific stuff is its own target at
+          # //components/bookmarks/common/android
+          # TODO(cjhopman): This should be its own target in Gyp, too.
           'dependencies': [
             'bookmarks_jni_headers',
           ],
@@ -88,6 +93,22 @@
         'bookmarks/common/bookmark_constants.h',
         'bookmarks/common/bookmark_pref_names.cc',
         'bookmarks/common/bookmark_pref_names.h',
+      ],
+    },
+    {
+      # GN version: //components/bookmarks/managed
+      'target_name': 'bookmarks_managed',
+      'type': 'static_library',
+      'include_dirs': [
+        '..',
+      ],
+      'dependencies': [
+        'bookmarks_browser',
+        'components_strings.gyp:components_strings',
+      ],
+      'sources': [
+        'bookmarks/managed/managed_bookmarks_tracker.cc',
+        'bookmarks/managed/managed_bookmarks_tracker.h',
       ],
     },
     {
@@ -125,6 +146,7 @@
     ['OS=="android"', {
       'targets': [
         {
+          # GN: //components/bookmarks/common/android:bookmarks_java
           'target_name': 'bookmarks_java',
           'type': 'none',
           'dependencies': [
@@ -137,6 +159,7 @@
           'includes': [ '../build/java.gypi' ],
         },
         {
+          # GN: //components/bookmarks/common/android:bookmarks_jni_headers
           'target_name': 'bookmarks_jni_headers',
           'type': 'none',
           'sources': [
@@ -148,16 +171,13 @@
           'includes': [ '../build/jni_generator.gypi' ],
         },
         {
+          # GN: //components/bookmarks/common/android:bookmarks_type_javagen
           'target_name': 'bookmark_type_java',
           'type': 'none',
-          'sources': [
-            'bookmarks/common/android/java/src/org/chromium/components/bookmarks/BookmarkType.template',
-          ],
           'variables': {
-            'package_name': 'org/chromium/components/bookmarks',
-            'template_deps': ['bookmarks/common/android/bookmark_type_list.h'],
+            'source_file': 'bookmarks/common/android/bookmark_type.h',
           },
-          'includes': [ '../build/android/java_cpp_template.gypi' ],
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
         },
       ],
     }]

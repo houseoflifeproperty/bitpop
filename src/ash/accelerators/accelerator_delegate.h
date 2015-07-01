@@ -6,6 +6,7 @@
 #define ASH_ACCELERATORS_ACCELERATOR_DELEGATE_H_
 
 #include "ash/ash_export.h"
+#include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "ui/wm/core/accelerator_delegate.h"
 
@@ -15,12 +16,12 @@ class ASH_EXPORT AcceleratorDelegate
     : NON_EXPORTED_BASE(public wm::AcceleratorDelegate) {
  public:
   AcceleratorDelegate();
-  virtual ~AcceleratorDelegate();
+  ~AcceleratorDelegate() override;
 
   // wm::AcceleratorDelegate:
-  virtual bool ProcessAccelerator(const ui::KeyEvent& event,
-                                  const ui::Accelerator& accelerator,
-                                  KeyType key_type) OVERRIDE;
+  bool ProcessAccelerator(const ui::KeyEvent& event,
+                          const ui::Accelerator& accelerator,
+                          KeyType key_type) override;
 
  private:
   // Returns true if the window should be allowed a chance to handle

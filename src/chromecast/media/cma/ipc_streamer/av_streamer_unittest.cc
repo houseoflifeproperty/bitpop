@@ -12,13 +12,13 @@
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "chromecast/media/cma/base/decoder_buffer_base.h"
-#include "chromecast/media/cma/base/frame_generator_for_test.h"
-#include "chromecast/media/cma/base/mock_frame_consumer.h"
-#include "chromecast/media/cma/base/mock_frame_provider.h"
 #include "chromecast/media/cma/ipc/media_memory_chunk.h"
 #include "chromecast/media/cma/ipc/media_message_fifo.h"
 #include "chromecast/media/cma/ipc_streamer/av_streamer_proxy.h"
 #include "chromecast/media/cma/ipc_streamer/coded_frame_provider_host.h"
+#include "chromecast/media/cma/test/frame_generator_for_test.h"
+#include "chromecast/media/cma/test/mock_frame_consumer.h"
+#include "chromecast/media/cma/test/mock_frame_provider.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/video_decoder_config.h"
@@ -33,11 +33,11 @@ class FifoMemoryChunk : public MediaMemoryChunk {
  public:
   FifoMemoryChunk(void* mem, size_t size)
       : mem_(mem), size_(size) {}
-  virtual ~FifoMemoryChunk() {}
+  ~FifoMemoryChunk() override {}
 
-  virtual void* data() const OVERRIDE { return mem_; }
-  virtual size_t size() const OVERRIDE { return size_; }
-  virtual bool valid() const OVERRIDE { return true; }
+  void* data() const override { return mem_; }
+  size_t size() const override { return size_; }
+  bool valid() const override { return true; }
 
  private:
   void* mem_;
@@ -51,7 +51,7 @@ class FifoMemoryChunk : public MediaMemoryChunk {
 class AvStreamerTest : public testing::Test {
  public:
   AvStreamerTest();
-  virtual ~AvStreamerTest();
+  ~AvStreamerTest() override;
 
   // Setups the test.
   void Configure(

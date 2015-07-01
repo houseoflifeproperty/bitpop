@@ -61,7 +61,7 @@ TEST(SafeSPrintfTest, NoArguments) {
   // always add a trailing NUL; it always deduplicates '%' characters).
   static const char text[] = "hello world";
   char ref[20], buf[20];
-  memset(ref, 'X', sizeof(char) * arraysize(buf));
+  memset(ref, 'X', sizeof(ref));
   memcpy(buf, ref, sizeof(buf));
 
   // A negative buffer size should always result in an error.
@@ -264,6 +264,13 @@ TEST(SafeSPrintfTest, NArgs) {
   EXPECT_EQ(10, SafeSNPrintf(buf, 11, "%c%c%c%c%c%c%c%c%c%c",
                              1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
   EXPECT_EQ("\1\2\3\4\5\6\7\10\11\12", std::string(buf));
+
+  EXPECT_EQ(11, SafeSPrintf(buf, "%c%c%c%c%c%c%c%c%c%c%c",
+                            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11));
+  EXPECT_EQ("\1\2\3\4\5\6\7\10\11\12\13", std::string(buf));
+  EXPECT_EQ(11, SafeSNPrintf(buf, 12, "%c%c%c%c%c%c%c%c%c%c%c",
+                             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11));
+  EXPECT_EQ("\1\2\3\4\5\6\7\10\11\12\13", std::string(buf));
 }
 
 TEST(SafeSPrintfTest, DataTypes) {

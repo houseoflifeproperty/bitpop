@@ -19,4 +19,6 @@ class ChromeTestTarget(cr.NamedTarget):
   NAME = 'chrome_test'
   CONFIG = cr.Config.From(
       CR_TARGET_NAME='ChromeTest',
+      CR_TEST_TYPE=cr.Target.INSTRUMENTATION_TEST,
+      CR_RUN_DEPENDENCIES=[ChromeTarget.NAME],
   )

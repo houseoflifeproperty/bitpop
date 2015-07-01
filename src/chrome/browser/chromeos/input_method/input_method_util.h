@@ -14,7 +14,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "base/threading/thread_checker.h"
-#include "chromeos/ime/input_method_descriptor.h"
+#include "ui/base/ime/chromeos/input_method_descriptor.h"
 
 namespace chromeos {
 namespace input_method {
@@ -57,6 +57,8 @@ class InputMethodUtil {
       const InputMethodDescriptor& input_method) const;
   base::string16 GetInputMethodMediumName(
       const InputMethodDescriptor& input_method) const;
+  base::string16 GetInputMethodLongNameStripped(
+      const InputMethodDescriptor& input_method) const;
   base::string16 GetInputMethodLongName(
       const InputMethodDescriptor& input_method) const;
 
@@ -97,7 +99,16 @@ class InputMethodUtil {
   // Returns empty string on error.
   std::string GetLanguageDefaultInputMethodId(const std::string& language_code);
 
-  // Migrates the legacy xkb id to extension based xkb id.
+  // Migrates the input method id as below:
+  //  - Legacy xkb id to extension based id, e.g.
+  //    xkb:us::eng -> _comp_ime_...xkb:us::eng
+  //  - VPD well formatted id to extension based input method id, e.g.
+  //    m17n:vi_telex -> _comp_ime_...vkd_vi_telex
+  //  - ChromiumOS input method ID to ChromeOS one, or vice versa, e.g.
+  //    _comp_ime_xxxxxx...xkb:us::eng -> _comp_ime_yyyyyy...xkb:us::eng
+  std::string MigrateInputMethod(const std::string& input_method_id);
+
+  // Migrates the input method IDs.
   // Returns true if the given input method id list is modified,
   // returns false otherwise.
   // This method should not be removed because it's required to transfer XKB
@@ -122,6 +133,10 @@ class InputMethodUtil {
   // non-login keyboard, this function will returns "xkb:us::eng" as the
   // fallback keyboard.
   const std::vector<std::string>& GetHardwareLoginInputMethodIds();
+
+  // Returns the localized display name for the given input method.
+  std::string GetLocalizedDisplayName(
+      const InputMethodDescriptor& descriptor) const;
 
   // Returns true if given input method can be used to input login data.
   bool IsLoginKeyboard(const std::string& input_method_id) const;
@@ -177,12 +192,17 @@ class InputMethodUtil {
   bool TranslateStringInternal(const std::string& english_string,
                                base::string16 *out_string) const;
 
+  // Get long name of the given input method. |short_name| is to specify whether
+  // to get the long name for OOBE screen, because OOBE screen displays shorter
+  // name (e.g. 'US' instead of 'US keyboard').
+  base::string16 GetInputMethodLongNameInternal(
+      const InputMethodDescriptor& input_method, bool short_name) const;
+
   // Map from language code to associated input method IDs, etc.
   typedef std::multimap<std::string, std::string> LanguageCodeToIdsMap;
 
   LanguageCodeToIdsMap language_code_to_ids_;
   InputMethodIdToDescriptorMap id_to_descriptor_;
-  std::map<std::string, std::string> xkb_layout_to_indicator_;
 
   typedef base::hash_map<std::string, int> HashType;
   HashType english_to_resource_id_;

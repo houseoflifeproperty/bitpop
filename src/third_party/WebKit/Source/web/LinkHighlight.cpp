@@ -28,26 +28,29 @@
 #include "web/LinkHighlight.h"
 
 #include "SkMatrix44.h"
+#include "core/dom/LayoutTreeBuilderTraversal.h"
 #include "core/dom/Node.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderLayerModelObject.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderPart.h"
-#include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/CompositedLayerMapping.h"
-#include "core/rendering/style/ShadowData.h"
+#include "core/layout/LayoutBoxModelObject.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutView.h"
+#include "core/layout/compositing/CompositedDeprecatedPaintLayerMapping.h"
+#include "core/style/ShadowData.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 #include "platform/graphics/Color.h"
-#include "platform/graphics/DisplayList.h"
+#include "platform/graphics/paint/DrawingRecorder.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorAnimationCurve.h"
 #include "public/platform/WebCompositorSupport.h"
+#include "public/platform/WebDisplayItemList.h"
 #include "public/platform/WebFloatAnimationCurve.h"
 #include "public/platform/WebFloatPoint.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebSize.h"
 #include "public/web/WebKit.h"
+#include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "web/WebLocalFrameImpl.h"
 #include "web/WebSettingsImpl.h"
 #include "web/WebViewImpl.h"
@@ -74,6 +77,7 @@ LinkHighlight::LinkHighlight(Node* node, WebViewImpl* owningWebViewImpl)
     ASSERT(owningWebViewImpl);
     WebCompositorSupport* compositorSupport = Platform::current()->compositorSupport();
     m_contentLayer = adoptPtr(compositorSupport->createContentLayer(this));
+    owningWebViewImpl->registerForAnimations(m_contentLayer->layer());
     m_clipLayer = adoptPtr(compositorSupport->createLayer());
     m_clipLayer->setTransformOrigin(WebFloatPoint3D());
     m_clipLayer->addChild(m_contentLayer->layer());
@@ -105,30 +109,14 @@ void LinkHighlight::releaseResources()
     m_node.clear();
 }
 
-RenderLayer* LinkHighlight::computeEnclosingCompositingLayer()
+void LinkHighlight::attachLinkHighlightToCompositingLayer(const LayoutBoxModelObject* paintInvalidationContainer)
 {
-    if (!m_node || !m_node->renderer())
-        return 0;
-
-    // Find the nearest enclosing composited layer and attach to it. We may need to cross frame boundaries
-    // to find a suitable layer.
-    RenderObject* renderer = m_node->renderer();
-    RenderLayer* renderLayer;
-    do {
-        renderLayer = renderer->enclosingLayer()->enclosingLayerForPaintInvalidation();
-        if (!renderLayer) {
-            renderer = renderer->frame()->ownerRenderer();
-            if (!renderer)
-                return 0;
-        }
-    } while (!renderLayer);
-
-    ASSERT(renderLayer->compositingState() != NotComposited);
-
-    GraphicsLayer* newGraphicsLayer = renderLayer->graphicsLayerBacking();
-    if (!newGraphicsLayer->drawsContent()) {
-        newGraphicsLayer = renderLayer->graphicsLayerBackingForScrolling();
-    }
+    GraphicsLayer* newGraphicsLayer = paintInvalidationContainer->layer()->graphicsLayerBacking();
+    // FIXME: There should always be a GraphicsLayer. See crbug.com/431961.
+    if (newGraphicsLayer && !newGraphicsLayer->drawsContent())
+        newGraphicsLayer = paintInvalidationContainer->layer()->graphicsLayerBackingForScrolling();
+    if (!newGraphicsLayer)
+        return;
 
     m_clipLayer->setTransform(SkMatrix44(SkMatrix44::kIdentity_Constructor));
 
@@ -139,15 +127,12 @@ RenderLayer* LinkHighlight::computeEnclosingCompositingLayer()
         m_currentGraphicsLayer = newGraphicsLayer;
         m_currentGraphicsLayer->addLinkHighlight(this);
     }
-
-    return renderLayer;
 }
 
-static void convertTargetSpaceQuadToCompositedLayer(const FloatQuad& targetSpaceQuad, RenderObject* targetRenderer, RenderObject* compositedRenderer, FloatQuad& compositedSpaceQuad)
+static void convertTargetSpaceQuadToCompositedLayer(const FloatQuad& targetSpaceQuad, LayoutObject* targetLayoutObject, const LayoutBoxModelObject* paintInvalidationContainer, FloatQuad& compositedSpaceQuad)
 {
-    ASSERT(targetRenderer);
-    ASSERT(compositedRenderer);
-
+    ASSERT(targetLayoutObject);
+    ASSERT(paintInvalidationContainer);
     for (unsigned i = 0; i < 4; ++i) {
         IntPoint point;
         switch (i) {
@@ -157,9 +142,11 @@ static void convertTargetSpaceQuadToCompositedLayer(const FloatQuad& targetSpace
         case 3: point = roundedIntPoint(targetSpaceQuad.p4()); break;
         }
 
-        point = targetRenderer->frame()->view()->contentsToWindow(point);
-        point = compositedRenderer->frame()->view()->windowToContents(point);
-        FloatPoint floatPoint = compositedRenderer->absoluteToLocal(point, UseTransforms);
+        // FIXME: this does not need to be absolute, just in the paint invalidation container's space.
+        point = targetLayoutObject->frame()->view()->contentsToRootFrame(point);
+        point = paintInvalidationContainer->frame()->view()->rootFrameToContents(point);
+        FloatPoint floatPoint = paintInvalidationContainer->absoluteToLocal(point, UseTransforms);
+        DeprecatedPaintLayer::mapPointToPaintBackingCoordinates(paintInvalidationContainer, floatPoint);
 
         switch (i) {
         case 0: compositedSpaceQuad.setP1(floatPoint); break;
@@ -180,44 +167,58 @@ static void addQuadToPath(const FloatQuad& quad, Path& path)
     path.closeSubpath();
 }
 
-void LinkHighlight::computeQuads(RenderObject& renderer, Vector<FloatQuad>& outQuads) const
+void LinkHighlight::computeQuads(const Node& node, Vector<FloatQuad>& outQuads) const
 {
+    if (!node.layoutObject())
+        return;
+
+    LayoutObject* layoutObject = node.layoutObject();
+
     // For inline elements, absoluteQuads will return a line box based on the line-height
     // and font metrics, which is technically incorrect as replaced elements like images
     // should use their intristic height and expand the linebox  as needed. To get an
     // appropriately sized highlight we descend into the children and have them add their
     // boxes.
-    if (renderer.isRenderInline()) {
-        for (RenderObject* child = renderer.slowFirstChild(); child; child = child->nextSibling())
+    if (layoutObject->isLayoutInline()) {
+        for (Node* child = LayoutTreeBuilderTraversal::firstChild(node); child; child = LayoutTreeBuilderTraversal::nextSibling(*child))
             computeQuads(*child, outQuads);
     } else {
-        renderer.absoluteQuads(outQuads);
+        // FIXME: this does not need to be absolute, just in the paint invalidation container's space.
+        layoutObject->absoluteQuads(outQuads);
     }
 }
 
-bool LinkHighlight::computeHighlightLayerPathAndPosition(RenderLayer* compositingLayer)
+bool LinkHighlight::computeHighlightLayerPathAndPosition(const LayoutBoxModelObject* paintInvalidationContainer)
 {
-    if (!m_node || !m_node->renderer() || !m_currentGraphicsLayer)
+    if (!m_node || !m_node->layoutObject() || !m_currentGraphicsLayer)
         return false;
+    ASSERT(paintInvalidationContainer);
 
-    ASSERT(compositingLayer);
+    // FIXME: This is defensive code to avoid crashes such as those described in
+    // crbug.com/440887. This should be cleaned up once we fix the root cause of
+    // of the paint invalidation container not being composited.
+    if (!paintInvalidationContainer->layer()->compositedDeprecatedPaintLayerMapping() && !paintInvalidationContainer->layer()->groupedMapping())
+        return false;
 
     // Get quads for node in absolute coordinates.
     Vector<FloatQuad> quads;
-    computeQuads(*m_node->renderer(), quads);
+    computeQuads(*m_node, quads);
     ASSERT(quads.size());
-
-    // Adjust for offset between target graphics layer and the node's renderer.
-    FloatPoint positionAdjust = IntPoint(m_currentGraphicsLayer->offsetFromRenderer());
-
     Path newPath;
+
+    FloatPoint positionAdjustForCompositedScrolling = IntPoint(m_currentGraphicsLayer->offsetFromLayoutObject());
+
     for (size_t quadIndex = 0; quadIndex < quads.size(); ++quadIndex) {
         FloatQuad absoluteQuad = quads[quadIndex];
-        absoluteQuad.move(-positionAdjust.x(), -positionAdjust.y());
+
+        // FIXME: this hack should not be necessary. It's a consequence of the fact that composited layers for scrolling are represented
+        // differently in Blink than other composited layers.
+        if (paintInvalidationContainer->layer()->needsCompositedScrolling() && m_node->layoutObject() != paintInvalidationContainer)
+            absoluteQuad.move(-positionAdjustForCompositedScrolling.x(), -positionAdjustForCompositedScrolling.y());
 
         // Transform node quads in target absolute coords to local coordinates in the compositor layer.
         FloatQuad transformedQuad;
-        convertTargetSpaceQuadToCompositedLayer(absoluteQuad, m_node->renderer(), compositingLayer->renderer(), transformedQuad);
+        convertTargetSpaceQuadToCompositedLayer(absoluteQuad, m_node->layoutObject(), paintInvalidationContainer, transformedQuad);
 
         // FIXME: for now, we'll only use rounded paths if we have a single node quad. The reason for this is that
         // we may sometimes get a chain of adjacent boxes (e.g. for text nodes) which end up looking like sausage
@@ -237,13 +238,6 @@ bool LinkHighlight::computeHighlightLayerPathAndPosition(RenderLayer* compositin
     bool pathHasChanged = !(newPath == m_path);
     if (pathHasChanged) {
         m_path = newPath;
-
-        GraphicsContext gc(0);
-        gc.beginRecording(boundingRect);
-        gc.setFillColor(m_node->renderer()->style()->tapHighlightColor());
-        gc.fillPath(m_path);
-        m_displayList = gc.endRecording();
-
         m_contentLayer->layer()->setBounds(enclosingIntRect(boundingRect).size());
     }
 
@@ -252,16 +246,28 @@ bool LinkHighlight::computeHighlightLayerPathAndPosition(RenderLayer* compositin
     return pathHasChanged;
 }
 
-void LinkHighlight::paintContents(WebCanvas* canvas, const WebRect& webClipRect, bool, WebContentLayerClient::GraphicsContextStatus contextStatus)
+void LinkHighlight::paintContents(WebCanvas* canvas, const WebRect&, WebContentLayerClient::PaintingControlSetting paintingControl)
 {
-    if (!m_node || !m_node->renderer())
+    if (!m_node || !m_node->layoutObject())
         return;
 
-    GraphicsContext gc(canvas,
-        contextStatus == WebContentLayerClient::GraphicsContextEnabled ? GraphicsContext::NothingDisabled : GraphicsContext::FullyDisabled);
-    IntRect clipRect(IntPoint(webClipRect.x, webClipRect.y), IntSize(webClipRect.width, webClipRect.height));
-    m_displayList->setClip(clipRect);
-    gc.drawDisplayList(m_displayList.get());
+    SkPaint paint;
+    paint.setStyle(SkPaint::kFill_Style);
+    paint.setFlags(SkPaint::kAntiAlias_Flag);
+    paint.setColor(m_node->layoutObject()->style()->tapHighlightColor().rgb());
+    canvas->drawPath(m_path.skPath(), paint);
+}
+
+void LinkHighlight::paintContents(WebDisplayItemList* webDisplayItemList, const WebRect& webClipRect, WebContentLayerClient::PaintingControlSetting paintingControl)
+{
+    if (!m_node || !m_node->layoutObject())
+        return;
+
+    SkPictureRecorder recorder;
+    SkCanvas* canvas = recorder.beginRecording(webClipRect.width, webClipRect.height);
+    canvas->translate(-webClipRect.x, -webClipRect.y);
+    paintContents(canvas, webClipRect, paintingControl);
+    webDisplayItemList->appendDrawingItem(recorder.endRecording());
 }
 
 void LinkHighlight::startHighlightAnimationIfNeeded()
@@ -306,11 +312,11 @@ void LinkHighlight::clearGraphicsLayerLinkHighlightPointer()
     }
 }
 
-void LinkHighlight::notifyAnimationStarted(double, WebCompositorAnimation::TargetProperty)
+void LinkHighlight::notifyAnimationStarted(double, int)
 {
 }
 
-void LinkHighlight::notifyAnimationFinished(double, WebCompositorAnimation::TargetProperty)
+void LinkHighlight::notifyAnimationFinished(double, int)
 {
     // Since WebViewImpl may hang on to us for a while, make sure we
     // release resources as soon as possible.
@@ -327,15 +333,18 @@ void LinkHighlight::updateGeometry()
 
     m_geometryNeedsUpdate = false;
 
-    RenderLayer* compositingLayer = computeEnclosingCompositingLayer();
-    if (compositingLayer && computeHighlightLayerPathAndPosition(compositingLayer)) {
+    bool hasLayoutObject = m_node && m_node->layoutObject();
+    const LayoutBoxModelObject* paintInvalidationContainer = hasLayoutObject ? m_node->layoutObject()->containerForPaintInvalidation() : 0;
+    if (paintInvalidationContainer)
+        attachLinkHighlightToCompositingLayer(paintInvalidationContainer);
+    if (paintInvalidationContainer && computeHighlightLayerPathAndPosition(paintInvalidationContainer)) {
         // We only need to invalidate the layer if the highlight size has changed, otherwise
         // we can just re-position the layer without needing to repaint.
         m_contentLayer->layer()->invalidate();
 
-        if (m_currentGraphicsLayer)
-            m_currentGraphicsLayer->addRepaintRect(FloatRect(layer()->position().x, layer()->position().y, layer()->bounds().width, layer()->bounds().height));
-    } else if (!m_node || !m_node->renderer()) {
+        if (m_currentGraphicsLayer && m_currentGraphicsLayer->isTrackingPaintInvalidations())
+            m_currentGraphicsLayer->trackPaintInvalidationRect(FloatRect(layer()->position().x, layer()->position().y, layer()->bounds().width, layer()->bounds().height));
+    } else if (!hasLayoutObject) {
         clearGraphicsLayerLinkHighlightPointer();
         releaseResources();
     }

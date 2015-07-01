@@ -23,9 +23,8 @@ class TestingDelegate : public IPC::MojoBootstrap::Delegate {
  public:
   TestingDelegate() : passed_(false) {}
 
-  virtual void OnPipeAvailable(
-      mojo::embedder::ScopedPlatformHandle handle) OVERRIDE;
-  virtual void OnBootstrapError() OVERRIDE;
+  void OnPipeAvailable(mojo::embedder::ScopedPlatformHandle handle) override;
+  void OnBootstrapError() override;
 
   bool passed() const { return passed_; }
 
@@ -56,7 +55,7 @@ TEST_F(IPCMojoBootstrapTest, Connect) {
 #else
   ASSERT_TRUE(StartClient());
 #endif
-  bootstrap->OnClientLaunched(client_process());
+  bootstrap->OnClientLaunched(client_process().Handle());
 
   base::MessageLoop::current()->Run();
 

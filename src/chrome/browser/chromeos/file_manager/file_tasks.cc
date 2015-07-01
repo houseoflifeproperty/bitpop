@@ -26,6 +26,8 @@
 #include "chrome/common/extensions/api/file_manager_private.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/chromeos_switches.h"
+#include "components/mime_util/mime_util.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
@@ -111,7 +113,7 @@ bool IsFallbackFileHandler(const file_tasks::TaskDescriptor& task) {
       task.task_type != file_tasks::TASK_TYPE_FILE_HANDLER)
     return false;
 
-  const char* kBuiltInApps[] = {
+  const char* const kBuiltInApps[] = {
     kFileManagerAppId,
     kVideoPlayerAppId,
     kGalleryAppId,
@@ -133,11 +135,13 @@ FullTaskDescriptor::FullTaskDescriptor(
     const TaskDescriptor& task_descriptor,
     const std::string& task_title,
     const GURL& icon_url,
-    bool is_default)
+    bool is_default,
+    bool is_generic_file_handler)
     : task_descriptor_(task_descriptor),
       task_title_(task_title),
       icon_url_(icon_url),
-      is_default_(is_default) {
+      is_default_(is_default),
+      is_generic_file_handler_(is_generic_file_handler) {
 }
 
 void UpdateDefaultTask(PrefService* pref_service,
@@ -353,8 +357,29 @@ void FindDriveAppTasks(
         FullTaskDescriptor(descriptor,
                            app_info.app_name,
                            icon_url,
-                           false /* is_default */));
+                           false /* is_default */,
+                           false /* is_generic_file_handler */));
   }
+}
+
+bool IsGoodMatchFileHandler(
+    const extensions::FileHandlerInfo& file_handler_info,
+    const PathAndMimeTypeSet& path_mime_set) {
+  if (file_handler_info.extensions.count("*") > 0 ||
+      file_handler_info.types.count("*") > 0 ||
+      file_handler_info.types.count("*/*") > 0)
+    return false;
+
+  // If text/* file handler matches with unsupported text mime type, we don't
+  // regard it as good match.
+  if (file_handler_info.types.count("text/*")) {
+    for (const auto& path_mime : path_mime_set) {
+      if (mime_util::IsUnsupportedTextMimeType(path_mime.second))
+        return false;
+    }
+  }
+
+  return true;
 }
 
 void FindFileHandlerTasks(
@@ -366,6 +391,7 @@ void FindFileHandlerTasks(
 
   const extensions::ExtensionSet& enabled_extensions =
       extensions::ExtensionRegistry::Get(profile)->enabled_extensions();
+
   for (extensions::ExtensionSet::const_iterator iter =
            enabled_extensions.begin();
        iter != enabled_extensions.end();
@@ -391,8 +417,24 @@ void FindFileHandlerTasks(
     if (file_handlers.empty())
       continue;
 
-    // Only show the first matching handler from each app.
+    // If the new ZIP unpacker is disabled, then hide its handlers, so we don't
+    // show both the legacy one and the new one in Files app for ZIP files.
+    if (extension->id() == extension_misc::kZIPUnpackerExtensionId &&
+        base::CommandLine::ForCurrentProcess()->HasSwitch(
+            chromeos::switches::kDisableNewZIPUnpacker)) {
+      continue;
+    }
+
+    // Show the first good matching handler of each app. If there doesn't exist
+    // such handler, show the first matching handler of the app.
     const extensions::FileHandlerInfo* file_handler = file_handlers.front();
+    for (auto handler : file_handlers) {
+      if (IsGoodMatchFileHandler(*handler, path_mime_set)) {
+        file_handler = handler;
+        break;
+      }
+    }
+
     std::string task_id = file_tasks::MakeTaskID(
         extension->id(), file_tasks::TASK_TYPE_FILE_HANDLER, file_handler->id);
 
@@ -403,13 +445,15 @@ void FindFileHandlerTasks(
         false,  // grayscale
         NULL);  // exists
 
-    result_list->push_back(
-        FullTaskDescriptor(TaskDescriptor(extension->id(),
-                                          file_tasks::TASK_TYPE_FILE_HANDLER,
-                                          file_handler->id),
-                           extension->name(),
-                           best_icon,
-                           false /* is_default */));
+    // If file handler doesn't match as good match, regards it as generic file
+    // handler.
+    const bool is_generic_file_handler =
+        !IsGoodMatchFileHandler(*file_handler, path_mime_set);
+    result_list->push_back(FullTaskDescriptor(
+        TaskDescriptor(extension->id(), file_tasks::TASK_TYPE_FILE_HANDLER,
+                       file_handler->id),
+        extension->name(), best_icon, false /* is_default */,
+        is_generic_file_handler));
   }
 }
 
@@ -451,7 +495,8 @@ void FindFileBrowserHandlerTasks(
                        handler->id()),
         handler->title(),
         icon_url,
-        false /* is_default */));
+        false /* is_default */,
+        false /* is_generic_file_handler */));
   }
 }
 

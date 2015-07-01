@@ -2,9 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from telemetry import benchmark
+
 from measurements import memory
 import page_sets
-from telemetry import benchmark
 
 
 @benchmark.Enabled('android')
@@ -12,21 +13,31 @@ class MemoryMobile(benchmark.Benchmark):
   test = memory.Memory
   page_set = page_sets.MobileMemoryPageSet
 
+  @classmethod
+  def Name(cls):
+    return 'memory.mobile_memory'
 
-@benchmark.Disabled
-class MemoryTop25(benchmark.Benchmark):
+
+class MemoryTop7Stress(benchmark.Benchmark):
+  """Use (recorded) real world web sites and measure memory consumption."""
   test = memory.Memory
-  page_set = page_sets.Top25PageSet
+  page_set = page_sets.Top7StressPageSet
+
+  @classmethod
+  def Name(cls):
+    return 'memory.top_7_stress'
 
 
-@benchmark.Disabled
-class Reload2012Q3(benchmark.Benchmark):
-  tag = 'reload'
+class MemoryTop7StressWithSlimmingPaint(benchmark.Benchmark):
+  """Use (recorded) real world web sites and measure memory consumption,
+  with --enable--slimming-paint."""
+
   test = memory.Memory
-  page_set = page_sets.Top2012Q3PageSet
+  page_set = page_sets.Top7StressPageSet
 
+  def CustomizeBrowserOptions(self, options):
+    options.AppendExtraBrowserArgs(['--enable-slimming-paint'])
 
-@benchmark.Disabled  # crbug.com/371153
-class MemoryToughDomMemoryCases(benchmark.Benchmark):
-  test = memory.Memory
-  page_set = page_sets.ToughDomMemoryCasesPageSet
+  @classmethod
+  def Name(cls):
+    return 'memory.top_7_stress_slimming_paint'

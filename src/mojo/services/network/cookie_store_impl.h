@@ -5,7 +5,7 @@
 #ifndef MOJO_SERVICES_NETWORK_COOKIE_STORE_IMPL_H_
 #define MOJO_SERVICES_NETWORK_COOKIE_STORE_IMPL_H_
 
-#include "mojo/services/public/interfaces/network/cookie_store.mojom.h"
+#include "mojo/services/network/public/interfaces/cookie_store.mojom.h"
 #include "url/gurl.h"
 
 namespace mojo {
@@ -14,14 +14,14 @@ class NetworkContext;
 class CookieStoreImpl : public InterfaceImpl<CookieStore> {
  public:
   CookieStoreImpl(NetworkContext* context, const GURL& origin);
-  virtual ~CookieStoreImpl();
+  ~CookieStoreImpl() override;
 
  private:
   // CookieStore methods:
-  virtual void Get(const String& url,
-                   const Callback<void(String)>& callback) OVERRIDE;
-  virtual void Set(const String& url, const String& cookie,
-                   const Callback<void(bool)>& callback) OVERRIDE;
+  void Get(const String& url, const Callback<void(String)>& callback) override;
+  void Set(const String& url,
+           const String& cookie,
+           const Callback<void(bool)>& callback) override;
 
   NetworkContext* context_;
   GURL origin_;

@@ -4,9 +4,11 @@
 
 #include "chromeos/dbus/update_engine_client.h"
 
+#include <algorithm>
+
 #include "base/bind.h"
-#include "base/callback.h"
 #include "base/command_line.h"
+#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "chromeos/chromeos_switches.h"
@@ -23,6 +25,11 @@ namespace {
 const char kReleaseChannelDev[] = "dev-channel";
 const char kReleaseChannelBeta[] = "beta-channel";
 const char kReleaseChannelStable[] = "stable-channel";
+
+// List of release channels ordered by stability.
+const char* kReleaseChannelsList[] = {kReleaseChannelDev,
+                                      kReleaseChannelBeta,
+                                      kReleaseChannelStable};
 
 // Delay between successive state transitions during AU.
 const int kStateTransitionDefaultDelayMs = 3000;
@@ -66,9 +73,8 @@ void EmptyUpdateCheckCallbackBody(
 }
 
 bool IsValidChannel(const std::string& channel) {
-  return channel == kReleaseChannelDev ||
-      channel == kReleaseChannelBeta ||
-      channel == kReleaseChannelStable;
+  return channel == kReleaseChannelDev || channel == kReleaseChannelBeta ||
+         channel == kReleaseChannelStable;
 }
 
 }  // namespace
@@ -79,24 +85,22 @@ class UpdateEngineClientImpl : public UpdateEngineClient {
   UpdateEngineClientImpl()
       : update_engine_proxy_(NULL), last_status_(), weak_ptr_factory_(this) {}
 
-  virtual ~UpdateEngineClientImpl() {
-  }
+  ~UpdateEngineClientImpl() override {}
 
   // UpdateEngineClient implementation:
-  virtual void AddObserver(Observer* observer) OVERRIDE {
+  void AddObserver(Observer* observer) override {
     observers_.AddObserver(observer);
   }
 
-  virtual void RemoveObserver(Observer* observer) OVERRIDE {
+  void RemoveObserver(Observer* observer) override {
     observers_.RemoveObserver(observer);
   }
 
-  virtual bool HasObserver(Observer* observer) OVERRIDE {
+  bool HasObserver(const Observer* observer) const override {
     return observers_.HasObserver(observer);
   }
 
-  virtual void RequestUpdateCheck(
-      const UpdateCheckCallback& callback) OVERRIDE {
+  void RequestUpdateCheck(const UpdateCheckCallback& callback) override {
     dbus::MethodCall method_call(
         update_engine::kUpdateEngineInterface,
         update_engine::kAttemptUpdate);
@@ -113,7 +117,7 @@ class UpdateEngineClientImpl : public UpdateEngineClient {
                    callback));
   }
 
-  virtual void RebootAfterUpdate() OVERRIDE {
+  void RebootAfterUpdate() override {
     dbus::MethodCall method_call(
         update_engine::kUpdateEngineInterface,
         update_engine::kRebootIfNeeded);
@@ -126,7 +130,7 @@ class UpdateEngineClientImpl : public UpdateEngineClient {
                    weak_ptr_factory_.GetWeakPtr()));
   }
 
-  virtual void Rollback() OVERRIDE {
+  void Rollback() override {
     VLOG(1) << "Requesting a rollback";
      dbus::MethodCall method_call(
         update_engine::kUpdateEngineInterface,
@@ -141,9 +145,7 @@ class UpdateEngineClientImpl : public UpdateEngineClient {
                    weak_ptr_factory_.GetWeakPtr()));
   }
 
-
-  virtual void CanRollbackCheck(
-      const RollbackCheckCallback& callback) OVERRIDE {
+  void CanRollbackCheck(const RollbackCheckCallback& callback) override {
     dbus::MethodCall method_call(
         update_engine::kUpdateEngineInterface,
         update_engine::kCanRollback);
@@ -157,12 +159,10 @@ class UpdateEngineClientImpl : public UpdateEngineClient {
                    callback));
   }
 
-  virtual Status GetLastStatus() OVERRIDE {
-    return last_status_;
-  }
+  Status GetLastStatus() override { return last_status_; }
 
-  virtual void SetChannel(const std::string& target_channel,
-                          bool is_powerwash_allowed) OVERRIDE {
+  void SetChannel(const std::string& target_channel,
+                  bool is_powerwash_allowed) override {
     if (!IsValidChannel(target_channel)) {
       LOG(ERROR) << "Invalid channel name: " << target_channel;
       return;
@@ -185,8 +185,8 @@ class UpdateEngineClientImpl : public UpdateEngineClient {
                    weak_ptr_factory_.GetWeakPtr()));
   }
 
-  virtual void GetChannel(bool get_current_channel,
-                          const GetChannelCallback& callback) OVERRIDE {
+  void GetChannel(bool get_current_channel,
+                  const GetChannelCallback& callback) override {
     dbus::MethodCall method_call(
         update_engine::kUpdateEngineInterface,
         update_engine::kGetChannel);
@@ -204,7 +204,7 @@ class UpdateEngineClientImpl : public UpdateEngineClient {
   }
 
  protected:
-  virtual void Init(dbus::Bus* bus) OVERRIDE {
+  void Init(dbus::Bus* bus) override {
     update_engine_proxy_ = bus->GetObjectProxy(
         update_engine::kUpdateEngineServiceName,
         dbus::ObjectPath(update_engine::kUpdateEngineServicePath));
@@ -402,31 +402,29 @@ class UpdateEngineClientStubImpl : public UpdateEngineClient {
         target_channel_(kReleaseChannelBeta) {}
 
   // UpdateEngineClient implementation:
-  virtual void Init(dbus::Bus* bus) OVERRIDE {}
-  virtual void AddObserver(Observer* observer) OVERRIDE {}
-  virtual void RemoveObserver(Observer* observer) OVERRIDE {}
-  virtual bool HasObserver(Observer* observer) OVERRIDE { return false; }
+  void Init(dbus::Bus* bus) override {}
+  void AddObserver(Observer* observer) override {}
+  void RemoveObserver(Observer* observer) override {}
+  bool HasObserver(const Observer* observer) const override { return false; }
 
-  virtual void RequestUpdateCheck(
-      const UpdateCheckCallback& callback) OVERRIDE {
+  void RequestUpdateCheck(const UpdateCheckCallback& callback) override {
     callback.Run(UPDATE_RESULT_NOTIMPLEMENTED);
   }
-  virtual void RebootAfterUpdate() OVERRIDE {}
-  virtual void Rollback() OVERRIDE {}
-  virtual void CanRollbackCheck(
-      const RollbackCheckCallback& callback) OVERRIDE {
+  void RebootAfterUpdate() override {}
+  void Rollback() override {}
+  void CanRollbackCheck(const RollbackCheckCallback& callback) override {
     callback.Run(true);
   }
-  virtual Status GetLastStatus() OVERRIDE { return Status(); }
-  virtual void SetChannel(const std::string& target_channel,
-                          bool is_powerwash_allowed) OVERRIDE {
+  Status GetLastStatus() override { return Status(); }
+  void SetChannel(const std::string& target_channel,
+                  bool is_powerwash_allowed) override {
     VLOG(1) << "Requesting to set channel: "
             << "target_channel=" << target_channel << ", "
             << "is_powerwash_allowed=" << is_powerwash_allowed;
     target_channel_ = target_channel;
   }
-  virtual void GetChannel(bool get_current_channel,
-                          const GetChannelCallback& callback) OVERRIDE {
+  void GetChannel(bool get_current_channel,
+                  const GetChannelCallback& callback) override {
     VLOG(1) << "Requesting to get channel, get_current_channel="
             << get_current_channel;
     if (get_current_channel)
@@ -446,26 +444,24 @@ class UpdateEngineClientFakeImpl : public UpdateEngineClientStubImpl {
   UpdateEngineClientFakeImpl() : weak_factory_(this) {
   }
 
-  virtual ~UpdateEngineClientFakeImpl() {
-  }
+  ~UpdateEngineClientFakeImpl() override {}
 
   // UpdateEngineClient implementation:
-  virtual void AddObserver(Observer* observer) OVERRIDE {
+  void AddObserver(Observer* observer) override {
     if (observer)
       observers_.AddObserver(observer);
   }
 
-  virtual void RemoveObserver(Observer* observer) OVERRIDE {
+  void RemoveObserver(Observer* observer) override {
     if (observer)
       observers_.RemoveObserver(observer);
   }
 
-  virtual bool HasObserver(Observer* observer) OVERRIDE {
+  bool HasObserver(const Observer* observer) const override {
     return observers_.HasObserver(observer);
   }
 
-  virtual void RequestUpdateCheck(
-      const UpdateCheckCallback& callback) OVERRIDE {
+  void RequestUpdateCheck(const UpdateCheckCallback& callback) override {
     if (last_status_.status != UPDATE_STATUS_IDLE) {
       callback.Run(UPDATE_RESULT_FAILED);
       return;
@@ -482,7 +478,7 @@ class UpdateEngineClientFakeImpl : public UpdateEngineClientStubImpl {
         base::TimeDelta::FromMilliseconds(kStateTransitionDefaultDelayMs));
   }
 
-  virtual Status GetLastStatus() OVERRIDE { return last_status_; }
+  Status GetLastStatus() override { return last_status_; }
 
  private:
   void StateTransition() {
@@ -555,10 +551,24 @@ UpdateEngineClient* UpdateEngineClient::Create(
   if (type == REAL_DBUS_CLIENT_IMPLEMENTATION)
     return new UpdateEngineClientImpl();
   DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestAutoUpdateUI))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kTestAutoUpdateUI))
     return new UpdateEngineClientFakeImpl();
   else
     return new UpdateEngineClientStubImpl();
+}
+
+// static
+bool UpdateEngineClient::IsTargetChannelMoreStable(
+    const std::string& current_channel,
+    const std::string& target_channel) {
+  auto cix = std::find(kReleaseChannelsList,
+                       kReleaseChannelsList + arraysize(kReleaseChannelsList),
+                       current_channel);
+  auto tix = std::find(kReleaseChannelsList,
+                       kReleaseChannelsList + arraysize(kReleaseChannelsList),
+                       target_channel);
+  return tix > cix;
 }
 
 }  // namespace chromeos

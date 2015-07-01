@@ -32,6 +32,8 @@
 #include "modules/filesystem/InspectorFileSystemAgent.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/UnionTypesCore.h"
+#include "core/dom/DOMArrayBuffer.h"
 #include "core/dom/DOMImplementation.h"
 #include "core/dom/Document.h"
 #include "core/events/Event.h"
@@ -60,7 +62,6 @@
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
-#include "wtf/ArrayBuffer.h"
 #include "wtf/text/Base64.h"
 #include "wtf/text/TextEncoding.h"
 
@@ -81,7 +82,7 @@ static const char fileSystemAgentEnabled[] = "fileSystemAgentEnabled";
 namespace {
 
 template<typename BaseCallback, typename Handler, typename Argument>
-class CallbackDispatcher FINAL : public BaseCallback {
+class CallbackDispatcher final : public BaseCallback {
 public:
     typedef bool (Handler::*HandlingMethod)(Argument);
 
@@ -90,7 +91,7 @@ public:
         return new CallbackDispatcher(handler, handlingMethod);
     }
 
-    virtual void handleEvent(Argument argument) OVERRIDE
+    virtual void handleEvent(Argument argument) override
     {
         (m_handler.get()->*m_handlingMethod)(argument);
     }
@@ -154,13 +155,13 @@ void FileSystemRootRequest::start(ExecutionContext* executionContext)
 
     FileSystemType type;
     if (!DOMFileSystemBase::pathPrefixToFileSystemType(m_type, type)) {
-        errorCallback->handleEvent(FileError::create(FileError::SYNTAX_ERR).get());
+        errorCallback->handleEvent(FileError::create(FileError::SYNTAX_ERR));
         return;
     }
 
     KURL rootURL = DOMFileSystemBase::createFileSystemRootURL(executionContext->securityOrigin()->toString(), type);
     if (!rootURL.isValid()) {
-        errorCallback->handleEvent(FileError::create(FileError::SYNTAX_ERR).get());
+        errorCallback->handleEvent(FileError::create(FileError::SYNTAX_ERR));
         return;
     }
 
@@ -179,7 +180,7 @@ bool FileSystemRootRequest::didGetEntry(Entry* entry)
     return true;
 }
 
-class DirectoryContentRequest FINAL : public RefCounted<DirectoryContentRequest> {
+class DirectoryContentRequest final : public RefCounted<DirectoryContentRequest> {
     WTF_MAKE_NONCOPYABLE(DirectoryContentRequest);
 public:
     static PassRefPtr<DirectoryContentRequest> create(PassRefPtrWillBeRawPtr<RequestDirectoryContentCallback> requestCallback, const String& url)
@@ -204,7 +205,7 @@ private:
     bool didGetEntry(Entry*);
     bool didReadDirectoryEntries(const EntryHeapVector&);
 
-    void reportResult(FileError::ErrorCode errorCode, PassRefPtr<Array<TypeBuilder::FileSystem::Entry> > entries = nullptr)
+    void reportResult(FileError::ErrorCode errorCode, PassRefPtr<Array<TypeBuilder::FileSystem::Entry>> entries = nullptr)
     {
         m_requestCallback->sendSuccess(static_cast<int>(errorCode), entries);
     }
@@ -217,7 +218,7 @@ private:
 
     RefPtrWillBePersistent<RequestDirectoryContentCallback> m_requestCallback;
     KURL m_url;
-    RefPtr<Array<TypeBuilder::FileSystem::Entry> > m_entries;
+    RefPtr<Array<TypeBuilder::FileSystem::Entry>> m_entries;
     Persistent<DirectoryReader> m_directoryReader;
 };
 
@@ -300,7 +301,7 @@ bool DirectoryContentRequest::didReadDirectoryEntries(const EntryHeapVector& ent
     return true;
 }
 
-class MetadataRequest FINAL : public RefCounted<MetadataRequest> {
+class MetadataRequest final : public RefCounted<MetadataRequest> {
     WTF_MAKE_NONCOPYABLE(MetadataRequest);
 public:
     static PassRefPtr<MetadataRequest> create(PassRefPtrWillBeRawPtr<RequestMetadataCallback> requestCallback, const String& url)
@@ -373,7 +374,7 @@ bool MetadataRequest::didGetMetadata(Metadata* metadata)
     return true;
 }
 
-class FileContentRequest FINAL : public EventListener {
+class FileContentRequest final : public EventListener {
     WTF_MAKE_NONCOPYABLE(FileContentRequest);
 public:
     static PassRefPtr<FileContentRequest> create(PassRefPtrWillBeRawPtr<RequestFileContentCallback> requestCallback, const String& url, bool readAsText, long long start, long long end, const String& charset)
@@ -388,17 +389,17 @@ public:
 
     void start(ExecutionContext*);
 
-    virtual bool operator==(const EventListener& other) OVERRIDE
+    virtual bool operator==(const EventListener& other) override
     {
         return this == &other;
     }
 
-    virtual void handleEvent(ExecutionContext*, Event* event) OVERRIDE
+    virtual void handleEvent(ExecutionContext*, Event* event) override
     {
         if (event->type() == EventTypeNames::load)
             didRead();
         else if (event->type() == EventTypeNames::error)
-            didHitError(m_reader->error().get());
+            didHitError(m_reader->error());
     }
 
 private:
@@ -434,7 +435,7 @@ private:
     String m_mimeType;
     String m_charset;
 
-    RefPtrWillBePersistent<FileReader> m_reader;
+    Persistent<FileReader> m_reader;
 };
 
 void FileContentRequest::start(ExecutionContext* executionContext)
@@ -472,17 +473,19 @@ bool FileContentRequest::didGetEntry(Entry* entry)
 
 bool FileContentRequest::didGetFile(File* file)
 {
-    RefPtrWillBeRawPtr<Blob> blob = static_cast<Blob*>(file)->slice(m_start, m_end, IGNORE_EXCEPTION);
+    Blob* blob = file->Blob::slice(m_start, m_end, IGNORE_EXCEPTION);
     m_reader->setOnload(this);
     m_reader->setOnerror(this);
 
-    m_reader->readAsArrayBuffer(blob.get(), IGNORE_EXCEPTION);
+    m_reader->readAsArrayBuffer(blob, IGNORE_EXCEPTION);
     return true;
 }
 
 void FileContentRequest::didRead()
 {
-    RefPtr<ArrayBuffer> buffer = m_reader->arrayBufferResult();
+    StringOrArrayBuffer resultAttribute;
+    m_reader->result(resultAttribute);
+    RefPtr<DOMArrayBuffer> buffer = resultAttribute.getAsArrayBuffer();
 
     if (!m_readAsText) {
         String result = base64Encode(static_cast<char*>(buffer->data()), buffer->byteLength());
@@ -497,7 +500,7 @@ void FileContentRequest::didRead()
     reportResult(static_cast<FileError::ErrorCode>(0), &result, &m_charset);
 }
 
-class DeleteEntryRequest FINAL : public RefCounted<DeleteEntryRequest> {
+class DeleteEntryRequest final : public RefCounted<DeleteEntryRequest> {
 public:
     static PassRefPtr<DeleteEntryRequest> create(PassRefPtrWillBeRawPtr<DeleteEntryCallback> requestCallback, const KURL& url)
     {
@@ -513,14 +516,14 @@ public:
 
 private:
     // CallbackDispatcherFactory doesn't handle 0-arg handleEvent methods
-    class VoidCallbackImpl FINAL : public VoidCallback {
+    class VoidCallbackImpl final : public VoidCallback {
     public:
         explicit VoidCallbackImpl(PassRefPtr<DeleteEntryRequest> handler)
             : m_handler(handler)
         {
         }
 
-        virtual void handleEvent() OVERRIDE
+        virtual void handleEvent() override
         {
             m_handler->didDeleteEntry();
         }
@@ -560,7 +563,7 @@ void DeleteEntryRequest::start(ExecutionContext* executionContext)
     FileSystemType type;
     String path;
     if (!DOMFileSystemBase::crackFileSystemURL(m_url, type, path)) {
-        errorCallback->handleEvent(FileError::create(FileError::SYNTAX_ERR).get());
+        errorCallback->handleEvent(FileError::create(FileError::SYNTAX_ERR));
         return;
     }
 
@@ -686,19 +689,13 @@ void InspectorFileSystemAgent::deleteEntry(ErrorString* error, const String& url
     DeleteEntryRequest::create(requestCallback, url)->start(executionContext);
 }
 
-void InspectorFileSystemAgent::clearFrontend()
-{
-    m_enabled = false;
-    m_state->setBoolean(FileSystemAgentState::fileSystemAgentEnabled, m_enabled);
-}
-
 void InspectorFileSystemAgent::restore()
 {
     m_enabled = m_state->getBoolean(FileSystemAgentState::fileSystemAgentEnabled);
 }
 
 InspectorFileSystemAgent::InspectorFileSystemAgent(Page* page)
-    : InspectorBaseAgent<InspectorFileSystemAgent>("FileSystem")
+    : InspectorBaseAgent<InspectorFileSystemAgent, InspectorFrontend::FileSystem>("FileSystem")
     , m_page(page)
     , m_enabled(false)
 {
@@ -728,7 +725,7 @@ ExecutionContext* InspectorFileSystemAgent::assertExecutionContextForOrigin(Erro
     return 0;
 }
 
-void InspectorFileSystemAgent::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorFileSystemAgent)
 {
     visitor->trace(m_page);
     InspectorBaseAgent::trace(visitor);

@@ -4,12 +4,17 @@
 
 package org.chromium.base;
 
+import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
 import android.os.AsyncTask;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.Trace;
 import android.preference.PreferenceManager;
 import android.util.Log;
 
@@ -20,7 +25,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
@@ -34,8 +38,10 @@ public class ResourceExtractor {
 
     private static final String LOGTAG = "ResourceExtractor";
     private static final String LAST_LANGUAGE = "Last language";
-    private static final String PAK_FILENAMES = "Pak filenames";
+    private static final String PAK_FILENAMES_LEGACY_NOREUSE = "Pak filenames";
     private static final String ICU_DATA_FILENAME = "icudtl.dat";
+    private static final String V8_NATIVES_DATA_FILENAME = "natives_blob.bin";
+    private static final String V8_SNAPSHOT_DATA_FILENAME = "snapshot_blob.bin";
 
     private static String[] sMandatoryPaks = null;
 
@@ -44,41 +50,54 @@ public class ResourceExtractor {
     // change this behavior.
     private static boolean sExtractImplicitLocalePak = true;
 
+    private static boolean isAppDataFile(String file) {
+        return ICU_DATA_FILENAME.equals(file)
+                || V8_NATIVES_DATA_FILENAME.equals(file)
+                || V8_SNAPSHOT_DATA_FILENAME.equals(file);
+    }
+
     private class ExtractTask extends AsyncTask<Void, Void, Void> {
         private static final int BUFFER_SIZE = 16 * 1024;
+
+        private final List<Runnable> mCompletionCallbacks = new ArrayList<Runnable>();
 
         public ExtractTask() {
         }
 
-        @Override
-        protected Void doInBackground(Void... unused) {
+        private void doInBackgroundImpl() {
             final File outputDir = getOutputDir();
+            final File appDataDir = getAppDataDir();
             if (!outputDir.exists() && !outputDir.mkdirs()) {
                 Log.e(LOGTAG, "Unable to create pak resources directory!");
-                return null;
+                return;
             }
 
-            String timestampFile = checkPakTimestamp(outputDir);
+            String timestampFile = null;
+            beginTraceSection("checkPakTimeStamp");
+            try {
+                timestampFile = checkPakTimestamp(outputDir);
+            } finally {
+                endTraceSection();
+            }
             if (timestampFile != null) {
                 deleteFiles();
             }
 
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(mContext);
-            HashSet<String> filenames = (HashSet<String>) prefs.getStringSet(
-                    PAK_FILENAMES, new HashSet<String>());
             String currentLocale = LocaleUtils.getDefaultLocale();
             String currentLanguage = currentLocale.split("-", 2)[0];
-
-            if (prefs.getString(LAST_LANGUAGE, "").equals(currentLanguage)
-                    &&  filenames.size() >= sMandatoryPaks.length) {
+            // If everything we need is already there (and the locale hasn't
+            // changed), quick exit.
+            if (prefs.getString(LAST_LANGUAGE, "").equals(currentLanguage)) {
                 boolean filesPresent = true;
-                for (String file : filenames) {
-                    if (!new File(outputDir, file).exists()) {
+                for (String file : sMandatoryPaks) {
+                    File directory = isAppDataFile(file) ? appDataDir : outputDir;
+                    if (!new File(directory, file).exists()) {
                         filesPresent = false;
                         break;
                     }
                 }
-                if (filesPresent) return null;
+                if (filesPresent) return;
             } else {
                 prefs.edit().putString(LAST_LANGUAGE, currentLanguage).apply();
             }
@@ -91,9 +110,9 @@ public class ResourceExtractor {
 
             if (sExtractImplicitLocalePak) {
                 if (p.length() > 0) p.append('|');
-                // As well as the minimum required set of .paks above, we'll also add all .paks that
-                // we have for the user's currently selected language.
-
+                // As well as the minimum required set of .paks above, we'll
+                // also add all .paks that we have for the user's currently
+                // selected language.
                 p.append(currentLanguage);
                 p.append("(-\\w+)?\\.pak");
             }
@@ -101,6 +120,7 @@ public class ResourceExtractor {
             Pattern paksToInstall = Pattern.compile(p.toString());
 
             AssetManager manager = mContext.getResources().getAssets();
+            beginTraceSection("WalkAssets");
             try {
                 // Loop through every asset file that we have in the APK, and look for the
                 // ones that we need to extract by trying to match the Patterns that we
@@ -111,14 +131,14 @@ public class ResourceExtractor {
                     if (!paksToInstall.matcher(file).matches()) {
                         continue;
                     }
-                    boolean isICUData = file.equals(ICU_DATA_FILENAME);
-                    File output = new File(isICUData ? getAppDataDir() : outputDir, file);
+                    File output = new File(isAppDataFile(file) ? appDataDir : outputDir, file);
                     if (output.exists()) {
                         continue;
                     }
 
                     InputStream is = null;
                     OutputStream os = null;
+                    beginTraceSection("ExtractResource");
                     try {
                         is = manager.open(file);
                         os = new FileOutputStream(output);
@@ -138,10 +158,9 @@ public class ResourceExtractor {
                             throw new IOException(file + " extracted with 0 length!");
                         }
 
-                        if (!isICUData) {
-                            filenames.add(file);
-                        } else {
-                            // icudata needs to be accessed by a renderer process.
+                        if (isAppDataFile(file)) {
+                            // icu and V8 data need to be accessed by a renderer
+                            // process.
                             output.setReadable(true, false);
                         }
                     } finally {
@@ -153,6 +172,7 @@ public class ResourceExtractor {
                             if (os != null) {
                                 os.close();
                             }
+                            endTraceSection(); // ExtractResource
                         }
                     }
                 }
@@ -163,11 +183,12 @@ public class ResourceExtractor {
                 // this happens with regularity.
                 Log.w(LOGTAG, "Exception unpacking required pak resources: " + e.getMessage());
                 deleteFiles();
-                return null;
+                return;
+            } finally {
+                endTraceSection(); // WalkAssets
             }
 
             // Finished, write out a timestamp file if we need to.
-
             if (timestampFile != null) {
                 try {
                     new File(outputDir, timestampFile).createNewFile();
@@ -177,10 +198,38 @@ public class ResourceExtractor {
                     Log.w(LOGTAG, "Failed to write resource pak timestamp!");
                 }
             }
-            // TODO(yusufo): Figure out why remove is required here.
-            prefs.edit().remove(PAK_FILENAMES).apply();
-            prefs.edit().putStringSet(PAK_FILENAMES, filenames).apply();
+        }
+
+        @Override
+        protected Void doInBackground(Void... unused) {
+            // TODO(lizeb): Use chrome tracing here (and above in
+            // doInBackgroundImpl) when it will be possible. This is currently
+            // not doable since the native library is not loaded yet, and the
+            // TraceEvent calls are dropped before this point.
+            beginTraceSection("ResourceExtractor.ExtractTask.doInBackground");
+            try {
+                doInBackgroundImpl();
+            } finally {
+                endTraceSection();
+            }
             return null;
+        }
+
+        private void onPostExecuteImpl() {
+            for (int i = 0; i < mCompletionCallbacks.size(); i++) {
+                mCompletionCallbacks.get(i).run();
+            }
+            mCompletionCallbacks.clear();
+        }
+
+        @Override
+        protected void onPostExecute(Void result) {
+            beginTraceSection("ResourceExtractor.ExtractTask.onPostExecute");
+            try {
+                onPostExecuteImpl();
+            } finally {
+                endTraceSection();
+            }
         }
 
         // Looks for a timestamp file on disk that indicates the version of the APK that
@@ -226,6 +275,18 @@ public class ResourceExtractor {
 
             // timestamp file is already up-to date.
             return null;
+        }
+
+        @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR2)
+        private void beginTraceSection(String section) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR2) return;
+            Trace.beginSection(section);
+        }
+
+        @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR2)
+        private void endTraceSection() {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR2) return;
+            Trace.endSection();
         }
     }
 
@@ -274,24 +335,34 @@ public class ResourceExtractor {
      * running the tests.
      */
     @VisibleForTesting
-    public void setExtractAllPaksForTesting() {
-        List<String> pakFileAssets = new ArrayList<String>();
+    public void setExtractAllPaksAndV8SnapshotForTesting() {
+        List<String> pakAndSnapshotFileAssets = new ArrayList<String>();
         AssetManager manager = mContext.getResources().getAssets();
         try {
             String[] files = manager.list("");
             for (String file : files) {
-                if (file.endsWith(".pak")) pakFileAssets.add(file);
+                if (file.endsWith(".pak")) pakAndSnapshotFileAssets.add(file);
             }
         } catch (IOException e) {
             Log.w(LOGTAG, "Exception while accessing assets: " + e.getMessage(), e);
         }
-        setMandatoryPaksToExtract(pakFileAssets.toArray(new String[pakFileAssets.size()]));
+        pakAndSnapshotFileAssets.add("natives_blob.bin");
+        pakAndSnapshotFileAssets.add("snapshot_blob.bin");
+        setMandatoryPaksToExtract(pakAndSnapshotFileAssets.toArray(
+                new String[pakAndSnapshotFileAssets.size()]));
     }
 
     private ResourceExtractor(Context context) {
         mContext = context.getApplicationContext();
     }
 
+    /**
+     * Synchronously wait for the resource extraction to be completed.
+     * <p>
+     * This method is bad and you should feel bad for using it.
+     *
+     * @see #addCompletionCallback(Runnable)
+     */
     public void waitForCompletion() {
         if (shouldSkipPakExtraction()) {
             return;
@@ -308,6 +379,35 @@ public class ResourceExtractor {
             deleteFiles();
         } catch (InterruptedException e3) {
             deleteFiles();
+        }
+    }
+
+    /**
+     * Adds a callback to be notified upon the completion of resource extraction.
+     * <p>
+     * If the resource task has already completed, the callback will be posted to the UI message
+     * queue.  Otherwise, it will be executed after all the resources have been extracted.
+     * <p>
+     * This must be called on the UI thread.  The callback will also always be executed on
+     * the UI thread.
+     *
+     * @param callback The callback to be enqueued.
+     */
+    public void addCompletionCallback(Runnable callback) {
+        ThreadUtils.assertOnUiThread();
+
+        Handler handler = new Handler(Looper.getMainLooper());
+        if (shouldSkipPakExtraction()) {
+            handler.post(callback);
+            return;
+        }
+
+        assert mExtractTask != null;
+        assert !mExtractTask.isCancelled();
+        if (mExtractTask.getStatus() == AsyncTask.Status.FINISHED) {
+            handler.post(callback);
+        } else {
+            mExtractTask.mCompletionCallbacks.add(callback);
         }
     }
 
@@ -340,14 +440,26 @@ public class ResourceExtractor {
     /**
      * Pak files (UI strings and other resources) should be updated along with
      * Chrome. A version mismatch can lead to a rather broken user experience.
-     * The ICU data (icudtl.dat) is less version-sensitive, but still can
-     * lead to malfunction/UX misbehavior. So, we regard failing to update them
-     * as an error.
+     * Failing to update the V8 snapshot files will lead to a version mismatch
+     * between V8 and the loaded snapshot which will cause V8 to crash, so this
+     * is treated as an error. The ICU data (icudtl.dat) is less
+     * version-sensitive, but still can lead to malfunction/UX misbehavior. So,
+     * we regard failing to update them as an error.
      */
     private void deleteFiles() {
         File icudata = new File(getAppDataDir(), ICU_DATA_FILENAME);
         if (icudata.exists() && !icudata.delete()) {
             Log.e(LOGTAG, "Unable to remove the icudata " + icudata.getName());
+        }
+        File v8_natives = new File(getAppDataDir(), V8_NATIVES_DATA_FILENAME);
+        if (v8_natives.exists() && !v8_natives.delete()) {
+            Log.e(LOGTAG,
+                    "Unable to remove the v8 data " + v8_natives.getName());
+        }
+        File v8_snapshot = new File(getAppDataDir(), V8_SNAPSHOT_DATA_FILENAME);
+        if (v8_snapshot.exists() && !v8_snapshot.delete()) {
+            Log.e(LOGTAG,
+                    "Unable to remove the v8 data " + v8_snapshot.getName());
         }
         File dir = getOutputDir();
         if (dir.exists()) {

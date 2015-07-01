@@ -29,8 +29,8 @@ using content::BrowserThread;
 
 namespace {
 void SetUrlRequestMock(const base::FilePath& path) {
-  net::URLRequestMockHTTPJob::AddUrlHandler(path,
-                                            BrowserThread::GetBlockingPool());
+  net::URLRequestMockHTTPJob::AddUrlHandlers(path,
+                                             BrowserThread::GetBlockingPool());
 }
 }
 
@@ -38,7 +38,7 @@ class BrowsingDataRemoverBrowserTest : public InProcessBrowserTest {
  public:
   BrowsingDataRemoverBrowserTest() {}
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     base::FilePath path;
     PathService::Get(content::DIR_TEST_DATA, &path);
     BrowserThread::PostTask(

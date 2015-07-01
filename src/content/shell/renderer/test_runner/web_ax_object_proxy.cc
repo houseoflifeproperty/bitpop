@@ -34,14 +34,16 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("Article");
     case blink::WebAXRoleBanner:
       return result.append("Banner");
-    case blink::WebAXRoleBrowser:
-      return result.append("Browser");
+    case blink::WebAXRoleBlockquote:
+      return result.append("Blockquote");
     case blink::WebAXRoleBusyIndicator:
       return result.append("BusyIndicator");
     case blink::WebAXRoleButton:
       return result.append("Button");
     case blink::WebAXRoleCanvas:
       return result.append("Canvas");
+    case blink::WebAXRoleCaption:
+      return result.append("Caption");
     case blink::WebAXRoleCell:
       return result.append("Cell");
     case blink::WebAXRoleCheckBox:
@@ -58,12 +60,20 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("Complementary");
     case blink::WebAXRoleContentInfo:
       return result.append("ContentInfo");
+    case blink::WebAXRoleDate:
+      return result.append("DateField");
+    case blink::WebAXRoleDateTime:
+      return result.append("DateTimeField");
     case blink::WebAXRoleDefinition:
       return result.append("Definition");
     case blink::WebAXRoleDescriptionListDetail:
       return result.append("DescriptionListDetail");
+    case blink::WebAXRoleDescriptionList:
+      return result.append("DescriptionList");
     case blink::WebAXRoleDescriptionListTerm:
       return result.append("DescriptionListTerm");
+    case blink::WebAXRoleDetails:
+      return result.append("Details");
     case blink::WebAXRoleDialog:
       return result.append("Dialog");
     case blink::WebAXRoleDirectory:
@@ -74,10 +84,6 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("Div");
     case blink::WebAXRoleDocument:
       return result.append("Document");
-    case blink::WebAXRoleDrawer:
-      return result.append("Drawer");
-    case blink::WebAXRoleEditableText:
-      return result.append("EditableText");
     case blink::WebAXRoleEmbeddedObject:
       return result.append("EmbeddedObject");
     case blink::WebAXRoleFigcaption:
@@ -92,14 +98,8 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("Grid");
     case blink::WebAXRoleGroup:
       return result.append("Group");
-    case blink::WebAXRoleGrowArea:
-      return result.append("GrowArea");
     case blink::WebAXRoleHeading:
       return result.append("Heading");
-    case blink::WebAXRoleHelpTag:
-      return result.append("HelpTag");
-    case blink::WebAXRoleHorizontalRule:
-      return result.append("HorizontalRule");
     case blink::WebAXRoleIgnored:
       return result.append("Ignored");
     case blink::WebAXRoleImageMapLink:
@@ -108,8 +108,6 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("ImageMap");
     case blink::WebAXRoleImage:
       return result.append("Image");
-    case blink::WebAXRoleIncrementor:
-      return result.append("Incrementor");
     case blink::WebAXRoleInlineTextBox:
       return result.append("InlineTextBox");
     case blink::WebAXRoleLabel:
@@ -134,24 +132,26 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("Main");
     case blink::WebAXRoleMarquee:
       return result.append("Marquee");
-    case blink::WebAXRoleMathElement:
-      return result.append("MathElement");
     case blink::WebAXRoleMath:
       return result.append("Math");
-    case blink::WebAXRoleMatte:
-      return result.append("Matte");
     case blink::WebAXRoleMenuBar:
       return result.append("MenuBar");
     case blink::WebAXRoleMenuButton:
       return result.append("MenuButton");
     case blink::WebAXRoleMenuItem:
       return result.append("MenuItem");
+    case blink::WebAXRoleMenuItemCheckBox:
+      return result.append("MenuItemCheckBox");
+    case blink::WebAXRoleMenuItemRadio:
+      return result.append("MenuItemRadio");
     case blink::WebAXRoleMenuListOption:
       return result.append("MenuListOption");
     case blink::WebAXRoleMenuListPopup:
       return result.append("MenuListPopup");
     case blink::WebAXRoleMenu:
       return result.append("Menu");
+    case blink::WebAXRoleMeter:
+      return result.append("Meter");
     case blink::WebAXRoleNavigation:
       return result.append("Navigation");
     case blink::WebAXRoleNone:
@@ -164,6 +164,8 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("Paragraph");
     case blink::WebAXRolePopUpButton:
       return result.append("PopUpButton");
+    case blink::WebAXRolePre:
+      return result.append("Pre");
     case blink::WebAXRolePresentational:
       return result.append("Presentational");
     case blink::WebAXRoleProgressIndicator:
@@ -180,8 +182,8 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("RowHeader");
     case blink::WebAXRoleRow:
       return result.append("Row");
-    case blink::WebAXRoleRulerMarker:
-      return result.append("RulerMarker");
+    case blink::WebAXRoleRuby:
+      return result.append("Ruby");
     case blink::WebAXRoleRuler:
       return result.append("Ruler");
     case blink::WebAXRoleSVGRoot:
@@ -194,8 +196,8 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("SeamlessWebArea");
     case blink::WebAXRoleSearch:
       return result.append("Search");
-    case blink::WebAXRoleSheet:
-      return result.append("Sheet");
+    case blink::WebAXRoleSearchBox:
+      return result.append("SearchBox");
     case blink::WebAXRoleSlider:
       return result.append("Slider");
     case blink::WebAXRoleSliderThumb:
@@ -204,16 +206,14 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("SpinButtonPart");
     case blink::WebAXRoleSpinButton:
       return result.append("SpinButton");
-    case blink::WebAXRoleSplitGroup:
-      return result.append("SplitGroup");
     case blink::WebAXRoleSplitter:
       return result.append("Splitter");
     case blink::WebAXRoleStaticText:
       return result.append("StaticText");
     case blink::WebAXRoleStatus:
       return result.append("Status");
-    case blink::WebAXRoleSystemWide:
-      return result.append("SystemWide");
+    case blink::WebAXRoleSwitch:
+      return result.append("Switch");
     case blink::WebAXRoleTabGroup:
       return result.append("TabGroup");
     case blink::WebAXRoleTabList:
@@ -226,10 +226,10 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("TableHeaderContainer");
     case blink::WebAXRoleTable:
       return result.append("Table");
-    case blink::WebAXRoleTextArea:
-      return result.append("TextArea");
     case blink::WebAXRoleTextField:
       return result.append("TextField");
+    case blink::WebAXRoleTime:
+      return result.append("Time");
     case blink::WebAXRoleTimer:
       return result.append("Timer");
     case blink::WebAXRoleToggleButton:
@@ -246,8 +246,6 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("Unknown");
     case blink::WebAXRoleUserInterfaceTooltip:
       return result.append("UserInterfaceTooltip");
-    case blink::WebAXRoleValueIndicator:
-      return result.append("ValueIndicator");
     case blink::WebAXRoleWebArea:
       return result.append("WebArea");
     case blink::WebAXRoleWindow:
@@ -257,23 +255,25 @@ std::string RoleToString(blink::WebAXRole role)
   }
 }
 
-std::string GetDescription(const blink::WebAXObject& object) {
-  std::string description = object.accessibilityDescription().utf8();
+std::string DeprecatedGetDescription(const blink::WebAXObject& object) {
+  std::string description = object.deprecatedAccessibilityDescription().utf8();
   return description.insert(0, "AXDescription: ");
 }
 
-std::string GetHelpText(const blink::WebAXObject& object) {
-  std::string help_text = object.helpText().utf8();
+std::string DeprecatedGetHelpText(const blink::WebAXObject& object) {
+  std::string help_text = object.deprecatedHelpText().utf8();
   return help_text.insert(0, "AXHelp: ");
 }
 
 std::string GetStringValue(const blink::WebAXObject& object) {
   std::string value;
   if (object.role() == blink::WebAXRoleColorWell) {
-    int r, g, b;
-    object.colorValue(r, g, b);
-    value = base::StringPrintf("rgb %7.5f %7.5f %7.5f 1",
-                               r / 255., g / 255., b / 255.);
+    unsigned int color = object.colorValue();
+    unsigned int red = (color >> 16) & 0xFF;
+    unsigned int green = (color >> 8) & 0xFF;
+    unsigned int blue = color & 0xFF;
+    value = base::StringPrintf("rgba(%d, %d, %d, 1)",
+                               red, green, blue);
   } else {
     value = object.stringValue().utf8();
   }
@@ -294,16 +294,9 @@ std::string GetRole(const blink::WebAXObject& object) {
   return role_string;
 }
 
-std::string GetTitle(const blink::WebAXObject& object) {
-  std::string title = object.title().utf8();
+std::string DeprecatedGetTitle(const blink::WebAXObject& object) {
+  std::string title = object.deprecatedTitle().utf8();
   return title.insert(0, "AXTitle: ");
-}
-
-std::string GetOrientation(const blink::WebAXObject& object) {
-  if (object.isVertical())
-    return "AXOrientation: AXVerticalOrientation";
-
-  return "AXOrientation: AXHorizontalOrientation";
 }
 
 std::string GetValueDescription(const blink::WebAXObject& object) {
@@ -311,13 +304,18 @@ std::string GetValueDescription(const blink::WebAXObject& object) {
   return value_description.insert(0, "AXValueDescription: ");
 }
 
+std::string GetLanguage(const blink::WebAXObject& object) {
+  std::string language = object.language().utf8();
+  return language.insert(0, "AXLanguage: ");
+}
+
 std::string GetAttributes(const blink::WebAXObject& object) {
   // FIXME: Concatenate all attributes of the AXObject.
-  std::string attributes(GetTitle(object));
+  std::string attributes(DeprecatedGetTitle(object));
   attributes.append("\n");
   attributes.append(GetRole(object));
   attributes.append("\n");
-  attributes.append(GetDescription(object));
+  attributes.append(DeprecatedGetDescription(object));
   return attributes;
 }
 
@@ -479,10 +477,8 @@ gin::ObjectTemplateBuilder
 WebAXObjectProxy::GetObjectTemplateBuilder(v8::Isolate* isolate) {
   return gin::Wrappable<WebAXObjectProxy>::GetObjectTemplateBuilder(isolate)
       .SetProperty("role", &WebAXObjectProxy::Role)
-      .SetProperty("title", &WebAXObjectProxy::Title)
-      .SetProperty("description", &WebAXObjectProxy::Description)
-      .SetProperty("helpText", &WebAXObjectProxy::HelpText)
       .SetProperty("stringValue", &WebAXObjectProxy::StringValue)
+      .SetProperty("language", &WebAXObjectProxy::Language)
       .SetProperty("x", &WebAXObjectProxy::X)
       .SetProperty("y", &WebAXObjectProxy::Y)
       .SetProperty("width", &WebAXObjectProxy::Width)
@@ -492,9 +488,12 @@ WebAXObjectProxy::GetObjectTemplateBuilder(v8::Isolate* isolate) {
       .SetProperty("maxValue", &WebAXObjectProxy::MaxValue)
       .SetProperty("valueDescription", &WebAXObjectProxy::ValueDescription)
       .SetProperty("childrenCount", &WebAXObjectProxy::ChildrenCount)
-      .SetProperty("insertionPointLineNumber",
-                   &WebAXObjectProxy::InsertionPointLineNumber)
-      .SetProperty("selectedTextRange", &WebAXObjectProxy::SelectedTextRange)
+      .SetProperty("selectionStart", &WebAXObjectProxy::SelectionStart)
+      .SetProperty("selectionEnd", &WebAXObjectProxy::SelectionEnd)
+      .SetProperty("selectionStartLineNumber",
+                   &WebAXObjectProxy::SelectionStartLineNumber)
+      .SetProperty("selectionEndLineNumber",
+                   &WebAXObjectProxy::SelectionEndLineNumber)
       .SetProperty("isEnabled", &WebAXObjectProxy::IsEnabled)
       .SetProperty("isRequired", &WebAXObjectProxy::IsRequired)
       .SetProperty("isFocused", &WebAXObjectProxy::IsFocused)
@@ -512,24 +511,40 @@ WebAXObjectProxy::GetObjectTemplateBuilder(v8::Isolate* isolate) {
       .SetProperty("hasPopup", &WebAXObjectProxy::HasPopup)
       .SetProperty("isValid", &WebAXObjectProxy::IsValid)
       .SetProperty("isReadOnly", &WebAXObjectProxy::IsReadOnly)
+      .SetProperty("backgroundColor", &WebAXObjectProxy::BackgroundColor)
+      .SetProperty("color", &WebAXObjectProxy::Color)
+      .SetProperty("colorValue", &WebAXObjectProxy::ColorValue)
+      .SetProperty("fontSize", &WebAXObjectProxy::FontSize)
       .SetProperty("orientation", &WebAXObjectProxy::Orientation)
+      .SetProperty("posInSet", &WebAXObjectProxy::PosInSet)
+      .SetProperty("setSize", &WebAXObjectProxy::SetSize)
       .SetProperty("clickPointX", &WebAXObjectProxy::ClickPointX)
       .SetProperty("clickPointY", &WebAXObjectProxy::ClickPointY)
       .SetProperty("rowCount", &WebAXObjectProxy::RowCount)
+      .SetProperty("rowHeadersCount", &WebAXObjectProxy::RowHeadersCount)
       .SetProperty("columnCount", &WebAXObjectProxy::ColumnCount)
+      .SetProperty("columnHeadersCount", &WebAXObjectProxy::ColumnHeadersCount)
       .SetProperty("isClickable", &WebAXObjectProxy::IsClickable)
+      .SetProperty("isButtonStateMixed", &WebAXObjectProxy::IsButtonStateMixed)
       .SetMethod("allAttributes", &WebAXObjectProxy::AllAttributes)
       .SetMethod("attributesOfChildren",
                  &WebAXObjectProxy::AttributesOfChildren)
+      .SetMethod("ariaControlsElementAtIndex",
+                 &WebAXObjectProxy::AriaControlsElementAtIndex)
+      .SetMethod("ariaFlowToElementAtIndex",
+                 &WebAXObjectProxy::AriaFlowToElementAtIndex)
+      .SetMethod("ariaOwnsElementAtIndex",
+                 &WebAXObjectProxy::AriaOwnsElementAtIndex)
       .SetMethod("lineForIndex", &WebAXObjectProxy::LineForIndex)
       .SetMethod("boundsForRange", &WebAXObjectProxy::BoundsForRange)
       .SetMethod("childAtIndex", &WebAXObjectProxy::ChildAtIndex)
       .SetMethod("elementAtPoint", &WebAXObjectProxy::ElementAtPoint)
       .SetMethod("tableHeader", &WebAXObjectProxy::TableHeader)
+      .SetMethod("rowHeaderAtIndex", &WebAXObjectProxy::RowHeaderAtIndex)
+      .SetMethod("columnHeaderAtIndex", &WebAXObjectProxy::ColumnHeaderAtIndex)
       .SetMethod("rowIndexRange", &WebAXObjectProxy::RowIndexRange)
       .SetMethod("columnIndexRange", &WebAXObjectProxy::ColumnIndexRange)
       .SetMethod("cellForColumnAndRow", &WebAXObjectProxy::CellForColumnAndRow)
-      .SetMethod("titleUIElement", &WebAXObjectProxy::TitleUIElement)
       .SetMethod("setSelectedTextRange",
                  &WebAXObjectProxy::SetSelectedTextRange)
       .SetMethod("isAttributeSettable", &WebAXObjectProxy::IsAttributeSettable)
@@ -556,14 +571,41 @@ WebAXObjectProxy::GetObjectTemplateBuilder(v8::Isolate* isolate) {
       .SetMethod("scrollToGlobalPoint", &WebAXObjectProxy::ScrollToGlobalPoint)
       .SetMethod("wordStart", &WebAXObjectProxy::WordStart)
       .SetMethod("wordEnd", &WebAXObjectProxy::WordEnd)
+      .SetMethod("nextOnLine", &WebAXObjectProxy::NextOnLine)
+      .SetMethod("previousOnLine", &WebAXObjectProxy::PreviousOnLine)
       // TODO(hajimehoshi): This is for backward compatibility. Remove them.
       .SetMethod("addNotificationListener",
                  &WebAXObjectProxy::SetNotificationListener)
       .SetMethod("removeNotificationListener",
-                 &WebAXObjectProxy::UnsetNotificationListener);
+                 &WebAXObjectProxy::UnsetNotificationListener)
+      //
+      // DEPRECATED accessible name and description accessors
+      //
+      .SetProperty("title", &WebAXObjectProxy::DeprecatedTitle)
+      .SetProperty("description", &WebAXObjectProxy::DeprecatedDescription)
+      .SetProperty("helpText", &WebAXObjectProxy::DeprecatedHelpText)
+      .SetMethod("titleUIElement", &WebAXObjectProxy::DeprecatedTitleUIElement)
+      .SetProperty("deprecatedTitle",
+                   &WebAXObjectProxy::DeprecatedTitle)
+      .SetProperty("deprecatedDescription",
+                   &WebAXObjectProxy::DeprecatedDescription)
+      .SetProperty("deprecatedHelpText",
+                   &WebAXObjectProxy::DeprecatedHelpText)
+      .SetMethod("deprecatedTitleUIElement",
+                 &WebAXObjectProxy::DeprecatedTitleUIElement)
+      //
+      // NEW accessible name and description accessors
+      //
+      .SetProperty("name", &WebAXObjectProxy::Name)
+      .SetProperty("nameFrom", &WebAXObjectProxy::NameFrom)
+      .SetMethod("nameElementCount", &WebAXObjectProxy::NameElementCount)
+      .SetMethod("nameElementAtIndex", &WebAXObjectProxy::NameElementAtIndex);
+      // TODO(dmazzoni): add "description", etc. once LayoutTests have
+      // been updated to call deprecatedDescription instead.
+
 }
 
-v8::Handle<v8::Object> WebAXObjectProxy::GetChildAtIndex(unsigned index) {
+v8::Local<v8::Object> WebAXObjectProxy::GetChildAtIndex(unsigned index) {
   return factory_->GetOrCreate(accessibility_object_.childAt(index));
 }
 
@@ -581,13 +623,13 @@ void WebAXObjectProxy::NotificationReceived(
   if (notification_callback_.IsEmpty())
     return;
 
-  v8::Handle<v8::Context> context = frame->mainWorldScriptContext();
+  v8::Local<v8::Context> context = frame->mainWorldScriptContext();
   if (context.IsEmpty())
     return;
 
   v8::Isolate* isolate = blink::mainThreadIsolate();
 
-  v8::Handle<v8::Value> argv[] = {
+  v8::Local<v8::Value> argv[] = {
     v8::String::NewFromUtf8(isolate, notification_name.data(),
                             v8::String::kNormalString,
                             notification_name.size()),
@@ -608,24 +650,29 @@ std::string WebAXObjectProxy::Role() {
   return GetRole(accessibility_object_);
 }
 
-std::string WebAXObjectProxy::Title() {
+std::string WebAXObjectProxy::DeprecatedTitle() {
   accessibility_object_.updateLayoutAndCheckValidity();
-  return GetTitle(accessibility_object_);
+  return DeprecatedGetTitle(accessibility_object_);
 }
 
-std::string WebAXObjectProxy::Description() {
+std::string WebAXObjectProxy::DeprecatedDescription() {
   accessibility_object_.updateLayoutAndCheckValidity();
-  return GetDescription(accessibility_object_);
+  return DeprecatedGetDescription(accessibility_object_);
 }
 
-std::string WebAXObjectProxy::HelpText() {
+std::string WebAXObjectProxy::DeprecatedHelpText() {
   accessibility_object_.updateLayoutAndCheckValidity();
-  return GetHelpText(accessibility_object_);
+  return DeprecatedGetHelpText(accessibility_object_);
 }
 
 std::string WebAXObjectProxy::StringValue() {
   accessibility_object_.updateLayoutAndCheckValidity();
   return GetStringValue(accessibility_object_);
+}
+
+std::string WebAXObjectProxy::Language() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  return GetLanguage(accessibility_object_);
 }
 
 int WebAXObjectProxy::X() {
@@ -681,19 +728,24 @@ int WebAXObjectProxy::ChildrenCount() {
   return count;
 }
 
-int WebAXObjectProxy::InsertionPointLineNumber() {
+int WebAXObjectProxy::SelectionStart() {
   accessibility_object_.updateLayoutAndCheckValidity();
-  if (!accessibility_object_.isFocused())
-    return -1;
-  return accessibility_object_.selectionEndLineNumber();
+  return accessibility_object_.selectionStart();
 }
 
-std::string WebAXObjectProxy::SelectedTextRange() {
+int WebAXObjectProxy::SelectionEnd() {
   accessibility_object_.updateLayoutAndCheckValidity();
-  unsigned selection_start = accessibility_object_.selectionStart();
-  unsigned selection_end = accessibility_object_.selectionEnd();
-  return base::StringPrintf("{%d, %d}",
-                            selection_start, selection_end - selection_start);
+  return accessibility_object_.selectionEnd();
+}
+
+int WebAXObjectProxy::SelectionStartLineNumber() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  return accessibility_object_.selectionStartLineNumber();
+}
+
+int WebAXObjectProxy::SelectionEndLineNumber() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  return accessibility_object_.selectionEndLineNumber();
 }
 
 bool WebAXObjectProxy::IsEnabled() {
@@ -738,12 +790,17 @@ bool WebAXObjectProxy::IsSelectedOptionActive() {
 
 bool WebAXObjectProxy::IsExpanded() {
   accessibility_object_.updateLayoutAndCheckValidity();
-  return !accessibility_object_.isCollapsed();
+  return accessibility_object_.isExpanded() == blink::WebAXExpandedExpanded;
 }
 
 bool WebAXObjectProxy::IsChecked() {
   accessibility_object_.updateLayoutAndCheckValidity();
   return accessibility_object_.isChecked();
+}
+
+bool WebAXObjectProxy::IsCollapsed() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  return accessibility_object_.isExpanded() == blink::WebAXExpandedCollapsed;
 }
 
 bool WebAXObjectProxy::IsVisible() {
@@ -754,11 +811,6 @@ bool WebAXObjectProxy::IsVisible() {
 bool WebAXObjectProxy::IsOffScreen() {
   accessibility_object_.updateLayoutAndCheckValidity();
   return accessibility_object_.isOffScreen();
-}
-
-bool WebAXObjectProxy::IsCollapsed() {
-  accessibility_object_.updateLayoutAndCheckValidity();
-  return accessibility_object_.isCollapsed();
 }
 
 bool WebAXObjectProxy::HasPopup() {
@@ -776,9 +828,48 @@ bool WebAXObjectProxy::IsReadOnly() {
   return accessibility_object_.isReadOnly();
 }
 
+unsigned int WebAXObjectProxy::BackgroundColor() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  return accessibility_object_.backgroundColor();
+}
+
+unsigned int WebAXObjectProxy::Color() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  unsigned int color = accessibility_object_.color();
+  // Remove the alpha because it's always 1 and thus not informative.
+  return color & 0xFFFFFF;
+}
+
+// For input elements of type color.
+unsigned int WebAXObjectProxy::ColorValue() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  return accessibility_object_.colorValue();
+}
+
+float WebAXObjectProxy::FontSize() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  return accessibility_object_.fontSize();
+}
+
 std::string WebAXObjectProxy::Orientation() {
   accessibility_object_.updateLayoutAndCheckValidity();
-  return GetOrientation(accessibility_object_);
+  if (accessibility_object_.orientation() == blink::WebAXOrientationVertical)
+    return "AXOrientation: AXVerticalOrientation";
+  else if (accessibility_object_.orientation()
+           == blink::WebAXOrientationHorizontal)
+    return "AXOrientation: AXHorizontalOrientation";
+
+  return std::string();
+}
+
+int WebAXObjectProxy::PosInSet() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  return accessibility_object_.posInSet();
+}
+
+int WebAXObjectProxy::SetSize() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  return accessibility_object_.setSize();
 }
 
 int WebAXObjectProxy::ClickPointX() {
@@ -796,14 +887,72 @@ int32_t WebAXObjectProxy::RowCount() {
   return static_cast<int32_t>(accessibility_object_.rowCount());
 }
 
+int32_t WebAXObjectProxy::RowHeadersCount() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebVector<blink::WebAXObject> headers;
+  accessibility_object_.rowHeaders(headers);
+  return static_cast<int32_t>(headers.size());
+}
+
 int32_t WebAXObjectProxy::ColumnCount() {
   accessibility_object_.updateLayoutAndCheckValidity();
   return static_cast<int32_t>(accessibility_object_.columnCount());
 }
 
+int32_t WebAXObjectProxy::ColumnHeadersCount()
+{
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebVector<blink::WebAXObject> headers;
+  accessibility_object_.columnHeaders(headers);
+  return static_cast<int32_t>(headers.size());
+}
+
 bool WebAXObjectProxy::IsClickable() {
   accessibility_object_.updateLayoutAndCheckValidity();
   return accessibility_object_.isClickable();
+}
+
+bool WebAXObjectProxy::IsButtonStateMixed() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  return accessibility_object_.isButtonStateMixed();
+}
+
+v8::Local<v8::Object> WebAXObjectProxy::AriaControlsElementAtIndex(
+                                                                unsigned index)
+{
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebVector<blink::WebAXObject> elements;
+  accessibility_object_.ariaControls(elements);
+  size_t elementCount = elements.size();
+  if (index >= elementCount)
+    return v8::Local<v8::Object>();
+
+  return factory_->GetOrCreate(elements[index]);
+}
+
+v8::Local<v8::Object> WebAXObjectProxy::AriaFlowToElementAtIndex(
+                                                                unsigned index)
+{
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebVector<blink::WebAXObject> elements;
+  accessibility_object_.ariaFlowTo(elements);
+  size_t elementCount = elements.size();
+  if (index >= elementCount)
+    return v8::Local<v8::Object>();
+
+  return factory_->GetOrCreate(elements[index]);
+}
+
+v8::Local<v8::Object> WebAXObjectProxy::AriaOwnsElementAtIndex(unsigned index)
+{
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebVector<blink::WebAXObject> elements;
+  accessibility_object_.ariaOwns(elements);
+  size_t elementCount = elements.size();
+  if (index >= elementCount)
+    return v8::Local<v8::Object>();
+
+  return factory_->GetOrCreate(elements[index]);
 }
 
 std::string WebAXObjectProxy::AllAttributes() {
@@ -858,28 +1007,50 @@ std::string WebAXObjectProxy::BoundsForRange(int start, int end) {
                             bounds.x, bounds.y, bounds.width, bounds.height);
 }
 
-v8::Handle<v8::Object> WebAXObjectProxy::ChildAtIndex(int index) {
+v8::Local<v8::Object> WebAXObjectProxy::ChildAtIndex(int index) {
   accessibility_object_.updateLayoutAndCheckValidity();
   return GetChildAtIndex(index);
 }
 
-v8::Handle<v8::Object> WebAXObjectProxy::ElementAtPoint(int x, int y) {
+v8::Local<v8::Object> WebAXObjectProxy::ElementAtPoint(int x, int y) {
   accessibility_object_.updateLayoutAndCheckValidity();
   blink::WebPoint point(x, y);
   blink::WebAXObject obj = accessibility_object_.hitTest(point);
   if (obj.isNull())
-    return v8::Handle<v8::Object>();
+    return v8::Local<v8::Object>();
 
   return factory_->GetOrCreate(obj);
 }
 
-v8::Handle<v8::Object> WebAXObjectProxy::TableHeader() {
+v8::Local<v8::Object> WebAXObjectProxy::TableHeader() {
   accessibility_object_.updateLayoutAndCheckValidity();
   blink::WebAXObject obj = accessibility_object_.headerContainerObject();
   if (obj.isNull())
-    return v8::Handle<v8::Object>();
+    return v8::Local<v8::Object>();
 
   return factory_->GetOrCreate(obj);
+}
+
+v8::Local<v8::Object> WebAXObjectProxy::RowHeaderAtIndex(unsigned index) {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebVector<blink::WebAXObject> headers;
+  accessibility_object_.rowHeaders(headers);
+  size_t headerCount = headers.size();
+  if (index >= headerCount)
+    return v8::Local<v8::Object>();
+
+  return factory_->GetOrCreate(headers[index]);
+}
+
+v8::Local<v8::Object> WebAXObjectProxy::ColumnHeaderAtIndex(unsigned index) {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebVector<blink::WebAXObject> headers;
+  accessibility_object_.columnHeaders(headers);
+  size_t headerCount = headers.size();
+  if (index >= headerCount)
+    return v8::Local<v8::Object>();
+
+  return factory_->GetOrCreate(headers[index]);
 }
 
 std::string WebAXObjectProxy::RowIndexRange() {
@@ -896,22 +1067,22 @@ std::string WebAXObjectProxy::ColumnIndexRange() {
   return base::StringPrintf("{%d, %d}", column_index, column_span);
 }
 
-v8::Handle<v8::Object> WebAXObjectProxy::CellForColumnAndRow(
+v8::Local<v8::Object> WebAXObjectProxy::CellForColumnAndRow(
     int column, int row) {
   accessibility_object_.updateLayoutAndCheckValidity();
   blink::WebAXObject obj =
       accessibility_object_.cellForColumnAndRow(column, row);
   if (obj.isNull())
-    return v8::Handle<v8::Object>();
+    return v8::Local<v8::Object>();
 
   return factory_->GetOrCreate(obj);
 }
 
-v8::Handle<v8::Object> WebAXObjectProxy::TitleUIElement() {
+v8::Local<v8::Object> WebAXObjectProxy::DeprecatedTitleUIElement() {
   accessibility_object_.updateLayoutAndCheckValidity();
-  blink::WebAXObject obj = accessibility_object_.titleUIElement();
+  blink::WebAXObject obj = accessibility_object_.deprecatedTitleUIElement();
   if (obj.isNull())
-    return v8::Handle<v8::Object>();
+    return v8::Local<v8::Object>();
 
   return factory_->GetOrCreate(obj);
 }
@@ -946,7 +1117,7 @@ bool WebAXObjectProxy::IsDecrementActionSupported() {
   return accessibility_object_.canDecrement();
 }
 
-v8::Handle<v8::Object> WebAXObjectProxy::ParentElement() {
+v8::Local<v8::Object> WebAXObjectProxy::ParentElement() {
   accessibility_object_.updateLayoutAndCheckValidity();
   blink::WebAXObject parent_object = accessibility_object_.parentObject();
   while (parent_object.accessibilityIsIgnored())
@@ -972,7 +1143,7 @@ void WebAXObjectProxy::Press() {
   accessibility_object_.press();
 }
 
-bool WebAXObjectProxy::IsEqual(v8::Handle<v8::Object> proxy) {
+bool WebAXObjectProxy::IsEqual(v8::Local<v8::Object> proxy) {
   WebAXObjectProxy* unwrapped_proxy = NULL;
   if (!gin::ConvertFromV8(blink::mainThreadIsolate(), proxy, &unwrapped_proxy))
     return false;
@@ -980,7 +1151,7 @@ bool WebAXObjectProxy::IsEqual(v8::Handle<v8::Object> proxy) {
 }
 
 void WebAXObjectProxy::SetNotificationListener(
-    v8::Handle<v8::Function> callback) {
+    v8::Local<v8::Function> callback) {
   v8::Isolate* isolate = blink::mainThreadIsolate();
   notification_callback_.Reset(isolate, callback);
 }
@@ -1016,7 +1187,7 @@ int WebAXObjectProxy::WordStart(int character_index) {
   if (accessibility_object_.role() != blink::WebAXRoleStaticText)
     return -1;
 
-  int word_start, word_end;
+  int word_start = 0, word_end = 0;
   GetBoundariesForOneWord(accessibility_object_, character_index,
                           word_start, word_end);
   return word_start;
@@ -1027,10 +1198,72 @@ int WebAXObjectProxy::WordEnd(int character_index) {
   if (accessibility_object_.role() != blink::WebAXRoleStaticText)
     return -1;
 
-  int word_start, word_end;
+  int word_start = 0, word_end = 0;
   GetBoundariesForOneWord(accessibility_object_, character_index,
                           word_start, word_end);
   return word_end;
+}
+
+v8::Local<v8::Object> WebAXObjectProxy::NextOnLine() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebAXObject obj = accessibility_object_.nextOnLine();
+  if (obj.isNull())
+    return v8::Local<v8::Object>();
+
+  return factory_->GetOrCreate(obj);
+}
+
+v8::Local<v8::Object> WebAXObjectProxy::PreviousOnLine() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebAXObject obj = accessibility_object_.previousOnLine();
+  if (obj.isNull())
+    return v8::Local<v8::Object>();
+
+  return factory_->GetOrCreate(obj);
+}
+
+std::string WebAXObjectProxy::Name() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebAXNameFrom nameFrom;
+  blink::WebVector<blink::WebAXObject> nameObjects;
+  return accessibility_object_.name(nameFrom, nameObjects).utf8();
+}
+
+std::string WebAXObjectProxy::NameFrom() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebAXNameFrom nameFrom = blink::WebAXNameFromContents;
+  blink::WebVector<blink::WebAXObject> nameObjects;
+  accessibility_object_.name(nameFrom, nameObjects);
+  switch(nameFrom) {
+    case blink::WebAXNameFromAttribute:
+      return "attribute";
+    case blink::WebAXNameFromContents:
+      return "contents";
+    case blink::WebAXNameFromPlaceholder:
+      return "placeholder";
+    case blink::WebAXNameFromRelatedElement:
+      return "relatedElement";
+    default:
+      return "unknown";
+  }
+}
+
+int WebAXObjectProxy::NameElementCount() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebAXNameFrom nameFrom;
+  blink::WebVector<blink::WebAXObject> nameObjects;
+  accessibility_object_.name(nameFrom, nameObjects);
+  return static_cast<int>(nameObjects.size());
+}
+
+v8::Local<v8::Object> WebAXObjectProxy::NameElementAtIndex(unsigned index) {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebAXNameFrom nameFrom;
+  blink::WebVector<blink::WebAXObject> nameObjects;
+  accessibility_object_.name(nameFrom, nameObjects);
+  if (index >= nameObjects.size())
+    return v8::Local<v8::Object>();
+  return factory_->GetOrCreate(nameObjects[index]);
 }
 
 RootWebAXObjectProxy::RootWebAXObjectProxy(
@@ -1038,9 +1271,9 @@ RootWebAXObjectProxy::RootWebAXObjectProxy(
     : WebAXObjectProxy(object, factory) {
 }
 
-v8::Handle<v8::Object> RootWebAXObjectProxy::GetChildAtIndex(unsigned index) {
+v8::Local<v8::Object> RootWebAXObjectProxy::GetChildAtIndex(unsigned index) {
   if (index)
-    return v8::Handle<v8::Object>();
+    return v8::Local<v8::Object>();
 
   return factory()->GetOrCreate(accessibility_object());
 }
@@ -1072,10 +1305,10 @@ void WebAXObjectProxyList::Clear() {
   elements_.Clear();
 }
 
-v8::Handle<v8::Object> WebAXObjectProxyList::GetOrCreate(
+v8::Local<v8::Object> WebAXObjectProxyList::GetOrCreate(
     const blink::WebAXObject& object) {
   if (object.isNull())
-    return v8::Handle<v8::Object>();
+    return v8::Local<v8::Object>();
 
   v8::Isolate* isolate = blink::mainThreadIsolate();
 
@@ -1090,23 +1323,11 @@ v8::Handle<v8::Object> WebAXObjectProxyList::GetOrCreate(
       return elements_.Get(i);
   }
 
-  v8::Handle<v8::Value> value_handle = gin::CreateHandle(
+  v8::Local<v8::Value> value_handle = gin::CreateHandle(
       isolate, new WebAXObjectProxy(object, this)).ToV8();
   if (value_handle.IsEmpty())
-    return v8::Handle<v8::Object>();
-  v8::Handle<v8::Object> handle = value_handle->ToObject();
-  elements_.Append(handle);
-  return handle;
-}
-
-v8::Handle<v8::Object> WebAXObjectProxyList::CreateRoot(
-    const blink::WebAXObject& object) {
-  v8::Isolate* isolate = blink::mainThreadIsolate();
-  v8::Handle<v8::Value> value_handle = gin::CreateHandle(
-      isolate, new RootWebAXObjectProxy(object, this)).ToV8();
-  if (value_handle.IsEmpty())
-    return v8::Handle<v8::Object>();
-  v8::Handle<v8::Object> handle = value_handle->ToObject();
+    return v8::Local<v8::Object>();
+  v8::Local<v8::Object> handle = value_handle->ToObject(isolate);
   elements_.Append(handle);
   return handle;
 }

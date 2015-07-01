@@ -7,14 +7,16 @@
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/synchronization/lock.h"
+#include "base/thread_task_runner_handle.h"
 #include "cc/base/switches.h"
 #include "cc/blink/web_layer_impl.h"
 #include "cc/input/input_handler.h"
 #include "cc/layers/layer.h"
-#include "cc/output/output_surface.h"
+#include "cc/scheduler/begin_frame_source.h"
+#include "cc/test/pixel_test_output_surface.h"
 #include "cc/test/test_context_provider.h"
 #include "cc/trees/layer_tree_host.h"
-#include "content/test/test_webkit_platform_support.h"
+#include "content/test/test_blink_web_unit_test_support.h"
 #include "third_party/WebKit/public/platform/Platform.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/platform/WebLayer.h"
@@ -42,13 +44,12 @@ void WebLayerTreeViewImplForTesting::Initialize() {
 
   // Accelerated animations are enabled for unit tests.
   settings.accelerated_animation_enabled = true;
-  layer_tree_host_ = cc::LayerTreeHost::CreateSingleThreaded(
-      this, this, NULL, settings, base::MessageLoopProxy::current());
+  cc::LayerTreeHost::InitParams params;
+  params.client = this;
+  params.settings = &settings;
+  params.main_task_runner = base::ThreadTaskRunnerHandle::Get();
+  layer_tree_host_ = cc::LayerTreeHost::CreateSingleThreaded(this, &params);
   DCHECK(layer_tree_host_);
-}
-
-void WebLayerTreeViewImplForTesting::setSurfaceReady() {
-  layer_tree_host_->SetLayerTreeHostClientReady();
 }
 
 void WebLayerTreeViewImplForTesting::setRootLayer(
@@ -138,40 +139,61 @@ void WebLayerTreeViewImplForTesting::Layout() {
 }
 
 void WebLayerTreeViewImplForTesting::ApplyViewportDeltas(
+    const gfx::Vector2dF& inner_delta,
+    const gfx::Vector2dF& outer_delta,
+    const gfx::Vector2dF& elastic_overscroll_delta,
+    float page_scale,
+    float top_controls_delta) {
+}
+
+void WebLayerTreeViewImplForTesting::ApplyViewportDeltas(
     const gfx::Vector2d& scroll_delta,
     float page_scale,
     float top_controls_delta) {}
 
-void WebLayerTreeViewImplForTesting::RequestNewOutputSurface(
-    bool fallback) {
-  layer_tree_host_->SetOutputSurface(make_scoped_ptr(
-      new cc::OutputSurface(cc::TestContextProvider::Create())));
+void WebLayerTreeViewImplForTesting::RequestNewOutputSurface() {
+  bool flipped_output_surface = false;
+  layer_tree_host_->SetOutputSurface(
+      make_scoped_ptr(new cc::PixelTestOutputSurface(
+          cc::TestContextProvider::Create(), flipped_output_surface)));
+}
+
+void WebLayerTreeViewImplForTesting::DidFailToInitializeOutputSurface() {
+  RequestNewOutputSurface();
 }
 
 void WebLayerTreeViewImplForTesting::registerViewportLayers(
+    const blink::WebLayer* overscrollElasticityLayer,
     const blink::WebLayer* pageScaleLayer,
     const blink::WebLayer* innerViewportScrollLayer,
     const blink::WebLayer* outerViewportScrollLayer) {
   layer_tree_host_->RegisterViewportLayers(
+      // The scroll elasticity layer will only exist when using pinch virtual
+      // viewports.
+      overscrollElasticityLayer
+          ? static_cast<const cc_blink::WebLayerImpl*>(
+                overscrollElasticityLayer)->layer()
+          : NULL,
       static_cast<const cc_blink::WebLayerImpl*>(pageScaleLayer)->layer(),
       static_cast<const cc_blink::WebLayerImpl*>(innerViewportScrollLayer)
           ->layer(),
       // The outer viewport layer will only exist when using pinch virtual
       // viewports.
-      outerViewportScrollLayer ? static_cast<const cc_blink::WebLayerImpl*>(
-                                     outerViewportScrollLayer)->layer()
-                               : NULL);
+      outerViewportScrollLayer
+          ? static_cast<const cc_blink::WebLayerImpl*>(outerViewportScrollLayer)
+                ->layer()
+          : NULL);
 }
 
 void WebLayerTreeViewImplForTesting::clearViewportLayers() {
   layer_tree_host_->RegisterViewportLayers(scoped_refptr<cc::Layer>(),
                                            scoped_refptr<cc::Layer>(),
+                                           scoped_refptr<cc::Layer>(),
                                            scoped_refptr<cc::Layer>());
 }
 
 void WebLayerTreeViewImplForTesting::registerSelection(
-    const blink::WebSelectionBound& start,
-    const blink::WebSelectionBound& end) {
+    const blink::WebSelection& selection) {
 }
 
 void WebLayerTreeViewImplForTesting::clearSelection() {

@@ -5,6 +5,7 @@
 chrome.test.runTests([
   function isAvailable() {
     chrome.hotwordPrivate.getStatus(
+        true,
         chrome.test.callbackPass(function(result) {
           chrome.test.sendMessage("available: " + result.available);
     }));

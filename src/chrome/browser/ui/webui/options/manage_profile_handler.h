@@ -9,9 +9,9 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
-#include "chrome/browser/sync/profile_sync_service_observer.h"
+#include "chrome/browser/profiles/profile_info_cache_observer.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
-#include "content/public/browser/notification_observer.h"
+#include "components/sync_driver/sync_service_observer.h"
 
 namespace base {
 class StringValue;
@@ -21,29 +21,31 @@ namespace options {
 
 // Chrome personal stuff profiles manage overlay UI handler.
 class ManageProfileHandler : public OptionsPageUIHandler,
-                             public content::NotificationObserver,
-                             public ProfileSyncServiceObserver {
+                             public ProfileInfoCacheObserver,
+                             public sync_driver::SyncServiceObserver {
  public:
   ManageProfileHandler();
-  virtual ~ManageProfileHandler();
+  ~ManageProfileHandler() override;
 
   // OptionsPageUIHandler:
-  virtual void GetLocalizedValues(
-      base::DictionaryValue* localized_strings) OVERRIDE;
-  virtual void InitializeHandler() OVERRIDE;
-  virtual void InitializePage() OVERRIDE;
-  virtual void Uninitialize() OVERRIDE;
+  void GetLocalizedValues(base::DictionaryValue* localized_strings) override;
+  void InitializeHandler() override;
+  void InitializePage() override;
+  void Uninitialize() override;
 
   // WebUIMessageHandler:
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
-  // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // ProfileInfoCacheObserver:
+  void OnProfileAdded(const base::FilePath& profile_path) override;
+  void OnProfileWasRemoved(const base::FilePath& profile_path,
+                           const base::string16& profile_name) override;
+  void OnProfileNameChanged(const base::FilePath& profile_path,
+                            const base::string16& old_profile_name) override;
+  void OnProfileAvatarChanged(const base::FilePath& profile_path) override;
 
-  // ProfileSyncServiceObserver:
-  virtual void OnStateChanged() OVERRIDE;
+  // sync_driver::SyncServiceObserver:
+  void OnStateChanged() override;
 
  private:
   // This function creates signed in user specific strings in loadTimeData.

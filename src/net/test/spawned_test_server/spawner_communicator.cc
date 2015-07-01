@@ -12,10 +12,10 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "net/base/elements_upload_data_stream.h"
 #include "net/base/net_util.h"
 #include "net/base/request_priority.h"
 #include "net/base/upload_bytes_element_reader.h"
-#include "net/base/upload_data_stream.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request_test_util.h"
 #include "url/gurl.h"
@@ -47,7 +47,7 @@ class SpawnerRequestData : public base::SupportsUserData::Data {
     data_received_->clear();
   }
 
-  virtual ~SpawnerRequestData() {}
+  ~SpawnerRequestData() override {}
 
   bool DoesRequestIdMatch(int request_id) const {
     return request_id_ == request_id;
@@ -173,7 +173,7 @@ void SpawnerCommunicator::SendCommandAndWaitForResultOnIOThread(
   DCHECK(!cur_request_.get());
   context_.reset(new TestURLRequestContext);
   cur_request_ = context_->CreateRequest(
-      GenerateSpawnerCommandURL(command, port_), DEFAULT_PRIORITY, this, NULL);
+      GenerateSpawnerCommandURL(command, port_), DEFAULT_PRIORITY, this);
   DCHECK(cur_request_);
   int current_request_id = ++next_id_;
   SpawnerRequestData* data = new SpawnerRequestData(current_request_id,
@@ -188,10 +188,10 @@ void SpawnerCommunicator::SendCommandAndWaitForResultOnIOThread(
     cur_request_->set_method("POST");
     scoped_ptr<UploadElementReader> reader(
         UploadOwnedBytesElementReader::CreateWithString(post_data));
-    cur_request_->set_upload(make_scoped_ptr(
-        UploadDataStream::CreateWithReader(reader.Pass(), 0)));
-    net::HttpRequestHeaders headers;
-    headers.SetHeader(net::HttpRequestHeaders::kContentType,
+    cur_request_->set_upload(
+        ElementsUploadDataStream::CreateWithReader(reader.Pass(), 0));
+    HttpRequestHeaders headers;
+    headers.SetHeader(HttpRequestHeaders::kContentType,
                       "application/json");
     cur_request_->SetExtraRequestHeaders(headers);
   }

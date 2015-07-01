@@ -7,11 +7,11 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/user_metrics_action.h"
+#include "components/guest_view/common/guest_view_constants.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/media_stream_request.h"
 #include "extensions/browser/guest_view/web_view/web_view_permission_types.h"
-#include "extensions/common/guest_view/guest_view_constants.h"
 
 using base::UserMetricsAction;
 
@@ -28,7 +28,7 @@ class WebViewPermissionHelper
       : public content::WebContentsObserver {
  public:
   explicit WebViewPermissionHelper(WebViewGuest* guest);
-  virtual ~WebViewPermissionHelper();
+  ~WebViewPermissionHelper() override;
   typedef base::Callback<
       void(bool /* allow */, const std::string& /* user_input */)>
       PermissionResponseCallback;
@@ -142,10 +142,9 @@ class WebViewPermissionHelper
 
 #if defined(ENABLE_PLUGINS)
   // content::WebContentsObserver implementation.
-  virtual bool OnMessageReceived(
-      const IPC::Message& message,
-      content::RenderFrameHost* render_frame_host) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message,
+                         content::RenderFrameHost* render_frame_host) override;
+  bool OnMessageReceived(const IPC::Message& message) override;
 #endif  // defined(ENABLE_PLUGINS)
 
   // A counter to generate a unique request id for a permission request.

@@ -10,6 +10,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/scoped_com_initializer.h"
 #include "media/audio/audio_manager.h"
+#include "media/audio/audio_unittest_util.h"
 #include "media/audio/win/audio_device_listener_win.h"
 #include "media/audio/win/core_audio_util_win.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -25,8 +26,8 @@ static const char kSecondTestDevice[] = "test_device_1";
 
 class AudioDeviceListenerWinTest : public testing::Test {
  public:
-  AudioDeviceListenerWinTest()
-      : com_init_(ScopedCOMInitializer::kMTA) {
+  AudioDeviceListenerWinTest() {
+    DCHECK(com_init_.succeeded());
   }
 
   virtual void SetUp() {
@@ -47,7 +48,7 @@ class AudioDeviceListenerWinTest : public testing::Test {
   bool SimulateDefaultOutputDeviceChange(const char* new_device_id) {
     return output_device_listener_->OnDefaultDeviceChanged(
         static_cast<EDataFlow>(eConsole), static_cast<ERole>(eRender),
-        base::ASCIIToWide(new_device_id).c_str()) == S_OK;
+        base::ASCIIToUTF16(new_device_id).c_str()) == S_OK;
   }
 
   void SetOutputDeviceId(std::string new_device_id) {
@@ -65,8 +66,7 @@ class AudioDeviceListenerWinTest : public testing::Test {
 
 // Simulate a device change events and ensure we get the right callbacks.
 TEST_F(AudioDeviceListenerWinTest, OutputDeviceChange) {
-  if (!CoreAudioUtil::IsSupported())
-    return;
+  ABORT_AUDIO_TEST_IF_NOT(CoreAudioUtil::IsSupported());
 
   SetOutputDeviceId(kNoDevice);
   EXPECT_CALL(*this, OnDeviceChange()).Times(1);
@@ -84,8 +84,7 @@ TEST_F(AudioDeviceListenerWinTest, OutputDeviceChange) {
 // Ensure that null output device changes don't crash.  Simulates the situation
 // where we have no output devices.
 TEST_F(AudioDeviceListenerWinTest, NullOutputDeviceChange) {
-  if (!CoreAudioUtil::IsSupported())
-    return;
+  ABORT_AUDIO_TEST_IF_NOT(CoreAudioUtil::IsSupported());
 
   SetOutputDeviceId(kNoDevice);
   EXPECT_CALL(*this, OnDeviceChange()).Times(0);

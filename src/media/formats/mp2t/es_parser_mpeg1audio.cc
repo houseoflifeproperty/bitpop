@@ -4,7 +4,6 @@
 
 #include "media/formats/mp2t/es_parser_mpeg1audio.h"
 
-#include <list>
 
 #include "base/basictypes.h"
 #include "base/bind.h"
@@ -64,8 +63,9 @@ bool EsParserMpeg1Audio::ParseFromEsQueue() {
       audio_timestamp_helper_->SetBaseTimestamp(current_timing_desc.pts);
 
     if (audio_timestamp_helper_->base_timestamp() == kNoTimestamp()) {
-      DVLOG(1) << "Audio frame with unknown timestamp";
-      return false;
+      DVLOG(1) << "Skipping audio frame with unknown timestamp";
+      SkipMpeg1AudioFrame(mpeg1audio_frame);
+      continue;
     }
     base::TimeDelta current_pts = audio_timestamp_helper_->GetTimestamp();
     base::TimeDelta frame_duration =

@@ -7,7 +7,7 @@
 
 #include "base/macros.h"
 #include "base/strings/string16.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/views/view.h"
 
 struct MediaGalleryPrefInfo;
@@ -30,10 +30,10 @@ class MediaGalleryCheckboxView : public views::View {
                            int trailing_vertical_space,
                            views::ButtonListener* button_listener,
                            views::ContextMenuController* menu_controller);
-  virtual ~MediaGalleryCheckboxView();
+  ~MediaGalleryCheckboxView() override;
 
   // Overrides from views::View.
-  virtual void Layout() OVERRIDE;
+  void Layout() override;
 
   views::Checkbox* checkbox() { return checkbox_; }
   views::ImageButton* folder_viewer_button() { return folder_viewer_button_; }

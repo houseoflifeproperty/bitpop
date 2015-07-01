@@ -22,12 +22,13 @@ namespace gles2 {
 class GpuServiceTest : public testing::Test {
  public:
   GpuServiceTest();
-  virtual ~GpuServiceTest();
+  ~GpuServiceTest() override;
 
  protected:
   void SetUpWithGLVersion(const char* gl_version, const char* gl_extensions);
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
+  gfx::GLContext* GetGLContext();
 
   scoped_ptr< ::testing::StrictMock< ::gfx::MockGLInterface> > gl_;
 
@@ -40,4 +41,4 @@ class GpuServiceTest : public testing::Test {
 }  // namespace gles2
 }  // namespace gpu
 
-#endif  // GPU_COMMAND_BUFFER_SERVICE_MAILBOX_SYNCHRONIZER_H_
+#endif  // GPU_COMMAND_BUFFER_SERVICE_GPU_SERVICE_TEST_H_

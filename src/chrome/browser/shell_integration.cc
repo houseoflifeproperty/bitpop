@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/file_util.h"
-#include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -15,7 +14,6 @@
 #include "chrome/browser/policy/policy_path_parser.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 
 #if defined(OS_CHROMEOS)
@@ -55,12 +53,12 @@ bool ShellIntegration::IsRunningInAppMode() {
 }
 
 // static
-CommandLine ShellIntegration::CommandLineArgsForLauncher(
+base::CommandLine ShellIntegration::CommandLineArgsForLauncher(
     const GURL& url,
     const std::string& extension_app_id,
     const base::FilePath& profile_path) {
   base::ThreadRestrictions::AssertIOAllowed();
-  CommandLine new_cmd_line(CommandLine::NO_PROGRAM);
+  base::CommandLine new_cmd_line(base::CommandLine::NO_PROGRAM);
 
   AppendProfileArgs(
       extension_app_id.empty() ? base::FilePath() : profile_path,
@@ -81,11 +79,10 @@ CommandLine ShellIntegration::CommandLineArgsForLauncher(
 }
 
 // static
-void ShellIntegration::AppendProfileArgs(
-    const base::FilePath& profile_path,
-    CommandLine* command_line) {
+void ShellIntegration::AppendProfileArgs(const base::FilePath& profile_path,
+                                         base::CommandLine* command_line) {
   DCHECK(command_line);
-  const CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& cmd_line = *base::CommandLine::ForCurrentProcess();
 
   // Use the same UserDataDir for new launches that we currently have set.
   base::FilePath user_data_dir =

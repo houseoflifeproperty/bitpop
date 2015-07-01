@@ -19,7 +19,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/sys_color_change_listener.h"
 #include "ui/native_theme/native_theme.h"
 
@@ -104,22 +104,22 @@ class NATIVE_THEME_EXPORT NativeThemeWin : public NativeTheme,
                          bool draw_edges) const;
 
   // NativeTheme implementation:
-  virtual gfx::Size GetPartSize(Part part,
-                                State state,
-                                const ExtraParams& extra) const OVERRIDE;
-  virtual void Paint(SkCanvas* canvas,
-                     Part part,
-                     State state,
-                     const gfx::Rect& rect,
-                     const ExtraParams& extra) const OVERRIDE;
-  virtual SkColor GetSystemColor(ColorId color_id) const OVERRIDE;
+  gfx::Size GetPartSize(Part part,
+                        State state,
+                        const ExtraParams& extra) const override;
+  void Paint(SkCanvas* canvas,
+             Part part,
+             State state,
+             const gfx::Rect& rect,
+             const ExtraParams& extra) const override;
+  SkColor GetSystemColor(ColorId color_id) const override;
 
  private:
   NativeThemeWin();
-  ~NativeThemeWin();
+  ~NativeThemeWin() override;
 
   // gfx::SysColorChangeListener implementation:
-  virtual void OnSysColorChange() OVERRIDE;
+  void OnSysColorChange() override;
 
   // Update the locally cached set of system colors.
   void UpdateSystemColors();
@@ -156,8 +156,7 @@ class NATIVE_THEME_EXPORT NativeThemeWin : public NativeTheme,
                       RECT* rect) const;
 
   HRESULT PaintMenuSeparator(HDC hdc,
-                             const gfx::Rect& rect,
-                             const MenuSeparatorExtraParams& extra) const;
+                             const gfx::Rect& rect) const;
 
   HRESULT PaintMenuGutter(HDC hdc, const gfx::Rect& rect) const;
 

@@ -52,7 +52,7 @@ _exact_matches = {
     "WebKit Mac10.7": {"port_name": "mac-lion", "specifiers": ['Lion', 'Release']},
     "WebKit Mac10.7 (dbg)": {"port_name": "mac-lion", "specifiers": ['Lion', 'Debug']},
     "WebKit Mac10.8": {"port_name": "mac-mountainlion", "specifiers": ['MountainLion', 'Release']},
-    "WebKit Mac10.8 (retina)": {"port_name": "mac-retina", "specifiers": ['Retina', 'Release']},
+    "WebKit Mac10.9 (retina)": {"port_name": "mac-retina", "specifiers": ['Retina', 'Release']},
     "WebKit Mac10.9": {"port_name": "mac-mavericks", "specifiers": ['Mavericks', 'Release']},
     "WebKit Android (Nexus4)": {"port_name": "android", "specifiers": ['Android', 'Release']},
 }
@@ -65,6 +65,8 @@ _deps_builders = {
     "win-xp": "WebKit XP (deps)",
     "win-win7": "WebKit XP (deps)",
     "mac-snowleopard": "WebKit Mac10.6 (deps)",
+    # The following port names are mapped to 10.6 bot since we don't have bots
+    # for these ports.
     "mac-lion": "WebKit Mac10.6 (deps)",
     "mac-mountainlion": "WebKit Mac10.6 (deps)",
     "mac-mavericks": "WebKit Mac10.6 (deps)",

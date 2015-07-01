@@ -36,42 +36,48 @@ namespace blink {
 class AudioBus;
 class AudioContext;
 
-class OfflineAudioDestinationNode FINAL : public AudioDestinationNode {
+class OfflineAudioDestinationHandler final : public AudioDestinationHandler {
 public:
-    static OfflineAudioDestinationNode* create(AudioContext* context, AudioBuffer* renderTarget)
-    {
-        return adoptRefCountedGarbageCollectedWillBeNoop(new OfflineAudioDestinationNode(context, renderTarget));
-    }
+    static PassRefPtr<OfflineAudioDestinationHandler> create(AudioNode&, AudioBuffer* renderTarget);
+    virtual ~OfflineAudioDestinationHandler();
 
-    virtual ~OfflineAudioDestinationNode();
+    // AudioHandler
+    virtual void dispose() override;
+    virtual void initialize() override;
+    virtual void uninitialize() override;
 
-    // AudioNode
-    virtual void dispose() OVERRIDE;
-    virtual void initialize() OVERRIDE;
-    virtual void uninitialize() OVERRIDE;
+    // AudioDestinationHandler
+    virtual void startRendering() override;
+    virtual void stopRendering() override;
 
-    // AudioDestinationNode
-    virtual void startRendering() OVERRIDE;
-
-    virtual float sampleRate()  const OVERRIDE { return m_renderTarget->sampleRate(); }
-
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual float sampleRate()  const override { return m_renderTarget->sampleRate(); }
 
 private:
-    OfflineAudioDestinationNode(AudioContext*, AudioBuffer* renderTarget);
+    OfflineAudioDestinationHandler(AudioNode&, AudioBuffer* renderTarget);
+    void offlineRender();
+    void offlineRenderInternal();
 
-    // This AudioNode renders into this AudioBuffer.
-    Member<AudioBuffer> m_renderTarget;
+    // For completion callback on main thread.
+    void notifyComplete();
+
+    // This AudioHandler renders into this AudioBuffer.
+    // This Persistent doesn't make a reference cycle including the owner
+    // OfflineAudioDestinationNode.
+    Persistent<AudioBuffer> m_renderTarget;
     // Temporary AudioBus for each render quantum.
     RefPtr<AudioBus> m_renderBus;
 
     // Rendering thread.
     OwnPtr<WebThread> m_renderThread;
     bool m_startedRendering;
-    void offlineRender();
+};
 
-    // For completion callback on main thread.
-    void notifyComplete();
+class OfflineAudioDestinationNode final : public AudioDestinationNode {
+public:
+    static OfflineAudioDestinationNode* create(AudioContext*, AudioBuffer* renderTarget);
+
+private:
+    OfflineAudioDestinationNode(AudioContext&, AudioBuffer* renderTarget);
 };
 
 } // namespace blink

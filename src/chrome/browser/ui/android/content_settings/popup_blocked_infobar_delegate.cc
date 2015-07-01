@@ -5,11 +5,11 @@
 #include "chrome/browser/ui/android/content_settings/popup_blocked_infobar_delegate.h"
 
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/infobars/core/infobar.h"
@@ -23,12 +23,12 @@ void PopupBlockedInfoBarDelegate::Create(content::WebContents* web_contents,
   const GURL& url = web_contents->GetURL();
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  scoped_ptr<infobars::InfoBar> infobar(ConfirmInfoBarDelegate::CreateInfoBar(
+  InfoBarService* infobar_service =
+      InfoBarService::FromWebContents(web_contents);
+  scoped_ptr<infobars::InfoBar> infobar(infobar_service->CreateConfirmInfoBar(
       scoped_ptr<ConfirmInfoBarDelegate>(new PopupBlockedInfoBarDelegate(
           num_popups, url, profile->GetHostContentSettingsMap()))));
 
-  InfoBarService* infobar_service =
-      InfoBarService::FromWebContents(web_contents);
   // See if there is an existing popup infobar already.
   // TODO(dfalcantara) When triggering more than one popup the infobar
   // will be shown once, then hide then be shown again.

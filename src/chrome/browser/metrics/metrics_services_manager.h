@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/prefs/pref_change_registrar.h"
 #include "base/threading/thread_checker.h"
 
 class ChromeMetricsServiceClient;
@@ -51,21 +52,38 @@ class MetricsServicesManager {
   // Should be called when a plugin loading error occurs.
   void OnPluginLoadingError(const base::FilePath& plugin_path);
 
+  // Update the managed services when permissions for recording/uploading
+  // metrics change.
+  void UpdatePermissions(bool may_record, bool may_upload);
+
+  // Update the managed services when permissions for uploading metrics change.
+  void UpdateUploadPermissions(bool may_upload);
+
  private:
+  // Update the managed services when permissions for recording/uploading
+  // metrics change.
+  void UpdateRapporService();
+
   // Returns the ChromeMetricsServiceClient, creating it if it hasn't been
   // created yet (and additionally creating the MetricsService in that case).
   ChromeMetricsServiceClient* GetChromeMetricsServiceClient();
 
   metrics::MetricsStateManager* GetMetricsStateManager();
 
-  // Returns true iff metrics reporting is enabled.
-  bool IsMetricsReportingEnabled() const;
-
   // Ensures that all functions are called from the same thread.
   base::ThreadChecker thread_checker_;
 
   // Weak pointer to the local state prefs store.
   PrefService* local_state_;
+
+  // A change registrar for local_state_;
+  PrefChangeRegistrar pref_change_registrar_;
+
+  // The current metrics reporting setting.
+  bool may_upload_;
+
+  // The current metrics recording setting.
+  bool may_record_;
 
   // MetricsStateManager which is passed as a parameter to service constructors.
   scoped_ptr<metrics::MetricsStateManager> metrics_state_manager_;

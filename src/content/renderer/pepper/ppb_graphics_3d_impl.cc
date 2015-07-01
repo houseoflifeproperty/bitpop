@@ -14,6 +14,7 @@
 #include "content/public/common/web_preferences.h"
 #include "content/renderer/pepper/host_globals.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
+#include "content/renderer/pepper/plugin_instance_throttler_impl.h"
 #include "content/renderer/pepper/plugin_module.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
@@ -37,10 +38,11 @@ using blink::WebString;
 namespace content {
 
 namespace {
+
 const int32 kCommandBufferSize = 1024 * 1024;
 const int32 kTransferBufferSize = 1024 * 1024;
 
-}  // namespace.
+}  // namespace
 
 PPB_Graphics3D_Impl::PPB_Graphics3D_Impl(PP_Instance instance)
     : PPB_Graphics3D_Shared(instance),
@@ -85,6 +87,7 @@ PP_Resource PPB_Graphics3D_Impl::CreateRaw(
     PP_Instance instance,
     PP_Resource share_context,
     const int32_t* attrib_list,
+    gpu::Capabilities* capabilities,
     base::SharedMemoryHandle* shared_state_handle) {
   PPB_Graphics3D_API* share_api = NULL;
   if (share_context) {
@@ -95,7 +98,8 @@ PP_Resource PPB_Graphics3D_Impl::CreateRaw(
   }
   scoped_refptr<PPB_Graphics3D_Impl> graphics_3d(
       new PPB_Graphics3D_Impl(instance));
-  if (!graphics_3d->InitRaw(share_api, attrib_list, shared_state_handle))
+  if (!graphics_3d->InitRaw(share_api, attrib_list, capabilities,
+                            shared_state_handle))
     return 0;
   return graphics_3d->GetReference();
 }
@@ -161,8 +165,6 @@ void PPB_Graphics3D_Impl::ViewInitiatedPaint() {
     SwapBuffersACK(PP_OK);
 }
 
-void PPB_Graphics3D_Impl::ViewFlushedPaint() {}
-
 int PPB_Graphics3D_Impl::GetCommandBufferRouteId() {
   DCHECK(command_buffer_);
   return command_buffer_->GetRouteID();
@@ -200,8 +202,10 @@ int32 PPB_Graphics3D_Impl::DoSwapBuffers() {
     commit_pending_ = true;
   } else {
     // Wait for the command to complete on the GPU to allow for throttling.
-    command_buffer_->Echo(base::Bind(&PPB_Graphics3D_Impl::OnSwapBuffers,
-                                     weak_ptr_factory_.GetWeakPtr()));
+    command_buffer_->SignalSyncPoint(
+        sync_point_,
+        base::Bind(&PPB_Graphics3D_Impl::OnSwapBuffers,
+                   weak_ptr_factory_.GetWeakPtr()));
   }
 
   return PP_OK_COMPLETIONPENDING;
@@ -209,7 +213,7 @@ int32 PPB_Graphics3D_Impl::DoSwapBuffers() {
 
 bool PPB_Graphics3D_Impl::Init(PPB_Graphics3D_API* share_context,
                                const int32_t* attrib_list) {
-  if (!InitRaw(share_context, attrib_list, NULL))
+  if (!InitRaw(share_context, attrib_list, NULL, NULL))
     return false;
 
   gpu::gles2::GLES2Implementation* share_gles2 = NULL;
@@ -224,6 +228,7 @@ bool PPB_Graphics3D_Impl::Init(PPB_Graphics3D_API* share_context,
 bool PPB_Graphics3D_Impl::InitRaw(
     PPB_Graphics3D_API* share_context,
     const int32_t* attrib_list,
+    gpu::Capabilities* capabilities,
     base::SharedMemoryHandle* shared_state_handle) {
   PepperPluginInstanceImpl* plugin_instance =
       HostGlobals::Get()->GetInstance(pp_instance());
@@ -235,6 +240,11 @@ bool PPB_Graphics3D_Impl::InitRaw(
           ->webkit_preferences();
   // 3D access might be disabled or blacklisted.
   if (!prefs.pepper_3d_enabled)
+    return false;
+
+  // Force SW rendering for keyframe extraction to avoid pixel reads from VRAM.
+  PluginInstanceThrottlerImpl* throttler = plugin_instance->throttler();
+  if (throttler && throttler->needs_representative_keyframe())
     return false;
 
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
@@ -295,12 +305,14 @@ bool PPB_Graphics3D_Impl::InitRaw(
     return false;
   if (shared_state_handle)
     *shared_state_handle = command_buffer_->GetSharedStateHandle();
+  if (capabilities)
+    *capabilities = command_buffer_->GetCapabilities();
   mailbox_ = gpu::Mailbox::Generate();
   if (!command_buffer_->ProduceFrontBuffer(mailbox_))
     return false;
   sync_point_ = command_buffer_->InsertSyncPoint();
 
-  command_buffer_->SetChannelErrorCallback(base::Bind(
+  command_buffer_->SetContextLostCallback(base::Bind(
       &PPB_Graphics3D_Impl::OnContextLost, weak_ptr_factory_.GetWeakPtr()));
 
   command_buffer_->SetOnConsoleMessageCallback(base::Bind(

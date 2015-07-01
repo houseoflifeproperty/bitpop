@@ -9,12 +9,12 @@
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/micro_benchmark_controller.h"
 #include "cc/layers/layer.h"
-#include "cc/resources/picture_pile.h"
 #include "cc/trees/occlusion_tracker.h"
 
 namespace cc {
 
 class ContentLayerClient;
+class RecordingSource;
 class ResourceUpdateQueue;
 
 class CC_EXPORT PictureLayer : public Layer {
@@ -23,48 +23,51 @@ class CC_EXPORT PictureLayer : public Layer {
 
   void ClearClient();
 
-  // Layer interface.
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(
-      LayerTreeImpl* tree_impl) OVERRIDE;
-  virtual void SetLayerTreeHost(LayerTreeHost* host) OVERRIDE;
-  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
-  virtual void SetNeedsDisplayRect(const gfx::RectF& layer_rect) OVERRIDE;
-  virtual bool Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker<Layer>* occlusion) OVERRIDE;
-  virtual void SetIsMask(bool is_mask) OVERRIDE;
-  virtual bool SupportsLCDText() const OVERRIDE;
-  virtual skia::RefPtr<SkPicture> GetPicture() const OVERRIDE;
-  virtual bool IsSuitableForGpuRasterization() const OVERRIDE;
+  void SetNearestNeighbor(bool nearest_neighbor);
 
-  virtual void RunMicroBenchmark(MicroBenchmark* benchmark) OVERRIDE;
+  // Layer interface.
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
+  void SetLayerTreeHost(LayerTreeHost* host) override;
+  void PushPropertiesTo(LayerImpl* layer) override;
+  void SetNeedsDisplayRect(const gfx::Rect& layer_rect) override;
+  bool Update(ResourceUpdateQueue* queue,
+              const OcclusionTracker<Layer>* occlusion) override;
+  void SetIsMask(bool is_mask) override;
+  skia::RefPtr<SkPicture> GetPicture() const override;
+  bool IsSuitableForGpuRasterization() const override;
+
+  void RunMicroBenchmark(MicroBenchmark* benchmark) override;
 
   ContentLayerClient* client() { return client_; }
 
-  Picture::RecordingMode RecordingMode() const;
-
-  PicturePile* GetPicturePileForTesting() const { return pile_.get(); }
+  RecordingSource* GetRecordingSourceForTesting() {
+    return recording_source_.get();
+  }
 
  protected:
   explicit PictureLayer(ContentLayerClient* client);
-  virtual ~PictureLayer();
+  // Allow tests to inject a recording source.
+  PictureLayer(ContentLayerClient* client, scoped_ptr<RecordingSource> source);
+  ~PictureLayer() override;
 
-  virtual bool HasDrawableContent() const OVERRIDE;
-  void UpdateCanUseLCDText();
+  bool HasDrawableContent() const override;
+
+  bool is_mask() const { return is_mask_; }
 
  private:
   ContentLayerClient* client_;
-  scoped_refptr<PicturePile> pile_;
+  scoped_ptr<RecordingSource> recording_source_;
   devtools_instrumentation::
       ScopedLayerObjectTracker instrumentation_object_tracker_;
   // Invalidation to use the next time update is called.
   InvalidationRegion pending_invalidation_;
   // Invalidation from the last time update was called.
-  Region pile_invalidation_;
+  Region recording_invalidation_;
   gfx::Rect last_updated_visible_content_rect_;
-  bool is_mask_;
 
   int update_source_frame_number_;
-  bool can_use_lcd_text_last_frame_;
+  bool is_mask_;
+  bool nearest_neighbor_;
 
   DISALLOW_COPY_AND_ASSIGN(PictureLayer);
 };

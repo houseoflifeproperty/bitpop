@@ -8,7 +8,7 @@
 #include <set>
 #include <string>
 
-#include "chrome/browser/safe_browsing/database_manager.h"
+#include "chrome/browser/safe_browsing/local_database_manager.h"
 
 namespace extensions {
 
@@ -16,15 +16,16 @@ namespace extensions {
 //
 // By default it is disabled (returning true and ignoring |unsafe_ids_|);
 // call set_enabled to enable it.
-class FakeSafeBrowsingDatabaseManager : public SafeBrowsingDatabaseManager {
+class FakeSafeBrowsingDatabaseManager
+    : public LocalSafeBrowsingDatabaseManager {
  public:
   explicit FakeSafeBrowsingDatabaseManager(bool enabled);
 
   // Returns true if synchronously safe, false if not in which case the unsafe
   // IDs taken from |unsafe_ids_| are passed to to |client| on the current
   // message loop.
-  virtual bool CheckExtensionIDs(const std::set<std::string>& extension_ids,
-                                 Client* client) OVERRIDE;
+  bool CheckExtensionIDs(const std::set<std::string>& extension_ids,
+                         Client* client) override;
 
   // Return |this| to chain together SetUnsafe(...).NotifyUpdate() conveniently.
   FakeSafeBrowsingDatabaseManager& Enable();
@@ -47,11 +48,10 @@ class FakeSafeBrowsingDatabaseManager : public SafeBrowsingDatabaseManager {
   void NotifyUpdate();
 
  private:
-  virtual ~FakeSafeBrowsingDatabaseManager();
+  ~FakeSafeBrowsingDatabaseManager() override;
 
-  // Runs client->SafeBrowsingResult(result).
-  void OnSafeBrowsingResult(scoped_ptr<SafeBrowsingCheck> result,
-                            Client* client);
+  // Runs result->SafeBrowsingResult().
+  void OnSafeBrowsingResult(scoped_ptr<SafeBrowsingCheck> result);
 
   // Whether to respond to CheckExtensionIDs immediately with true (indicating
   // that there is definitely no extension ID match).

@@ -26,6 +26,7 @@
 #include "wtf/NullPtr.h"
 #include "wtf/TypeTraits.h"
 #include <algorithm>
+#include <utility>
 
 #if USE(CF)
 #include <CoreFoundation/CoreFoundation.h>
@@ -74,9 +75,7 @@ namespace WTF {
 
         RetainPtr(const RetainPtr& o) : m_ptr(o.m_ptr) { if (PtrType ptr = m_ptr) CFRetain(ptr); }
 
-#if COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
         RetainPtr(RetainPtr&& o) : m_ptr(o.leakRef()) { }
-#endif
 
         // Hash table deleted values, which are only constructed and never copied or destroyed.
         RetainPtr(HashTableDeletedValueType) : m_ptr(hashTableDeletedValue()) { }
@@ -106,10 +105,8 @@ namespace WTF {
         RetainPtr& operator=(PtrType);
         template<typename U> RetainPtr& operator=(U*);
 
-#if COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
         RetainPtr& operator=(RetainPtr&&);
         template<typename U> RetainPtr& operator=(RetainPtr<U>&&);
-#endif
 
 #if !COMPILER_SUPPORTS(CXX_NULLPTR)
         RetainPtr& operator=(std::nullptr_t) { clear(); return *this; }
@@ -194,7 +191,6 @@ namespace WTF {
         return *this;
     }
 
-#if COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
     template<typename T> inline RetainPtr<T>& RetainPtr<T>::operator=(RetainPtr<T>&& o)
     {
         adoptCF(o.leakRef());
@@ -206,7 +202,6 @@ namespace WTF {
         adoptCF(o.leakRef());
         return *this;
     }
-#endif
 
     template<typename T> inline void RetainPtr<T>::adoptCF(PtrType optr)
     {
@@ -285,9 +280,9 @@ namespace WTF {
         return RetainPtr<T>(o);
     }
 
-    template<typename P> struct HashTraits<RetainPtr<P> > : SimpleClassHashTraits<RetainPtr<P> > { };
+    template<typename P> struct HashTraits<RetainPtr<P>> : SimpleClassHashTraits<RetainPtr<P>> { };
 
-    template<typename P> struct PtrHash<RetainPtr<P> > : PtrHash<typename RetainPtr<P>::PtrType> {
+    template<typename P> struct PtrHash<RetainPtr<P>> : PtrHash<typename RetainPtr<P>::PtrType> {
         using PtrHash<typename RetainPtr<P>::PtrType>::hash;
         static unsigned hash(const RetainPtr<P>& key) { return hash(key.get()); }
         using PtrHash<typename RetainPtr<P>::PtrType>::equal;
@@ -296,7 +291,7 @@ namespace WTF {
         static bool equal(const RetainPtr<P>& a, typename RetainPtr<P>::PtrType b) { return a == b; }
     };
 
-    template<typename P> struct DefaultHash<RetainPtr<P> > { typedef PtrHash<RetainPtr<P> > Hash; };
+    template<typename P> struct DefaultHash<RetainPtr<P>> { typedef PtrHash<RetainPtr<P>> Hash; };
 } // namespace WTF
 
 using WTF::AdoptCF;

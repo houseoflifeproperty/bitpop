@@ -6,6 +6,7 @@
 #define CONTENT_COMMON_MESSAGE_ROUTER_H_
 
 #include "base/id_map.h"
+#include "content/common/content_export.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 
@@ -29,16 +30,16 @@
 
 namespace content {
 
-class MessageRouter : public IPC::Listener, public IPC::Sender {
+class CONTENT_EXPORT MessageRouter : public IPC::Listener, public IPC::Sender {
  public:
   MessageRouter();
-  virtual ~MessageRouter();
+  ~MessageRouter() override;
 
   // Implemented by subclasses to handle control messages
   virtual bool OnControlMessageReceived(const IPC::Message& msg);
 
   // IPC::Listener implementation:
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& msg) override;
 
   // Like OnMessageReceived, except it only handles routed messages.  Returns
   // true if the message was dispatched, or false if there was no listener for
@@ -46,7 +47,7 @@ class MessageRouter : public IPC::Listener, public IPC::Sender {
   virtual bool RouteMessage(const IPC::Message& msg);
 
   // IPC::Sender implementation:
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
+  bool Send(IPC::Message* msg) override;
 
   // Called to add a listener for a particular message routing ID.
   // Returns true if succeeded.

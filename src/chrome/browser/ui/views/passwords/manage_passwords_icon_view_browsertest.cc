@@ -16,13 +16,14 @@
 #include "content/public/test/test_utils.h"
 #include "grit/theme_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/events/event_utils.h"
 
 class ManagePasswordsIconViewTest : public ManagePasswordsTest {
  public:
   ManagePasswordsIconViewTest() {}
-  virtual ~ManagePasswordsIconViewTest() {}
+  ~ManagePasswordsIconViewTest() override {}
 
-  virtual ManagePasswordsIconView* view() OVERRIDE {
+  ManagePasswordsIconView* view() override {
     BrowserView* browser_view = static_cast<BrowserView*>(browser()->window());
     return static_cast<ManagePasswordsIconView*>(
         browser_view->GetToolbarView()
@@ -84,8 +85,8 @@ IN_PROC_BROWSER_TEST_F(ManagePasswordsIconViewTest, CloseOnClick) {
   SetupPendingPassword();
   EXPECT_TRUE(view()->visible());
   EXPECT_TRUE(view()->active());
-  ui::MouseEvent mouse_down(ui::ET_MOUSE_PRESSED,
-                            gfx::Point(10, 10), gfx::Point(900, 60),
+  ui::MouseEvent mouse_down(ui::ET_MOUSE_PRESSED, gfx::Point(10, 10),
+                            gfx::Point(900, 60), ui::EventTimeForNow(),
                             ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   view()->OnMousePressed(mouse_down);
   // Wait for the command execution to close the bubble.

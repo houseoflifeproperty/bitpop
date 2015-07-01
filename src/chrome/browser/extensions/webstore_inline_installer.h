@@ -8,8 +8,8 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
+#include "chrome/browser/extensions/webstore_standalone_installer.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "webstore_standalone_installer.h"
 
 namespace content {
 class WebContents;
@@ -25,9 +25,8 @@ namespace extensions {
 //
 // Clients will be notified of success or failure via the |callback| argument
 // passed into the constructor.
-class WebstoreInlineInstaller
-    : public WebstoreStandaloneInstaller,
-      public content::WebContentsObserver {
+class WebstoreInlineInstaller : public WebstoreStandaloneInstaller,
+                                public content::WebContentsObserver {
  public:
   typedef WebstoreStandaloneInstaller::Callback Callback;
 
@@ -36,29 +35,33 @@ class WebstoreInlineInstaller
                           const GURL& requestor_url,
                           const Callback& callback);
 
+  // Returns true if given |requestor_url| is a verified site according to the
+  // given |webstore_data|.
+  static bool IsRequestorPermitted(const base::DictionaryValue& webstore_data,
+                                   const GURL& requestor_url,
+                                   std::string* error);
+
  protected:
   friend class base::RefCountedThreadSafe<WebstoreInlineInstaller>;
 
-  virtual ~WebstoreInlineInstaller();
+  ~WebstoreInlineInstaller() override;
 
   // Implementations WebstoreStandaloneInstaller Template Method's hooks.
-  virtual bool CheckRequestorAlive() const OVERRIDE;
-  virtual const GURL& GetRequestorURL() const OVERRIDE;
-  virtual bool ShouldShowPostInstallUI() const OVERRIDE;
-  virtual bool ShouldShowAppInstalledBubble() const OVERRIDE;
-  virtual content::WebContents* GetWebContents() const OVERRIDE;
-  virtual scoped_refptr<ExtensionInstallPrompt::Prompt> CreateInstallPrompt()
-      const OVERRIDE;
-  virtual bool CheckInlineInstallPermitted(
-      const base::DictionaryValue& webstore_data,
-      std::string* error) const OVERRIDE;
-  virtual bool CheckRequestorPermitted(
-      const base::DictionaryValue& webstore_data,
-      std::string* error) const OVERRIDE;
+  bool CheckRequestorAlive() const override;
+  const GURL& GetRequestorURL() const override;
+  bool ShouldShowPostInstallUI() const override;
+  bool ShouldShowAppInstalledBubble() const override;
+  content::WebContents* GetWebContents() const override;
+  scoped_refptr<ExtensionInstallPrompt::Prompt> CreateInstallPrompt()
+      const override;
+  bool CheckInlineInstallPermitted(const base::DictionaryValue& webstore_data,
+                                   std::string* error) const override;
+  bool CheckRequestorPermitted(const base::DictionaryValue& webstore_data,
+                               std::string* error) const override;
 
  private:
   // content::WebContentsObserver interface implementation.
-  virtual void WebContentsDestroyed() OVERRIDE;
+  void WebContentsDestroyed() override;
 
   // Checks whether the install is initiated by a page in a verified site
   // (which is at least a domain, but can also have a port or a path).

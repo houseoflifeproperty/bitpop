@@ -123,14 +123,6 @@ cr.define('print_preview', function() {
   };
 
   /**
-   * Padding at the bottom of a destination list in pixels.
-   * @type {number}
-   * @const
-   * @private
-   */
-  DestinationSearch.LIST_BOTTOM_PADDING_ = 18;
-
-  /**
    * Number of unregistered destinations that may be promoted to the top.
    * @type {number}
    * @const
@@ -264,6 +256,11 @@ cr.define('print_preview', function() {
           print_preview.UserInfo.EventType.USERS_CHANGED,
           this.onUsersChanged_.bind(this));
 
+      this.tracker.add(
+          this.getChildElement('.button-strip .cancel-button'),
+          'click',
+          this.cancel.bind(this));
+
       this.tracker.add(window, 'resize', this.onWindowResize_.bind(this));
 
       this.updateThrobbers_();
@@ -280,8 +277,8 @@ cr.define('print_preview', function() {
       this.cloudList_.render(this.getChildElement('.cloud-list'));
       this.getChildElement('.promo-text').innerHTML = loadTimeData.getStringF(
           'cloudPrintPromotion',
-          '<span class="sign-in link-button">',
-          '</span>');
+          '<a is="action-link" class="sign-in">',
+          '</a>');
       this.getChildElement('.account-select-label').textContent =
           loadTimeData.getString('accountSelectTitle');
     },
@@ -293,11 +290,12 @@ cr.define('print_preview', function() {
     getAvailableListsHeight_: function() {
       var elStyle = window.getComputedStyle(this.getElement());
       return this.getElement().offsetHeight -
-          parseInt(elStyle.getPropertyValue('padding-top')) -
-          parseInt(elStyle.getPropertyValue('padding-bottom')) -
+          parseInt(elStyle.getPropertyValue('padding-top'), 10) -
+          parseInt(elStyle.getPropertyValue('padding-bottom'), 10) -
           this.getChildElement('.lists').offsetTop -
           this.getChildElement('.invitation-container').offsetHeight -
-          this.getChildElement('.cloudprint-promo').offsetHeight;
+          this.getChildElement('.cloudprint-promo').offsetHeight -
+          this.getChildElement('.action-area').offsetHeight;
     },
 
     /**
@@ -384,8 +382,9 @@ cr.define('print_preview', function() {
 
       var getListsTotalHeight = function(lists, counts) {
         return lists.reduce(function(sum, list, index) {
+          var container = list.getContainerElement();
           return sum + list.getEstimatedHeightInPixels(counts[index]) +
-              DestinationSearch.LIST_BOTTOM_PADDING_;
+              parseInt(window.getComputedStyle(container).paddingBottom, 10);
         }, 0);
       };
       var getCounts = function(lists, count) {
@@ -482,14 +481,14 @@ cr.define('print_preview', function() {
       if (invitation.asGroupManager) {
         invitationText = loadTimeData.getStringF(
             'groupPrinterSharingInviteText',
-            invitation.sender,
-            invitation.destination.displayName,
-            invitation.receiver);
+            HTMLEscape(invitation.sender),
+            HTMLEscape(invitation.destination.displayName),
+            HTMLEscape(invitation.receiver));
       } else {
         invitationText = loadTimeData.getStringF(
             'printerSharingInviteText',
-            invitation.sender,
-            invitation.destination.displayName);
+            HTMLEscape(invitation.sender),
+            HTMLEscape(invitation.destination.displayName));
       }
       this.getChildElement('.invitation-text').innerHTML = invitationText;
 
@@ -679,6 +678,7 @@ cr.define('print_preview', function() {
      */
     onCloudprintPromoCloseButtonClick_: function() {
       setIsVisible(this.getChildElement('.cloudprint-promo'), false);
+      this.reflowLists_();
     },
 
     /**

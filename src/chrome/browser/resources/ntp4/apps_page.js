@@ -11,7 +11,6 @@ cr.define('ntp', function() {
     NTP_APPS_COLLAPSED: 1,
     NTP_APPS_MENU: 2,
     NTP_MOST_VISITED: 3,
-    NTP_RECENTLY_CLOSED: 4,
     NTP_APP_RE_ENABLE: 16,
     NTP_WEBSTORE_FOOTER: 18,
     NTP_WEBSTORE_PLUS_ICON: 19,
@@ -49,12 +48,9 @@ cr.define('ntp', function() {
       this.launch_.addEventListener('activate', this.onLaunch_.bind(this));
 
       menu.appendChild(cr.ui.MenuItem.createSeparator());
-      if (loadTimeData.getBoolean('enableStreamlinedHostedApps'))
-        this.launchRegularTab_ = this.appendMenuItem_('applaunchtypetab');
-      else
-        this.launchRegularTab_ = this.appendMenuItem_('applaunchtyperegular');
+      this.launchRegularTab_ = this.appendMenuItem_('applaunchtyperegular');
       this.launchPinnedTab_ = this.appendMenuItem_('applaunchtypepinned');
-      if (!cr.isMac)
+      if (loadTimeData.getBoolean('enableNewBookmarkApps') || !cr.isMac)
         this.launchNewWindow_ = this.appendMenuItem_('applaunchtypewindow');
       this.launchFullscreen_ = this.appendMenuItem_('applaunchtypefullscreen');
 
@@ -67,12 +63,20 @@ cr.define('ntp', function() {
       this.launchTypeMenuSeparator_ = cr.ui.MenuItem.createSeparator();
       menu.appendChild(this.launchTypeMenuSeparator_);
       this.options_ = this.appendMenuItem_('appoptions');
-      this.details_ = this.appendMenuItem_('appdetails');
       this.uninstall_ = this.appendMenuItem_('appuninstall');
+
+      if (loadTimeData.getBoolean('canShowAppInfoDialog')) {
+        this.appinfo_ = this.appendMenuItem_('appinfodialog');
+        this.appinfo_.addEventListener('activate',
+                                       this.onShowAppInfo_.bind(this));
+      } else {
+        this.details_ = this.appendMenuItem_('appdetails');
+        this.details_.addEventListener('activate',
+                                       this.onShowDetails_.bind(this));
+      }
+
       this.options_.addEventListener('activate',
                                      this.onShowOptions_.bind(this));
-      this.details_.addEventListener('activate',
-                                     this.onShowDetails_.bind(this));
       this.uninstall_.addEventListener('activate',
                                        this.onUninstall_.bind(this));
 
@@ -89,15 +93,15 @@ cr.define('ntp', function() {
 
     /**
      * Appends a menu item to |this.menu|.
-     * @param {?string} textId If non-null, the ID for the localized string
+     * @param {string=} opt_textId If defined, the ID for the localized string
      *     that acts as the item's label.
      */
-    appendMenuItem_: function(textId) {
+    appendMenuItem_: function(opt_textId) {
       var button = cr.doc.createElement('button');
       this.menu.appendChild(button);
       cr.ui.decorate(button, cr.ui.MenuItem);
-      if (textId)
-        button.textContent = loadTimeData.getString(textId);
+      if (opt_textId)
+        button.textContent = loadTimeData.getString(opt_textId);
       return button;
     },
 
@@ -131,20 +135,21 @@ cr.define('ntp', function() {
 
       this.launch_.textContent = app.appData.title;
 
-      var launchTypeRegularTab = this.launchRegularTab_;
+      var launchTypeWindow = this.launchNewWindow_;
       this.forAllLaunchTypes_(function(launchTypeButton, id) {
         launchTypeButton.disabled = false;
         launchTypeButton.checked = app.appData.launch_type == id;
-        // Streamlined hosted apps should only show the "Open as tab" button.
+        // If bookmark apps are enabled, only show the "Open as window" button.
         launchTypeButton.hidden = app.appData.packagedApp ||
-            (loadTimeData.getBoolean('enableStreamlinedHostedApps') &&
-             launchTypeButton != launchTypeRegularTab);
+            (loadTimeData.getBoolean('enableNewBookmarkApps') &&
+             launchTypeButton != launchTypeWindow);
       });
 
       this.launchTypeMenuSeparator_.hidden = app.appData.packagedApp;
 
       this.options_.disabled = !app.appData.optionsUrl || !app.appData.enabled;
-      this.details_.disabled = !app.appData.detailsUrl;
+      if (this.details_)
+        this.details_.disabled = !app.appData.detailsUrl;
       this.uninstall_.disabled = !app.appData.mayDisable;
 
       if (cr.isMac) {
@@ -168,11 +173,11 @@ cr.define('ntp', function() {
       var pressed = e.currentTarget;
       var app = this.app_;
       var targetLaunchType = pressed;
-      // Streamlined hosted apps can only toggle between open as window and open
-      // as tab.
-      if (loadTimeData.getBoolean('enableStreamlinedHostedApps')) {
-        targetLaunchType = this.launchRegularTab_.checked ?
-            this.launchNewWindow_ : this.launchRegularTab_;
+      // When bookmark apps are enabled, hosted apps can only toggle between
+      // open as window and open as tab.
+      if (loadTimeData.getBoolean('enableNewBookmarkApps')) {
+        targetLaunchType = this.launchNewWindow_.checked ?
+            this.launchRegularTab_ : this.launchNewWindow_;
       }
       this.forAllLaunchTypes_(function(launchTypeButton, id) {
         if (launchTypeButton == targetLaunchType) {
@@ -197,6 +202,9 @@ cr.define('ntp', function() {
     onCreateShortcut_: function(e) {
       chrome.send('createAppShortcut', [this.app_.appData.id]);
     },
+    onShowAppInfo_: function(e) {
+      chrome.send('showAppInfo', [this.app_.appData.id]);
+    }
   };
 
   /**
@@ -237,12 +245,14 @@ cr.define('ntp', function() {
       this.appContents_.id = '';
       this.appendChild(this.appContents_);
 
-      this.appImgContainer_ = this.querySelector('.app-img-container');
+      this.appImgContainer_ = /** @type {HTMLElement} */(
+          this.querySelector('.app-img-container'));
       this.appImg_ = this.appImgContainer_.querySelector('img');
       this.setIcon();
 
       if (this.useSmallIcon_) {
-        this.imgDiv_ = this.querySelector('.app-icon-div');
+        this.imgDiv_ = /** @type {HTMLElement} */(
+            this.querySelector('.app-icon-div'));
         this.addLaunchClickTarget_(this.imgDiv_);
         this.imgDiv_.title = this.appData_.full_name;
         chrome.send('getAppIconDominantColor', [this.id]);
@@ -253,7 +263,8 @@ cr.define('ntp', function() {
 
       // The app's full name is shown in the tooltip, whereas the short name
       // is used for the label.
-      var appSpan = this.appContents_.querySelector('.title');
+      var appSpan = /** @type {HTMLElement} */(
+          this.appContents_.querySelector('.title'));
       appSpan.textContent = this.appData_.title;
       appSpan.title = this.appData_.full_name;
       this.addLaunchClickTarget_(appSpan);
@@ -443,7 +454,8 @@ cr.define('ntp', function() {
         e.preventDefault();
 
       if (e.button == 2 ||
-          !findAncestorByClass(e.target, 'launch-click-target')) {
+          !findAncestorByClass(/** @type {Element} */(e.target),
+                               'launch-click-target')) {
         this.appContents_.classList.add('suppress-active');
       } else {
         this.appContents_.classList.remove('suppress-active');
@@ -456,7 +468,7 @@ cr.define('ntp', function() {
 
     /**
      * Change the appData and update the appearance of the app.
-     * @param {Object} appData The new data object that describes the app.
+     * @param {AppInfo} appData The new data object that describes the app.
      */
     replaceAppData: function(appData) {
       this.appData_ = appData;
@@ -567,7 +579,7 @@ cr.define('ntp', function() {
 
     /**
      * Highlight a newly installed app as it's added to the NTP.
-     * @param {Object} appData The data object that describes the app.
+     * @param {AppInfo} appData The data object that describes the app.
      */
     insertAndHighlightApp: function(appData) {
       ntp.getCardSlider().selectCardByValue(this);
@@ -761,7 +773,7 @@ cr.define('ntp', function() {
   /**
    * Launches the specified app using the APP_LAUNCH_NTP_APP_RE_ENABLE
    * histogram. This should only be invoked from the AppLauncherHandler.
-   * @param {string} appID The ID of the app.
+   * @param {string} appId The ID of the app.
    */
   function launchAppAfterEnable(appId) {
     chrome.send('launchApp', [appId, APP_LAUNCH.NTP_APP_RE_ENABLE]);

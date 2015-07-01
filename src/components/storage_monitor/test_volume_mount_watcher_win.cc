@@ -11,6 +11,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/storage_monitor/storage_info.h"
+#include "content/public/browser/browser_thread.h"
 
 namespace storage_monitor {
 
@@ -62,7 +63,8 @@ bool GetMassStorageDeviceDetails(const base::FilePath& device_path,
   base::FilePath path(device_path);
   if (device_path.value().length() > 3)
     path = base::FilePath(device_path.value().substr(0, 3));
-  if (path.value()[0] < L'A' || path.value()[0] > L'Z')
+  base::FilePath::CharType drive_letter = path.value()[0];
+  if (drive_letter < L'A' || drive_letter > L'Z')
     return false;
 
   StorageInfo::Type type = StorageInfo::FIXED_MASS_STORAGE;
@@ -73,7 +75,7 @@ bool GetMassStorageDeviceDetails(const base::FilePath& device_path,
   }
   std::string unique_id =
       "\\\\?\\Volume{00000000-0000-0000-0000-000000000000}\\";
-  unique_id[11] = device_path.value()[0];
+  unique_id[11] = static_cast<char>(drive_letter);
   std::string device_id = StorageInfo::MakeDeviceId(type, unique_id);
   base::string16 storage_label = path.Append(L" Drive").LossyDisplayName();
   *info = StorageInfo(device_id, path.value(), storage_label, base::string16(),
@@ -107,7 +109,7 @@ void TestVolumeMountWatcherWin::SetAttachedDevicesFake() {
 }
 
 void TestVolumeMountWatcherWin::FlushWorkerPoolForTesting() {
-  device_info_worker_pool_->FlushForTesting();
+  content::BrowserThread::GetBlockingPool()->FlushForTesting();
 }
 
 void TestVolumeMountWatcherWin::DeviceCheckComplete(
@@ -147,10 +149,6 @@ VolumeMountWatcherWin::GetAttachedDevicesCallbackType
   if (attached_devices_fake_)
     return base::Bind(&FakeGetAttachedDevices);
   return base::Bind(&FakeGetSingleAttachedDevice);
-}
-
-void TestVolumeMountWatcherWin::ShutdownWorkerPool() {
-  device_info_worker_pool_->Shutdown();
 }
 
 }  // namespace storage_monitor

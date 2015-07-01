@@ -11,6 +11,10 @@
 #include "components/keyed_service/core/keyed_service.h"
 #include "extensions/common/extension.h"
 
+#if !defined(ENABLE_EXTENSIONS)
+#error "Extensions must be enabled"
+#endif
+
 class ExtensionService;
 
 #if defined(OS_CHROMEOS)
@@ -25,10 +29,8 @@ class BrowserContext;
 
 namespace extensions {
 
-class Blacklist;
 class ContentVerifier;
-class DeclarativeUserScriptMaster;
-class ErrorConsole;
+class DeclarativeUserScriptManager;
 class EventRouter;
 class Extension;
 class ExtensionSet;
@@ -37,12 +39,10 @@ class InstallVerifier;
 class LazyBackgroundTaskQueue;
 class ManagementPolicy;
 class OneShotEvent;
-class ProcessManager;
 class QuotaService;
 class RuntimeData;
 class SharedUserScriptMaster;
 class StateStore;
-class WarningService;
 
 // ExtensionSystem manages the lifetime of many of the services used by the
 // extensions and apps system, and it handles startup and shutdown as needed.
@@ -51,7 +51,7 @@ class WarningService;
 class ExtensionSystem : public KeyedService {
  public:
   ExtensionSystem();
-  virtual ~ExtensionSystem();
+  ~ExtensionSystem() override;
 
   // Returns the instance for the given browser context, or NULL if none.
   static ExtensionSystem* Get(content::BrowserContext* context);
@@ -76,8 +76,8 @@ class ExtensionSystem : public KeyedService {
   // The SharedUserScriptMaster is created at startup.
   virtual SharedUserScriptMaster* shared_user_script_master() = 0;
 
-  // The ProcessManager is created at startup.
-  virtual ProcessManager* process_manager() = 0;
+  // The DeclarativeUserScriptManager is created at startup.
+  virtual DeclarativeUserScriptManager* declarative_user_script_manager() = 0;
 
   // The StateStore is created at startup.
   virtual StateStore* state_store() = 0;
@@ -93,15 +93,6 @@ class ExtensionSystem : public KeyedService {
 
   // The EventRouter is created at startup.
   virtual EventRouter* event_router() = 0;
-
-  // The WarningService is created at startup.
-  virtual WarningService* warning_service() = 0;
-
-  // The blacklist is created at startup.
-  virtual Blacklist* blacklist() = 0;
-
-  // The ErrorConsole is created at startup.
-  virtual ErrorConsole* error_console() = 0;
 
   // The InstallVerifier is created at startup.
   virtual InstallVerifier* install_verifier() = 0;
@@ -136,11 +127,6 @@ class ExtensionSystem : public KeyedService {
   // so it can be retrieved from ExtensionSystem directly.
   virtual scoped_ptr<ExtensionSet> GetDependentExtensions(
       const Extension* extension) = 0;
-
-  // Get the user script master for declarative scripts, if any.
-  virtual DeclarativeUserScriptMaster*
-      GetDeclarativeUserScriptMasterByExtension(
-          const ExtensionId& extension_id) = 0;
 };
 
 }  // namespace extensions

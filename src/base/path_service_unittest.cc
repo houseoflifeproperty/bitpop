@@ -98,18 +98,8 @@ TEST_F(PathServiceTest, Get) {
 #if defined(OS_WIN)
   for (int key = base::PATH_WIN_START + 1; key < base::PATH_WIN_END; ++key) {
     bool valid = true;
-    switch(key) {
-      case base::DIR_LOCAL_APP_DATA_LOW:
-        // DIR_LOCAL_APP_DATA_LOW is not supported prior Vista and is expected
-        // to fail.
-        valid = base::win::GetVersion() >= base::win::VERSION_VISTA;
-        break;
-      case base::DIR_APP_SHORTCUTS:
-        // DIR_APP_SHORTCUTS is not supported prior Windows 8 and is expected to
-        // fail.
-        valid = base::win::GetVersion() >= base::win::VERSION_WIN8;
-        break;
-    }
+    if (key == base::DIR_APP_SHORTCUTS)
+      valid = base::win::GetVersion() >= base::win::VERSION_WIN8;
 
     if (valid)
       EXPECT_TRUE(ReturnsValidPath(key)) << key;
@@ -230,3 +220,55 @@ TEST_F(PathServiceTest, RemoveOverride) {
   EXPECT_TRUE(PathService::Get(base::DIR_TEMP, &new_user_data_dir));
   EXPECT_EQ(original_user_data_dir, new_user_data_dir);
 }
+
+#if defined(OS_WIN)
+TEST_F(PathServiceTest, GetProgramFiles) {
+  base::FilePath programfiles_dir;
+#if defined(_WIN64)
+  // 64-bit on 64-bit.
+  EXPECT_TRUE(PathService::Get(base::DIR_PROGRAM_FILES,
+      &programfiles_dir));
+  EXPECT_EQ(programfiles_dir.value(),
+      FILE_PATH_LITERAL("C:\\Program Files"));
+  EXPECT_TRUE(PathService::Get(base::DIR_PROGRAM_FILESX86,
+      &programfiles_dir));
+  EXPECT_EQ(programfiles_dir.value(),
+      FILE_PATH_LITERAL("C:\\Program Files (x86)"));
+  EXPECT_TRUE(PathService::Get(base::DIR_PROGRAM_FILES6432,
+      &programfiles_dir));
+  EXPECT_EQ(programfiles_dir.value(),
+      FILE_PATH_LITERAL("C:\\Program Files"));
+#else
+  if (base::win::OSInfo::GetInstance()->wow64_status() ==
+      base::win::OSInfo::WOW64_ENABLED) {
+    // 32-bit on 64-bit.
+    EXPECT_TRUE(PathService::Get(base::DIR_PROGRAM_FILES,
+        &programfiles_dir));
+    EXPECT_EQ(programfiles_dir.value(),
+        FILE_PATH_LITERAL("C:\\Program Files (x86)"));
+    EXPECT_TRUE(PathService::Get(base::DIR_PROGRAM_FILESX86,
+        &programfiles_dir));
+    EXPECT_EQ(programfiles_dir.value(),
+        FILE_PATH_LITERAL("C:\\Program Files (x86)"));
+    EXPECT_TRUE(PathService::Get(base::DIR_PROGRAM_FILES6432,
+        &programfiles_dir));
+    EXPECT_EQ(programfiles_dir.value(),
+        FILE_PATH_LITERAL("C:\\Program Files"));
+  } else {
+    // 32-bit on 32-bit.
+    EXPECT_TRUE(PathService::Get(base::DIR_PROGRAM_FILES,
+        &programfiles_dir));
+    EXPECT_EQ(programfiles_dir.value(),
+        FILE_PATH_LITERAL("C:\\Program Files"));
+    EXPECT_TRUE(PathService::Get(base::DIR_PROGRAM_FILESX86,
+        &programfiles_dir));
+    EXPECT_EQ(programfiles_dir.value(),
+        FILE_PATH_LITERAL("C:\\Program Files"));
+    EXPECT_TRUE(PathService::Get(base::DIR_PROGRAM_FILES6432,
+        &programfiles_dir));
+    EXPECT_EQ(programfiles_dir.value(),
+        FILE_PATH_LITERAL("C:\\Program Files"));
+  }
+#endif
+}
+#endif

@@ -9,7 +9,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/posix/eintr_wrapper.h"
@@ -31,12 +30,12 @@ namespace {
 
 #if defined(OS_BSD) || defined(OS_MACOSX) || defined(OS_NACL)
 static int CallFstat(int fd, stat_wrapper_t *sb) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   return fstat(fd, sb);
 }
 #else
 static int CallFstat(int fd, stat_wrapper_t *sb) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   return fstat64(fd, sb);
 }
 #endif
@@ -50,10 +49,6 @@ static bool IsOpenAppend(PlatformFile file) {
 
 static int CallFtruncate(PlatformFile file, int64 length) {
   return HANDLE_EINTR(ftruncate(file, length));
-}
-
-static int CallFsync(PlatformFile file) {
-  return HANDLE_EINTR(fsync(file));
 }
 
 static int CallFutimes(PlatformFile file, const struct timeval times[2]) {
@@ -94,11 +89,6 @@ static bool IsOpenAppend(PlatformFile file) {
 
 static int CallFtruncate(PlatformFile file, int64 length) {
   NOTIMPLEMENTED();  // NaCl doesn't implement ftruncate.
-  return 0;
-}
-
-static int CallFsync(PlatformFile file) {
-  NOTIMPLEMENTED();  // NaCl doesn't implement fsync.
   return 0;
 }
 
@@ -166,11 +156,318 @@ void File::Info::FromStat(const stat_wrapper_t& stat_info) {
                                   Time::kNanosecondsPerMicrosecond);
 }
 
+bool File::IsValid() const {
+  return file_.is_valid();
+}
+
+PlatformFile File::GetPlatformFile() const {
+  return file_.get();
+}
+
+PlatformFile File::TakePlatformFile() {
+  return file_.release();
+}
+
+void File::Close() {
+  if (!IsValid())
+    return;
+
+  SCOPED_FILE_TRACE("Close");
+  ThreadRestrictions::AssertIOAllowed();
+  file_.reset();
+}
+
+int64 File::Seek(Whence whence, int64 offset) {
+  ThreadRestrictions::AssertIOAllowed();
+  DCHECK(IsValid());
+
+  SCOPED_FILE_TRACE_WITH_SIZE("Seek", offset);
+
+#if defined(OS_ANDROID)
+  COMPILE_ASSERT(sizeof(int64) == sizeof(off64_t), off64_t_64_bit);
+  return lseek64(file_.get(), static_cast<off64_t>(offset),
+                 static_cast<int>(whence));
+#else
+  COMPILE_ASSERT(sizeof(int64) == sizeof(off_t), off_t_64_bit);
+  return lseek(file_.get(), static_cast<off_t>(offset),
+               static_cast<int>(whence));
+#endif
+}
+
+int File::Read(int64 offset, char* data, int size) {
+  ThreadRestrictions::AssertIOAllowed();
+  DCHECK(IsValid());
+  if (size < 0)
+    return -1;
+
+  SCOPED_FILE_TRACE_WITH_SIZE("Read", size);
+
+  int bytes_read = 0;
+  int rv;
+  do {
+    rv = HANDLE_EINTR(pread(file_.get(), data + bytes_read,
+                            size - bytes_read, offset + bytes_read));
+    if (rv <= 0)
+      break;
+
+    bytes_read += rv;
+  } while (bytes_read < size);
+
+  return bytes_read ? bytes_read : rv;
+}
+
+int File::ReadAtCurrentPos(char* data, int size) {
+  ThreadRestrictions::AssertIOAllowed();
+  DCHECK(IsValid());
+  if (size < 0)
+    return -1;
+
+  SCOPED_FILE_TRACE_WITH_SIZE("ReadAtCurrentPos", size);
+
+  int bytes_read = 0;
+  int rv;
+  do {
+    rv = HANDLE_EINTR(read(file_.get(), data + bytes_read, size - bytes_read));
+    if (rv <= 0)
+      break;
+
+    bytes_read += rv;
+  } while (bytes_read < size);
+
+  return bytes_read ? bytes_read : rv;
+}
+
+int File::ReadNoBestEffort(int64 offset, char* data, int size) {
+  ThreadRestrictions::AssertIOAllowed();
+  DCHECK(IsValid());
+  SCOPED_FILE_TRACE_WITH_SIZE("ReadNoBestEffort", size);
+  return HANDLE_EINTR(pread(file_.get(), data, size, offset));
+}
+
+int File::ReadAtCurrentPosNoBestEffort(char* data, int size) {
+  ThreadRestrictions::AssertIOAllowed();
+  DCHECK(IsValid());
+  if (size < 0)
+    return -1;
+
+  SCOPED_FILE_TRACE_WITH_SIZE("ReadAtCurrentPosNoBestEffort", size);
+  return HANDLE_EINTR(read(file_.get(), data, size));
+}
+
+int File::Write(int64 offset, const char* data, int size) {
+  ThreadRestrictions::AssertIOAllowed();
+
+  if (IsOpenAppend(file_.get()))
+    return WriteAtCurrentPos(data, size);
+
+  DCHECK(IsValid());
+  if (size < 0)
+    return -1;
+
+  SCOPED_FILE_TRACE_WITH_SIZE("Write", size);
+
+  int bytes_written = 0;
+  int rv;
+  do {
+    rv = HANDLE_EINTR(pwrite(file_.get(), data + bytes_written,
+                             size - bytes_written, offset + bytes_written));
+    if (rv <= 0)
+      break;
+
+    bytes_written += rv;
+  } while (bytes_written < size);
+
+  return bytes_written ? bytes_written : rv;
+}
+
+int File::WriteAtCurrentPos(const char* data, int size) {
+  ThreadRestrictions::AssertIOAllowed();
+  DCHECK(IsValid());
+  if (size < 0)
+    return -1;
+
+  SCOPED_FILE_TRACE_WITH_SIZE("WriteAtCurrentPos", size);
+
+  int bytes_written = 0;
+  int rv;
+  do {
+    rv = HANDLE_EINTR(write(file_.get(), data + bytes_written,
+                            size - bytes_written));
+    if (rv <= 0)
+      break;
+
+    bytes_written += rv;
+  } while (bytes_written < size);
+
+  return bytes_written ? bytes_written : rv;
+}
+
+int File::WriteAtCurrentPosNoBestEffort(const char* data, int size) {
+  ThreadRestrictions::AssertIOAllowed();
+  DCHECK(IsValid());
+  if (size < 0)
+    return -1;
+
+  SCOPED_FILE_TRACE_WITH_SIZE("WriteAtCurrentPosNoBestEffort", size);
+  return HANDLE_EINTR(write(file_.get(), data, size));
+}
+
+int64 File::GetLength() {
+  DCHECK(IsValid());
+
+  SCOPED_FILE_TRACE("GetLength");
+
+  stat_wrapper_t file_info;
+  if (CallFstat(file_.get(), &file_info))
+    return false;
+
+  return file_info.st_size;
+}
+
+bool File::SetLength(int64 length) {
+  ThreadRestrictions::AssertIOAllowed();
+  DCHECK(IsValid());
+
+  SCOPED_FILE_TRACE_WITH_SIZE("SetLength", length);
+  return !CallFtruncate(file_.get(), length);
+}
+
+bool File::SetTimes(Time last_access_time, Time last_modified_time) {
+  ThreadRestrictions::AssertIOAllowed();
+  DCHECK(IsValid());
+
+  SCOPED_FILE_TRACE("SetTimes");
+
+  timeval times[2];
+  times[0] = last_access_time.ToTimeVal();
+  times[1] = last_modified_time.ToTimeVal();
+
+  return !CallFutimes(file_.get(), times);
+}
+
+bool File::GetInfo(Info* info) {
+  DCHECK(IsValid());
+
+  SCOPED_FILE_TRACE("GetInfo");
+
+  stat_wrapper_t file_info;
+  if (CallFstat(file_.get(), &file_info))
+    return false;
+
+  info->FromStat(file_info);
+  return true;
+}
+
+File::Error File::Lock() {
+  SCOPED_FILE_TRACE("Lock");
+  return CallFctnlFlock(file_.get(), true);
+}
+
+File::Error File::Unlock() {
+  SCOPED_FILE_TRACE("Unlock");
+  return CallFctnlFlock(file_.get(), false);
+}
+
+File File::Duplicate() {
+  if (!IsValid())
+    return File();
+
+  SCOPED_FILE_TRACE("Duplicate");
+
+  PlatformFile other_fd = dup(GetPlatformFile());
+  if (other_fd == -1)
+    return File(OSErrorToFileError(errno));
+
+  File other(other_fd);
+  if (async())
+    other.async_ = true;
+  return other.Pass();
+}
+
+// Static.
+File::Error File::OSErrorToFileError(int saved_errno) {
+  switch (saved_errno) {
+    case EACCES:
+    case EISDIR:
+    case EROFS:
+    case EPERM:
+      return FILE_ERROR_ACCESS_DENIED;
+    case EBUSY:
+#if !defined(OS_NACL)  // ETXTBSY not defined by NaCl.
+    case ETXTBSY:
+#endif
+      return FILE_ERROR_IN_USE;
+    case EEXIST:
+      return FILE_ERROR_EXISTS;
+    case EIO:
+      return FILE_ERROR_IO;
+    case ENOENT:
+      return FILE_ERROR_NOT_FOUND;
+    case EMFILE:
+      return FILE_ERROR_TOO_MANY_OPENED;
+    case ENOMEM:
+      return FILE_ERROR_NO_MEMORY;
+    case ENOSPC:
+      return FILE_ERROR_NO_SPACE;
+    case ENOTDIR:
+      return FILE_ERROR_NOT_A_DIRECTORY;
+    default:
+#if !defined(OS_NACL)  // NaCl build has no metrics code.
+      UMA_HISTOGRAM_SPARSE_SLOWLY("PlatformFile.UnknownErrors.Posix",
+                                  saved_errno);
+#endif
+      return FILE_ERROR_FAILED;
+  }
+}
+
+File::MemoryCheckingScopedFD::MemoryCheckingScopedFD() {
+  UpdateChecksum();
+}
+
+File::MemoryCheckingScopedFD::MemoryCheckingScopedFD(int fd) : file_(fd) {
+  UpdateChecksum();
+}
+
+File::MemoryCheckingScopedFD::~MemoryCheckingScopedFD() {}
+
+// static
+void File::MemoryCheckingScopedFD::ComputeMemoryChecksum(
+    unsigned int* out_checksum) const {
+  // Use a single iteration of a linear congruentional generator (lcg) to
+  // provide a cheap checksum unlikely to be accidentally matched by a random
+  // memory corruption.
+
+  // By choosing constants that satisfy the Hull-Duebell Theorem on lcg cycle
+  // length, we insure that each distinct fd value maps to a distinct checksum,
+  // which maximises the utility of our checksum.
+
+  // This code uses "unsigned int" throughout for its defined modular semantics,
+  // which implicitly gives us a divisor that is a power of two.
+
+  const unsigned int kMultiplier = 13035 * 4 + 1;
+  COMPILE_ASSERT(((kMultiplier - 1) & 3) == 0, pred_must_be_multiple_of_four);
+  const unsigned int kIncrement = 1595649551;
+  COMPILE_ASSERT(kIncrement & 1, must_be_coprime_to_powers_of_two);
+
+  *out_checksum =
+      static_cast<unsigned int>(file_.get()) * kMultiplier + kIncrement;
+}
+
+void File::MemoryCheckingScopedFD::Check() const {
+  unsigned int computed_checksum;
+  ComputeMemoryChecksum(&computed_checksum);
+  CHECK_EQ(file_memory_checksum_, computed_checksum) << "corrupted fd memory";
+}
+
+void File::MemoryCheckingScopedFD::UpdateChecksum() {
+  ComputeMemoryChecksum(&file_memory_checksum_);
+}
+
 // NaCl doesn't implement system calls to open files directly.
 #if !defined(OS_NACL)
 // TODO(erikkay): does it make sense to support FLAG_EXCLUSIVE_* here?
-void File::InitializeUnsafe(const FilePath& name, uint32 flags) {
-  base::ThreadRestrictions::AssertIOAllowed();
+void File::DoInitialize(uint32 flags) {
+  ThreadRestrictions::AssertIOAllowed();
   DCHECK(!IsValid());
 
   int open_flags = 0;
@@ -224,7 +521,7 @@ void File::InitializeUnsafe(const FilePath& name, uint32 flags) {
   mode |= S_IRGRP | S_IROTH;
 #endif
 
-  int descriptor = HANDLE_EINTR(open(name.value().c_str(), open_flags, mode));
+  int descriptor = HANDLE_EINTR(open(path_.value().c_str(), open_flags, mode));
 
   if (flags & FLAG_OPEN_ALWAYS) {
     if (descriptor < 0) {
@@ -232,7 +529,7 @@ void File::InitializeUnsafe(const FilePath& name, uint32 flags) {
       if (flags & FLAG_EXCLUSIVE_READ || flags & FLAG_EXCLUSIVE_WRITE)
         open_flags |= O_EXCL;   // together with O_CREAT implies O_NOFOLLOW
 
-      descriptor = HANDLE_EINTR(open(name.value().c_str(), open_flags, mode));
+      descriptor = HANDLE_EINTR(open(path_.value().c_str(), open_flags, mode));
       if (descriptor >= 0)
         created_ = true;
     }
@@ -247,7 +544,7 @@ void File::InitializeUnsafe(const FilePath& name, uint32 flags) {
     created_ = true;
 
   if (flags & FLAG_DELETE_ON_CLOSE)
-    unlink(name.value().c_str());
+    unlink(path_.value().c_str());
 
   async_ = ((flags & FLAG_ASYNC) == FLAG_ASYNC);
   error_details_ = FILE_OK;
@@ -255,232 +552,18 @@ void File::InitializeUnsafe(const FilePath& name, uint32 flags) {
 }
 #endif  // !defined(OS_NACL)
 
-bool File::IsValid() const {
-  return file_.is_valid();
-}
-
-PlatformFile File::GetPlatformFile() const {
-  return file_.get();
-}
-
-PlatformFile File::TakePlatformFile() {
-  return file_.release();
-}
-
-void File::Close() {
-  if (!IsValid())
-    return;
-
-  base::ThreadRestrictions::AssertIOAllowed();
-  file_.reset();
-}
-
-int64 File::Seek(Whence whence, int64 offset) {
-  base::ThreadRestrictions::AssertIOAllowed();
+bool File::DoFlush() {
+  ThreadRestrictions::AssertIOAllowed();
   DCHECK(IsValid());
 
-#if defined(OS_ANDROID)
-  COMPILE_ASSERT(sizeof(int64) == sizeof(off64_t), off64_t_64_bit);
-  return lseek64(file_.get(), static_cast<off64_t>(offset),
-                 static_cast<int>(whence));
-#else
-  COMPILE_ASSERT(sizeof(int64) == sizeof(off_t), off_t_64_bit);
-  return lseek(file_.get(), static_cast<off_t>(offset),
-               static_cast<int>(whence));
-#endif
-}
-
-int File::Read(int64 offset, char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
-  DCHECK(IsValid());
-  if (size < 0)
-    return -1;
-
-  int bytes_read = 0;
-  int rv;
-  do {
-    rv = HANDLE_EINTR(pread(file_.get(), data + bytes_read,
-                            size - bytes_read, offset + bytes_read));
-    if (rv <= 0)
-      break;
-
-    bytes_read += rv;
-  } while (bytes_read < size);
-
-  return bytes_read ? bytes_read : rv;
-}
-
-int File::ReadAtCurrentPos(char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
-  DCHECK(IsValid());
-  if (size < 0)
-    return -1;
-
-  int bytes_read = 0;
-  int rv;
-  do {
-    rv = HANDLE_EINTR(read(file_.get(), data + bytes_read, size - bytes_read));
-    if (rv <= 0)
-      break;
-
-    bytes_read += rv;
-  } while (bytes_read < size);
-
-  return bytes_read ? bytes_read : rv;
-}
-
-int File::ReadNoBestEffort(int64 offset, char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
-  DCHECK(IsValid());
-
-  return HANDLE_EINTR(pread(file_.get(), data, size, offset));
-}
-
-int File::ReadAtCurrentPosNoBestEffort(char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
-  DCHECK(IsValid());
-  if (size < 0)
-    return -1;
-
-  return HANDLE_EINTR(read(file_.get(), data, size));
-}
-
-int File::Write(int64 offset, const char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
-
-  if (IsOpenAppend(file_.get()))
-    return WriteAtCurrentPos(data, size);
-
-  DCHECK(IsValid());
-  if (size < 0)
-    return -1;
-
-  int bytes_written = 0;
-  int rv;
-  do {
-    rv = HANDLE_EINTR(pwrite(file_.get(), data + bytes_written,
-                             size - bytes_written, offset + bytes_written));
-    if (rv <= 0)
-      break;
-
-    bytes_written += rv;
-  } while (bytes_written < size);
-
-  return bytes_written ? bytes_written : rv;
-}
-
-int File::WriteAtCurrentPos(const char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
-  DCHECK(IsValid());
-  if (size < 0)
-    return -1;
-
-  int bytes_written = 0;
-  int rv;
-  do {
-    rv = HANDLE_EINTR(write(file_.get(), data + bytes_written,
-                            size - bytes_written));
-    if (rv <= 0)
-      break;
-
-    bytes_written += rv;
-  } while (bytes_written < size);
-
-  return bytes_written ? bytes_written : rv;
-}
-
-int File::WriteAtCurrentPosNoBestEffort(const char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
-  DCHECK(IsValid());
-  if (size < 0)
-    return -1;
-
-  return HANDLE_EINTR(write(file_.get(), data, size));
-}
-
-int64 File::GetLength() {
-  DCHECK(IsValid());
-
-  stat_wrapper_t file_info;
-  if (CallFstat(file_.get(), &file_info))
-    return false;
-
-  return file_info.st_size;
-}
-
-bool File::SetLength(int64 length) {
-  base::ThreadRestrictions::AssertIOAllowed();
-  DCHECK(IsValid());
-  return !CallFtruncate(file_.get(), length);
-}
-
-bool File::Flush() {
-  base::ThreadRestrictions::AssertIOAllowed();
-  DCHECK(IsValid());
-  return !CallFsync(file_.get());
-}
-
-bool File::SetTimes(Time last_access_time, Time last_modified_time) {
-  base::ThreadRestrictions::AssertIOAllowed();
-  DCHECK(IsValid());
-
-  timeval times[2];
-  times[0] = last_access_time.ToTimeVal();
-  times[1] = last_modified_time.ToTimeVal();
-
-  return !CallFutimes(file_.get(), times);
-}
-
-bool File::GetInfo(Info* info) {
-  DCHECK(IsValid());
-
-  stat_wrapper_t file_info;
-  if (CallFstat(file_.get(), &file_info))
-    return false;
-
-  info->FromStat(file_info);
+#if defined(OS_NACL)
+  NOTIMPLEMENTED();  // NaCl doesn't implement fsync.
   return true;
-}
-
-File::Error File::Lock() {
-  return CallFctnlFlock(file_.get(), true);
-}
-
-File::Error File::Unlock() {
-  return CallFctnlFlock(file_.get(), false);
-}
-
-// Static.
-File::Error File::OSErrorToFileError(int saved_errno) {
-  switch (saved_errno) {
-    case EACCES:
-    case EISDIR:
-    case EROFS:
-    case EPERM:
-      return FILE_ERROR_ACCESS_DENIED;
-#if !defined(OS_NACL)  // ETXTBSY not defined by NaCl.
-    case ETXTBSY:
-      return FILE_ERROR_IN_USE;
+#elif defined(OS_LINUX) || defined(OS_ANDROID)
+  return !HANDLE_EINTR(fdatasync(file_.get()));
+#else
+  return !HANDLE_EINTR(fsync(file_.get()));
 #endif
-    case EEXIST:
-      return FILE_ERROR_EXISTS;
-    case ENOENT:
-      return FILE_ERROR_NOT_FOUND;
-    case EMFILE:
-      return FILE_ERROR_TOO_MANY_OPENED;
-    case ENOMEM:
-      return FILE_ERROR_NO_MEMORY;
-    case ENOSPC:
-      return FILE_ERROR_NO_SPACE;
-    case ENOTDIR:
-      return FILE_ERROR_NOT_A_DIRECTORY;
-    default:
-#if !defined(OS_NACL)  // NaCl build has no metrics code.
-      UMA_HISTOGRAM_SPARSE_SLOWLY("PlatformFile.UnknownErrors.Posix",
-                                  saved_errno);
-#endif
-      return FILE_ERROR_FAILED;
-  }
 }
 
 void File::SetPlatformFile(PlatformFile file) {

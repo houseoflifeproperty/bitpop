@@ -32,15 +32,15 @@ class FaviconRawBitmapHandler : public content::WebContentsObserver {
         delegate_(delegate),
         weak_ptr_factory_(this) {}
 
-  virtual ~FaviconRawBitmapHandler() {}
+  ~FaviconRawBitmapHandler() override {}
 
   const SkBitmap& bitmap() const { return bitmap_; }
 
   bool HasPendingDownloads() const;
 
   // content::WebContentObserver implementation.
-  virtual void DidUpdateFaviconURL(
-    const std::vector<content::FaviconURL>& candidates) OVERRIDE;
+  void DidUpdateFaviconURL(
+      const std::vector<content::FaviconURL>& candidates) override;
 
  private:
   void DidDownloadFavicon(
@@ -107,8 +107,9 @@ void FaviconRawBitmapHandler::DidUpdateFaviconURL(
     pending_requests_.insert(*iter);
     web_contents()->DownloadImage(
         *iter,
-        true,  // is a favicon
-        0,     // no maximum size
+        true,   // is a favicon
+        0,      // no maximum size
+        false,  // normal cache policy
         base::Bind(&FaviconRawBitmapHandler::DidDownloadFavicon,
                    weak_ptr_factory_.GetWeakPtr()));
   }

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/message_loop/message_loop.h"
 #include "base/values.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
@@ -10,6 +9,7 @@
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/manifest.h"
@@ -35,23 +35,21 @@ class ExtensionSpecialStoragePolicyTest : public testing::Test {
           expected_change_flags_(0) {
     }
 
-    virtual void OnGranted(const GURL& origin,
-                           int change_flags) OVERRIDE {
+    void OnGranted(const GURL& origin, int change_flags) override {
       EXPECT_EQ(expected_type_, NOTIFICATION_TYPE_GRANT);
       EXPECT_EQ(expected_origin_, origin);
       EXPECT_EQ(expected_change_flags_, change_flags);
       expected_type_ = NOTIFICATION_TYPE_NONE;
     }
 
-    virtual void OnRevoked(const GURL& origin,
-                           int change_flags) OVERRIDE {
+    void OnRevoked(const GURL& origin, int change_flags) override {
       EXPECT_EQ(expected_type_, NOTIFICATION_TYPE_REVOKE);
       EXPECT_EQ(expected_origin_, origin);
       EXPECT_EQ(expected_change_flags_, change_flags);
       expected_type_ = NOTIFICATION_TYPE_NONE;
     }
 
-    virtual void OnCleared() OVERRIDE {
+    void OnCleared() override {
       EXPECT_EQ(expected_type_, NOTIFICATION_TYPE_CLEAR);
       expected_type_ = NOTIFICATION_TYPE_NONE;
     }
@@ -92,9 +90,7 @@ class ExtensionSpecialStoragePolicyTest : public testing::Test {
     DISALLOW_COPY_AND_ASSIGN(PolicyChangeObserver);
   };
 
-  virtual void SetUp() OVERRIDE {
-    policy_ = new ExtensionSpecialStoragePolicy(NULL);
-  }
+  void SetUp() override { policy_ = new ExtensionSpecialStoragePolicy(NULL); }
 
   scoped_refptr<Extension> CreateProtectedApp() {
 #if defined(OS_WIN)
@@ -176,6 +172,7 @@ class ExtensionSpecialStoragePolicyTest : public testing::Test {
     }
   }
 
+  content::TestBrowserThreadBundle thread_bundle_;
   scoped_refptr<ExtensionSpecialStoragePolicy> policy_;
 };
 
@@ -198,7 +195,7 @@ TEST_F(ExtensionSpecialStoragePolicyTest, EmptyPolicy) {
 
 TEST_F(ExtensionSpecialStoragePolicyTest, AppWithProtectedStorage) {
   scoped_refptr<Extension> extension(CreateProtectedApp());
-  policy_->GrantRightsForExtension(extension.get());
+  policy_->GrantRightsForExtension(extension.get(), NULL);
   ExtensionSet protecting_extensions;
   protecting_extensions.Insert(extension);
   ExtensionSet empty_set;
@@ -219,7 +216,7 @@ TEST_F(ExtensionSpecialStoragePolicyTest, AppWithProtectedStorage) {
 
 TEST_F(ExtensionSpecialStoragePolicyTest, AppWithUnlimitedStorage) {
   scoped_refptr<Extension> extension(CreateUnlimitedApp());
-  policy_->GrantRightsForExtension(extension.get());
+  policy_->GrantRightsForExtension(extension.get(), NULL);
   ExtensionSet protecting_extensions;
   protecting_extensions.Insert(extension);
   ExtensionSet empty_set;
@@ -253,9 +250,9 @@ TEST_F(ExtensionSpecialStoragePolicyTest, CanQueryDiskSize) {
   scoped_refptr<Extension> regular_app(CreateRegularApp());
   scoped_refptr<Extension> protected_app(CreateProtectedApp());
   scoped_refptr<Extension> unlimited_app(CreateUnlimitedApp());
-  policy_->GrantRightsForExtension(regular_app.get());
-  policy_->GrantRightsForExtension(protected_app.get());
-  policy_->GrantRightsForExtension(unlimited_app.get());
+  policy_->GrantRightsForExtension(regular_app.get(), NULL);
+  policy_->GrantRightsForExtension(protected_app.get(), NULL);
+  policy_->GrantRightsForExtension(unlimited_app.get(), NULL);
 
   EXPECT_FALSE(policy_->CanQueryDiskSize(kHttpUrl));
   EXPECT_FALSE(policy_->CanQueryDiskSize(kExtensionUrl));
@@ -268,7 +265,7 @@ TEST_F(ExtensionSpecialStoragePolicyTest, HasIsolatedStorage) {
   const GURL kHttpUrl("http://foo");
   const GURL kExtensionUrl("chrome-extension://bar");
   scoped_refptr<Extension> app(CreateRegularApp());
-  policy_->GrantRightsForExtension(app.get());
+  policy_->GrantRightsForExtension(app.get(), NULL);
 
   EXPECT_FALSE(policy_->HasIsolatedStorage(kHttpUrl));
   EXPECT_FALSE(policy_->HasIsolatedStorage(kExtensionUrl));
@@ -278,8 +275,8 @@ TEST_F(ExtensionSpecialStoragePolicyTest, HasIsolatedStorage) {
 TEST_F(ExtensionSpecialStoragePolicyTest, OverlappingApps) {
   scoped_refptr<Extension> protected_app(CreateProtectedApp());
   scoped_refptr<Extension> unlimited_app(CreateUnlimitedApp());
-  policy_->GrantRightsForExtension(protected_app.get());
-  policy_->GrantRightsForExtension(unlimited_app.get());
+  policy_->GrantRightsForExtension(protected_app.get(), NULL);
+  policy_->GrantRightsForExtension(unlimited_app.get(), NULL);
   ExtensionSet protecting_extensions;
   ExtensionSet empty_set;
   protecting_extensions.Insert(protected_app);
@@ -313,9 +310,6 @@ TEST_F(ExtensionSpecialStoragePolicyTest, OverlappingApps) {
 }
 
 TEST_F(ExtensionSpecialStoragePolicyTest, HasSessionOnlyOrigins) {
-  base::MessageLoop message_loop;
-  content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
-
   TestingProfile profile;
   CookieSettings* cookie_settings =
       CookieSettings::Factory::GetForProfile(&profile).get();
@@ -348,10 +342,6 @@ TEST_F(ExtensionSpecialStoragePolicyTest, HasSessionOnlyOrigins) {
 }
 
 TEST_F(ExtensionSpecialStoragePolicyTest, NotificationTest) {
-  base::MessageLoop message_loop;
-  content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
-  content::TestBrowserThread io_thread(BrowserThread::IO, &message_loop);
-
   PolicyChangeObserver observer;
   policy_->AddObserver(&observer);
 
@@ -371,15 +361,15 @@ TEST_F(ExtensionSpecialStoragePolicyTest, NotificationTest) {
   for (size_t i = 0; i < arraysize(apps); ++i) {
     SCOPED_TRACE(testing::Message() << "i: " << i);
     observer.ExpectGrant(apps[i]->id(), change_flags[i]);
-    policy_->GrantRightsForExtension(apps[i].get());
-    message_loop.RunUntilIdle();
+    policy_->GrantRightsForExtension(apps[i].get(), NULL);
+    base::MessageLoop::current()->RunUntilIdle();
     EXPECT_TRUE(observer.IsCompleted());
   }
 
   for (size_t i = 0; i < arraysize(apps); ++i) {
     SCOPED_TRACE(testing::Message() << "i: " << i);
-    policy_->GrantRightsForExtension(apps[i].get());
-    message_loop.RunUntilIdle();
+    policy_->GrantRightsForExtension(apps[i].get(), NULL);
+    base::MessageLoop::current()->RunUntilIdle();
     EXPECT_TRUE(observer.IsCompleted());
   }
 
@@ -387,20 +377,20 @@ TEST_F(ExtensionSpecialStoragePolicyTest, NotificationTest) {
     SCOPED_TRACE(testing::Message() << "i: " << i);
     observer.ExpectRevoke(apps[i]->id(), change_flags[i]);
     policy_->RevokeRightsForExtension(apps[i].get());
-    message_loop.RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     EXPECT_TRUE(observer.IsCompleted());
   }
 
   for (size_t i = 0; i < arraysize(apps); ++i) {
     SCOPED_TRACE(testing::Message() << "i: " << i);
     policy_->RevokeRightsForExtension(apps[i].get());
-    message_loop.RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     EXPECT_TRUE(observer.IsCompleted());
   }
 
   observer.ExpectClear();
   policy_->RevokeRightsForAllExtensions();
-  message_loop.RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(observer.IsCompleted());
 
   policy_->RemoveObserver(&observer);

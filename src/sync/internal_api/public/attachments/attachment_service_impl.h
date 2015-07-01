@@ -26,6 +26,9 @@ class SYNC_EXPORT AttachmentServiceImpl
       public net::NetworkChangeNotifier::NetworkChangeObserver,
       public base::NonThreadSafe {
  public:
+  // |attachment_store| is required. UploadAttachments reads attachment data
+  // from it. Downloaded attachments will be written into it.
+  //
   // |attachment_uploader| is optional. If null, attachments will never be
   // uploaded to the sync server and |delegate|'s OnAttachmentUploaded will
   // never be invoked.
@@ -47,30 +50,25 @@ class SYNC_EXPORT AttachmentServiceImpl
   //
   // |max_backoff_delay| the maxmium delay between upload attempts when backed
   // off.
-  AttachmentServiceImpl(scoped_refptr<AttachmentStore> attachment_store,
+  AttachmentServiceImpl(scoped_ptr<AttachmentStoreForSync> attachment_store,
                         scoped_ptr<AttachmentUploader> attachment_uploader,
                         scoped_ptr<AttachmentDownloader> attachment_downloader,
                         Delegate* delegate,
                         const base::TimeDelta& initial_backoff_delay,
                         const base::TimeDelta& max_backoff_delay);
-  virtual ~AttachmentServiceImpl();
+  ~AttachmentServiceImpl() override;
 
   // Create an AttachmentServiceImpl suitable for use in tests.
   static scoped_ptr<syncer::AttachmentService> CreateForTest();
 
   // AttachmentService implementation.
-  virtual AttachmentStore* GetStore() OVERRIDE;
-  virtual void GetOrDownloadAttachments(
-      const AttachmentIdList& attachment_ids,
-      const GetOrDownloadCallback& callback) OVERRIDE;
-  virtual void DropAttachments(const AttachmentIdList& attachment_ids,
-                               const DropCallback& callback) OVERRIDE;
-  virtual void UploadAttachments(
-      const AttachmentIdSet& attachment_ids) OVERRIDE;
+  void GetOrDownloadAttachments(const AttachmentIdList& attachment_ids,
+                                const GetOrDownloadCallback& callback) override;
+  void UploadAttachments(const AttachmentIdList& attachment_ids) override;
 
   // NetworkChangeObserver implementation.
-  virtual void OnNetworkChanged(
-      net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
+  void OnNetworkChanged(
+      net::NetworkChangeNotifier::ConnectionType type) override;
 
   // Use |timer| in the underlying TaskQueue.
   //
@@ -84,8 +82,9 @@ class SYNC_EXPORT AttachmentServiceImpl
                 const AttachmentStore::Result& result,
                 scoped_ptr<AttachmentMap> attachments,
                 scoped_ptr<AttachmentIdList> unavailable_attachment_ids);
-  void DropDone(const DropCallback& callback,
-                const AttachmentStore::Result& result);
+  void WriteDone(const scoped_refptr<GetOrDownloadState>& state,
+                 const Attachment& attachment,
+                 const AttachmentStore::Result& result);
   void UploadDone(const AttachmentUploader::UploadResult& result,
                   const AttachmentId& attachment_id);
   void DownloadDone(const scoped_refptr<GetOrDownloadState>& state,
@@ -98,7 +97,7 @@ class SYNC_EXPORT AttachmentServiceImpl
       scoped_ptr<AttachmentMap> attachments,
       scoped_ptr<AttachmentIdList> unavailable_attachment_ids);
 
-  scoped_refptr<AttachmentStore> attachment_store_;
+  scoped_ptr<AttachmentStoreForSync> attachment_store_;
 
   // May be null.
   const scoped_ptr<AttachmentUploader> attachment_uploader_;

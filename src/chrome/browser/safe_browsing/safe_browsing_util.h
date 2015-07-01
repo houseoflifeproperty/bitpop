@@ -133,8 +133,8 @@ enum SBThreatType {
   // The URL hosts malware.
   SB_THREAT_TYPE_URL_MALWARE,
 
-  // The URL hosts harmful programs.
-  SB_THREAT_TYPE_URL_HARMFUL,
+  // The URL hosts unwanted programs.
+  SB_THREAT_TYPE_URL_UNWANTED,
 
   // The download URL is malware.
   SB_THREAT_TYPE_BINARY_MALWARE_URL,
@@ -166,13 +166,15 @@ extern const char kCsdWhiteList[];
 extern const char kDownloadWhiteList[];
 // SafeBrowsing extension list name.
 extern const char kExtensionBlacklist[];
-// SafeBrowsing side-effect free whitelist name.
-extern const char kSideEffectFreeWhitelist[];
 // SafeBrowsing csd malware IP blacklist name.
 extern const char kIPBlacklist[];
+// SafeBrowsing unwanted URL list.
+extern const char kUnwantedUrlList[];
+// SafeBrowsing off-domain inclusion whitelist list name.
+extern const char kInclusionWhitelist[];
 
 // This array must contain all Safe Browsing lists.
-extern const char* kAllLists[8];
+extern const char* kAllLists[9];
 
 enum ListType {
   INVALID = -1,
@@ -188,10 +190,14 @@ enum ListType {
   // See above comment. Leave 7 available.
   EXTENSIONBLACKLIST = 8,
   // See above comment. Leave 9 available.
-  SIDEEFFECTFREEWHITELIST = 10,
+  // Obsolete SIDEEFFECTFREEWHITELIST = 10,
   // See above comment. Leave 11 available.
   IPBLACKLIST = 12,
   // See above comment.  Leave 13 available.
+  UNWANTEDURL = 14,
+  // See above comment.  Leave 15 available.
+  INCLUSIONWHITELIST = 16,
+  // See above comment.  Leave 17 available.
 };
 
 // Maps a list name to ListType.

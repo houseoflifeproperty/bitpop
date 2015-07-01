@@ -11,12 +11,12 @@
 #include "base/sys_byteorder.h"
 #include "base/test/test_timeouts.h"
 #include "net/base/dns_util.h"
-#include "net/base/net_log.h"
 #include "net/dns/dns_protocol.h"
 #include "net/dns/dns_query.h"
 #include "net/dns/dns_response.h"
 #include "net/dns/dns_session.h"
 #include "net/dns/dns_test_util.h"
+#include "net/log/net_log.h"
 #include "net/socket/socket_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -152,8 +152,8 @@ class FailingUDPClientSocket : public MockUDPClientSocket {
                          net::NetLog* net_log)
       : MockUDPClientSocket(data, net_log) {
   }
-  virtual ~FailingUDPClientSocket() {}
-  virtual int Connect(const IPEndPoint& endpoint) OVERRIDE {
+  ~FailingUDPClientSocket() override {}
+  int Connect(const IPEndPoint& endpoint) override {
     return ERR_CONNECTION_REFUSED;
   }
 
@@ -169,8 +169,8 @@ class TestUDPClientSocket : public MockUDPClientSocket {
                       net::NetLog* net_log)
       : MockUDPClientSocket(data, net_log), factory_(factory) {
   }
-  virtual ~TestUDPClientSocket() {}
-  virtual int Connect(const IPEndPoint& endpoint) OVERRIDE;
+  ~TestUDPClientSocket() override {}
+  int Connect(const IPEndPoint& endpoint) override;
 
  private:
   TestSocketFactory* factory_;
@@ -182,13 +182,13 @@ class TestUDPClientSocket : public MockUDPClientSocket {
 class TestSocketFactory : public MockClientSocketFactory {
  public:
   TestSocketFactory() : fail_next_socket_(false) {}
-  virtual ~TestSocketFactory() {}
+  ~TestSocketFactory() override {}
 
-  virtual scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
+  scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
       const RandIntCallback& rand_int_cb,
-      net::NetLog* net_log,
-      const net::NetLog::Source& source) OVERRIDE {
+      NetLog* net_log,
+      const NetLog::Source& source) override {
     if (fail_next_socket_) {
       fail_next_socket_ = false;
       return scoped_ptr<DatagramClientSocket>(
@@ -198,7 +198,7 @@ class TestSocketFactory : public MockClientSocketFactory {
     scoped_ptr<TestUDPClientSocket> socket(
         new TestUDPClientSocket(this, data_provider, net_log));
     data_provider->set_socket(socket.get());
-    return socket.PassAs<DatagramClientSocket>();
+    return socket.Pass();
   }
 
   void OnConnect(const IPEndPoint& endpoint) {
@@ -441,7 +441,7 @@ class DnsTransactionTest : public testing::Test {
     }
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // By default set one server,
     ConfigureNumServers(1);
     // and no retransmissions,
@@ -451,7 +451,7 @@ class DnsTransactionTest : public testing::Test {
     ConfigureFactory();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // Check that all socket data was at least written to.
     for (size_t i = 0; i < socket_data_.size(); ++i) {
       EXPECT_TRUE(socket_data_[i]->was_written()) << i;

@@ -16,9 +16,9 @@
 
 namespace {
 
-static const DWORD kAllowedRegFlags = KEY_QUERY_VALUE | KEY_ENUMERATE_SUB_KEYS |
-                                      KEY_NOTIFY | KEY_READ | GENERIC_READ |
-                                      GENERIC_EXECUTE | READ_CONTROL;
+static const uint32 kAllowedRegFlags =
+    KEY_QUERY_VALUE | KEY_ENUMERATE_SUB_KEYS | KEY_NOTIFY | KEY_READ |
+    GENERIC_READ | GENERIC_EXECUTE | READ_CONTROL;
 
 // Opens the key referenced by |obj_attributes| with |access| and
 // checks what permission was given. Remove the WRITE flags and update
@@ -137,7 +137,7 @@ bool RegistryPolicy::GenerateRules(const wchar_t* name,
       // We consider all flags that are not known to be readonly as potentially
       // used for write. Here we also support MAXIMUM_ALLOWED, but we are going
       // to expand it to read-only before the call.
-      DWORD restricted_flags = ~(kAllowedRegFlags | MAXIMUM_ALLOWED);
+      uint32 restricted_flags = ~(kAllowedRegFlags | MAXIMUM_ALLOWED);
       open.AddNumberMatch(IF_NOT, OpenKey::ACCESS, restricted_flags, AND);
       create.AddNumberMatch(IF_NOT, OpenKey::ACCESS, restricted_flags, AND);
       break;
@@ -191,7 +191,7 @@ bool RegistryPolicy::CreateKeyAction(EvalResult eval_result,
   UNICODE_STRING uni_name = {0};
   OBJECT_ATTRIBUTES obj_attributes = {0};
   InitObjectAttribs(key, attributes, root_directory, &obj_attributes,
-                    &uni_name);
+                    &uni_name, NULL);
   *nt_status = NtCreateKeyInTarget(handle, desired_access, &obj_attributes,
                                    title_index, NULL, create_options,
                                    disposition, client_info.process);
@@ -216,7 +216,7 @@ bool RegistryPolicy::OpenKeyAction(EvalResult eval_result,
   UNICODE_STRING uni_name = {0};
   OBJECT_ATTRIBUTES obj_attributes = {0};
   InitObjectAttribs(key, attributes, root_directory, &obj_attributes,
-                    &uni_name);
+                    &uni_name, NULL);
   *nt_status = NtOpenKeyInTarget(handle, desired_access, &obj_attributes,
                                 client_info.process);
   return true;

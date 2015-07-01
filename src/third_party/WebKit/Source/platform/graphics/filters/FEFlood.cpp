@@ -26,10 +26,8 @@
 
 #include "SkColorFilter.h"
 #include "SkColorFilterImageFilter.h"
-#include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/text/TextStream.h"
-#include "third_party/skia/include/core/SkDevice.h"
 
 namespace blink {
 
@@ -41,9 +39,9 @@ FEFlood::FEFlood(Filter* filter, const Color& floodColor, float floodOpacity)
     FilterEffect::setOperatingColorSpace(ColorSpaceDeviceRGB);
 }
 
-PassRefPtr<FEFlood> FEFlood::create(Filter* filter, const Color& floodColor, float floodOpacity)
+PassRefPtrWillBeRawPtr<FEFlood> FEFlood::create(Filter* filter, const Color& floodColor, float floodOpacity)
 {
-    return adoptRef(new FEFlood(filter, floodColor, floodOpacity));
+    return adoptRefWillBeNoop(new FEFlood(filter, floodColor, floodOpacity));
 }
 
 Color FEFlood::floodColor() const
@@ -72,17 +70,6 @@ bool FEFlood::setFloodOpacity(float floodOpacity)
     return true;
 }
 
-void FEFlood::applySoftware()
-{
-    ImageBuffer* resultImage = createImageBufferResult();
-    if (!resultImage)
-        return;
-
-    Color color = floodColor().combineWithAlpha(floodOpacity());
-    resultImage->context()->fillRect(FloatRect(FloatPoint(), absolutePaintRect().size()), color);
-    FilterEffect::setResultColorSpace(ColorSpaceDeviceRGB);
-}
-
 PassRefPtr<SkImageFilter> FEFlood::createImageFilter(SkiaImageFilterBuilder* builder)
 {
     Color color = floodColor().combineWithAlpha(floodOpacity());
@@ -97,7 +84,7 @@ TextStream& FEFlood::externalRepresentation(TextStream& ts, int indent) const
     writeIndent(ts, indent);
     ts << "[feFlood";
     FilterEffect::externalRepresentation(ts);
-    ts << " flood-color=\"" << floodColor().nameForRenderTreeAsText() << "\" "
+    ts << " flood-color=\"" << floodColor().nameForLayoutTreeAsText() << "\" "
        << "flood-opacity=\"" << floodOpacity() << "\"]\n";
     return ts;
 }

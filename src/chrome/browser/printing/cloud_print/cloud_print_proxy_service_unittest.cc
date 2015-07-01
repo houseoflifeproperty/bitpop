@@ -183,7 +183,7 @@ class TestCloudPrintProxyService : public CloudPrintProxyService {
     base::RunLoop().RunUntilIdle();
   }
 
-  virtual ServiceProcessControl* GetServiceProcessControl() OVERRIDE {
+  ServiceProcessControl* GetServiceProcessControl() override {
     return &process_control_;
   }
   MockServiceProcessControl* GetMockServiceProcessControl() {
@@ -206,12 +206,11 @@ class CloudPrintProxyPolicyTest : public ::testing::Test {
       : ui_thread_(content::BrowserThread::UI, &message_loop_) {
   }
 
-  bool LaunchBrowser(const CommandLine& command_line, Profile* profile) {
-    int return_code = 0;
+  bool LaunchBrowser(const base::CommandLine& command_line, Profile* profile) {
     StartupBrowserCreator browser_creator;
     return StartupBrowserCreator::ProcessCmdLineImpl(
         command_line, base::FilePath(), false, profile,
-        StartupBrowserCreator::Profiles(), &return_code, &browser_creator);
+        StartupBrowserCreator::Profiles(), &browser_creator);
   }
 
  protected:
@@ -436,34 +435,4 @@ TEST_F(CloudPrintProxyPolicyTest,
 
   EXPECT_EQ(MockServiceProcessControl::EnabledUserId(),
             prefs->GetString(prefs::kCloudPrintEmail));
-}
-
-KeyedService* TestCloudPrintProxyServiceFactory(
-    content::BrowserContext* profile) {
-  TestCloudPrintProxyService* service =
-      new TestCloudPrintProxyService(static_cast<Profile*>(profile));
-
-  service->GetMockServiceProcessControl()->SetConnectSuccessMockExpectations(
-      MockServiceProcessControl::kServiceStateEnabled, true);
-  service->GetMockServiceProcessControl()->SetWillBeDisabledExpectations();
-
-  service->Initialize();
-  return service;
-}
-
-TEST_F(CloudPrintProxyPolicyTest, StartupBrowserCreatorWithCommandLine) {
-  TestingPrefServiceSyncable* prefs = profile_.GetTestingPrefService();
-  prefs->SetUserPref(prefs::kCloudPrintEmail,
-                     new base::StringValue(std::string()));
-  prefs->SetManagedPref(prefs::kCloudPrintProxyEnabled,
-                        new base::FundamentalValue(false));
-
-  CloudPrintProxyServiceFactory::GetInstance()->
-      SetTestingFactory(&profile_, TestCloudPrintProxyServiceFactory);
-
-  CommandLine command_line(CommandLine::NO_PROGRAM);
-  command_line.AppendSwitch(switches::kCheckCloudPrintConnectorPolicy);
-
-  EXPECT_FALSE(LaunchBrowser(command_line, &profile_));
-  base::RunLoop().RunUntilIdle();
 }

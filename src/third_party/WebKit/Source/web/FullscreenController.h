@@ -31,6 +31,7 @@
 #ifndef FullscreenController_h
 #define FullscreenController_h
 
+#include "core/layout/LayoutFullScreen.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/heap/Handle.h"
@@ -43,7 +44,7 @@ class Element;
 class LocalFrame;
 class WebViewImpl;
 
-class FullscreenController FINAL : public NoBaseWillBeGarbageCollected<FullscreenController> {
+class FullscreenController final : public NoBaseWillBeGarbageCollected<FullscreenController> {
 public:
     static PassOwnPtrWillBeRawPtr<FullscreenController> create(WebViewImpl*);
 
@@ -55,12 +56,16 @@ public:
 
     bool isFullscreen() { return m_fullScreenFrame; }
 
-    void trace(Visitor*);
+    void updateSize();
+
+    DECLARE_TRACE();
 
 protected:
     explicit FullscreenController(WebViewImpl*);
 
 private:
+    void updatePageScaleConstraints(bool removeConstraints);
+
     WebViewImpl* m_webViewImpl;
 
     float m_exitFullscreenPageScaleFactor;

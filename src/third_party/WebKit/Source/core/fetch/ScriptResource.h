@@ -26,6 +26,7 @@
 #ifndef ScriptResource_h
 #define ScriptResource_h
 
+#include "core/CoreExport.h"
 #include "core/fetch/ResourceClient.h"
 #include "core/fetch/TextResource.h"
 
@@ -33,24 +34,27 @@ namespace blink {
 
 class ScriptResource;
 
-class ScriptResourceClient : public ResourceClient {
+class CORE_EXPORT ScriptResourceClient : public ResourceClient {
 public:
     virtual ~ScriptResourceClient() { }
     static ResourceClientType expectedType() { return ScriptType; }
-    virtual ResourceClientType resourceClientType() const OVERRIDE FINAL { return expectedType(); }
+    virtual ResourceClientType resourceClientType() const override final { return expectedType(); }
 
     virtual void notifyAppendData(ScriptResource* resource) { }
 };
 
-class ScriptResource FINAL : public TextResource {
+class CORE_EXPORT ScriptResource final : public TextResource {
 public:
     typedef ScriptResourceClient ClientType;
+    static PassOwnPtrWillBeRawPtr<ScriptResource> create(const ResourceRequest& request, const String& charset)
+    {
+        return adoptPtrWillBeNoop(new ScriptResource(request, charset));
+    }
 
-    ScriptResource(const ResourceRequest&, const String& charset);
     virtual ~ScriptResource();
 
-    virtual void didAddClient(ResourceClient*) OVERRIDE;
-    virtual void appendData(const char*, int) OVERRIDE;
+    virtual void didAddClient(ResourceClient*) override;
+    virtual void appendData(const char*, unsigned) override;
 
     const String& script();
 
@@ -59,6 +63,8 @@ public:
     bool mimeTypeAllowedByNosniff() const;
 
 private:
+    ScriptResource(const ResourceRequest&, const String& charset);
+
     AtomicString m_script;
 };
 

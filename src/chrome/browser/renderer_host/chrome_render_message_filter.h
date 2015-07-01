@@ -21,6 +21,10 @@ namespace chrome_browser_net {
 class Predictor;
 }
 
+namespace network_hints {
+struct LookupRequest;
+}
+
 namespace extensions {
 class InfoMap;
 }
@@ -45,19 +49,18 @@ class ChromeRenderMessageFilter : public content::BrowserMessageFilter {
   };
 
   // content::BrowserMessageFilter methods:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OverrideThreadForMessage(
-      const IPC::Message& message,
-      content::BrowserThread::ID* thread) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OverrideThreadForMessage(const IPC::Message& message,
+                                content::BrowserThread::ID* thread) override;
 
  private:
   friend class content::BrowserThread;
   friend class base::DeleteHelper<ChromeRenderMessageFilter>;
 
-  virtual ~ChromeRenderMessageFilter();
+  ~ChromeRenderMessageFilter() override;
 
-  void OnDnsPrefetch(const std::vector<std::string>& hostnames);
-  void OnPreconnect(const GURL& url);
+  void OnDnsPrefetch(const network_hints::LookupRequest& request);
+  void OnPreconnect(const GURL& url, int count);
   void OnResourceTypeStats(const blink::WebCache::ResourceTypeStats& stats);
   void OnUpdatedCacheStats(const blink::WebCache::UsageStats& stats);
   void OnV8HeapStats(int v8_memory_allocated, int v8_memory_used);
@@ -118,6 +121,12 @@ class ChromeRenderMessageFilter : public content::BrowserMessageFilter {
 #if defined(ENABLE_PLUGINS)
   void OnIsCrashReportingEnabled(bool* enabled);
 #endif
+
+  // Called when a message is received from a renderer that a trial has been
+  // activated (ChromeViewHostMsg_FieldTrialActivated).
+  void OnFieldTrialActivated(const std::string& trial_name);
+  void OnRecordRappor(const std::string& metric, const std::string& sample);
+  void OnRecordRapporURL(const std::string& metric, const GURL& sample);
 
   const int render_process_id_;
 

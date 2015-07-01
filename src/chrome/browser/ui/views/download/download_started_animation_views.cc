@@ -8,7 +8,7 @@
 #include "grit/theme_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/animation/linear_animation.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/widget/widget.h"
 
@@ -38,7 +38,7 @@ class DownloadStartedAnimationViews : public gfx::LinearAnimation,
   void Close();
 
   // Animation
-  virtual void AnimateToState(double state) OVERRIDE;
+  void AnimateToState(double state) override;
 
   // We use a TYPE_POPUP for the popup so that it may float above any windows in
   // our UI.

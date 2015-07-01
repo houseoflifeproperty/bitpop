@@ -66,11 +66,17 @@ namespace address_parser {
 
 namespace internal {
 
+Word::Word() {
+}
+
 Word::Word(const base::string16::const_iterator& begin,
            const base::string16::const_iterator& end)
     : begin(begin),
       end(end) {
   DCHECK(begin <= end);
+}
+
+HouseNumberParser::HouseNumberParser() {
 }
 
 bool HouseNumberParser::IsPreDelimiter(base::char16 character) {
@@ -340,7 +346,7 @@ bool FindStateStartingInWord(WordList* words,
   };
 
   DCHECK_EQ(state_names_accumulative[arraysize(state_names_accumulative) - 1],
-      static_cast<int>(ARRAYSIZE_UNSAFE(state_names)));
+      static_cast<int>(arraysize(state_names)));
 
   const Word& first_word = words->at(state_first_word);
   int length = first_word.end - first_word.begin;
@@ -590,7 +596,7 @@ bool IsValidLocationName(const Word& word) {
 
   DCHECK_EQ(
       location_names_accumulative[arraysize(location_names_accumulative) - 1],
-      static_cast<int>(ARRAYSIZE_UNSAFE(location_names)));
+      static_cast<int>(arraysize(location_names)));
 
   if (!IsAsciiAlpha(*word.begin))
     return false;

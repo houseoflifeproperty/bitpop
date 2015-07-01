@@ -27,7 +27,7 @@
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
-#include "google_apis/drive/gdata_errorcode.h"
+#include "google_apis/drive/drive_api_error_codes.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
 #include "third_party/leveldatabase/src/include/leveldb/env.h"
@@ -50,9 +50,9 @@ class RemoteToLocalSyncerTest : public testing::Test {
 
   RemoteToLocalSyncerTest()
       : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP) {}
-  virtual ~RemoteToLocalSyncerTest() {}
+  ~RemoteToLocalSyncerTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(database_dir_.CreateUniqueTempDir());
     in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
 
@@ -69,12 +69,12 @@ class RemoteToLocalSyncerTest : public testing::Test {
                                    kSyncRootFolderTitle));
     remote_change_processor_.reset(new FakeRemoteChangeProcessor);
 
-    context_.reset(new SyncEngineContext(
-        fake_drive_service.PassAs<drive::DriveServiceInterface>(),
-        drive_uploader.Pass(),
-        NULL,
-        base::ThreadTaskRunnerHandle::Get(),
-        base::ThreadTaskRunnerHandle::Get()));
+    context_.reset(new SyncEngineContext(fake_drive_service.Pass(),
+                                         drive_uploader.Pass(),
+                                         nullptr /* task_logger */,
+                                         base::ThreadTaskRunnerHandle::Get(),
+                                         base::ThreadTaskRunnerHandle::Get(),
+                                         nullptr /* worker_pool*/));
     context_->SetRemoteChangeProcessor(remote_change_processor_.get());
 
     RegisterSyncableFileSystem();
@@ -82,11 +82,12 @@ class RemoteToLocalSyncerTest : public testing::Test {
     sync_task_manager_.reset(new SyncTaskManager(
         base::WeakPtr<SyncTaskManager::Client>(),
         10 /* max_parallel_task */,
-        base::ThreadTaskRunnerHandle::Get()));
+        base::ThreadTaskRunnerHandle::Get(),
+        nullptr /* worker_pool */));
     sync_task_manager_->Initialize(SYNC_STATUS_OK);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     sync_task_manager_.reset();
     RevokeSyncableFileSystem();
     fake_drive_helper_.reset();
@@ -381,7 +382,7 @@ TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFileOnFolder) {
   VerifyConsistency();
 
   // Tracker for the remote file should has low priority.
-  EXPECT_FALSE(GetMetadataDatabase()->GetDirtyTracker(NULL));
+  EXPECT_FALSE(GetMetadataDatabase()->GetDirtyTracker(nullptr));
   EXPECT_TRUE(GetMetadataDatabase()->HasDemotedDirtyTracker());
 }
 
@@ -446,7 +447,7 @@ TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFileOnFile) {
   VerifyConsistency();
 
   // Tracker for the remote file should be lowered.
-  EXPECT_FALSE(GetMetadataDatabase()->GetDirtyTracker(NULL));
+  EXPECT_FALSE(GetMetadataDatabase()->GetDirtyTracker(nullptr));
   EXPECT_TRUE(GetMetadataDatabase()->HasDemotedDirtyTracker());
 }
 

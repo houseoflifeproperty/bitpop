@@ -40,15 +40,15 @@ net::WebSocketFrameHeader::OpCode MessageTypeToOpCode(
   typedef net::WebSocketFrameHeader::OpCode OpCode;
   // These compile asserts verify that the same underlying values are used for
   // both types, so we can simply cast between them.
-  COMPILE_ASSERT(static_cast<OpCode>(WEB_SOCKET_MESSAGE_TYPE_CONTINUATION) ==
-                     net::WebSocketFrameHeader::kOpCodeContinuation,
-                 enum_values_must_match_for_opcode_continuation);
-  COMPILE_ASSERT(static_cast<OpCode>(WEB_SOCKET_MESSAGE_TYPE_TEXT) ==
-                     net::WebSocketFrameHeader::kOpCodeText,
-                 enum_values_must_match_for_opcode_text);
-  COMPILE_ASSERT(static_cast<OpCode>(WEB_SOCKET_MESSAGE_TYPE_BINARY) ==
-                     net::WebSocketFrameHeader::kOpCodeBinary,
-                 enum_values_must_match_for_opcode_binary);
+  static_assert(static_cast<OpCode>(WEB_SOCKET_MESSAGE_TYPE_CONTINUATION) ==
+                    net::WebSocketFrameHeader::kOpCodeContinuation,
+                "enum values must match for opcode continuation");
+  static_assert(static_cast<OpCode>(WEB_SOCKET_MESSAGE_TYPE_TEXT) ==
+                    net::WebSocketFrameHeader::kOpCodeText,
+                "enum values must match for opcode text");
+  static_assert(static_cast<OpCode>(WEB_SOCKET_MESSAGE_TYPE_BINARY) ==
+                    net::WebSocketFrameHeader::kOpCodeBinary,
+                "enum values must match for opcode binary");
   return static_cast<OpCode>(type);
 }
 
@@ -57,7 +57,7 @@ WebSocketMessageType OpCodeToMessageType(
   DCHECK(opCode == net::WebSocketFrameHeader::kOpCodeContinuation ||
          opCode == net::WebSocketFrameHeader::kOpCodeText ||
          opCode == net::WebSocketFrameHeader::kOpCodeBinary);
-  // This cast is guaranteed valid by the COMPILE_ASSERT() statements above.
+  // This cast is guaranteed valid by the static_assert() statements above.
   return static_cast<WebSocketMessageType>(opCode);
 }
 
@@ -71,12 +71,12 @@ ChannelState StateCast(WebSocketDispatcherHost::WebSocketHostState host_state) {
          host_state == WEBSOCKET_HOST_DELETED);
   // These compile asserts verify that we can get away with using static_cast<>
   // for the conversion.
-  COMPILE_ASSERT(static_cast<ChannelState>(WEBSOCKET_HOST_ALIVE) ==
-                     net::WebSocketEventInterface::CHANNEL_ALIVE,
-                 enum_values_must_match_for_state_alive);
-  COMPILE_ASSERT(static_cast<ChannelState>(WEBSOCKET_HOST_DELETED) ==
-                     net::WebSocketEventInterface::CHANNEL_DELETED,
-                 enum_values_must_match_for_state_deleted);
+  static_assert(static_cast<ChannelState>(WEBSOCKET_HOST_ALIVE) ==
+                    net::WebSocketEventInterface::CHANNEL_ALIVE,
+                "enum values must match for state_alive");
+  static_assert(static_cast<ChannelState>(WEBSOCKET_HOST_DELETED) ==
+                    net::WebSocketEventInterface::CHANNEL_DELETED,
+                "enum values must match for state_deleted");
   return static_cast<ChannelState>(host_state);
 }
 
@@ -88,47 +88,43 @@ class WebSocketEventHandler : public net::WebSocketEventInterface {
   WebSocketEventHandler(WebSocketDispatcherHost* dispatcher,
                         int routing_id,
                         int render_frame_id);
-  virtual ~WebSocketEventHandler();
+  ~WebSocketEventHandler() override;
 
   // net::WebSocketEventInterface implementation
 
-  virtual ChannelState OnAddChannelResponse(
-      bool fail,
-      const std::string& selected_subprotocol,
-      const std::string& extensions) OVERRIDE;
-  virtual ChannelState OnDataFrame(bool fin,
-                                   WebSocketMessageType type,
-                                   const std::vector<char>& data) OVERRIDE;
-  virtual ChannelState OnClosingHandshake() OVERRIDE;
-  virtual ChannelState OnFlowControl(int64 quota) OVERRIDE;
-  virtual ChannelState OnDropChannel(bool was_clean,
-                                     uint16 code,
-                                     const std::string& reason) OVERRIDE;
-  virtual ChannelState OnFailChannel(const std::string& message) OVERRIDE;
-  virtual ChannelState OnStartOpeningHandshake(
-      scoped_ptr<net::WebSocketHandshakeRequestInfo> request) OVERRIDE;
-  virtual ChannelState OnFinishOpeningHandshake(
-      scoped_ptr<net::WebSocketHandshakeResponseInfo> response) OVERRIDE;
-  virtual ChannelState OnSSLCertificateError(
+  ChannelState OnAddChannelResponse(const std::string& selected_subprotocol,
+                                    const std::string& extensions) override;
+  ChannelState OnDataFrame(bool fin,
+                           WebSocketMessageType type,
+                           const std::vector<char>& data) override;
+  ChannelState OnClosingHandshake() override;
+  ChannelState OnFlowControl(int64 quota) override;
+  ChannelState OnDropChannel(bool was_clean,
+                             uint16 code,
+                             const std::string& reason) override;
+  ChannelState OnFailChannel(const std::string& message) override;
+  ChannelState OnStartOpeningHandshake(
+      scoped_ptr<net::WebSocketHandshakeRequestInfo> request) override;
+  ChannelState OnFinishOpeningHandshake(
+      scoped_ptr<net::WebSocketHandshakeResponseInfo> response) override;
+  ChannelState OnSSLCertificateError(
       scoped_ptr<net::WebSocketEventInterface::SSLErrorCallbacks> callbacks,
       const GURL& url,
       const net::SSLInfo& ssl_info,
-      bool fatal) OVERRIDE;
+      bool fatal) override;
 
  private:
   class SSLErrorHandlerDelegate : public SSLErrorHandler::Delegate {
    public:
     SSLErrorHandlerDelegate(
         scoped_ptr<net::WebSocketEventInterface::SSLErrorCallbacks> callbacks);
-    virtual ~SSLErrorHandlerDelegate();
+    ~SSLErrorHandlerDelegate() override;
 
     base::WeakPtr<SSLErrorHandler::Delegate> GetWeakPtr();
 
     // SSLErrorHandler::Delegate methods
-    virtual void CancelSSLRequest(const GlobalRequestID& id,
-                                  int error,
-                                  const net::SSLInfo* ssl_info) OVERRIDE;
-    virtual void ContinueSSLRequest(const GlobalRequestID& id) OVERRIDE;
+    void CancelSSLRequest(int error, const net::SSLInfo* ssl_info) override;
+    void ContinueSSLRequest() override;
 
    private:
     scoped_ptr<net::WebSocketEventInterface::SSLErrorCallbacks> callbacks_;
@@ -159,16 +155,15 @@ WebSocketEventHandler::~WebSocketEventHandler() {
 }
 
 ChannelState WebSocketEventHandler::OnAddChannelResponse(
-    bool fail,
     const std::string& selected_protocol,
     const std::string& extensions) {
   DVLOG(3) << "WebSocketEventHandler::OnAddChannelResponse"
-           << " routing_id=" << routing_id_ << " fail=" << fail
+           << " routing_id=" << routing_id_
            << " selected_protocol=\"" << selected_protocol << "\""
            << " extensions=\"" << extensions << "\"";
 
   return StateCast(dispatcher_->SendAddChannelResponse(
-      routing_id_, fail, selected_protocol, extensions));
+      routing_id_, selected_protocol, extensions));
 }
 
 ChannelState WebSocketEventHandler::OnDataFrame(
@@ -276,10 +271,7 @@ ChannelState WebSocketEventHandler::OnSSLCertificateError(
            << " cert_status=" << ssl_info.cert_status << " fatal=" << fatal;
   ssl_error_handler_delegate_.reset(
       new SSLErrorHandlerDelegate(callbacks.Pass()));
-  // We don't need request_id to be unique so just make a fake one.
-  GlobalRequestID request_id(-1, -1);
   SSLManager::OnSSLCertificateError(ssl_error_handler_delegate_->GetWeakPtr(),
-                                    request_id,
                                     RESOURCE_TYPE_SUB_RESOURCE,
                                     url,
                                     dispatcher_->render_process_id(),
@@ -302,7 +294,6 @@ WebSocketEventHandler::SSLErrorHandlerDelegate::GetWeakPtr() {
 }
 
 void WebSocketEventHandler::SSLErrorHandlerDelegate::CancelSSLRequest(
-    const GlobalRequestID& id,
     int error,
     const net::SSLInfo* ssl_info) {
   DVLOG(3) << "SSLErrorHandlerDelegate::CancelSSLRequest"
@@ -312,8 +303,7 @@ void WebSocketEventHandler::SSLErrorHandlerDelegate::CancelSSLRequest(
   callbacks_->CancelSSLRequest(error, ssl_info);
 }
 
-void WebSocketEventHandler::SSLErrorHandlerDelegate::ContinueSSLRequest(
-    const GlobalRequestID& id) {
+void WebSocketEventHandler::SSLErrorHandlerDelegate::ContinueSSLRequest() {
   DVLOG(3) << "SSLErrorHandlerDelegate::ContinueSSLRequest";
   callbacks_->ContinueSSLRequest();
 }
@@ -322,10 +312,15 @@ void WebSocketEventHandler::SSLErrorHandlerDelegate::ContinueSSLRequest(
 
 WebSocketHost::WebSocketHost(int routing_id,
                              WebSocketDispatcherHost* dispatcher,
-                             net::URLRequestContext* url_request_context)
+                             net::URLRequestContext* url_request_context,
+                             base::TimeDelta delay)
     : dispatcher_(dispatcher),
       url_request_context_(url_request_context),
-      routing_id_(routing_id) {
+      routing_id_(routing_id),
+      delay_(delay),
+      pending_flow_control_quota_(0),
+      handshake_succeeded_(false),
+      weak_ptr_factory_(this) {
   DVLOG(1) << "WebSocketHost: created routing_id=" << routing_id;
 }
 
@@ -359,11 +354,56 @@ void WebSocketHost::OnAddChannelRequest(
            << origin.string() << "\"";
 
   DCHECK(!channel_);
+  if (delay_ > base::TimeDelta()) {
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&WebSocketHost::AddChannel,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   socket_url,
+                   requested_protocols,
+                   origin,
+                   render_frame_id),
+        delay_);
+  } else {
+    AddChannel(socket_url, requested_protocols, origin, render_frame_id);
+  }
+  // |this| may have been deleted here.
+}
+
+void WebSocketHost::AddChannel(
+    const GURL& socket_url,
+    const std::vector<std::string>& requested_protocols,
+    const url::Origin& origin,
+    int render_frame_id) {
+  DVLOG(3) << "WebSocketHost::AddChannel"
+           << " routing_id=" << routing_id_ << " socket_url=\"" << socket_url
+           << "\" requested_protocols=\""
+           << JoinString(requested_protocols, ", ") << "\" origin=\""
+           << origin.string() << "\"";
+
+  DCHECK(!channel_);
+
   scoped_ptr<net::WebSocketEventInterface> event_interface(
       new WebSocketEventHandler(dispatcher_, routing_id_, render_frame_id));
   channel_.reset(
       new net::WebSocketChannel(event_interface.Pass(), url_request_context_));
+
+  if (pending_flow_control_quota_ > 0) {
+    // channel_->SendFlowControl(pending_flow_control_quota_) must be called
+    // after channel_->SendAddChannelRequest() below.
+    // We post OnFlowControl() here using |weak_ptr_factory_| instead of
+    // calling SendFlowControl directly, because |this| may have been deleted
+    // after channel_->SendAddChannelRequest().
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&WebSocketHost::OnFlowControl,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   pending_flow_control_quota_));
+    pending_flow_control_quota_ = 0;
+  }
+
   channel_->SendAddChannelRequest(socket_url, requested_protocols, origin);
+  // |this| may have been deleted here.
 }
 
 void WebSocketHost::OnSendFrame(bool fin,
@@ -381,7 +421,14 @@ void WebSocketHost::OnFlowControl(int64 quota) {
   DVLOG(3) << "WebSocketHost::OnFlowControl"
            << " routing_id=" << routing_id_ << " quota=" << quota;
 
-  DCHECK(channel_);
+  if (!channel_) {
+    // WebSocketChannel is not yet created due to the delay introduced by
+    // per-renderer WebSocket throttling.
+    // SendFlowControl() is called after WebSocketChannel is created.
+    pending_flow_control_quota_ += quota;
+    return;
+  }
+
   channel_->SendFlowControl(quota);
 }
 
@@ -392,7 +439,18 @@ void WebSocketHost::OnDropChannel(bool was_clean,
            << " routing_id=" << routing_id_ << " was_clean=" << was_clean
            << " code=" << code << " reason=\"" << reason << "\"";
 
-  DCHECK(channel_);
+  if (!channel_) {
+    // WebSocketChannel is not yet created due to the delay introduced by
+    // per-renderer WebSocket throttling.
+    WebSocketDispatcherHost::WebSocketHostState result =
+        dispatcher_->DoDropChannel(routing_id_,
+                                   false,
+                                   net::kWebSocketErrorAbnormalClosure,
+                                   "");
+    DCHECK_EQ(WebSocketDispatcherHost::WEBSOCKET_HOST_DELETED, result);
+    return;
+  }
+
   // TODO(yhirano): Handle |was_clean| appropriately.
   channel_->StartClosingHandshake(code, reason);
 }

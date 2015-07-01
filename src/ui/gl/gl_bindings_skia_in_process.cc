@@ -64,9 +64,17 @@ GLvoid StubGLBindVertexArray(GLuint array) {
   glBindVertexArrayOES(array);
 }
 
+GLvoid StubGLBlendBarrier() {
+  glBlendBarrierKHR();
+}
+
 GLvoid StubGLBlendColor(GLclampf red, GLclampf green, GLclampf blue,
                         GLclampf alpha) {
   glBlendColor(red, green, blue, alpha);
+}
+
+GLvoid StubGLBlendEquation(GLenum mode) {
+  glBlendEquation(mode);
 }
 
 GLvoid StubGLBlendFunc(GLenum sfactor, GLenum dfactor) {
@@ -229,6 +237,11 @@ GLvoid StubGLFlush() {
   glFlush();
 }
 
+GLvoid StubGLFlushMappedBufferRange(GLenum target, GLintptr offset,
+                                    GLsizeiptr length) {
+  glFlushMappedBufferRange(target, offset, length);
+}
+
 GLvoid StubGLFramebufferRenderbuffer(GLenum target, GLenum attachment,
                                      GLenum renderbuffertarget,
                                      GLuint renderbuffer) {
@@ -277,6 +290,10 @@ GLvoid StubGLGenVertexArrays(GLsizei n, GLuint* arrays) {
   glGenVertexArraysOES(n, arrays);
 }
 
+GLvoid StubGLGenerateMipmap(GLenum target){
+  glGenerateMipmapEXT(target);
+}
+
 GLvoid StubGLGetBufferParameteriv(GLenum target, GLenum pname, GLint* params) {
   glGetBufferParameteriv(target, pname, params);
 }
@@ -318,8 +335,17 @@ GLvoid StubGLGetShaderiv(GLuint shader, GLenum pname, GLint* params) {
   glGetShaderiv(shader, pname, params);
 }
 
+GLvoid StubGLGetShaderPrecisionFormat(GLenum shadertype, GLenum precisiontype,
+                                      GLint *range, GLint *precision) {
+  glGetShaderPrecisionFormat(shadertype, precisiontype, range, precision);
+}
+
 const GLubyte* StubGLGetString(GLenum name) {
   return glGetString(name);
+}
+
+const GLubyte* StubGLGetStringi(GLenum name, GLuint index) {
+  return glGetStringi(name, index);
 }
 
 GLvoid StubGLGetQueryiv(GLenum target, GLenum pname, GLint* params) {
@@ -355,6 +381,20 @@ GLvoid StubGLInsertEventMarker(GLsizei length, const char* marker) {
   glInsertEventMarkerEXT(length, marker);
 }
 
+GLvoid StubGLInvalidateFramebuffer(GLenum target, GLsizei numAttachments,
+                                   const GLenum* attachments) {
+  glInvalidateFramebuffer(target, numAttachments, attachments);
+}
+
+GLvoid StubGLInvalidateSubFramebuffer(GLenum target,
+                                      GLsizei numAttachments,
+                                      const GLenum* attachments,
+                                      GLint x, GLint y,
+                                      GLsizei width, GLsizei height) {
+  glInvalidateSubFramebuffer(target, numAttachments, attachments,
+                             x, y, width, height);
+}
+
 GLvoid StubGLLineWidth(GLfloat width) {
   glLineWidth(width);
 }
@@ -365,6 +405,11 @@ GLvoid StubGLLinkProgram(GLuint program) {
 
 void* StubGLMapBuffer(GLenum target, GLenum access) {
   return glMapBuffer(target, access);
+}
+
+void* StubGLMapBufferRange(GLenum target, GLintptr offset, GLsizeiptr length,
+                           GLbitfield access) {
+  return glMapBufferRange(target, offset, length, access);
 }
 
 GLvoid StubGLPixelStorei(GLenum pname, GLint param) {
@@ -467,7 +512,7 @@ GLvoid StubGLTexSubImage2D(GLenum target, GLint level, GLint xoffset,
 }
 
 GLvoid StubGLUniform1f(GLint location, GLfloat v) {
-  glUniform1i(location, v);
+  glUniform1f(location, v);
 }
 
 GLvoid StubGLUniform1i(GLint location, GLint v) {
@@ -483,7 +528,7 @@ GLvoid StubGLUniform1iv(GLint location, GLsizei count, const GLint* v) {
 }
 
 GLvoid StubGLUniform2f(GLint location, GLfloat v0, GLfloat v1) {
-  glUniform2i(location, v0, v1);
+  glUniform2f(location, v0, v1);
 }
 
 GLvoid StubGLUniform2i(GLint location, GLint v0, GLint v1) {
@@ -499,7 +544,7 @@ GLvoid StubGLUniform2iv(GLint location, GLsizei count, const GLint* v) {
 }
 
 GLvoid StubGLUniform3f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2) {
-  glUniform3i(location, v0, v1, v2);
+  glUniform3f(location, v0, v1, v2);
 }
 
 GLvoid StubGLUniform3i(GLint location, GLint v0, GLint v1, GLint v2) {
@@ -516,7 +561,7 @@ GLvoid StubGLUniform3iv(GLint location, GLsizei count, const GLint* v) {
 
 GLvoid StubGLUniform4f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2,
                        GLfloat v3) {
-  glUniform4i(location, v0, v1, v2, v3);
+  glUniform4f(location, v0, v1, v2, v3);
 }
 
 GLvoid StubGLUniform4i(GLint location, GLint v0, GLint v1, GLint v2,
@@ -555,6 +600,18 @@ GLvoid StubGLUseProgram(GLuint program) {
   glUseProgram(program);
 }
 
+GLvoid StubGLVertexAttrib1f(GLuint indx, const GLfloat value) {
+  glVertexAttrib1f(indx, value);
+}
+
+GLvoid StubGLVertexAttrib2fv(GLuint indx, const GLfloat* values) {
+  glVertexAttrib2fv(indx, values);
+}
+
+GLvoid StubGLVertexAttrib3fv(GLuint indx, const GLfloat* values) {
+  glVertexAttrib3fv(indx, values);
+}
+
 GLvoid StubGLVertexAttrib4fv(GLuint indx, const GLfloat* values) {
   glVertexAttrib4fv(indx, values);
 }
@@ -568,6 +625,13 @@ GLvoid StubGLVertexAttribPointer(GLuint indx, GLint size, GLenum type,
 GLvoid StubGLViewport(GLint x, GLint y, GLsizei width, GLsizei height) {
   glViewport(x, y, width, height);
 }
+
+GLint StubGLGetProgramResourceLocation(GLuint program,
+                                       GLenum programInterface,
+                                       const char* name) {
+  return glGetProgramResourceLocation(program, programInterface, name);
+}
+
 }  // extern "C"
 }  // namespace
 
@@ -601,7 +665,7 @@ GrGLInterface* CreateInProcessSkiaGLBinding() {
   interface->fStandard = standard;
   interface->fExtensions.init(standard,
                               StubGLGetString,
-                              NULL,
+                              StubGLGetStringi,
                               StubGLGetIntegerv);
 
   GrGLInterface::Functions* functions = &interface->fFunctions;
@@ -613,7 +677,9 @@ GrGLInterface* CreateInProcessSkiaGLBinding() {
   functions->fBindFragDataLocation = StubGLBindFragDataLocation;
   functions->fBindTexture = StubGLBindTexture;
   functions->fBindVertexArray = StubGLBindVertexArray;
+  functions->fBlendBarrier = StubGLBlendBarrier;
   functions->fBlendColor = StubGLBlendColor;
+  functions->fBlendEquation = StubGLBlendEquation;
   functions->fBlendFunc = StubGLBlendFunc;
   functions->fBufferData = StubGLBufferData;
   functions->fBufferSubData = StubGLBufferSubData;
@@ -646,11 +712,13 @@ GrGLInterface* CreateInProcessSkiaGLBinding() {
   functions->fEndQuery = StubGLEndQuery;
   functions->fFinish = StubGLFinish;
   functions->fFlush = StubGLFlush;
+  functions->fFlushMappedBufferRange = StubGLFlushMappedBufferRange;
   functions->fFrontFace = StubGLFrontFace;
   functions->fGenBuffers = StubGLGenBuffers;
   functions->fGenQueries = StubGLGenQueries;
   functions->fGenTextures = StubGLGenTextures;
   functions->fGenVertexArrays = StubGLGenVertexArrays;
+  functions->fGenerateMipmap = StubGLGenerateMipmap;
   functions->fGetBufferParameteriv = StubGLGetBufferParameteriv;
   functions->fGetError = StubGLGetError;
   functions->fGetIntegerv = StubGLGetIntegerv;
@@ -663,12 +731,17 @@ GrGLInterface* CreateInProcessSkiaGLBinding() {
   functions->fGetProgramiv = StubGLGetProgramiv;
   functions->fGetShaderInfoLog = StubGLGetShaderInfoLog;
   functions->fGetShaderiv = StubGLGetShaderiv;
+  functions->fGetShaderPrecisionFormat = StubGLGetShaderPrecisionFormat;
   functions->fGetString = StubGLGetString;
+  functions->fGetStringi = StubGLGetStringi;
   functions->fGetTexLevelParameteriv = StubGLGetTexLevelParameteriv;
   functions->fGetUniformLocation = StubGLGetUniformLocation;
   functions->fInsertEventMarker = StubGLInsertEventMarker;
+  functions->fInvalidateFramebuffer = StubGLInvalidateFramebuffer;
+  functions->fInvalidateSubFramebuffer = StubGLInvalidateSubFramebuffer;
   functions->fLineWidth = StubGLLineWidth;
   functions->fLinkProgram = StubGLLinkProgram;
+  functions->fMapBufferRange = StubGLMapBufferRange;
   functions->fPixelStorei = StubGLPixelStorei;
   functions->fPopGroupMarker = StubGLPopGroupMarker;
   functions->fPushGroupMarker = StubGLPushGroupMarker;
@@ -708,6 +781,9 @@ GrGLInterface* CreateInProcessSkiaGLBinding() {
   functions->fUniformMatrix3fv = StubGLUniformMatrix3fv;
   functions->fUniformMatrix4fv = StubGLUniformMatrix4fv;
   functions->fUseProgram = StubGLUseProgram;
+  functions->fVertexAttrib1f = StubGLVertexAttrib1f;
+  functions->fVertexAttrib2fv = StubGLVertexAttrib2fv;
+  functions->fVertexAttrib3fv = StubGLVertexAttrib3fv;
   functions->fVertexAttrib4fv = StubGLVertexAttrib4fv;
   functions->fVertexAttribPointer = StubGLVertexAttribPointer;
   functions->fViewport = StubGLViewport;
@@ -728,11 +804,14 @@ GrGLInterface* CreateInProcessSkiaGLBinding() {
   functions->fRenderbufferStorage = StubGLRenderbufferStorage;
   functions->fRenderbufferStorageMultisample =
     StubGLRenderbufferStorageMultisample;
+  functions->fRenderbufferStorageMultisampleES2EXT =
+    StubGLRenderbufferStorageMultisample;
   functions->fBlitFramebuffer = StubGLBlitFramebuffer;
   functions->fMapBuffer = StubGLMapBuffer;
   functions->fUnmapBuffer = StubGLUnmapBuffer;
   functions->fBindFragDataLocationIndexed =
     StubGLBindFragDataLocationIndexed;
+  functions->fGetProgramResourceLocation = StubGLGetProgramResourceLocation;
 
   return interface;
 }

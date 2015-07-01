@@ -37,11 +37,11 @@ class MergeSessionThrottle
 
   explicit MergeSessionThrottle(net::URLRequest* request,
                                 content::ResourceType resource_type);
-  virtual ~MergeSessionThrottle();
+  ~MergeSessionThrottle() override;
 
   // content::ResourceThrottle implementation:
-  virtual void WillStartRequest(bool* defer) OVERRIDE;
-  virtual const char* GetNameForLogging() const OVERRIDE;
+  void WillStartRequest(bool* defer) override;
+  const char* GetNameForLogging() const override;
 
   // Checks if session is already merged.
   static bool AreAllSessionMergedAlready();

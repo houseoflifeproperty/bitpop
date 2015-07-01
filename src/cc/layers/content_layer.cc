@@ -26,9 +26,8 @@ scoped_ptr<ContentLayerPainter> ContentLayerPainter::Create(
 
 void ContentLayerPainter::Paint(SkCanvas* canvas,
                                 const gfx::Rect& content_rect) {
-  client_->PaintContents(canvas,
-                         content_rect,
-                         ContentLayerClient::GRAPHICS_CONTEXT_ENABLED);
+  client_->PaintContents(canvas, content_rect,
+                         ContentLayerClient::PAINTING_BEHAVIOR_NORMAL);
 }
 
 scoped_refptr<ContentLayer> ContentLayer::Create(ContentLayerClient* client) {
@@ -36,15 +35,13 @@ scoped_refptr<ContentLayer> ContentLayer::Create(ContentLayerClient* client) {
 }
 
 ContentLayer::ContentLayer(ContentLayerClient* client)
-    : TiledLayer(),
-      client_(client),
-      can_use_lcd_text_last_frame_(can_use_lcd_text()) {
+    : TiledLayer(), client_(client) {
 }
 
 ContentLayer::~ContentLayer() {}
 
 void ContentLayer::ClearClient() {
-  client_ = NULL;
+  client_ = nullptr;
   UpdateDrawsContent(HasDrawableContent());
 }
 
@@ -57,13 +54,6 @@ void ContentLayer::SetLayerTreeHost(LayerTreeHost* host) {
 
   if (!updater_.get())
     return;
-
-  if (host) {
-    updater_->set_rendering_stats_instrumentation(
-        host->rendering_stats_instrumentation());
-  } else {
-    updater_->set_rendering_stats_instrumentation(NULL);
-  }
 }
 
 void ContentLayer::SetTexturePriorities(
@@ -81,7 +71,6 @@ bool ContentLayer::Update(ResourceUpdateQueue* queue,
                                                   true);
 
     CreateUpdaterIfNeeded();
-    UpdateCanUseLCDText();
   }
 
   bool updated = TiledLayer::Update(queue, occlusion);
@@ -99,8 +88,7 @@ LayerUpdater* ContentLayer::Updater() const {
 void ContentLayer::CreateUpdaterIfNeeded() {
   if (updater_.get())
     return;
-  scoped_ptr<LayerPainter> painter =
-      ContentLayerPainter::Create(client_).PassAs<LayerPainter>();
+  scoped_ptr<LayerPainter> painter = ContentLayerPainter::Create(client_);
   if (layer_tree_host()->settings().per_tile_painting_enabled) {
     updater_ = BitmapSkPictureContentLayerUpdater::Create(
         painter.Pass(),
@@ -109,7 +97,6 @@ void ContentLayer::CreateUpdaterIfNeeded() {
   } else {
     updater_ = BitmapContentLayerUpdater::Create(
         painter.Pass(),
-        rendering_stats_instrumentation(),
         id());
   }
   updater_->SetOpaque(contents_opaque());
@@ -127,19 +114,6 @@ void ContentLayer::SetContentsOpaque(bool opaque) {
     updater_->SetOpaque(opaque);
 }
 
-void ContentLayer::UpdateCanUseLCDText() {
-  if (can_use_lcd_text_last_frame_ == can_use_lcd_text())
-    return;
-
-  can_use_lcd_text_last_frame_ = can_use_lcd_text();
-  if (client_)
-    client_->DidChangeLayerCanUseLCDText();
-}
-
-bool ContentLayer::SupportsLCDText() const {
-  return true;
-}
-
 skia::RefPtr<SkPicture> ContentLayer::GetPicture() const {
   if (!DrawsContent())
     return skia::RefPtr<SkPicture>();
@@ -148,11 +122,11 @@ skia::RefPtr<SkPicture> ContentLayer::GetPicture() const {
   int height = bounds().height();
 
   SkPictureRecorder recorder;
-  SkCanvas* canvas = recorder.beginRecording(width, height, NULL, 0);
-  client_->PaintContents(canvas,
-                         gfx::Rect(width, height),
-                         ContentLayerClient::GRAPHICS_CONTEXT_ENABLED);
-  skia::RefPtr<SkPicture> picture = skia::AdoptRef(recorder.endRecording());
+  SkCanvas* canvas = recorder.beginRecording(width, height, nullptr, 0);
+  client_->PaintContents(canvas, gfx::Rect(width, height),
+                         ContentLayerClient::PAINTING_BEHAVIOR_NORMAL);
+  skia::RefPtr<SkPicture> picture =
+      skia::AdoptRef(recorder.endRecordingAsPicture());
   return picture;
 }
 

@@ -9,7 +9,7 @@ cr.define('print_preview', function() {
    * Toggles visibility of the specified printing options sections.
    * @param {!print_preview.DestinationStore} destinationStore To listen for
    *     destination changes.
-   * @param {!Array.<print_preview.SettingsSection>} settingsSections Sections
+   * @param {!Array<print_preview.SettingsSection>} settingsSections Sections
    *     to toggle by this component.
    * @constructor
    * @extends {print_preview.Component}
@@ -20,7 +20,7 @@ cr.define('print_preview', function() {
     /** @private {!print_preview.DestinationStore} */
     this.destinationStore_ = destinationStore;
 
-    /** @private {!Array.<print_preview.SettingsSection>} */
+    /** @private {!Array<print_preview.SettingsSection>} */
     this.settingsSections_ = settingsSections;
 
     /** @private {MoreSettings.SettingsToShow} */
@@ -123,7 +123,7 @@ cr.define('print_preview', function() {
      */
     updateState_: function(noAnimation) {
       if (!this.firstDestinationReady_) {
-        fadeOutElement(this.getElement(), noAnimation);
+        fadeOutElement(this.getElement());
         return;
       }
       // When capabilities are not known yet, don't change the state to avoid
@@ -154,7 +154,7 @@ cr.define('print_preview', function() {
       if (hasSectionsToToggle)
         fadeInElement(this.getElement(), noAnimation);
       else
-        fadeOutElement(this.getElement(), noAnimation);
+        fadeOutElement(this.getElement());
 
       var collapseContent =
           this.settingsToShow_ == MoreSettings.SettingsToShow.MOST_POPULAR &&

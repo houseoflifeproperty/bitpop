@@ -6,6 +6,7 @@
 #include "chrome/common/render_messages.h"
 #include "chrome/renderer/content_settings_observer.h"
 #include "chrome/test/base/chrome_render_view_test.h"
+#include "components/content_settings/content/common/content_settings_messages.h"
 #include "content/public/renderer/render_view.h"
 #include "ipc/ipc_message_macros.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -23,8 +24,8 @@ class MockContentSettingsObserver : public ContentSettingsObserver {
 
   virtual bool Send(IPC::Message* message);
 
-  MOCK_METHOD1(OnContentBlocked,
-               void(ContentSettingsType));
+  MOCK_METHOD2(OnContentBlocked,
+               void(ContentSettingsType, const base::string16&));
 
   MOCK_METHOD5(OnAllowDOMStorage,
                void(int, const GURL&, const GURL&, bool, IPC::Message*));
@@ -34,7 +35,7 @@ class MockContentSettingsObserver : public ContentSettingsObserver {
 
 MockContentSettingsObserver::MockContentSettingsObserver(
     content::RenderFrame* render_frame)
-    : ContentSettingsObserver(render_frame, NULL),
+    : ContentSettingsObserver(render_frame, NULL, false),
       image_url_("http://www.foo.com/image.jpg"),
       image_origin_("http://www.foo.com") {
 }
@@ -55,8 +56,8 @@ bool MockContentSettingsObserver::Send(IPC::Message* message) {
 
 TEST_F(ChromeRenderViewTest, DidBlockContentType) {
   MockContentSettingsObserver observer(view_->GetMainRenderFrame());
-  EXPECT_CALL(observer,
-              OnContentBlocked(CONTENT_SETTINGS_TYPE_COOKIES));
+  EXPECT_CALL(observer, OnContentBlocked(CONTENT_SETTINGS_TYPE_COOKIES,
+                                         base::string16()));
   observer.DidBlockContentType(CONTENT_SETTINGS_TYPE_COOKIES);
 
   // Blocking the same content type a second time shouldn't send a notification.
@@ -189,7 +190,7 @@ TEST_F(ChromeRenderViewTest, ImagesBlockedByDefault) {
       view_->GetMainRenderFrame());
   observer->SetContentSettingRules(&content_setting_rules);
   EXPECT_CALL(mock_observer,
-              OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES));
+              OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES, base::string16()));
   EXPECT_FALSE(observer->allowImage(true, mock_observer.image_url_));
   ::testing::Mock::VerifyAndClearExpectations(&observer);
 
@@ -203,9 +204,8 @@ TEST_F(ChromeRenderViewTest, ImagesBlockedByDefault) {
           std::string(),
           false));
 
-  EXPECT_CALL(
-      mock_observer,
-      OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES)).Times(0);
+  EXPECT_CALL(mock_observer, OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES,
+                                              base::string16())).Times(0);
   EXPECT_TRUE(observer->allowImage(true, mock_observer.image_url_));
   ::testing::Mock::VerifyAndClearExpectations(&observer);
 }
@@ -230,9 +230,8 @@ TEST_F(ChromeRenderViewTest, ImagesAllowedByDefault) {
   ContentSettingsObserver* observer =
       ContentSettingsObserver::Get(view_->GetMainRenderFrame());
   observer->SetContentSettingRules(&content_setting_rules);
-  EXPECT_CALL(
-      mock_observer,
-      OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES)).Times(0);
+  EXPECT_CALL(mock_observer, OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES,
+                                              base::string16())).Times(0);
   EXPECT_TRUE(observer->allowImage(true, mock_observer.image_url_));
   ::testing::Mock::VerifyAndClearExpectations(&observer);
 
@@ -246,7 +245,7 @@ TEST_F(ChromeRenderViewTest, ImagesAllowedByDefault) {
           std::string(),
           false));
   EXPECT_CALL(mock_observer,
-              OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES));
+              OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES, base::string16()));
   EXPECT_FALSE(observer->allowImage(true, mock_observer.image_url_));
   ::testing::Mock::VerifyAndClearExpectations(&observer);
 }
@@ -370,9 +369,8 @@ TEST_F(ChromeRenderViewTest, ContentSettingsInterstitialPages) {
   EXPECT_FALSE(was_blocked);
 
   // Verify that images are allowed.
-  EXPECT_CALL(
-      mock_observer,
-      OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES)).Times(0);
+  EXPECT_CALL(mock_observer, OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES,
+                                              base::string16())).Times(0);
   EXPECT_TRUE(observer->allowImage(true, mock_observer.image_url_));
   ::testing::Mock::VerifyAndClearExpectations(&observer);
 }

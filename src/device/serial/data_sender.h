@@ -12,28 +12,25 @@
 #include "base/strings/string_piece.h"
 #include "device/serial/buffer.h"
 #include "device/serial/data_stream.mojom.h"
-#include "mojo/public/cpp/system/data_pipe.h"
+#include "third_party/mojo/src/mojo/public/cpp/system/data_pipe.h"
 
 namespace device {
 
-class AsyncWaiter;
-
 // A DataSender sends data to a DataSink.
-class DataSender : public serial::DataSinkClient, public mojo::ErrorHandler {
+class DataSender : public mojo::ErrorHandler {
  public:
   typedef base::Callback<void(uint32_t bytes_sent)> DataSentCallback;
   typedef base::Callback<void(uint32_t bytes_sent, int32_t error)>
       SendErrorCallback;
   typedef base::Callback<void()> CancelCallback;
 
-  // Constructs a DataSender to send data to |sink|, using a data pipe with a
-  // buffer size of |buffer_size|, with connection errors reported as
-  // |fatal_error_value|.
+  // Constructs a DataSender to send data to |sink|, using a buffer size of
+  // |buffer_size|, with connection errors reported as |fatal_error_value|.
   DataSender(mojo::InterfacePtr<serial::DataSink> sink,
              uint32_t buffer_size,
              int32_t fatal_error_value);
 
-  virtual ~DataSender();
+  ~DataSender() override;
 
   // Starts an asynchronous send of |data|. If the send completes successfully,
   // |callback| will be called. Otherwise, |error_callback| will be called with
@@ -52,23 +49,14 @@ class DataSender : public serial::DataSinkClient, public mojo::ErrorHandler {
  private:
   class PendingSend;
 
-  // serial::DataSinkClient overrides.
-  virtual void ReportBytesSent(uint32_t bytes_sent) OVERRIDE;
-  virtual void ReportBytesSentAndError(
-      uint32_t bytes_sent,
-      int32_t error,
-      const mojo::Callback<void(uint32_t)>& callback) OVERRIDE;
+  // Invoked when a PendingSend completes.
+  void SendComplete();
+
+  // Invoked when a PendingSend fails with |error|.
+  void SendFailed(int32_t error);
 
   // mojo::ErrorHandler override.
-  virtual void OnConnectionError() OVERRIDE;
-
-  // Copies data from |pending_sends_| into the data pipe and starts |waiter_|
-  // waiting if the pipe is full. When a PendingSend in |pending_sends_| has
-  // been fully copied into the data pipe, it moves to |sends_awaiting_ack_|.
-  void SendInternal();
-
-  // Invoked when |handle_| is ready for writes. Calls SendInternal().
-  void OnDoneWaiting(MojoResult result);
+  void OnConnectionError() override;
 
   // Dispatches a cancel callback if one is pending.
   void RunCancelCallback();
@@ -80,22 +68,12 @@ class DataSender : public serial::DataSinkClient, public mojo::ErrorHandler {
   // The control connection to the data sink.
   mojo::InterfacePtr<serial::DataSink> sink_;
 
-  // The data connection to the data sink.
-  mojo::ScopedDataPipeProducerHandle handle_;
-
   // The error value to report in the event of a fatal error.
   const int32_t fatal_error_value_;
 
-  // A waiter used to wait until |handle_| is writable if we are waiting.
-  scoped_ptr<AsyncWaiter> waiter_;
-
-  // A queue of PendingSend that have not yet been fully written to the data
-  // pipe.
-  std::queue<linked_ptr<PendingSend> > pending_sends_;
-
-  // A queue of PendingSend that have been written to the data pipe, but have
-  // not yet been acked by the DataSink.
-  std::queue<linked_ptr<PendingSend> > sends_awaiting_ack_;
+  // A queue of PendingSend that have been sent to |sink_|, but have not yet
+  // been acked by the DataSink.
+  std::queue<linked_ptr<PendingSend>> sends_awaiting_ack_;
 
   // The callback to report cancel completion if a cancel operation is in
   // progress.

@@ -10,7 +10,6 @@
 
 #include <deque>
 
-#include "net/quic/congestion_control/receive_algorithm_interface.h"
 #include "net/quic/quic_config.h"
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_protocol.h"
@@ -59,12 +58,14 @@ class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
     void SetCumulativeEntropyUpTo(QuicPacketSequenceNumber sequence_number,
                                   QuicPacketEntropyHash entropy_hash);
 
+    size_t size() const { return packets_entropy_.size(); }
+
    private:
     friend class test::EntropyTrackerPeer;
 
     // A deque indexed by sequence number storing the packet's hash and whether
     // a hash was recorded for that sequence number.
-    typedef std::deque<std::pair<QuicPacketEntropyHash, bool> >
+    typedef std::deque<std::pair<QuicPacketEntropyHash, bool>>
         ReceivedEntropyHashes;
 
     // Recomputes first_gap_ and removes packets_entropy_ entries that are no
@@ -96,7 +97,7 @@ class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
   };
 
   explicit QuicReceivedPacketManager(QuicConnectionStats* stats);
-  virtual ~QuicReceivedPacketManager();
+  ~QuicReceivedPacketManager() override;
 
   // Updates the internal state concerning which packets have been received.
   // bytes: the packet size in bytes including Quic Headers.
@@ -118,18 +119,11 @@ class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
   void UpdateReceivedPacketInfo(QuicAckFrame* ack_frame,
                                 QuicTime approximate_now);
 
-  // Should be called before sending an ACK packet, to decide if we need
-  // to attach a QuicCongestionFeedbackFrame block.
-  // Returns false if no QuicCongestionFeedbackFrame block is needed.
-  // Otherwise fills in feedback and returns true.
-  virtual bool GenerateCongestionFeedback(
-      QuicCongestionFeedbackFrame* feedback);
-
   // QuicReceivedEntropyHashCalculatorInterface
   // Called by QuicFramer, when the outgoing ack gets truncated, to recalculate
   // the received entropy hash for the truncated ack frame.
-  virtual QuicPacketEntropyHash EntropyHash(
-      QuicPacketSequenceNumber sequence_number) const OVERRIDE;
+  QuicPacketEntropyHash EntropyHash(
+      QuicPacketSequenceNumber sequence_number) const override;
 
   // Updates internal state based on |stop_waiting|.
   void UpdatePacketInformationSentByPeer(
@@ -137,7 +131,10 @@ class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
 
   // Returns true when there are new missing packets to be reported within 3
   // packets of the largest observed.
-  bool HasNewMissingPackets();
+  bool HasNewMissingPackets() const;
+
+  // Returns the number of packets being tracked in the EntropyTracker.
+  size_t NumTrackedPackets() const;
 
   QuicPacketSequenceNumber peer_least_packet_awaiting_ack() {
     return peer_least_packet_awaiting_ack_;
@@ -167,8 +164,6 @@ class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
   // no sequence numbers have been received since UpdateReceivedPacketInfo.
   // Needed for calculating delta_time_largest_observed.
   QuicTime time_largest_observed_;
-
-  scoped_ptr<ReceiveAlgorithmInterface> receive_algorithm_;
 
   QuicConnectionStats* stats_;
 

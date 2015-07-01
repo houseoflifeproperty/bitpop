@@ -20,7 +20,13 @@
         'out_pnacl_newlib_x86_32': '>(tc_lib_dir_pnacl_translate)/lib-x86-32/>(nlib_target)',
         'out_pnacl_newlib_x86_64': '>(tc_lib_dir_pnacl_translate)/lib-x86-64/>(nlib_target)',
         'out_pnacl_newlib_mips': '>(tc_lib_dir_pnacl_translate)/lib-mips32/>(nlib_target)',
+        # TODO(hidehiko): When crrev.com/524573002 is submitted and NaCl
+        # repository is rolled out with the CL, then we can simply remove this
+        # variable, as it is no longer used.
         'out_pnacl_newlib_x86_32_nonsfi': '>(tc_lib_dir_pnacl_translate)/lib-x86-32-nonsfi/>(nlib_target)',
+        'out_newlib32_nonsfi': '>(tc_lib_dir_pnacl_translate)/lib-x86-32-nonsfi/>(nlib_target)',
+        'out_pnacl_newlib_arm_nonsfi': '>(tc_lib_dir_pnacl_translate)/lib-arm-nonsfi/>(nlib_target)',
+        'out_newlib_arm_nonsfi': '>(tc_lib_dir_pnacl_translate)/lib-arm-nonsfi/>(nlib_target)',
         'build_glibc': 0,
         'build_newlib': 0,
         'build_pnacl_newlib': 1,
@@ -30,6 +36,7 @@
         'enable_arm': 1,
         'enable_mips': 1,
         'enable_x86_32_nonsfi': 1,
+        'enable_arm_nonsfi': 1,
         'sources': [
           'irt_shim_ppapi.c',
           'pnacl_shim.c',
@@ -44,9 +51,6 @@
           '-DPNACL_SHIM_AOT',
         ],
       },
-      'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-      ],
     },
     # Smaller shim library for PNaCl in-browser translation.
     # Uses an unstable IRT hook interface to get the shim from the IRT itself.
@@ -80,9 +84,6 @@
           '--strip-debug',
         ],
       },
-      'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-      ],
     },
     {
       # Second half of shim library for PNaCl in-browser translation.
@@ -102,9 +103,6 @@
           'pnacl_shim.c',
         ],
       },
-      'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-      ],
     },
   ],
 }

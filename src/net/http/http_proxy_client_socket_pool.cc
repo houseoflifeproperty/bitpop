@@ -11,6 +11,7 @@
 #include "base/values.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
+#include "net/base/proxy_delegate.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_proxy_client_socket.h"
 #include "net/socket/client_socket_factory.h"
@@ -31,7 +32,6 @@ namespace net {
 HttpProxySocketParams::HttpProxySocketParams(
     const scoped_refptr<TransportSocketParams>& transport_params,
     const scoped_refptr<SSLSocketParams>& ssl_params,
-    const GURL& request_url,
     const std::string& user_agent,
     const HostPortPair& endpoint,
     HttpAuthCache* http_auth_cache,
@@ -42,7 +42,6 @@ HttpProxySocketParams::HttpProxySocketParams(
     : transport_params_(transport_params),
       ssl_params_(ssl_params),
       spdy_session_pool_(spdy_session_pool),
-      request_url_(request_url),
       user_agent_(user_agent),
       endpoint_(endpoint),
       http_auth_cache_(tunnel ? http_auth_cache : NULL),
@@ -85,7 +84,6 @@ HttpProxyConnectJob::HttpProxyConnectJob(
     const base::TimeDelta& timeout_duration,
     TransportClientSocketPool* transport_pool,
     SSLClientSocketPool* ssl_pool,
-    HostResolver* host_resolver,
     Delegate* delegate,
     NetLog* net_log)
     : ConnectJob(group_name, timeout_duration, priority, delegate,
@@ -93,7 +91,6 @@ HttpProxyConnectJob::HttpProxyConnectJob(
       params_(params),
       transport_pool_(transport_pool),
       ssl_pool_(ssl_pool),
-      resolver_(host_resolver),
       using_spdy_(false),
       protocol_negotiated_(kProtoUnknown),
       weak_ptr_factory_(this) {
@@ -130,8 +127,10 @@ void HttpProxyConnectJob::GetAdditionalErrorState(ClientSocketHandle * handle) {
 
 void HttpProxyConnectJob::OnIOComplete(int result) {
   int rv = DoLoop(result);
-  if (rv != ERR_IO_PENDING)
+  if (rv != ERR_IO_PENDING) {
+    NotifyProxyDelegateOfCompletion(rv);
     NotifyDelegateOfCompletion(rv);  // Deletes |this|
+  }
 }
 
 int HttpProxyConnectJob::DoLoop(int result) {
@@ -255,8 +254,8 @@ int HttpProxyConnectJob::DoSSLConnectComplete(int result) {
 
   SSLClientSocket* ssl =
       static_cast<SSLClientSocket*>(transport_socket_handle_->socket());
-  using_spdy_ = ssl->was_spdy_negotiated();
   protocol_negotiated_ = ssl->GetNegotiatedProtocol();
+  using_spdy_ = NextProtoIsSPDY(protocol_negotiated_);
 
   // Reset the timer to just the length of time allowed for HttpProxy handshake
   // so that a fast SSL connection plus a slow HttpProxy failure doesn't take
@@ -285,7 +284,6 @@ int HttpProxyConnectJob::DoHttpProxyConnect() {
   // Add a HttpProxy connection on top of the tcp socket.
   transport_socket_.reset(
       new HttpProxyClientSocket(transport_socket_handle_.release(),
-                                params_->request_url(),
                                 params_->user_agent(),
                                 params_->endpoint(),
                                 proxy_server,
@@ -302,8 +300,11 @@ int HttpProxyConnectJob::DoHttpProxyConnect() {
 int HttpProxyConnectJob::DoHttpProxyConnectComplete(int result) {
   if (result == OK || result == ERR_PROXY_AUTH_REQUESTED ||
       result == ERR_HTTPS_PROXY_TUNNEL_RESPONSE) {
-    SetSocket(transport_socket_.PassAs<StreamSocket>());
+    SetSocket(transport_socket_.Pass());
   }
+
+  if (result == ERR_HTTP_1_1_REQUIRED)
+    return ERR_PROXY_HTTP_1_1_REQUIRED;
 
   return result;
 }
@@ -334,12 +335,10 @@ int HttpProxyConnectJob::DoSpdyProxyCreateStream() {
   }
 
   next_state_ = STATE_SPDY_PROXY_CREATE_STREAM_COMPLETE;
-  return spdy_stream_request_.StartRequest(SPDY_BIDIRECTIONAL_STREAM,
-                                           spdy_session,
-                                           params_->request_url(),
-                                           priority(),
-                                           spdy_session->net_log(),
-                                           callback_);
+  return spdy_stream_request_.StartRequest(
+      SPDY_BIDIRECTIONAL_STREAM, spdy_session,
+      GURL("https://" + params_->endpoint().ToString()), priority(),
+      spdy_session->net_log(), callback_);
 }
 
 int HttpProxyConnectJob::DoSpdyProxyCreateStreamComplete(int result) {
@@ -354,12 +353,21 @@ int HttpProxyConnectJob::DoSpdyProxyCreateStreamComplete(int result) {
       new SpdyProxyClientSocket(stream,
                                 params_->user_agent(),
                                 params_->endpoint(),
-                                params_->request_url(),
                                 params_->destination().host_port_pair(),
                                 net_log(),
                                 params_->http_auth_cache(),
                                 params_->http_auth_handler_factory()));
   return transport_socket_->Connect(callback_);
+}
+
+void HttpProxyConnectJob::NotifyProxyDelegateOfCompletion(int result) {
+  if (!params_->proxy_delegate())
+    return;
+
+  const HostPortPair& proxy_server = params_->destination().host_port_pair();
+  params_->proxy_delegate()->OnTunnelConnectCompleted(params_->endpoint(),
+                                                      proxy_server,
+                                                      result);
 }
 
 int HttpProxyConnectJob::ConnectInternal() {
@@ -368,20 +376,22 @@ int HttpProxyConnectJob::ConnectInternal() {
   } else {
     next_state_ = STATE_SSL_CONNECT;
   }
-  return DoLoop(OK);
+
+  int rv = DoLoop(OK);
+  if (rv != ERR_IO_PENDING) {
+    NotifyProxyDelegateOfCompletion(rv);
+  }
+
+  return rv;
 }
 
 HttpProxyClientSocketPool::
 HttpProxyConnectJobFactory::HttpProxyConnectJobFactory(
     TransportClientSocketPool* transport_pool,
     SSLClientSocketPool* ssl_pool,
-    HostResolver* host_resolver,
-    const ProxyDelegate* proxy_delegate,
     NetLog* net_log)
     : transport_pool_(transport_pool),
       ssl_pool_(ssl_pool),
-      host_resolver_(host_resolver),
-      proxy_delegate_(proxy_delegate),
       net_log_(net_log) {
   base::TimeDelta max_pool_timeout = base::TimeDelta();
 
@@ -411,7 +421,6 @@ HttpProxyClientSocketPool::HttpProxyConnectJobFactory::NewConnectJob(
                                                         ConnectionTimeout(),
                                                         transport_pool_,
                                                         ssl_pool_,
-                                                        host_resolver_,
                                                         delegate,
                                                         net_log_));
 }
@@ -425,22 +434,17 @@ HttpProxyClientSocketPool::HttpProxyConnectJobFactory::ConnectionTimeout(
 HttpProxyClientSocketPool::HttpProxyClientSocketPool(
     int max_sockets,
     int max_sockets_per_group,
-    ClientSocketPoolHistograms* histograms,
-    HostResolver* host_resolver,
     TransportClientSocketPool* transport_pool,
     SSLClientSocketPool* ssl_pool,
-    const ProxyDelegate* proxy_delegate,
     NetLog* net_log)
     : transport_pool_(transport_pool),
       ssl_pool_(ssl_pool),
-      base_(this, max_sockets, max_sockets_per_group, histograms,
+      base_(this,
+            max_sockets,
+            max_sockets_per_group,
             ClientSocketPool::unused_idle_socket_timeout(),
             ClientSocketPool::used_idle_socket_timeout(),
-            new HttpProxyConnectJobFactory(transport_pool,
-                                           ssl_pool,
-                                           host_resolver,
-                                           proxy_delegate,
-                                           net_log)) {
+            new HttpProxyConnectJobFactory(transport_pool, ssl_pool, net_log)) {
   // We should always have a |transport_pool_| except in unit tests.
   if (transport_pool_)
     base_.AddLowerLayeredPool(transport_pool_);
@@ -531,10 +535,6 @@ base::DictionaryValue* HttpProxyClientSocketPool::GetInfoAsValue(
 
 base::TimeDelta HttpProxyClientSocketPool::ConnectionTimeout() const {
   return base_.ConnectionTimeout();
-}
-
-ClientSocketPoolHistograms* HttpProxyClientSocketPool::histograms() const {
-  return base_.histograms();
 }
 
 bool HttpProxyClientSocketPool::IsStalled() const {

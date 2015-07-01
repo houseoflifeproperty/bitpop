@@ -10,7 +10,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
-#include "base/process/process.h"
+#include "base/process/process_handle.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/streams/stream_registry.h"
@@ -25,7 +25,7 @@
 #include "net/base/io_buffer.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/fileapi/file_system_context.h"
-#include "storage/common/blob/blob_data.h"
+#include "storage/common/data_element.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
@@ -48,7 +48,7 @@ class FileAPIMessageFilterTest : public testing::Test {
   }
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     file_system_context_ =
         CreateFileSystemContextForTesting(NULL, base::FilePath());
 
@@ -197,7 +197,7 @@ TEST_F(FileAPIMessageFilterTest, BuildNonEmptyStream) {
   StreamHostMsg_StartBuilding start_message(kUrl, kFakeContentType);
   EXPECT_TRUE(filter_->OnMessageReceived(start_message));
 
-  storage::BlobData::Item item;
+  storage::DataElement item;
   const std::string kFakeData = "foobarbaz";
   item.SetToBytes(kFakeData.data(), kFakeData.size());
   StreamHostMsg_AppendBlobDataItem append_message(kUrl, item);
@@ -232,11 +232,11 @@ TEST_F(FileAPIMessageFilterTest, BuildStreamWithSharedMemory) {
 
   EXPECT_EQ(NULL, stream_registry->GetStream(kUrl).get());
 
-  // For win, we need to set valid PID to the filter.
+  // For win, we need to set valid process to the filter.
   // OnAppendSharedMemoryToStream passes the peer process's handle to
   // SharedMemory's constructor. If it's incorrect, DuplicateHandle won't work
   // correctly.
-  filter_->set_peer_pid_for_testing(base::Process::Current().pid());
+  filter_->set_peer_process_for_testing(base::Process::Current());
 
   StreamHostMsg_StartBuilding start_message(kUrl, kFakeContentType);
   EXPECT_TRUE(filter_->OnMessageReceived(start_message));

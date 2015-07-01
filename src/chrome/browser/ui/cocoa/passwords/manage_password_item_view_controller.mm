@@ -10,6 +10,7 @@
 #include "chrome/browser/ui/chrome_style.h"
 #import "chrome/browser/ui/cocoa/passwords/manage_passwords_bubble_content_view_controller.h"
 #include "chrome/browser/ui/passwords/manage_passwords_bubble_model.h"
+#include "grit/components_strings.h"
 #include "grit/generated_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "ui/base/cocoa/controls/hyperlink_button_cell.h"
@@ -103,6 +104,12 @@ NSSecureTextField* PasswordLabel(const base::string16& text) {
   return textField.autorelease();
 }
 
+base::string16 GetDisplayUsername(const autofill::PasswordForm& form) {
+  return form.username_value.empty() ?
+      l10n_util::GetStringUTF16(IDS_PASSWORD_MANAGER_EMPTY_LOGIN) :
+      form.username_value;
+}
+
 }  // namespace
 
 @implementation ManagePasswordItemUndoView
@@ -180,7 +187,7 @@ NSSecureTextField* PasswordLabel(const base::string16& text) {
     CGFloat curY = views::kRelatedControlVerticalSpacing;
 
     // Add the username.
-    usernameField_.reset([UsernameLabel(form.username_value) retain]);
+    usernameField_.reset([UsernameLabel(GetDisplayUsername(form)) retain]);
     [usernameField_ setFrameOrigin:NSMakePoint(curX, curY)];
     [self addSubview:usernameField_];
 
@@ -228,7 +235,7 @@ NSSecureTextField* PasswordLabel(const base::string16& text) {
     CGFloat curY = views::kRelatedControlVerticalSpacing;
 
     // Add the username.
-    usernameField_.reset([UsernameLabel(form.username_value) retain]);
+    usernameField_.reset([UsernameLabel(GetDisplayUsername(form)) retain]);
     [usernameField_ setFrameOrigin:NSMakePoint(curX, curY)];
     [self addSubview:usernameField_];
 
@@ -285,7 +292,7 @@ NSSecureTextField* PasswordLabel(const base::string16& text) {
     model_ = model;
     position_ = position;
     passwordForm_ = passwordForm;
-    state_ = password_manager::ui::IsPendingState(model_->state())
+    state_ = model_->state() == password_manager::ui::PENDING_PASSWORD_STATE
         ? MANAGE_PASSWORD_ITEM_STATE_PENDING
         : MANAGE_PASSWORD_ITEM_STATE_MANAGE;
     [self updateContent];

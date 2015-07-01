@@ -26,13 +26,12 @@ NTSTATUS EatResolverThunk::Setup(const void* target_module,
   if (!eat_entry_)
     return STATUS_INVALID_PARAMETER;
 
-  size_t thunk_bytes = GetInternalThunkSize();
-
 #if defined(_WIN64)
   // We have two thunks, in order: the return path and the forward path.
   if (!SetInternalThunk(thunk_storage, storage_bytes, NULL, target_))
     return STATUS_BUFFER_TOO_SMALL;
 
+  size_t thunk_bytes = GetInternalThunkSize();
   storage_bytes -= thunk_bytes;
   thunk_storage = reinterpret_cast<char*>(thunk_storage) + thunk_bytes;
 #endif
@@ -46,12 +45,8 @@ NTSTATUS EatResolverThunk::Setup(const void* target_module,
     return ret;
 
   // Perform the patch.
-#pragma warning(push)
-#pragma warning(disable: 4311)
-  // These casts generate warnings because they are 32 bit specific.
-  *eat_entry_ = reinterpret_cast<DWORD>(thunk_storage) -
-                reinterpret_cast<DWORD>(target_module);
-#pragma warning(pop)
+  *eat_entry_ = static_cast<DWORD>(reinterpret_cast<uintptr_t>(thunk_storage)) -
+                static_cast<DWORD>(reinterpret_cast<uintptr_t>(target_module));
 
   if (NULL != storage_used)
     *storage_used = GetThunkSize();

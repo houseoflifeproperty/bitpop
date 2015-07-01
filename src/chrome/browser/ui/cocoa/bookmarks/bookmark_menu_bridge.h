@@ -26,49 +26,52 @@
 #import "chrome/browser/ui/cocoa/main_menu_item.h"
 #include "components/bookmarks/browser/bookmark_model_observer.h"
 
-class BookmarkNode;
 class Profile;
 @class NSImage;
 @class NSMenu;
 @class NSMenuItem;
 @class BookmarkMenuCocoaController;
 
-class BookmarkMenuBridge : public BookmarkModelObserver,
+namespace bookmarks {
+class BookmarkNode;
+}
+
+class BookmarkMenuBridge : public bookmarks::BookmarkModelObserver,
                            public MainMenuItem {
  public:
   BookmarkMenuBridge(Profile* profile, NSMenu* menu);
-  virtual ~BookmarkMenuBridge();
+  ~BookmarkMenuBridge() override;
 
-  // BookmarkModelObserver:
-  virtual void BookmarkModelLoaded(BookmarkModel* model,
-                                   bool ids_reassigned) OVERRIDE;
-  virtual void BookmarkModelBeingDeleted(BookmarkModel* model) OVERRIDE;
-  virtual void BookmarkNodeMoved(BookmarkModel* model,
-                                 const BookmarkNode* old_parent,
-                                 int old_index,
-                                 const BookmarkNode* new_parent,
-                                 int new_index) OVERRIDE;
-  virtual void BookmarkNodeAdded(BookmarkModel* model,
-                                 const BookmarkNode* parent,
-                                 int index) OVERRIDE;
-  virtual void BookmarkNodeRemoved(BookmarkModel* model,
-                                   const BookmarkNode* parent,
-                                   int old_index,
-                                   const BookmarkNode* node,
-                                   const std::set<GURL>& removed_urls) OVERRIDE;
-  virtual void BookmarkAllUserNodesRemoved(
-      BookmarkModel* model,
-      const std::set<GURL>& removed_urls) OVERRIDE;
-  virtual void BookmarkNodeChanged(BookmarkModel* model,
-                                   const BookmarkNode* node) OVERRIDE;
-  virtual void BookmarkNodeFaviconChanged(BookmarkModel* model,
-                                          const BookmarkNode* node) OVERRIDE;
-  virtual void BookmarkNodeChildrenReordered(BookmarkModel* model,
-                                             const BookmarkNode* node) OVERRIDE;
+  // bookmarks::BookmarkModelObserver:
+  void BookmarkModelLoaded(bookmarks::BookmarkModel* model,
+                           bool ids_reassigned) override;
+  void BookmarkModelBeingDeleted(bookmarks::BookmarkModel* model) override;
+  void BookmarkNodeMoved(bookmarks::BookmarkModel* model,
+                         const bookmarks::BookmarkNode* old_parent,
+                         int old_index,
+                         const bookmarks::BookmarkNode* new_parent,
+                         int new_index) override;
+  void BookmarkNodeAdded(bookmarks::BookmarkModel* model,
+                         const bookmarks::BookmarkNode* parent,
+                         int index) override;
+  void BookmarkNodeRemoved(bookmarks::BookmarkModel* model,
+                           const bookmarks::BookmarkNode* parent,
+                           int old_index,
+                           const bookmarks::BookmarkNode* node,
+                           const std::set<GURL>& removed_urls) override;
+  void BookmarkAllUserNodesRemoved(bookmarks::BookmarkModel* model,
+                                   const std::set<GURL>& removed_urls) override;
+  void BookmarkNodeChanged(bookmarks::BookmarkModel* model,
+                           const bookmarks::BookmarkNode* node) override;
+  void BookmarkNodeFaviconChanged(bookmarks::BookmarkModel* model,
+                                  const bookmarks::BookmarkNode* node) override;
+  void BookmarkNodeChildrenReordered(
+      bookmarks::BookmarkModel* model,
+      const bookmarks::BookmarkNode* node) override;
 
   // MainMenuItem:
-  virtual void ResetMenu() OVERRIDE;
-  virtual void BuildMenu() OVERRIDE;
+  void ResetMenu() override;
+  void BuildMenu() override;
 
   // Rebuilds the main bookmark menu, if it has been marked invalid.
   void UpdateMenu(NSMenu* bookmark_menu);
@@ -77,8 +80,11 @@ class BookmarkMenuBridge : public BookmarkModelObserver,
   void UpdateSubMenu(NSMenu* bookmark_menu);
 
   // I wish I had a "friend @class" construct.
-  BookmarkModel* GetBookmarkModel();
+  bookmarks::BookmarkModel* GetBookmarkModel();
   Profile* GetProfile();
+
+  // Return the Bookmark menu.
+  virtual NSMenu* BookmarkMenu();
 
  protected:
   // Rebuilds the bookmark content of supplied menu.
@@ -95,7 +101,7 @@ class BookmarkMenuBridge : public BookmarkModelObserver,
   // If |add_extra_items| is true, also adds extra menu items at bottom of
   // menu, such as "Open All Bookmarks".
   void AddNodeAsSubmenu(NSMenu* menu,
-                        const BookmarkNode* node,
+                        const bookmarks::BookmarkNode* node,
                         NSImage* image,
                         bool add_extra_items);
 
@@ -104,7 +110,8 @@ class BookmarkMenuBridge : public BookmarkModelObserver,
   // If |add_extra_items| is true, also adds extra menu items at bottom of
   // menu, such as "Open All Bookmarks".
   // TODO(jrg): add a counter to enforce maximum nodes added
-  void AddNodeToMenu(const BookmarkNode* node, NSMenu* menu,
+  void AddNodeToMenu(const bookmarks::BookmarkNode* node,
+                     NSMenu* menu,
                      bool add_extra_items);
 
   // Helper for adding an item to our bookmark menu. An item which has a
@@ -112,7 +119,7 @@ class BookmarkMenuBridge : public BookmarkModelObserver,
   // The item is also bound to |node| by tag. |command_id| selects the action.
   void AddItemToMenu(int command_id,
                      int message_id,
-                     const BookmarkNode* node,
+                     const bookmarks::BookmarkNode* node,
                      NSMenu* menu,
                      bool enabled);
 
@@ -122,14 +129,12 @@ class BookmarkMenuBridge : public BookmarkModelObserver,
   // |set_title| is optional since it is only needed when we get a
   // node changed notification.  On initial build of the menu we set
   // the title as part of alloc/init.
-  void ConfigureMenuItem(const BookmarkNode* node, NSMenuItem* item,
+  void ConfigureMenuItem(const bookmarks::BookmarkNode* node,
+                         NSMenuItem* item,
                          bool set_title);
 
   // Returns the NSMenuItem for a given BookmarkNode.
-  NSMenuItem* MenuItemForNode(const BookmarkNode* node);
-
-  // Return the Bookmark menu.
-  virtual NSMenu* BookmarkMenu();
+  NSMenuItem* MenuItemForNode(const bookmarks::BookmarkNode* node);
 
   // Start watching the bookmarks for changes.
   void ObserveBookmarkModel();
@@ -148,7 +153,7 @@ class BookmarkMenuBridge : public BookmarkModelObserver,
 
   // In order to appropriately update items in the bookmark menu, without
   // forcing a rebuild, map the model's nodes to menu items.
-  std::map<const BookmarkNode*, NSMenuItem*> bookmark_nodes_;
+  std::map<const bookmarks::BookmarkNode*, NSMenuItem*> bookmark_nodes_;
 };
 
 #endif  // CHROME_BROWSER_UI_COCOA_BOOKMARKS_BOOKMARK_MENU_BRIDGE_H_

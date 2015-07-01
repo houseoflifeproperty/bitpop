@@ -27,14 +27,14 @@ class CHROMEOS_EXPORT DhcpProxyScriptFetcherChromeos
  public:
   explicit DhcpProxyScriptFetcherChromeos(
       net::URLRequestContext* url_request_context);
-  virtual ~DhcpProxyScriptFetcherChromeos() OVERRIDE;
+  ~DhcpProxyScriptFetcherChromeos() override;
 
   // net::DhcpProxyScriptFetcher
-  virtual int Fetch(base::string16* utf16_text,
-                    const net::CompletionCallback& callback) OVERRIDE;
-  virtual void Cancel() OVERRIDE;
-  virtual const GURL& GetPacURL() const OVERRIDE;
-  virtual std::string GetFetcherName() const OVERRIDE;
+  int Fetch(base::string16* utf16_text,
+            const net::CompletionCallback& callback) override;
+  void Cancel() override;
+  const GURL& GetPacURL() const override;
+  std::string GetFetcherName() const override;
 
  private:
   void ContinueFetch(base::string16* utf16_text,
@@ -44,9 +44,10 @@ class CHROMEOS_EXPORT DhcpProxyScriptFetcherChromeos
   net::URLRequestContext* url_request_context_;  // Weak ptr
   scoped_ptr<net::ProxyScriptFetcher> proxy_script_fetcher_;
   scoped_refptr<base::MessageLoopProxy> network_handler_message_loop_;
-  base::WeakPtrFactory<DhcpProxyScriptFetcherChromeos> weak_ptr_factory_;
 
   GURL pac_url_;
+
+  base::WeakPtrFactory<DhcpProxyScriptFetcherChromeos> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DhcpProxyScriptFetcherChromeos);
 };

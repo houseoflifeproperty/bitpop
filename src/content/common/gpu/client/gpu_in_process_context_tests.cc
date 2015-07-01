@@ -8,17 +8,17 @@
 #include <vector>
 
 #include "content/public/test/unittest_test_suite.h"
+#include "gpu/blink/webgraphicscontext3d_in_process_command_buffer_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_surface.h"
-#include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
 namespace {
 
-using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
+using gpu_blink::WebGraphicsContext3DInProcessCommandBufferImpl;
 
 class ContextTestBase : public testing::Test {
  public:
-  virtual void SetUp() {
+  void SetUp() override {
     blink::WebGraphicsContext3D::Attributes attributes;
     bool lose_context_when_out_of_memory = false;
     typedef WebGraphicsContext3DInProcessCommandBufferImpl WGC3DIPCBI;
@@ -28,9 +28,7 @@ class ContextTestBase : public testing::Test {
     context_support_ = context_->GetContextSupport();
   }
 
-  virtual void TearDown() {
-    context_.reset(NULL);
-  }
+  void TearDown() override { context_.reset(NULL); }
 
  protected:
   scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> context_;

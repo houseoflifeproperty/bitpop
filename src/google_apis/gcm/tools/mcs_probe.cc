@@ -13,12 +13,14 @@
 #include "base/at_exit.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
 #include "base/threading/worker_pool.h"
 #include "base/time/default_clock.h"
@@ -33,13 +35,13 @@
 #include "google_apis/gcm/engine/mcs_client.h"
 #include "google_apis/gcm/monitoring/fake_gcm_stats_recorder.h"
 #include "net/base/host_mapping_rules.h"
-#include "net/base/net_log_logger.h"
 #include "net/cert/cert_verifier.h"
 #include "net/dns/host_resolver.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_impl.h"
 #include "net/http/transport_security_state.h"
+#include "net/log/write_to_file_net_log_observer.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/ssl/channel_id_service.h"
@@ -139,16 +141,16 @@ class MyTestURLRequestContext : public net::TestURLRequestContext {
     Init();
   }
 
-  virtual ~MyTestURLRequestContext() {}
+  ~MyTestURLRequestContext() override {}
 };
 
 class MyTestURLRequestContextGetter : public net::TestURLRequestContextGetter {
  public:
   explicit MyTestURLRequestContextGetter(
-      const scoped_refptr<base::MessageLoopProxy>& io_message_loop_proxy)
-      : TestURLRequestContextGetter(io_message_loop_proxy) {}
+      const scoped_refptr<base::SingleThreadTaskRunner>& io_task_runner)
+      : TestURLRequestContextGetter(io_task_runner) {}
 
-  virtual net::TestURLRequestContext* GetURLRequestContext() OVERRIDE {
+  net::TestURLRequestContext* GetURLRequestContext() override {
     // Construct |context_| lazily so it gets constructed on the right
     // thread (the IO thread).
     if (!context_)
@@ -157,46 +159,34 @@ class MyTestURLRequestContextGetter : public net::TestURLRequestContextGetter {
   }
 
  private:
-  virtual ~MyTestURLRequestContextGetter() {}
+  ~MyTestURLRequestContextGetter() override {}
 
   scoped_ptr<MyTestURLRequestContext> context_;
-};
-
-// A net log that logs all events by default.
-class MyTestNetLog : public net::NetLog {
- public:
-  MyTestNetLog() {
-    SetBaseLogLevel(LOG_ALL);
-  }
-  virtual ~MyTestNetLog() {}
 };
 
 // A cert verifier that access all certificates.
 class MyTestCertVerifier : public net::CertVerifier {
  public:
   MyTestCertVerifier() {}
-  virtual ~MyTestCertVerifier() {}
+  ~MyTestCertVerifier() override {}
 
-  virtual int Verify(net::X509Certificate* cert,
-                     const std::string& hostname,
-                     int flags,
-                     net::CRLSet* crl_set,
-                     net::CertVerifyResult* verify_result,
-                     const net::CompletionCallback& callback,
-                     RequestHandle* out_req,
-                     const net::BoundNetLog& net_log) OVERRIDE {
+  int Verify(net::X509Certificate* cert,
+             const std::string& hostname,
+             const std::string& ocsp_response,
+             int flags,
+             net::CRLSet* crl_set,
+             net::CertVerifyResult* verify_result,
+             const net::CompletionCallback& callback,
+             scoped_ptr<Request>* out_req,
+             const net::BoundNetLog& net_log) override {
     return net::OK;
-  }
-
-  virtual void CancelRequest(RequestHandle req) OVERRIDE {
-    // Do nothing.
   }
 };
 
 class MCSProbe {
  public:
   MCSProbe(
-      const CommandLine& command_line,
+      const base::CommandLine& command_line,
       scoped_refptr<net::URLRequestContextGetter> url_request_context_getter);
   ~MCSProbe();
 
@@ -219,7 +209,7 @@ class MCSProbe {
 
   base::DefaultClock clock_;
 
-  CommandLine command_line_;
+  base::CommandLine command_line_;
 
   base::FilePath gcm_store_path_;
   uint64 android_id_;
@@ -229,9 +219,8 @@ class MCSProbe {
 
   // Network state.
   scoped_refptr<net::URLRequestContextGetter> url_request_context_getter_;
-  MyTestNetLog net_log_;
-  scoped_ptr<net::NetLogLogger> logger_;
-  scoped_ptr<base::Value> net_constants_;
+  net::NetLog net_log_;
+  scoped_ptr<net::WriteToFileNetLogObserver> logger_;
   scoped_ptr<net::HostResolver> host_resolver_;
   scoped_ptr<net::CertVerifier> cert_verifier_;
   scoped_ptr<net::ChannelIDService> system_channel_id_service_;
@@ -256,7 +245,7 @@ class MCSProbe {
 };
 
 MCSProbe::MCSProbe(
-    const CommandLine& command_line,
+    const base::CommandLine& command_line,
     scoped_refptr<net::URLRequestContextGetter> url_request_context_getter)
     : command_line_(command_line),
       gcm_store_path_(base::FilePath(FILE_PATH_LITERAL("gcm_store"))),
@@ -288,6 +277,8 @@ MCSProbe::MCSProbe(
 }
 
 MCSProbe::~MCSProbe() {
+  if (logger_)
+    logger_->StopObserving(nullptr);
   file_thread_.Stop();
 }
 
@@ -355,19 +346,20 @@ void MCSProbe::UpdateCallback(bool success) {
 }
 
 void MCSProbe::InitializeNetworkState() {
-  FILE* log_file = NULL;
+  base::ScopedFILE log_file;
   if (command_line_.HasSwitch(kLogFileSwitch)) {
     base::FilePath log_path = command_line_.GetSwitchValuePath(kLogFileSwitch);
 #if defined(OS_WIN)
-    log_file = _wfopen(log_path.value().c_str(), L"w");
+    log_file.reset(_wfopen(log_path.value().c_str(), L"w"));
 #elif defined(OS_POSIX)
-    log_file = fopen(log_path.value().c_str(), "w");
+    log_file.reset(fopen(log_path.value().c_str(), "w"));
 #endif
   }
-  net_constants_.reset(net::NetLogLogger::GetConstants());
-  if (log_file != NULL) {
-    logger_.reset(new net::NetLogLogger(log_file, *net_constants_));
-    logger_->StartObserving(&net_log_);
+  if (log_file.get()) {
+    logger_.reset(new net::WriteToFileNetLogObserver());
+    logger_->set_capture_mode(
+        net::NetLogCaptureMode::IncludeCookiesAndCredentials());
+    logger_->StartObserving(&net_log_, log_file.Pass(), nullptr, nullptr);
   }
 
   host_resolver_ = net::HostResolver::CreateDefaultResolver(&net_log_);
@@ -479,7 +471,7 @@ void MCSProbe::StartMCSLogin() {
 int MCSProbeMain(int argc, char* argv[]) {
   base::AtExitManager exit_manager;
 
-  CommandLine::Init(argc, argv);
+  base::CommandLine::Init(argc, argv);
   logging::LoggingSettings settings;
   settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
   logging::InitLogging(settings);
@@ -491,7 +483,8 @@ int MCSProbeMain(int argc, char* argv[]) {
       new MyTestURLRequestContextGetter(
           base::MessageLoop::current()->message_loop_proxy());
 
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
 
   MCSProbe mcs_probe(command_line, context_getter);
   mcs_probe.Start();

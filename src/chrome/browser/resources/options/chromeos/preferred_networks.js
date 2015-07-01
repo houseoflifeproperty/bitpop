@@ -5,7 +5,7 @@
 cr.exportPath('options');
 
 /**
- * @typedef {{Name: string, Type: string, servicePath: string}}
+ * @typedef {{GUID: string, Name: string, Source: string, Type: string}}
  */
 options.PreferredNetwork;
 
@@ -83,8 +83,10 @@ cr.define('options', function() {
       DeletableItem.prototype.decorate.call(this);
       var label = this.ownerDocument.createElement('div');
       label.textContent = this.data.Name;
-      if (this.data.policyManaged)
+      if (this.data.Source == 'DevicePolicy' ||
+          this.data.Source == 'UserPolicy') {
         this.deletable = false;
+      }
       this.contentElement.appendChild(label);
     }
   };
@@ -125,13 +127,8 @@ cr.define('options', function() {
     /** @override */
     deleteItemAtIndex: function(index) {
       var item = this.dataModel.item(index);
-      if (item) {
-        // Inform the network library that we are forgetting this network.
-        chrome.send('networkCommand',
-                    [item.Type,
-                    item.servicePath,
-                    'forget']);
-      }
+      if (item)
+        chrome.networkingPrivate.forgetNetwork(item.GUID);
       this.dataModel.splice(index, 1);
       // Invalidate the list since it has a stale cache after a splice
       // involving a deletion.

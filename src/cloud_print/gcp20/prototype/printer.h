@@ -30,7 +30,7 @@ class Printer : public base::SupportsWeakPtr<Printer>,
   Printer();
 
   // Destroys the object.
-  virtual ~Printer();
+  ~Printer() override;
 
   // Starts all servers.
   bool Start();
@@ -54,78 +54,77 @@ class Printer : public base::SupportsWeakPtr<Printer>,
   std::string GetRawCdd();
 
   // PrivetHttpServer::Delegate methods:
-  virtual PrivetHttpServer::RegistrationErrorStatus RegistrationStart(
-      const std::string& user) OVERRIDE;
-  virtual PrivetHttpServer::RegistrationErrorStatus RegistrationGetClaimToken(
+  PrivetHttpServer::RegistrationErrorStatus RegistrationStart(
+      const std::string& user) override;
+  PrivetHttpServer::RegistrationErrorStatus RegistrationGetClaimToken(
       const std::string& user,
       std::string* token,
-      std::string* claim_url) OVERRIDE;
-  virtual PrivetHttpServer::RegistrationErrorStatus RegistrationComplete(
+      std::string* claim_url) override;
+  PrivetHttpServer::RegistrationErrorStatus RegistrationComplete(
       const std::string& user,
-      std::string* device_id) OVERRIDE;
-  virtual PrivetHttpServer::RegistrationErrorStatus RegistrationCancel(
-      const std::string& user) OVERRIDE;
-  virtual void GetRegistrationServerError(std::string* description) OVERRIDE;
-  virtual void CreateInfo(PrivetHttpServer::DeviceInfo* info) OVERRIDE;
-  virtual bool IsRegistered() const OVERRIDE;
-  virtual bool IsLocalPrintingAllowed() const OVERRIDE;
-  virtual bool CheckXPrivetTokenHeader(const std::string& token) const OVERRIDE;
-  virtual const base::DictionaryValue& GetCapabilities() OVERRIDE;
-  virtual LocalPrintJob::CreateResult CreateJob(
+      std::string* device_id) override;
+  PrivetHttpServer::RegistrationErrorStatus RegistrationCancel(
+      const std::string& user) override;
+  void GetRegistrationServerError(std::string* description) override;
+  void CreateInfo(PrivetHttpServer::DeviceInfo* info) override;
+  bool IsRegistered() const override;
+  bool IsLocalPrintingAllowed() const override;
+  bool CheckXPrivetTokenHeader(const std::string& token) const override;
+  const base::DictionaryValue& GetCapabilities() override;
+  LocalPrintJob::CreateResult CreateJob(
       const std::string& ticket,
       std::string* job_id,
       int* expires_in,
       int* error_timeout,
-      std::string* error_description) OVERRIDE;
-  virtual LocalPrintJob::SaveResult SubmitDoc(
+      std::string* error_description) override;
+  LocalPrintJob::SaveResult SubmitDoc(
       const LocalPrintJob& job,
       std::string* job_id,
       int* expires_in,
       std::string* error_description,
-      int* timeout) OVERRIDE;
-  virtual LocalPrintJob::SaveResult SubmitDocWithId(
+      int* timeout) override;
+  LocalPrintJob::SaveResult SubmitDocWithId(
       const LocalPrintJob& job,
       const std::string& job_id,
       int* expires_in,
       std::string* error_description,
-      int* timeout) OVERRIDE;
-  virtual bool GetJobState(const std::string& id,
-                           LocalPrintJob::Info* info) OVERRIDE;
+      int* timeout) override;
+  bool GetJobState(const std::string& id, LocalPrintJob::Info* info) override;
 
   // CloudRequester::Delegate methods:
-  virtual void OnRegistrationStartResponseParsed(
+  void OnRegistrationStartResponseParsed(
       const std::string& registration_token,
       const std::string& complete_invite_url,
-      const std::string& device_id) OVERRIDE;
-  virtual void OnRegistrationFinished(
+      const std::string& device_id) override;
+  void OnRegistrationFinished(
       const std::string& refresh_token,
       const std::string& access_token,
-      int access_token_expires_in_seconds) OVERRIDE;
-  virtual void OnXmppJidReceived(const std::string& xmpp_jid) OVERRIDE;
-  virtual void OnAccesstokenReceviced(const std::string& access_token,
-                                      int expires_in_seconds) OVERRIDE;
-  virtual void OnRegistrationError(const std::string& description) OVERRIDE;
-  virtual void OnNetworkError() OVERRIDE;
-  virtual void OnServerError(const std::string& description) OVERRIDE;
-  virtual void OnAuthError() OVERRIDE;
-  virtual std::string GetAccessToken() OVERRIDE;
-  virtual void OnPrintJobsAvailable(
-      const std::vector<cloud_print_response_parser::Job>& jobs) OVERRIDE;
-  virtual void OnPrintJobDownloaded(
-      const cloud_print_response_parser::Job& job) OVERRIDE;
-  virtual void OnPrintJobDone() OVERRIDE;
-  virtual void OnLocalSettingsReceived(
+      int access_token_expires_in_seconds) override;
+  void OnXmppJidReceived(const std::string& xmpp_jid) override;
+  void OnAccesstokenReceviced(const std::string& access_token,
+                              int expires_in_seconds) override;
+  void OnRegistrationError(const std::string& description) override;
+  void OnNetworkError() override;
+  void OnServerError(const std::string& description) override;
+  void OnAuthError() override;
+  std::string GetAccessToken() override;
+  void OnPrintJobsAvailable(
+      const std::vector<cloud_print_response_parser::Job>& jobs) override;
+  void OnPrintJobDownloaded(
+      const cloud_print_response_parser::Job& job) override;
+  void OnPrintJobDone() override;
+  void OnLocalSettingsReceived(
       LocalSettings::State state,
-      const LocalSettings& settings) OVERRIDE;
-  virtual void OnLocalSettingsUpdated() OVERRIDE;
+      const LocalSettings& settings) override;
+  void OnLocalSettingsUpdated() override;
 
   // CloudPrintXmppListener::Delegate methods:
-  virtual void OnXmppConnected() OVERRIDE;
-  virtual void OnXmppAuthError() OVERRIDE;
-  virtual void OnXmppNetworkError() OVERRIDE;
-  virtual void OnXmppNewPrintJob(const std::string& device_id) OVERRIDE;
-  virtual void OnXmppNewLocalSettings(const std::string& device_id) OVERRIDE;
-  virtual void OnXmppDeleteNotification(const std::string& device_id) OVERRIDE;
+  void OnXmppConnected() override;
+  void OnXmppAuthError() override;
+  void OnXmppNetworkError() override;
+  void OnXmppNewPrintJob(const std::string& device_id) override;
+  void OnXmppNewLocalSettings(const std::string& device_id) override;
+  void OnXmppDeleteNotification(const std::string& device_id) override;
 
   // Method for trying to reconnecting to server on start or after network fail.
   void TryConnect();

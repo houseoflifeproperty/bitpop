@@ -49,7 +49,6 @@ class SSLManagerSet : public base::SupportsUserData::Data {
 // static
 void SSLManager::OnSSLCertificateError(
     const base::WeakPtr<SSLErrorHandler::Delegate>& delegate,
-    const GlobalRequestID& id,
     const ResourceType resource_type,
     const GURL& url,
     int render_process_id,
@@ -58,10 +57,11 @@ void SSLManager::OnSSLCertificateError(
     bool fatal) {
   DCHECK(delegate.get());
   DVLOG(1) << "OnSSLCertificateError() cert_error: "
-           << net::MapCertStatusToNetError(ssl_info.cert_status) << " id: "
-           << id.child_id << "," << id.request_id << " resource_type: "
-           << resource_type << " url: " << url.spec() << " render_process_id: "
-           << render_process_id << " render_frame_id: " << render_frame_id
+           << net::MapCertStatusToNetError(ssl_info.cert_status)
+           << " resource_type: " << resource_type
+           << " url: " << url.spec()
+           << " render_process_id: " << render_process_id
+           << " render_frame_id: " << render_frame_id
            << " cert_status: " << std::hex << ssl_info.cert_status;
 
   // A certificate error occurred.  Construct a SSLCertErrorHandler object and
@@ -70,7 +70,6 @@ void SSLManager::OnSSLCertificateError(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&SSLCertErrorHandler::Dispatch,
                  new SSLCertErrorHandler(delegate,
-                                         id,
                                          resource_type,
                                          url,
                                          render_process_id,
@@ -86,8 +85,7 @@ void SSLManager::NotifySSLInternalStateChanged(BrowserContext* context) {
 
   for (std::set<SSLManager*>::iterator i = managers->get().begin();
        i != managers->get().end(); ++i) {
-    (*i)->UpdateEntry(NavigationEntryImpl::FromNavigationEntry(
-                          (*i)->controller()->GetLastCommittedEntry()));
+    (*i)->UpdateEntry((*i)->controller()->GetLastCommittedEntry());
   }
 }
 
@@ -113,9 +111,7 @@ SSLManager::~SSLManager() {
 }
 
 void SSLManager::DidCommitProvisionalLoad(const LoadCommittedDetails& details) {
-  NavigationEntryImpl* entry =
-      NavigationEntryImpl::FromNavigationEntry(
-          controller_->GetLastCommittedEntry());
+  NavigationEntryImpl* entry = controller_->GetLastCommittedEntry();
 
   if (details.is_main_frame) {
     if (entry) {
@@ -149,15 +145,11 @@ void SSLManager::DidCommitProvisionalLoad(const LoadCommittedDetails& details) {
 }
 
 void SSLManager::DidDisplayInsecureContent() {
-  UpdateEntry(
-      NavigationEntryImpl::FromNavigationEntry(
-          controller_->GetLastCommittedEntry()));
+  UpdateEntry(controller_->GetLastCommittedEntry());
 }
 
 void SSLManager::DidRunInsecureContent(const std::string& security_origin) {
-  NavigationEntryImpl* navigation_entry =
-      NavigationEntryImpl::FromNavigationEntry(
-          controller_->GetLastCommittedEntry());
+  NavigationEntryImpl* navigation_entry = controller_->GetLastCommittedEntry();
   policy()->DidRunInsecureContent(navigation_entry, security_origin);
   UpdateEntry(navigation_entry);
 }

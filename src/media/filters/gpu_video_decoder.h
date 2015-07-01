@@ -41,31 +41,33 @@ class MEDIA_EXPORT GpuVideoDecoder
       const scoped_refptr<GpuVideoAcceleratorFactories>& factories);
 
   // VideoDecoder implementation.
-  virtual std::string GetDisplayName() const OVERRIDE;
-  virtual void Initialize(const VideoDecoderConfig& config,
-                          bool low_delay,
-                          const PipelineStatusCB& status_cb,
-                          const OutputCB& output_cb) OVERRIDE;
-  virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
-                      const DecodeCB& decode_cb) OVERRIDE;
-  virtual void Reset(const base::Closure& closure) OVERRIDE;
-  virtual bool NeedsBitstreamConversion() const OVERRIDE;
-  virtual bool CanReadWithoutStalling() const OVERRIDE;
-  virtual int GetMaxDecodeRequests() const OVERRIDE;
+  std::string GetDisplayName() const override;
+  void Initialize(const VideoDecoderConfig& config,
+                  bool low_delay,
+                  const PipelineStatusCB& status_cb,
+                  const OutputCB& output_cb) override;
+  void Decode(const scoped_refptr<DecoderBuffer>& buffer,
+              const DecodeCB& decode_cb) override;
+  void Reset(const base::Closure& closure) override;
+  bool NeedsBitstreamConversion() const override;
+  bool CanReadWithoutStalling() const override;
+  int GetMaxDecodeRequests() const override;
 
   // VideoDecodeAccelerator::Client implementation.
-  virtual void ProvidePictureBuffers(uint32 count,
-                                     const gfx::Size& size,
-                                     uint32 texture_target) OVERRIDE;
-  virtual void DismissPictureBuffer(int32 id) OVERRIDE;
-  virtual void PictureReady(const media::Picture& picture) OVERRIDE;
-  virtual void NotifyEndOfBitstreamBuffer(int32 id) OVERRIDE;
-  virtual void NotifyFlushDone() OVERRIDE;
-  virtual void NotifyResetDone() OVERRIDE;
-  virtual void NotifyError(media::VideoDecodeAccelerator::Error error) OVERRIDE;
+  void ProvidePictureBuffers(uint32 count,
+                             const gfx::Size& size,
+                             uint32 texture_target) override;
+  void DismissPictureBuffer(int32 id) override;
+  void PictureReady(const media::Picture& picture) override;
+  void NotifyEndOfBitstreamBuffer(int32 id) override;
+  void NotifyFlushDone() override;
+  void NotifyResetDone() override;
+  void NotifyError(media::VideoDecodeAccelerator::Error error) override;
+
+  static const char kDecoderName[];
 
  protected:
-  virtual ~GpuVideoDecoder();
+  ~GpuVideoDecoder() override;
 
  private:
   enum State {
@@ -77,9 +79,9 @@ class MEDIA_EXPORT GpuVideoDecoder
 
   // A shared memory segment and its allocated size.
   struct SHMBuffer {
-    SHMBuffer(base::SharedMemory* m, size_t s);
+    SHMBuffer(scoped_ptr<base::SharedMemory> m, size_t s);
     ~SHMBuffer();
-    base::SharedMemory* shm;
+    scoped_ptr<base::SharedMemory> shm;
     size_t size;
   };
 
@@ -116,14 +118,18 @@ class MEDIA_EXPORT GpuVideoDecoder
   void DestroyVDA();
 
   // Request a shared-memory segment of at least |min_size| bytes.  Will
-  // allocate as necessary.  Caller does not own returned pointer.
-  SHMBuffer* GetSHM(size_t min_size);
+  // allocate as necessary.
+  scoped_ptr<SHMBuffer> GetSHM(size_t min_size);
 
   // Return a shared-memory segment to the available pool.
-  void PutSHM(SHMBuffer* shm_buffer);
+  void PutSHM(scoped_ptr<SHMBuffer> shm_buffer);
 
   // Destroy all PictureBuffers in |buffers|, and delete their textures.
   void DestroyPictureBuffers(PictureBufferMap* buffers);
+
+  // Returns true if the video decoder can support |profile| and |coded_size|.
+  bool IsProfileSupported(VideoCodecProfile profile,
+                          const gfx::Size& coded_size);
 
   // Assert the contract that this class is operated on the right thread.
   void DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent() const;

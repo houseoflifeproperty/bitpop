@@ -23,7 +23,7 @@ class ServiceClient::Core
   Core(const std::string& chromoting_hosts_url,
        net::URLRequestContextGetter* request_context_getter)
            : request_context_getter_(request_context_getter),
-             delegate_(NULL),
+             delegate_(nullptr),
              pending_request_type_(PENDING_REQUEST_NONE),
              chromoting_hosts_url_(chromoting_hosts_url) {
   }
@@ -40,11 +40,11 @@ class ServiceClient::Core
                       ServiceClient::Delegate* delegate);
 
   // net::URLFetcherDelegate implementation.
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
 
  private:
   friend class base::RefCountedThreadSafe<Core>;
-  virtual ~Core() {}
+  ~Core() override {}
 
   enum PendingRequestType {
     PENDING_REQUEST_NONE,
@@ -111,8 +111,8 @@ void ServiceClient::Core::MakeChromotingRequest(
     const std::string& oauth_access_token,
     ServiceClient::Delegate* delegate) {
   delegate_ = delegate;
-  request_.reset(net::URLFetcher::Create(
-      0, GURL(chromoting_hosts_url_ + url_suffix), request_type, this));
+  request_ = net::URLFetcher::Create(
+      0, GURL(chromoting_hosts_url_ + url_suffix), request_type, this);
   request_->SetRequestContext(request_context_getter_.get());
   request_->SetUploadData("application/json; charset=UTF-8", request_body);
   request_->AddExtraRequestHeader("Authorization: OAuth " + oauth_access_token);

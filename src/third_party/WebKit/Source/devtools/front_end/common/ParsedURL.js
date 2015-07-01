@@ -49,7 +49,7 @@ WebInspector.ParsedURL = function(url)
     // 3 - ?port
     // 4 - ?path
     // 5 - ?fragment
-    var match = url.match(/^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^\/:]*)(?::([\d]+))?(?:(\/[^#]*)(?:#(.*))?)?$/i);
+    var match = url.match(/^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^\s\/:]*)(?::([\d]+))?(?:(\/[^#]*)(?:#(.*))?)?$/i);
     if (match) {
         this.isValid = true;
         this.scheme = match[1].toLowerCase();
@@ -73,7 +73,7 @@ WebInspector.ParsedURL = function(url)
     var path = this.path;
     var indexOfQuery = path.indexOf("?");
     if (indexOfQuery !== -1) {
-        this.queryParams = path.substring(indexOfQuery + 1)
+        this.queryParams = path.substring(indexOfQuery + 1);
         path = path.substring(0, indexOfQuery);
     }
 
@@ -88,11 +88,25 @@ WebInspector.ParsedURL = function(url)
 
 /**
  * @param {string} url
+ * @return {string}
+ */
+WebInspector.ParsedURL._decodeIfPossible = function(url)
+{
+    var decodedURL = url;
+    try {
+        decodedURL = decodeURI(url);
+    } catch (e) { }
+    return decodedURL;
+}
+
+/**
+ * @param {string} url
  * @return {!Array.<string>}
  */
 WebInspector.ParsedURL.splitURLIntoPathComponents = function(url)
 {
-    var parsedURL = new WebInspector.ParsedURL(decodeURI(url));
+    var decodedURL = WebInspector.ParsedURL._decodeIfPossible(url);
+    var parsedURL = new WebInspector.ParsedURL(decodedURL);
     var origin;
     var folderPath;
     var name;
@@ -232,7 +246,39 @@ WebInspector.ParsedURL.prototype = {
     isDataURL: function()
     {
         return this.scheme === "data";
+    },
+
+    /**
+     * @return {string}
+     */
+    lastPathComponentWithFragment: function()
+    {
+       return this.lastPathComponent + (this.fragment ? "#" + this.fragment : "");
     }
+}
+
+/**
+ * @param {string} string
+ * @return {?{url: string, lineNumber: (number|undefined), columnNumber: (number|undefined)}}
+ */
+WebInspector.ParsedURL.splitLineAndColumn = function(string)
+{
+    var lineColumnRegEx = /:(\d+)(:(\d+))?$/;
+    var lineColumnMatch = lineColumnRegEx.exec(string);
+    var lineNumber;
+    var columnNumber;
+    if (!lineColumnMatch)
+        return null;
+
+    lineNumber = parseInt(lineColumnMatch[1], 10);
+    // Immediately convert line and column to 0-based numbers.
+    lineNumber = isNaN(lineNumber) ? undefined : lineNumber - 1;
+    if (typeof(lineColumnMatch[3]) === "string") {
+        columnNumber = parseInt(lineColumnMatch[3], 10);
+        columnNumber = isNaN(columnNumber) ? undefined : columnNumber - 1;
+    }
+
+    return { url: string.substring(0, string.length - lineColumnMatch[0].length), lineNumber: lineNumber, columnNumber: columnNumber};
 }
 
 /**

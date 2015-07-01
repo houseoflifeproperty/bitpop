@@ -28,7 +28,10 @@
 
 #include "core/dom/CrossThreadTask.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/dom/ExecutionContextTask.h"
 #include "core/html/VoidCallback.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "modules/webdatabase/ChangeVersionData.h"
 #include "modules/webdatabase/ChangeVersionWrapper.h"
 #include "modules/webdatabase/DatabaseAuthorizer.h"
@@ -47,6 +50,7 @@
 #include "modules/webdatabase/sqlite/SQLiteStatement.h"
 #include "modules/webdatabase/sqlite/SQLiteTransaction.h"
 #include "platform/Logging.h"
+#include "platform/heap/SafePoint.h"
 #include "platform/weborigin/DatabaseIdentifier.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebDatabaseObserver.h"
@@ -138,7 +142,7 @@ static bool setTextValueInDatabase(SQLiteDatabase& db, const String& query, cons
 // FIXME: move all guid-related functions to a DatabaseVersionTracker class.
 static RecursiveMutex& guidMutex()
 {
-    AtomicallyInitializedStatic(RecursiveMutex&, mutex = *new RecursiveMutex);
+    AtomicallyInitializedStaticReference(RecursiveMutex, mutex, new RecursiveMutex);
     return mutex;
 }
 
@@ -147,7 +151,7 @@ static GuidVersionMap& guidToVersionMap()
 {
     // Ensure the the mutex is locked.
     ASSERT(guidMutex().locked());
-    DEFINE_STATIC_LOCAL(GuidVersionMap, map, ());
+    DEFINE_STATIC_LOCAL_NOASSERT(GuidVersionMap, map, ());
     return map;
 }
 
@@ -173,7 +177,7 @@ static GuidDatabaseMap& guidToDatabaseMap()
 {
     // Ensure the the mutex is locked.
     ASSERT(guidMutex().locked());
-    DEFINE_STATIC_LOCAL(GuidDatabaseMap, map, ());
+    DEFINE_STATIC_LOCAL_NOASSERT(GuidDatabaseMap, map, ());
     return map;
 }
 
@@ -185,7 +189,7 @@ static DatabaseGuid guidForOriginAndName(const String& origin, const String& nam
     String stringID = origin + "/" + name;
 
     typedef HashMap<String, int> IDGuidMap;
-    DEFINE_STATIC_LOCAL(IDGuidMap, stringIdentifierToGUIDMap, ());
+    DEFINE_STATIC_LOCAL_NOASSERT(IDGuidMap, stringIdentifierToGUIDMap, ());
     DatabaseGuid guid = stringIdentifierToGUIDMap.get(stringID);
     if (!guid) {
         static int currentNewGUID = 1;
@@ -248,7 +252,7 @@ Database::~Database()
     ASSERT(!m_opened);
 }
 
-void Database::trace(Visitor* visitor)
+DEFINE_TRACE(Database)
 {
     visitor->trace(m_databaseContext);
     visitor->trace(m_sqliteDatabase);
@@ -282,7 +286,7 @@ void Database::close()
         // Clean up transactions that have not been scheduled yet:
         // Transaction phase 1 cleanup. See comment on "What happens if a
         // transaction is interrupted?" at the top of SQLTransactionBackend.cpp.
-        RefPtrWillBeRawPtr<SQLTransactionBackend> transaction = nullptr;
+        SQLTransactionBackend* transaction = nullptr;
         while (!m_transactionQueue.isEmpty()) {
             transaction = m_transactionQueue.takeFirst();
             transaction->notifyDatabaseThreadIsShuttingDown();
@@ -296,18 +300,17 @@ void Database::close()
     databaseContext()->databaseThread()->recordDatabaseClosed(this);
 }
 
-PassRefPtrWillBeRawPtr<SQLTransactionBackend> Database::runTransaction(PassRefPtrWillBeRawPtr<SQLTransaction> transaction,
-    bool readOnly, const ChangeVersionData* data)
+SQLTransactionBackend* Database::runTransaction(SQLTransaction* transaction, bool readOnly, const ChangeVersionData* data)
 {
     MutexLocker locker(m_transactionInProgressMutex);
     if (!m_isTransactionQueueEnabled)
         return nullptr;
 
-    RefPtrWillBeRawPtr<SQLTransactionWrapper> wrapper = nullptr;
+    SQLTransactionWrapper* wrapper = nullptr;
     if (data)
         wrapper = ChangeVersionWrapper::create(data->oldVersion(), data->newVersion());
 
-    RefPtrWillBeRawPtr<SQLTransactionBackend> transactionBackend = SQLTransactionBackend::create(this, transaction, wrapper.release(), readOnly);
+    SQLTransactionBackend* transactionBackend = SQLTransactionBackend::create(this, transaction, wrapper, readOnly);
     m_transactionQueue.append(transactionBackend);
     if (!m_transactionInProgress)
         scheduleTransaction();
@@ -325,7 +328,7 @@ void Database::inProgressTransactionCompleted()
 void Database::scheduleTransaction()
 {
     ASSERT(!m_transactionInProgressMutex.tryLock()); // Locked by caller.
-    RefPtrWillBeRawPtr<SQLTransactionBackend> transaction = nullptr;
+    SQLTransactionBackend* transaction = nullptr;
 
     if (m_isTransactionQueueEnabled && !m_transactionQueue.isEmpty())
         transaction = m_transactionQueue.takeFirst();
@@ -400,6 +403,7 @@ String Database::version() const
 }
 
 class DoneCreatingDatabaseOnExitCaller {
+    STACK_ALLOCATED();
 public:
     DoneCreatingDatabaseOnExitCaller(Database* database)
         : m_database(database)
@@ -415,7 +419,7 @@ public:
     void setOpenSucceeded() { m_openSucceeded = true; }
 
 private:
-    Database* m_database;
+    Member<Database> m_database;
     bool m_openSucceeded;
 };
 
@@ -429,7 +433,7 @@ bool Database::performOpenAndVerify(bool shouldSetVersionInNewDatabase, Database
 
     const int maxSqliteBusyWaitTime = 30000;
 
-    if (!m_sqliteDatabase.open(m_filename, true)) {
+    if (!m_sqliteDatabase.open(m_filename)) {
         reportOpenDatabaseResult(1, InvalidStateError, m_sqliteDatabase.lastError());
         errorMessage = formatErrorMessage("unable to open database", m_sqliteDatabase.lastError(), m_sqliteDatabase.lastErrorMsg());
         return false;
@@ -716,8 +720,7 @@ void Database::reportOpenDatabaseResult(int errorSite, int webSqlErrorCode, int 
     if (Platform::current()->databaseObserver()) {
         Platform::current()->databaseObserver()->reportOpenDatabaseResult(
             createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
-            stringIdentifier(), false,
-            errorSite, webSqlErrorCode, sqliteErrorCode);
+            stringIdentifier(), errorSite, webSqlErrorCode, sqliteErrorCode);
     }
 }
 
@@ -726,8 +729,7 @@ void Database::reportChangeVersionResult(int errorSite, int webSqlErrorCode, int
     if (Platform::current()->databaseObserver()) {
         Platform::current()->databaseObserver()->reportChangeVersionResult(
             createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
-            stringIdentifier(), false,
-            errorSite, webSqlErrorCode, sqliteErrorCode);
+            stringIdentifier(), errorSite, webSqlErrorCode, sqliteErrorCode);
     }
 }
 
@@ -736,8 +738,7 @@ void Database::reportStartTransactionResult(int errorSite, int webSqlErrorCode, 
     if (Platform::current()->databaseObserver()) {
         Platform::current()->databaseObserver()->reportStartTransactionResult(
             createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
-            stringIdentifier(), false,
-            errorSite, webSqlErrorCode, sqliteErrorCode);
+            stringIdentifier(), errorSite, webSqlErrorCode, sqliteErrorCode);
     }
 }
 
@@ -746,8 +747,7 @@ void Database::reportCommitTransactionResult(int errorSite, int webSqlErrorCode,
     if (Platform::current()->databaseObserver()) {
         Platform::current()->databaseObserver()->reportCommitTransactionResult(
             createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
-            stringIdentifier(), false,
-            errorSite, webSqlErrorCode, sqliteErrorCode);
+            stringIdentifier(), errorSite, webSqlErrorCode, sqliteErrorCode);
     }
 }
 
@@ -756,8 +756,7 @@ void Database::reportExecuteStatementResult(int errorSite, int webSqlErrorCode, 
     if (Platform::current()->databaseObserver()) {
         Platform::current()->databaseObserver()->reportExecuteStatementResult(
             createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
-            stringIdentifier(), false,
-            errorSite, webSqlErrorCode, sqliteErrorCode);
+            stringIdentifier(), errorSite, webSqlErrorCode, sqliteErrorCode);
     }
 }
 
@@ -766,7 +765,7 @@ void Database::reportVacuumDatabaseResult(int sqliteErrorCode)
     if (Platform::current()->databaseObserver()) {
         Platform::current()->databaseObserver()->reportVacuumDatabaseResult(
             createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
-            stringIdentifier(), false, sqliteErrorCode);
+            stringIdentifier(), sqliteErrorCode);
     }
 }
 
@@ -816,10 +815,9 @@ void Database::readTransaction(
     runTransaction(callback, errorCallback, successCallback, true);
 }
 
-static void callTransactionErrorCallback(ExecutionContext*, SQLTransactionErrorCallback* callback, PassOwnPtr<SQLErrorData> errorData)
+static void callTransactionErrorCallback(SQLTransactionErrorCallback* callback, PassOwnPtr<SQLErrorData> errorData)
 {
-    RefPtrWillBeRawPtr<SQLError> error = SQLError::create(*errorData);
-    callback->handleEvent(error.get());
+    callback->handleEvent(SQLError::create(*errorData));
 }
 
 void Database::runTransaction(
@@ -829,6 +827,7 @@ void Database::runTransaction(
     bool readOnly,
     const ChangeVersionData* changeVersionData)
 {
+    ASSERT(executionContext()->isContextThread());
     // FIXME: Rather than passing errorCallback to SQLTransaction and then
     // sometimes firing it ourselves, this code should probably be pushed down
     // into Database so that we only create the SQLTransaction if we're
@@ -836,44 +835,23 @@ void Database::runTransaction(
 #if ENABLE(ASSERT)
     SQLTransactionErrorCallback* originalErrorCallback = errorCallback;
 #endif
-    RefPtrWillBeRawPtr<SQLTransaction> transaction = SQLTransaction::create(this, callback, successCallback, errorCallback, readOnly);
-    RefPtrWillBeRawPtr<SQLTransactionBackend> transactionBackend = runTransaction(transaction, readOnly, changeVersionData);
+    SQLTransaction* transaction = SQLTransaction::create(this, callback, successCallback, errorCallback, readOnly);
+    SQLTransactionBackend* transactionBackend = runTransaction(transaction, readOnly, changeVersionData);
     if (!transactionBackend) {
         SQLTransactionErrorCallback* callback = transaction->releaseErrorCallback();
         ASSERT(callback == originalErrorCallback);
         if (callback) {
             OwnPtr<SQLErrorData> error = SQLErrorData::create(SQLError::UNKNOWN_ERR, "database has been closed");
-            executionContext()->postTask(createCrossThreadTask(&callTransactionErrorCallback, callback, error.release()));
+            executionContext()->postTask(FROM_HERE, createSameThreadTask(&callTransactionErrorCallback, callback, error.release()));
         }
     }
 }
 
-// This object is constructed in a database thread, and destructed in the
-// context thread.
-class DeliverPendingCallbackTask FINAL : public ExecutionContextTask {
-public:
-    static PassOwnPtr<DeliverPendingCallbackTask> create(PassRefPtrWillBeRawPtr<SQLTransaction> transaction)
-    {
-        return adoptPtr(new DeliverPendingCallbackTask(transaction));
-    }
-
-    virtual void performTask(ExecutionContext*) OVERRIDE
-    {
-        m_transaction->performPendingCallback();
-    }
-
-private:
-    DeliverPendingCallbackTask(PassRefPtrWillBeRawPtr<SQLTransaction> transaction)
-        : m_transaction(transaction)
-    {
-    }
-
-    RefPtrWillBeCrossThreadPersistent<SQLTransaction> m_transaction;
-};
-
 void Database::scheduleTransactionCallback(SQLTransaction* transaction)
 {
-    executionContext()->postTask(DeliverPendingCallbackTask::create(transaction));
+    // The task is constructed in a database thread, and destructed in the
+    // context thread.
+    executionContext()->postTask(FROM_HERE, createCrossThreadTask(&SQLTransaction::performPendingCallback, transaction));
 }
 
 Vector<String> Database::performGetTableNames()

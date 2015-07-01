@@ -4,127 +4,120 @@
 
 #include "content/browser/compositor/browser_compositor_view_mac.h"
 
-#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
-#include "content/browser/gpu/gpu_process_host_ui_shim.h"
-#include "content/browser/compositor/browser_compositor_view_private_mac.h"
-#include "content/common/gpu/gpu_messages.h"
+#include "base/trace_event/trace_event.h"
+#include "content/browser/compositor/image_transport_factory.h"
+#include "content/browser/gpu/gpu_data_manager_impl.h"
+#include "content/browser/renderer_host/render_widget_resize_helper.h"
+#include "content/public/browser/context_factory.h"
+#include "gpu/config/gpu_driver_bug_workaround_type.h"
+#include "ui/accelerated_widget_mac/accelerated_widget_mac.h"
 
 ////////////////////////////////////////////////////////////////////////////////
-// BrowserCompositorViewMac
+// BrowserCompositorMac
 
 namespace content {
+
 namespace {
 
+// Set when no browser compositors should remain alive.
+bool g_has_shut_down = false;
+
 // The number of placeholder objects allocated. If this reaches zero, then
-// the BrowserCompositorViewMacInternal being held on to for recycling,
-// |g_recyclable_internal_view|, will be freed.
+// the BrowserCompositorMac being held on to for recycling,
+// |g_recyclable_browser_compositor|, will be freed.
 uint32 g_placeholder_count = 0;
 
-// A spare BrowserCompositorViewMacInternal kept around for recycling.
-base::LazyInstance<scoped_ptr<BrowserCompositorViewMacInternal>>
-  g_recyclable_internal_view;
+// A spare BrowserCompositorMac kept around for recycling.
+base::LazyInstance<scoped_ptr<BrowserCompositorMac>>
+  g_recyclable_browser_compositor;
+
+bool WidgetNeedsGLFinishWorkaround() {
+  return GpuDataManagerImpl::GetInstance()->IsDriverBugWorkaroundActive(
+      gpu::FORCE_GL_FINISH_AFTER_COMPOSITING);
+}
 
 }  // namespace
 
-BrowserCompositorViewMac::BrowserCompositorViewMac(
-    BrowserCompositorViewMacClient* client) : client_(client) {
-  // Try to use the recyclable BrowserCompositorViewMacInternal if there is one,
-  // otherwise allocate a new one.
-  // TODO(ccameron): If there exists a frame in flight (swap has been called
-  // by the compositor, but the frame has not arrived from the GPU process
-  // yet), then that frame may inappropriately flash in the new view.
-  internal_view_ = g_recyclable_internal_view.Get().Pass();
-  if (!internal_view_)
-    internal_view_.reset(new BrowserCompositorViewMacInternal);
-  internal_view_->SetClient(client_);
+BrowserCompositorMac::BrowserCompositorMac()
+    : accelerated_widget_mac_(
+          new ui::AcceleratedWidgetMac(WidgetNeedsGLFinishWorkaround())),
+      compositor_(
+          accelerated_widget_mac_->accelerated_widget(),
+          content::GetContextFactory(),
+          RenderWidgetResizeHelper::Get()->task_runner()) {
+  compositor_.SetLocksWillTimeOut(false);
+  Suspend();
+  compositor_.AddObserver(this);
 }
 
-BrowserCompositorViewMac::~BrowserCompositorViewMac() {
-  // Make this BrowserCompositorViewMacInternal recyclable for future instances.
-  internal_view_->ResetClient();
-  g_recyclable_internal_view.Get() = internal_view_.Pass();
+BrowserCompositorMac::~BrowserCompositorMac() {
+  compositor_.RemoveObserver(this);
+}
+
+void BrowserCompositorMac::Suspend() {
+  compositor_suspended_lock_ = compositor_.GetCompositorLock();
+}
+
+void BrowserCompositorMac::Unsuspend() {
+  compositor_suspended_lock_ = nullptr;
+}
+
+void BrowserCompositorMac::OnCompositingDidCommit(
+    ui::Compositor* compositor_that_did_commit) {
+  DCHECK_EQ(compositor_that_did_commit, compositor());
+  content::ImageTransportFactory::GetInstance()
+      ->SetCompositorSuspendedForRecycle(compositor(), false);
+}
+
+// static
+scoped_ptr<BrowserCompositorMac> BrowserCompositorMac::Create() {
+  if (g_recyclable_browser_compositor.Get())
+    return g_recyclable_browser_compositor.Get().Pass();
+  return scoped_ptr<BrowserCompositorMac>(new BrowserCompositorMac).Pass();
+}
+
+// static
+void BrowserCompositorMac::Recycle(
+    scoped_ptr<BrowserCompositorMac> compositor) {
+  DCHECK(compositor);
+  content::ImageTransportFactory::GetInstance()
+      ->SetCompositorSuspendedForRecycle(compositor->compositor(), true);
+
+  // It is an error to have a browser compositor continue to exist after
+  // shutdown.
+  CHECK(!g_has_shut_down);
+
+  // Make this BrowserCompositorMac recyclable for future instances.
+  g_recyclable_browser_compositor.Get().swap(compositor);
 
   // If there are no placeholders allocated, destroy the recyclable
-  // BrowserCompositorViewMacInternal that we just populated.
+  // BrowserCompositorMac that we just populated.
   if (!g_placeholder_count)
-    g_recyclable_internal_view.Get().reset();
-}
-
-ui::Compositor* BrowserCompositorViewMac::GetCompositor() const {
-  DCHECK(internal_view_);
-  return internal_view_->compositor();
-}
-
-bool BrowserCompositorViewMac::HasFrameOfSize(
-    const gfx::Size& dip_size) const {
-  if (internal_view_)
-    return internal_view_->HasFrameOfSize(dip_size);
-  return false;
-}
-
-void BrowserCompositorViewMac::BeginPumpingFrames() {
-  if (internal_view_)
-    internal_view_->BeginPumpingFrames();
-}
-
-void BrowserCompositorViewMac::EndPumpingFrames() {
-  if (internal_view_)
-    internal_view_->EndPumpingFrames();
+    g_recyclable_browser_compositor.Get().reset();
 }
 
 // static
-void BrowserCompositorViewMac::GotAcceleratedFrame(
-    gfx::AcceleratedWidget widget,
-    uint64 surface_handle, int surface_id,
-    const std::vector<ui::LatencyInfo>& latency_info,
-    gfx::Size pixel_size, float scale_factor,
-    int gpu_host_id, int gpu_route_id) {
-  BrowserCompositorViewMacInternal* internal_view =
-      BrowserCompositorViewMacInternal::FromAcceleratedWidget(widget);
-  int renderer_id = 0;
-  if (internal_view) {
-    internal_view->GotAcceleratedFrame(
-        surface_handle, surface_id, latency_info, pixel_size, scale_factor);
-    renderer_id = internal_view->GetRendererID();
-  }
-
-  // Acknowledge the swap, now that it has been processed.
-  AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
-  ack_params.sync_point = 0;
-  ack_params.renderer_id = renderer_id;
-  GpuProcessHostUIShim* ui_shim = GpuProcessHostUIShim::FromID(gpu_host_id);
-  if (ui_shim) {
-    ui_shim->Send(new AcceleratedSurfaceMsg_BufferPresented(
-        gpu_route_id, ack_params));
-  }
-}
-
-// static
-void BrowserCompositorViewMac::GotSoftwareFrame(
-    gfx::AcceleratedWidget widget,
-    cc::SoftwareFrameData* frame_data, float scale_factor, SkCanvas* canvas) {
-  BrowserCompositorViewMacInternal* internal_view =
-      BrowserCompositorViewMacInternal::FromAcceleratedWidget(widget);
-  if (internal_view)
-    internal_view->GotSoftwareFrame(frame_data, scale_factor, canvas);
+void BrowserCompositorMac::DisableRecyclingForShutdown() {
+  g_has_shut_down = true;
+  g_recyclable_browser_compositor.Get().reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// BrowserCompositorViewPlaceholderMac
+// BrowserCompositorMacPlaceholder
 
-BrowserCompositorViewPlaceholderMac::BrowserCompositorViewPlaceholderMac() {
+BrowserCompositorMacPlaceholder::BrowserCompositorMacPlaceholder() {
   g_placeholder_count += 1;
 }
 
-BrowserCompositorViewPlaceholderMac::~BrowserCompositorViewPlaceholderMac() {
+BrowserCompositorMacPlaceholder::~BrowserCompositorMacPlaceholder() {
   DCHECK_GT(g_placeholder_count, 0u);
   g_placeholder_count -= 1;
 
   // If there are no placeholders allocated, destroy the recyclable
-  // BrowserCompositorViewMacInternal.
+  // BrowserCompositorMac.
   if (!g_placeholder_count)
-    g_recyclable_internal_view.Get().reset();
+    g_recyclable_browser_compositor.Get().reset();
 }
 
 }  // namespace content

@@ -53,8 +53,8 @@ void GetGalleryInfoCallback(
 
 class MTPDeviceDelegateImplWinTest : public ChromeRenderViewHostTestHarness {
  protected:
-  void SetUp() OVERRIDE;
-  void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   void ProcessAttach(const std::string& id,
                      const base::string16& name,
@@ -88,7 +88,7 @@ void MTPDeviceDelegateImplWinTest::SetUp() {
   TestingBrowserProcess* browser_process = TestingBrowserProcess::GetGlobal();
   DCHECK(browser_process);
   monitor_ = monitor.get();
-  StorageMonitor::SetStorageMonitorForTesting(monitor.PassAs<StorageMonitor>());
+  StorageMonitor::SetStorageMonitorForTesting(monitor.Pass());
 
   base::RunLoop runloop;
   browser_process->media_file_system_registry()->GetPreferences(profile())->
@@ -99,7 +99,7 @@ void MTPDeviceDelegateImplWinTest::SetUp() {
       static_cast<extensions::TestExtensionSystem*>(
           extensions::ExtensionSystem::Get(profile())));
   extension_system->CreateExtensionService(
-      CommandLine::ForCurrentProcess(), base::FilePath(), false);
+      base::CommandLine::ForCurrentProcess(), base::FilePath(), false);
 
   std::vector<std::string> all_permissions;
   all_permissions.push_back("allAutoDetected");

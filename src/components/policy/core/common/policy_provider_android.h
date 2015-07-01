@@ -18,7 +18,7 @@ class Schema;
 class POLICY_EXPORT PolicyProviderAndroid : public ConfigurationPolicyProvider {
  public:
   PolicyProviderAndroid();
-  virtual ~PolicyProviderAndroid();
+  ~PolicyProviderAndroid() override;
 
   // Call this method to tell the policy system whether it should wait for
   // policies to be loaded by this provider. If this method is called,
@@ -33,9 +33,9 @@ class POLICY_EXPORT PolicyProviderAndroid : public ConfigurationPolicyProvider {
   void SetPolicies(scoped_ptr<PolicyBundle> policy);
 
   // ConfigurationPolicyProvider:
-  virtual void Shutdown() OVERRIDE;
-  virtual bool IsInitializationComplete(PolicyDomain domain) const OVERRIDE;
-  virtual void RefreshPolicies() OVERRIDE;
+  void Shutdown() override;
+  bool IsInitializationComplete(PolicyDomain domain) const override;
+  void RefreshPolicies() override;
 
  private:
   PolicyProviderAndroidDelegate* delegate_;

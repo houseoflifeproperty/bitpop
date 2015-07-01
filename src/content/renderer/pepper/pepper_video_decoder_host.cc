@@ -7,8 +7,10 @@
 #include "base/bind.h"
 #include "base/memory/shared_memory.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
+#include "content/common/pepper_file_util.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
+#include "content/renderer/pepper/gfx_conversion.h"
 #include "content/renderer/pepper/ppb_graphics_3d_impl.h"
 #include "content/renderer/pepper/video_decoder_shim.h"
 #include "media/video/video_decode_accelerator.h"
@@ -194,13 +196,8 @@ int32_t PepperVideoDecoderHost::OnHostMsgGetShm(
     shm_buffers_[shm_id] = shm.release();
   }
 
-#if defined(OS_WIN)
-  base::PlatformFile platform_file = shm_handle;
-#elif defined(OS_POSIX)
-  base::PlatformFile platform_file = shm_handle.fd;
-#else
-#error Not implemented.
-#endif
+  base::PlatformFile platform_file =
+      PlatformFileFromSharedMemoryHandle(shm_handle);
   SerializedHandle handle(
       renderer_ppapi_host_->ShareHandleWithRemote(platform_file, false),
       shm_size);
@@ -271,7 +268,24 @@ int32_t PepperVideoDecoderHost::OnHostMsgRecyclePicture(
     return PP_ERROR_FAILED;
   DCHECK(decoder_);
 
-  decoder_->ReusePictureBuffer(texture_id);
+  TextureSet::iterator it = pictures_in_use_.find(texture_id);
+  if (it == pictures_in_use_.end())
+    return PP_ERROR_BADARGUMENT;
+
+  pictures_in_use_.erase(it);
+
+  TextureSet::iterator dismissed_texture =
+      dismissed_pictures_in_use_.find(texture_id);
+  if (dismissed_texture != dismissed_pictures_in_use_.end()) {
+    // The texture was already dismissed by the decoder. Notify the plugin.
+    host()->SendUnsolicitedReply(
+        pp_resource(),
+        PpapiPluginMsg_VideoDecoder_DismissPicture(texture_id));
+    dismissed_pictures_in_use_.erase(dismissed_texture);
+  } else {
+    decoder_->ReusePictureBuffer(texture_id);
+  }
+
   return PP_OK;
 }
 
@@ -314,15 +328,27 @@ void PepperVideoDecoderHost::ProvidePictureBuffers(
 }
 
 void PepperVideoDecoderHost::PictureReady(const media::Picture& picture) {
-  // So far picture.visible_rect is not used. If used, visible_rect should
-  // be validated since it comes from GPU process and may not be trustworthy.
-  host()->SendUnsolicitedReply(
-      pp_resource(),
-      PpapiPluginMsg_VideoDecoder_PictureReady(picture.bitstream_buffer_id(),
-                                               picture.picture_buffer_id()));
+  // Don't bother validating the visible rect, since the plugin process is less
+  // trusted than the gpu process.
+  DCHECK(pictures_in_use_.find(picture.picture_buffer_id()) ==
+         pictures_in_use_.end());
+  pictures_in_use_.insert(picture.picture_buffer_id());
+
+  PP_Rect visible_rect = PP_FromGfxRect(picture.visible_rect());
+  host()->SendUnsolicitedReply(pp_resource(),
+                               PpapiPluginMsg_VideoDecoder_PictureReady(
+                                   picture.bitstream_buffer_id(),
+                                   picture.picture_buffer_id(), visible_rect));
 }
 
 void PepperVideoDecoderHost::DismissPictureBuffer(int32 picture_buffer_id) {
+  // If the texture is still used by the plugin keep it until the plugin
+  // recycles it.
+  if (pictures_in_use_.find(picture_buffer_id) != pictures_in_use_.end()) {
+    dismissed_pictures_in_use_.insert(picture_buffer_id);
+    return;
+  }
+
   host()->SendUnsolicitedReply(
       pp_resource(),
       PpapiPluginMsg_VideoDecoder_DismissPicture(picture_buffer_id));

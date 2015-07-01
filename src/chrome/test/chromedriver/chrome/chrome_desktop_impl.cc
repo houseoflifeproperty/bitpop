@@ -27,36 +27,36 @@
 
 namespace {
 
-bool KillProcess(base::ProcessHandle process_id) {
+bool KillProcess(const base::Process& process, bool kill_gracefully) {
 #if defined(OS_POSIX)
-  kill(process_id, SIGKILL);
-  base::TimeTicks deadline =
-      base::TimeTicks::Now() + base::TimeDelta::FromSeconds(30);
-  while (base::TimeTicks::Now() < deadline) {
-    pid_t pid = HANDLE_EINTR(waitpid(process_id, NULL, WNOHANG));
-    if (pid == process_id)
-      return true;
-    if (pid == -1) {
-      if (errno == ECHILD) {
-        // The wait may fail with ECHILD if another process also waited for
-        // the same pid, causing the process state to get cleaned up.
+  if (!kill_gracefully) {
+    kill(process.Pid(), SIGKILL);
+    base::TimeTicks deadline =
+        base::TimeTicks::Now() + base::TimeDelta::FromSeconds(30);
+    while (base::TimeTicks::Now() < deadline) {
+      pid_t pid = HANDLE_EINTR(waitpid(process.Pid(), NULL, WNOHANG));
+      if (pid == process.Pid())
         return true;
+      if (pid == -1) {
+        if (errno == ECHILD) {
+          // The wait may fail with ECHILD if another process also waited for
+          // the same pid, causing the process state to get cleaned up.
+          return true;
+        }
+        LOG(WARNING) << "Error waiting for process " << process.Pid();
       }
-      LOG(WARNING) << "Error waiting for process " << process_id;
+      base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(50));
     }
-    base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(50));
+    return false;
   }
-  return false;
 #endif
 
-#if defined(OS_WIN)
-  if (!base::KillProcess(process_id, 0, true)) {
+  if (!process.Terminate(0, true)) {
     int exit_code;
-    return base::GetTerminationStatus(process_id, &exit_code) !=
+    return base::GetTerminationStatus(process.Handle(), &exit_code) !=
         base::TERMINATION_STATUS_STILL_RUNNING;
   }
   return true;
-#endif
 }
 
 }  // namespace
@@ -66,15 +66,15 @@ ChromeDesktopImpl::ChromeDesktopImpl(
     scoped_ptr<DevToolsClient> websocket_client,
     ScopedVector<DevToolsEventListener>& devtools_event_listeners,
     scoped_ptr<PortReservation> port_reservation,
-    base::ProcessHandle process,
-    const CommandLine& command,
+    base::Process process,
+    const base::CommandLine& command,
     base::ScopedTempDir* user_data_dir,
     base::ScopedTempDir* extension_dir)
     : ChromeImpl(http_client.Pass(),
                  websocket_client.Pass(),
                  devtools_event_listeners,
                  port_reservation.Pass()),
-      process_(process),
+      process_(process.Pass()),
       command_(command) {
   if (user_data_dir->IsValid())
     CHECK(user_data_dir_.Set(user_data_dir->Take()));
@@ -86,10 +86,14 @@ ChromeDesktopImpl::~ChromeDesktopImpl() {
   if (!quit_) {
     base::FilePath user_data_dir = user_data_dir_.Take();
     base::FilePath extension_dir = extension_dir_.Take();
-    LOG(WARNING) << "chrome detaches, user should take care of directory:"
-                 << user_data_dir.value() << " and " << extension_dir.value();
+    LOG(WARNING) << "chrome quit unexpectedly, leaving behind temporary "
+        "directories for debugging:";
+    if (user_data_dir_.IsValid())
+      LOG(WARNING) << "chrome user data directory: " << user_data_dir.value();
+    if (extension_dir_.IsValid())
+      LOG(WARNING) << "chromedriver automation extension directory: "
+                   << extension_dir.value();
   }
-  base::CloseProcessHandle(process_);
 }
 
 Status ChromeDesktopImpl::WaitForPageToLoad(const std::string& url,
@@ -150,8 +154,9 @@ Status ChromeDesktopImpl::GetAutomationExtension(
   return Status(kOk);
 }
 
-ChromeDesktopImpl* ChromeDesktopImpl::GetAsDesktop() {
-  return this;
+Status ChromeDesktopImpl::GetAsDesktop(ChromeDesktopImpl** desktop) {
+  *desktop = this;
+  return Status(kOk);
 }
 
 std::string ChromeDesktopImpl::GetOperatingSystemName() {
@@ -163,11 +168,16 @@ bool ChromeDesktopImpl::IsMobileEmulationEnabled() const {
 }
 
 Status ChromeDesktopImpl::QuitImpl() {
-  if (!KillProcess(process_))
+  // If the Chrome session uses a custom user data directory, try sending a
+  // SIGTERM signal before SIGKILL, so that Chrome has a chance to write
+  // everything back out to the user data directory and exit cleanly.If
+  // we're using a temporary user data directory, we're going to delete
+  // the temporary directory anyway, so just send SIGKILL immediately.
+  if (!KillProcess(process_, !user_data_dir_.IsValid()))
     return Status(kUnknownError, "cannot kill Chrome");
   return Status(kOk);
 }
 
-const CommandLine& ChromeDesktopImpl::command() const {
+const base::CommandLine& ChromeDesktopImpl::command() const {
   return command_;
 }

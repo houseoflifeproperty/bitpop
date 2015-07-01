@@ -169,7 +169,8 @@ scoped_ptr<base::DictionaryValue> DefaultsToValue(ExtensionAction* action) {
   dict->SetInteger(kAppearanceStorageKey,
                    action->GetIsVisible(kDefaultTabId) ? ACTIVE : INVISIBLE);
 
-  gfx::ImageSkia icon = action->GetExplicitlySetIcon(kDefaultTabId);
+  gfx::ImageSkia icon =
+      action->GetExplicitlySetIcon(kDefaultTabId).AsImageSkia();
   if (!icon.isNull()) {
     scoped_ptr<base::DictionaryValue> icon_value(new base::DictionaryValue());
     for (size_t i = 0; i < extension_misc::kNumExtensionActionIconSizes; i++) {
@@ -244,7 +245,7 @@ void ExtensionActionStorageManager::WriteToStorage(
         DefaultsToValue(extension_action);
     store->SetExtensionValue(extension_action->extension_id(),
                              kBrowserActionStorageKey,
-                             defaults.PassAs<base::Value>());
+                             defaults.Pass());
   }
 }
 

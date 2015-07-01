@@ -11,7 +11,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
-#include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/prefs/synced_pref_change_registrar.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
@@ -23,7 +22,7 @@ class PrefRegistrySimple;
 class PrefMetricsService : public KeyedService {
  public:
   explicit PrefMetricsService(Profile* profile);
-  virtual ~PrefMetricsService();
+  ~PrefMetricsService() override;
 
   class Factory : public BrowserContextKeyedServiceFactory {
    public:
@@ -33,15 +32,15 @@ class PrefMetricsService : public KeyedService {
     friend struct DefaultSingletonTraits<Factory>;
 
     Factory();
-    virtual ~Factory();
+    ~Factory() override;
 
     // BrowserContextKeyedServiceFactory implementation
-    virtual KeyedService* BuildServiceInstanceFor(
-        content::BrowserContext* profile) const OVERRIDE;
-    virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
-    virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
-    virtual content::BrowserContext* GetBrowserContextToUse(
-        content::BrowserContext* context) const OVERRIDE;
+    KeyedService* BuildServiceInstanceFor(
+        content::BrowserContext* profile) const override;
+    bool ServiceIsCreatedWithBrowserContext() const override;
+    bool ServiceIsNULLWhileTesting() const override;
+    content::BrowserContext* GetBrowserContextToUse(
+        content::BrowserContext* context) const override;
   };
 
  private:
@@ -84,7 +83,6 @@ class PrefMetricsService : public KeyedService {
   PrefService* prefs_;
   PrefService* local_state_;
 
-  PrefChangeRegistrar pref_registrar_;
   scoped_ptr<SyncedPrefChangeRegistrar> synced_pref_change_registrar_;
 
   base::WeakPtrFactory<PrefMetricsService> weak_factory_;

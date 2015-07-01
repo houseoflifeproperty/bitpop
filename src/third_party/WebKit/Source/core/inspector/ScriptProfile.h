@@ -39,14 +39,14 @@
 
 namespace blink {
 
-class ScriptProfile FINAL : public RefCountedWillBeGarbageCollectedFinalized<ScriptProfile> {
+class ScriptProfile final : public RefCountedWillBeGarbageCollectedFinalized<ScriptProfile> {
 public:
     static PassRefPtrWillBeRawPtr<ScriptProfile> create(v8::CpuProfile* profile, double idleTime)
     {
         return adoptRefWillBeNoop(new ScriptProfile(profile, idleTime));
     }
     ~ScriptProfile();
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
     String title() const;
     double idleTime() const;

@@ -7,7 +7,7 @@
 
 #include "ui/aura/window_observer.h"
 #include "ui/events/event_handler.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 #include "ui/views/widget/widget_observer.h"
 
 namespace ash {
@@ -23,7 +23,7 @@ class PartialMagnificationController
     public views::WidgetObserver {
  public:
   PartialMagnificationController();
-  virtual ~PartialMagnificationController();
+  ~PartialMagnificationController() override;
 
   // Enables (or disables if |enabled| is false) partial screen magnifier
   // feature.
@@ -37,15 +37,15 @@ class PartialMagnificationController
   // Returns the current magnification ratio.
   float GetScale() const { return scale_; }
 
- private:
-  void OnMouseMove(const gfx::Point& location_in_root);
-
   // Switch PartialMagnified RootWindow to |new_root_window|. This does
   // following:
   //  - Remove the magnifier from the current root window.
   //  - Create a magnifier in the new root_window |new_root_window|.
   //  - Switch the target window from current window to |new_root_window|.
   void SwitchTargetRootWindow(aura::Window* new_root_window);
+
+ private:
+  void OnMouseMove(const gfx::Point& location_in_root);
 
   // Returns the root window that contains the mouse cursor.
   aura::Window* GetCurrentRootWindow();
@@ -63,17 +63,13 @@ class PartialMagnificationController
   void RemoveZoomWidgetObservers();
 
   // ui::EventHandler overrides:
-  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
+  void OnMouseEvent(ui::MouseEvent* event) override;
 
   // Overridden from WindowObserver:
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
+  void OnWindowDestroying(aura::Window* window) override;
 
   // Overridden from WidgetObserver:
-  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
-
-  // True if the magnified window is in motion of zooming or un-zooming effect.
-  // Otherwise, false.
-  bool is_on_zooming_;
+  void OnWidgetDestroying(views::Widget* widget) override;
 
   bool is_enabled_;
 

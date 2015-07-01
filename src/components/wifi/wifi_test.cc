@@ -82,19 +82,20 @@ class WiFiTest {
 
 WiFiTest::Result WiFiTest::Main(int argc, const char* argv[]) {
   if (!ParseCommandLine(argc, argv)) {
-    VLOG(0) <<  "Usage: " << argv[0] <<
-                " [--list]"
-                " [--get_key]"
-                " [--get_properties]"
-                " [--create]"
-                " [--connect]"
-                " [--disconnect]"
-                " [--scan]"
-                " [--network_guid=<network_guid>]"
-                " [--frequency=0|2400|5000]"
-                " [--security=none|WEP-PSK|WPA-PSK|WPA2-PSK]"
-                " [--password=<wifi_password>]"
-                " [<network_guid>]\n";
+    VLOG(0) << "Usage: " << argv[0]
+            << " [--list]"
+               " [--get_connected_ssid]"
+               " [--get_key]"
+               " [--get_properties]"
+               " [--create]"
+               " [--connect]"
+               " [--disconnect]"
+               " [--scan]"
+               " [--network_guid=<network_guid>]"
+               " [--frequency=0|2400|5000]"
+               " [--security=none|WEP-PSK|WPA-PSK|WPA2-PSK]"
+               " [--password=<wifi_password>]"
+               " [<network_guid>]\n";
     return RESULT_WRONG_USAGE;
   }
 
@@ -105,8 +106,9 @@ WiFiTest::Result WiFiTest::Main(int argc, const char* argv[]) {
 }
 
 bool WiFiTest::ParseCommandLine(int argc, const char* argv[]) {
-  CommandLine::Init(argc, argv);
-  const CommandLine& parsed_command_line = *CommandLine::ForCurrentProcess();
+  base::CommandLine::Init(argc, argv);
+  const base::CommandLine& parsed_command_line =
+      *base::CommandLine::ForCurrentProcess();
   std::string network_guid =
       parsed_command_line.GetSwitchValueASCII("network_guid");
   std::string frequency =
@@ -231,13 +233,24 @@ bool WiFiTest::ParseCommandLine(int argc, const char* argv[]) {
     return true;
   }
 
+  if (parsed_command_line.HasSwitch("get_connected_ssid")) {
+    std::string ssid;
+    std::string error;
+    wifi_service_->GetConnectedNetworkSSID(&ssid, &error);
+    if (error.length() > 0)
+      VLOG(0) << error;
+    else
+      VLOG(0) << "Network SSID: " << ssid;
+    return true;
+  }
+
   return false;
 }
 
 }  // namespace wifi
 
 int main(int argc, const char* argv[]) {
-  CommandLine::Init(argc, argv);
+  base::CommandLine::Init(argc, argv);
   logging::LoggingSettings settings;
   settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
   logging::InitLogging(settings);

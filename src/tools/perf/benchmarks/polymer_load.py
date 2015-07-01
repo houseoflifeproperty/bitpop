@@ -2,9 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from telemetry import benchmark
+
 from measurements import polymer_load
 import page_sets
-from telemetry import benchmark
 
 
 @benchmark.Enabled('android')
@@ -13,9 +14,22 @@ class PolymerLoadPica(benchmark.Benchmark):
   test = polymer_load.PolymerLoadMeasurement
   page_set = page_sets.PicaPageSet
 
+  @classmethod
+  def Name(cls):
+    return 'polymer_load.pica'
 
-@benchmark.Enabled('android')
+
+# There is something weird about this test (or a test that precedes it)
+# that causes it to fail in telemetry_perf_unittests when it is not run
+# as the first of the benchmark_smoke_unittest test cases.
+# See crbug.com/428207.
+#@benchmark.Enabled('android')
+@benchmark.Disabled
 class PolymerLoadTopeka(benchmark.Benchmark):
   """Measures time to polymer-ready for Topeka (Quiz App)."""
   test = polymer_load.PolymerLoadMeasurement
   page_set = page_sets.TopekaPageSet
+  @classmethod
+  def Name(cls):
+    return 'polymer_load.topeka'
+

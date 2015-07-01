@@ -63,6 +63,9 @@ class SvcTest : public ::testing::Test {
     vpx_codec_dec_cfg_t dec_cfg = vpx_codec_dec_cfg_t();
     VP9CodecFactory codec_factory;
     decoder_ = codec_factory.CreateDecoder(dec_cfg, 0);
+
+    tile_columns_ = 0;
+    tile_rows_ = 0;
   }
 
   virtual void TearDown() {
@@ -75,6 +78,8 @@ class SvcTest : public ::testing::Test {
         vpx_svc_init(&svc_, &codec_, vpx_codec_vp9_cx(), &codec_enc_);
     EXPECT_EQ(VPX_CODEC_OK, res);
     vpx_codec_control(&codec_, VP8E_SET_CPUUSED, 4);  // Make the test faster
+    vpx_codec_control(&codec_, VP9E_SET_TILE_COLUMNS, tile_columns_);
+    vpx_codec_control(&codec_, VP9E_SET_TILE_ROWS, tile_rows_);
     codec_initialized_ = true;
   }
 
@@ -108,7 +113,8 @@ class SvcTest : public ::testing::Test {
     codec_enc_.g_pass = VPX_RC_FIRST_PASS;
     InitializeEncoder();
 
-    libvpx_test::I420VideoSource video(test_file_name_, kWidth, kHeight,
+    libvpx_test::I420VideoSource video(test_file_name_,
+                                       codec_enc_.g_w, codec_enc_.g_h,
                                        codec_enc_.g_timebase.den,
                                        codec_enc_.g_timebase.num, 0, 30);
     video.Begin();
@@ -176,7 +182,8 @@ class SvcTest : public ::testing::Test {
     }
     InitializeEncoder();
 
-    libvpx_test::I420VideoSource video(test_file_name_, kWidth, kHeight,
+    libvpx_test::I420VideoSource video(test_file_name_,
+                                       codec_enc_.g_w, codec_enc_.g_h,
                                        codec_enc_.g_timebase.den,
                                        codec_enc_.g_timebase.num, 0, 30);
     video.Begin();
@@ -225,10 +232,9 @@ class SvcTest : public ::testing::Test {
     EXPECT_EQ(received_frames, n);
   }
 
-  void DropLayersAndMakeItVP9Comaptible(struct vpx_fixed_buf *const inputs,
-                                        const int num_super_frames,
-                                        const int remained_spatial_layers,
-                                        const bool is_multiple_frame_contexts) {
+  void DropEnhancementLayers(struct vpx_fixed_buf *const inputs,
+                             const int num_super_frames,
+                             const int remained_spatial_layers) {
     ASSERT_TRUE(inputs != NULL);
     ASSERT_GT(num_super_frames, 0);
     ASSERT_GT(remained_spatial_layers, 0);
@@ -250,45 +256,6 @@ class SvcTest : public ::testing::Test {
       if (frame_count == 0) {
         // There's no super frame but only a single frame.
         ASSERT_EQ(1, remained_spatial_layers);
-        if (is_multiple_frame_contexts) {
-          // Make a new super frame.
-          uint8_t marker = 0xc1;
-          unsigned int mask;
-          int mag;
-
-          // Choose the magnitude.
-          for (mag = 0, mask = 0xff; mag < 4; ++mag) {
-            if (inputs[i].sz < mask)
-              break;
-            mask <<= 8;
-            mask |= 0xff;
-          }
-          marker |= mag << 3;
-          int index_sz = 2 + (mag + 1) * 2;
-
-          inputs[i].buf = realloc(inputs[i].buf, inputs[i].sz + index_sz + 16);
-          ASSERT_TRUE(inputs[i].buf != NULL);
-          uint8_t *frame_data = static_cast<uint8_t*>(inputs[i].buf);
-          frame_data[0] &= ~2;      // Set the show_frame flag to 0.
-          frame_data += inputs[i].sz;
-          // Add an one byte frame with show_existing_frame.
-          *frame_data++ = 0x88;
-
-          // Write the super frame index.
-          *frame_data++ = marker;
-
-          frame_sizes[0] = inputs[i].sz;
-          frame_sizes[1] = 1;
-          for (int j = 0; j < 2; ++j) {
-            unsigned int this_sz = frame_sizes[j];
-            for (int k = 0; k <= mag; k++) {
-              *frame_data++ = this_sz & 0xff;
-              this_sz >>= 8;
-            }
-          }
-          *frame_data++ = marker;
-          inputs[i].sz += index_sz + 1;
-        }
       } else {
         // Found a super frame.
         uint8_t *frame_data = static_cast<uint8_t*>(inputs[i].buf);
@@ -304,16 +271,13 @@ class SvcTest : public ::testing::Test {
         }
         ASSERT_LT(frame, frame_count) << "Couldn't find a visible frame. "
             << "remained_spatial_layers: " << remained_spatial_layers
-            << "    super_frame: " << i
-            << "    is_multiple_frame_context: " << is_multiple_frame_contexts;
-        if (frame == frame_count - 1 && !is_multiple_frame_contexts)
+            << "    super_frame: " << i;
+        if (frame == frame_count - 1)
           continue;
 
         frame_data += frame_sizes[frame];
 
         // We need to add one more frame for multiple frame contexts.
-        if (is_multiple_frame_contexts)
-          ++frame;
         uint8_t marker =
             static_cast<const uint8_t*>(inputs[i].buf)[inputs[i].sz - 1];
         const uint32_t mag = ((marker >> 3) & 0x3) + 1;
@@ -323,35 +287,14 @@ class SvcTest : public ::testing::Test {
         marker |= frame;
 
         // Copy existing frame sizes.
-        memmove(frame_data + (is_multiple_frame_contexts ? 2 : 1),
-                frame_start + inputs[i].sz - index_sz + 1, new_index_sz - 2);
-        if (is_multiple_frame_contexts) {
-          // Add a one byte frame with flag show_existing_frame.
-          *frame_data++ = 0x88 | (remained_spatial_layers - 1);
-        }
+        memmove(frame_data + 1, frame_start + inputs[i].sz - index_sz + 1,
+                new_index_sz - 2);
         // New marker.
         frame_data[0] = marker;
         frame_data += (mag * (frame + 1) + 1);
 
-        if (is_multiple_frame_contexts) {
-          // Write the frame size for the one byte frame.
-          frame_data -= mag;
-          *frame_data++ = 1;
-          for (uint32_t j = 1; j < mag; ++j) {
-            *frame_data++ = 0;
-          }
-        }
-
         *frame_data++ = marker;
         inputs[i].sz = frame_data - frame_start;
-
-        if (is_multiple_frame_contexts) {
-          // Change the show frame flag to 0 for all frames.
-          for (int j = 0; j < frame; ++j) {
-            frame_start[0] &= ~2;
-            frame_start += frame_sizes[j];
-          }
-        }
       }
     }
   }
@@ -374,6 +317,8 @@ class SvcTest : public ::testing::Test {
   std::string test_file_name_;
   bool codec_initialized_;
   Decoder *decoder_;
+  int tile_columns_;
+  int tile_rows_;
 };
 
 TEST_F(SvcTest, SvcInit) {
@@ -555,7 +500,7 @@ TEST_F(SvcTest, TwoPassEncode2SpatialLayersDecodeBaseLayerOnly) {
   vpx_fixed_buf outputs[10];
   memset(&outputs[0], 0, sizeof(outputs));
   Pass2EncodeNFrames(&stats_buf, 10, 2, &outputs[0]);
-  DropLayersAndMakeItVP9Comaptible(&outputs[0], 10, 1, false);
+  DropEnhancementLayers(&outputs[0], 10, 1);
   DecodeNFrames(&outputs[0], 10);
   FreeBitstreamBuffers(&outputs[0], 10);
 }
@@ -573,13 +518,13 @@ TEST_F(SvcTest, TwoPassEncode5SpatialLayersDecode54321Layers) {
   Pass2EncodeNFrames(&stats_buf, 10, 5, &outputs[0]);
 
   DecodeNFrames(&outputs[0], 10);
-  DropLayersAndMakeItVP9Comaptible(&outputs[0], 10, 4, false);
+  DropEnhancementLayers(&outputs[0], 10, 4);
   DecodeNFrames(&outputs[0], 10);
-  DropLayersAndMakeItVP9Comaptible(&outputs[0], 10, 3, false);
+  DropEnhancementLayers(&outputs[0], 10, 3);
   DecodeNFrames(&outputs[0], 10);
-  DropLayersAndMakeItVP9Comaptible(&outputs[0], 10, 2, false);
+  DropEnhancementLayers(&outputs[0], 10, 2);
   DecodeNFrames(&outputs[0], 10);
-  DropLayersAndMakeItVP9Comaptible(&outputs[0], 10, 1, false);
+  DropEnhancementLayers(&outputs[0], 10, 1);
   DecodeNFrames(&outputs[0], 10);
 
   FreeBitstreamBuffers(&outputs[0], 10);
@@ -616,9 +561,9 @@ TEST_F(SvcTest, TwoPassEncode3SNRLayersDecode321Layers) {
   memset(&outputs[0], 0, sizeof(outputs));
   Pass2EncodeNFrames(&stats_buf, 20, 3, &outputs[0]);
   DecodeNFrames(&outputs[0], 20);
-  DropLayersAndMakeItVP9Comaptible(&outputs[0], 20, 2, false);
+  DropEnhancementLayers(&outputs[0], 20, 2);
   DecodeNFrames(&outputs[0], 20);
-  DropLayersAndMakeItVP9Comaptible(&outputs[0], 20, 1, false);
+  DropEnhancementLayers(&outputs[0], 20, 1);
   DecodeNFrames(&outputs[0], 20);
 
   FreeBitstreamBuffers(&outputs[0], 20);
@@ -649,7 +594,6 @@ TEST_F(SvcTest, TwoPassEncode2SpatialLayersWithMultipleFrameContexts) {
   vpx_fixed_buf outputs[10];
   memset(&outputs[0], 0, sizeof(outputs));
   Pass2EncodeNFrames(&stats_buf, 10, 2, &outputs[0]);
-  DropLayersAndMakeItVP9Comaptible(&outputs[0], 10, 2, true);
   DecodeNFrames(&outputs[0], 10);
   FreeBitstreamBuffers(&outputs[0], 10);
 }
@@ -667,7 +611,7 @@ TEST_F(SvcTest,
   vpx_fixed_buf outputs[10];
   memset(&outputs[0], 0, sizeof(outputs));
   Pass2EncodeNFrames(&stats_buf, 10, 2, &outputs[0]);
-  DropLayersAndMakeItVP9Comaptible(&outputs[0], 10, 1, true);
+  DropEnhancementLayers(&outputs[0], 10, 1);
   DecodeNFrames(&outputs[0], 10);
   FreeBitstreamBuffers(&outputs[0], 10);
 }
@@ -686,7 +630,6 @@ TEST_F(SvcTest, TwoPassEncode2SNRLayersWithMultipleFrameContexts) {
   vpx_fixed_buf outputs[10];
   memset(&outputs[0], 0, sizeof(outputs));
   Pass2EncodeNFrames(&stats_buf, 10, 2, &outputs[0]);
-  DropLayersAndMakeItVP9Comaptible(&outputs[0], 10, 2, true);
   DecodeNFrames(&outputs[0], 10);
   FreeBitstreamBuffers(&outputs[0], 10);
 }
@@ -707,32 +650,13 @@ TEST_F(SvcTest,
   memset(&outputs[0], 0, sizeof(outputs));
   Pass2EncodeNFrames(&stats_buf, 10, 3, &outputs[0]);
 
-  vpx_fixed_buf outputs_new[10];
-  for (int i = 0; i < 10; ++i) {
-    outputs_new[i].buf = malloc(outputs[i].sz + 16);
-    ASSERT_TRUE(outputs_new[i].buf != NULL);
-    memcpy(outputs_new[i].buf, outputs[i].buf, outputs[i].sz);
-    outputs_new[i].sz = outputs[i].sz;
-  }
-  DropLayersAndMakeItVP9Comaptible(&outputs_new[0], 10, 3, true);
-  DecodeNFrames(&outputs_new[0], 10);
-
-  for (int i = 0; i < 10; ++i) {
-    memcpy(outputs_new[i].buf, outputs[i].buf, outputs[i].sz);
-    outputs_new[i].sz = outputs[i].sz;
-  }
-  DropLayersAndMakeItVP9Comaptible(&outputs_new[0], 10, 2, true);
-  DecodeNFrames(&outputs_new[0], 10);
-
-  for (int i = 0; i < 10; ++i) {
-    memcpy(outputs_new[i].buf, outputs[i].buf, outputs[i].sz);
-    outputs_new[i].sz = outputs[i].sz;
-  }
-  DropLayersAndMakeItVP9Comaptible(&outputs_new[0], 10, 1, true);
-  DecodeNFrames(&outputs_new[0], 10);
+  DecodeNFrames(&outputs[0], 10);
+  DropEnhancementLayers(&outputs[0], 10, 2);
+  DecodeNFrames(&outputs[0], 10);
+  DropEnhancementLayers(&outputs[0], 10, 1);
+  DecodeNFrames(&outputs[0], 10);
 
   FreeBitstreamBuffers(&outputs[0], 10);
-  FreeBitstreamBuffers(&outputs_new[0], 10);
 }
 
 TEST_F(SvcTest, TwoPassEncode2TemporalLayers) {
@@ -769,7 +693,6 @@ TEST_F(SvcTest, TwoPassEncode2TemporalLayersWithMultipleFrameContexts) {
   vpx_fixed_buf outputs[10];
   memset(&outputs[0], 0, sizeof(outputs));
   Pass2EncodeNFrames(&stats_buf, 10, 1, &outputs[0]);
-  DropLayersAndMakeItVP9Comaptible(&outputs[0], 10, 1, true);
   DecodeNFrames(&outputs[0], 10);
   FreeBitstreamBuffers(&outputs[0], 10);
 }
@@ -814,13 +737,59 @@ TEST_F(SvcTest,
   vpx_fixed_buf outputs[10];
   memset(&outputs[0], 0, sizeof(outputs));
   Pass2EncodeNFrames(&stats_buf, 10, 1, &outputs[0]);
-  DropLayersAndMakeItVP9Comaptible(&outputs[0], 10, 1, true);
 
   vpx_fixed_buf base_layer[5];
   for (int i = 0; i < 5; ++i)
     base_layer[i] = outputs[i * 2];
 
   DecodeNFrames(&base_layer[0], 5);
+  FreeBitstreamBuffers(&outputs[0], 10);
+}
+
+TEST_F(SvcTest, TwoPassEncode2TemporalLayersWithTiles) {
+  // First pass encode
+  std::string stats_buf;
+  vpx_svc_set_options(&svc_, "scale-factors=1/1");
+  svc_.temporal_layers = 2;
+  Pass1EncodeNFrames(10, 1, &stats_buf);
+
+  // Second pass encode
+  codec_enc_.g_pass = VPX_RC_LAST_PASS;
+  svc_.temporal_layers = 2;
+  vpx_svc_set_options(&svc_, "auto-alt-refs=1 scale-factors=1/1");
+  codec_enc_.g_w = 704;
+  codec_enc_.g_h = 144;
+  tile_columns_ = 1;
+  tile_rows_ = 1;
+  vpx_fixed_buf outputs[10];
+  memset(&outputs[0], 0, sizeof(outputs));
+  Pass2EncodeNFrames(&stats_buf, 10, 1, &outputs[0]);
+  DecodeNFrames(&outputs[0], 10);
+  FreeBitstreamBuffers(&outputs[0], 10);
+}
+
+TEST_F(SvcTest,
+       TwoPassEncode2TemporalLayersWithMultipleFrameContextsAndTiles) {
+  // First pass encode
+  std::string stats_buf;
+  vpx_svc_set_options(&svc_, "scale-factors=1/1");
+  svc_.temporal_layers = 2;
+  Pass1EncodeNFrames(10, 1, &stats_buf);
+
+  // Second pass encode
+  codec_enc_.g_pass = VPX_RC_LAST_PASS;
+  svc_.temporal_layers = 2;
+  codec_enc_.g_error_resilient = 0;
+  codec_enc_.g_w = 704;
+  codec_enc_.g_h = 144;
+  tile_columns_ = 1;
+  tile_rows_ = 1;
+  vpx_svc_set_options(&svc_, "auto-alt-refs=1 scale-factors=1/1 "
+                      "multi-frame-contexts=1");
+  vpx_fixed_buf outputs[10];
+  memset(&outputs[0], 0, sizeof(outputs));
+  Pass2EncodeNFrames(&stats_buf, 10, 1, &outputs[0]);
+  DecodeNFrames(&outputs[0], 10);
   FreeBitstreamBuffers(&outputs[0], 10);
 }
 

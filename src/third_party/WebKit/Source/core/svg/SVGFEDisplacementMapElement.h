@@ -24,12 +24,13 @@
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FEDisplacementMap.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<ChannelSelectorType>();
 
-class SVGFEDisplacementMapElement FINAL : public SVGFilterPrimitiveStandardAttributes {
+class SVGFEDisplacementMapElement final : public SVGFilterPrimitiveStandardAttributes {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGFEDisplacementMapElement);
@@ -42,20 +43,20 @@ public:
     SVGAnimatedEnumeration<ChannelSelectorType>* xChannelSelector() { return m_xChannelSelector.get(); }
     SVGAnimatedEnumeration<ChannelSelectorType>* yChannelSelector() { return m_yChannelSelector.get(); }
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
-    SVGFEDisplacementMapElement(Document&);
+    explicit SVGFEDisplacementMapElement(Document&);
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName& attrName) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
+    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName& attrName) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual PassRefPtrWillBeRawPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
-    RefPtr<SVGAnimatedNumber> m_scale;
-    RefPtr<SVGAnimatedString> m_in1;
-    RefPtr<SVGAnimatedString> m_in2;
-    RefPtr<SVGAnimatedEnumeration<ChannelSelectorType> > m_xChannelSelector;
-    RefPtr<SVGAnimatedEnumeration<ChannelSelectorType> > m_yChannelSelector;
+    RefPtrWillBeMember<SVGAnimatedNumber> m_scale;
+    RefPtrWillBeMember<SVGAnimatedString> m_in1;
+    RefPtrWillBeMember<SVGAnimatedString> m_in2;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<ChannelSelectorType>> m_xChannelSelector;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<ChannelSelectorType>> m_yChannelSelector;
 };
 
 } // namespace blink

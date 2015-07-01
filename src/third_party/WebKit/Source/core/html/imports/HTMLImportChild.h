@@ -49,10 +49,11 @@ class HTMLLinkElement;
 // is done by HTMLImportLoader, which can be shared among multiple
 // HTMLImportChild of same link URL.
 //
-class HTMLImportChild FINAL : public HTMLImport {
+class HTMLImportChild final : public HTMLImport {
 public:
     HTMLImportChild(const KURL&, HTMLImportLoader*, SyncMode);
     virtual ~HTMLImportChild();
+    void dispose();
 
     HTMLLinkElement* link() const;
     const KURL& url() const { return m_url; }
@@ -61,20 +62,19 @@ public:
     void didShareLoader();
     void didStartLoading();
 #if !ENABLE(OILPAN)
-    void importDestroyed();
     WeakPtr<HTMLImportChild> weakPtr() { return m_weakFactory.createWeakPtr(); }
 #endif
 
     // HTMLImport
-    virtual Document* document() const OVERRIDE;
-    virtual bool isDone() const OVERRIDE;
-    virtual HTMLImportLoader* loader() const OVERRIDE;
-    virtual void stateWillChange() OVERRIDE;
-    virtual void stateDidChange() OVERRIDE;
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual Document* document() const override;
+    virtual bool hasFinishedLoading() const override;
+    virtual HTMLImportLoader* loader() const override;
+    virtual void stateWillChange() override;
+    virtual void stateDidChange() override;
+    DECLARE_VIRTUAL_TRACE();
 
 #if !defined(NDEBUG)
-    virtual void showThis() OVERRIDE;
+    virtual void showThis() override;
 #endif
 
     void setClient(HTMLImportChildClient*);

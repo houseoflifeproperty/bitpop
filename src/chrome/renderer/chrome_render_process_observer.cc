@@ -43,10 +43,6 @@
 #include "third_party/WebKit/public/web/WebSecurityPolicy.h"
 #include "third_party/WebKit/public/web/WebView.h"
 
-#if defined(OS_WIN)
-#include "base/win/iat_patch_function.h"
-#endif
-
 #if defined(ENABLE_EXTENSIONS)
 #include "chrome/renderer/extensions/extension_localization_peer.h"
 #endif
@@ -67,10 +63,9 @@ class RendererResourceDelegate : public content::ResourceDispatcherDelegate {
       : weak_factory_(this) {
   }
 
-  virtual content::RequestPeer* OnRequestComplete(
-      content::RequestPeer* current_peer,
-      content::ResourceType resource_type,
-      int error_code) OVERRIDE {
+  content::RequestPeer* OnRequestComplete(content::RequestPeer* current_peer,
+                                          content::ResourceType resource_type,
+                                          int error_code) override {
     // Update the browser about our cache.
     // Rate limit informing the host of our cache stats.
     if (!weak_factory_.HasWeakPtrs()) {
@@ -90,10 +85,9 @@ class RendererResourceDelegate : public content::ResourceDispatcherDelegate {
         resource_type, current_peer, error_code);
   }
 
-  virtual content::RequestPeer* OnReceivedResponse(
-      content::RequestPeer* current_peer,
-      const std::string& mime_type,
-      const GURL& url) OVERRIDE {
+  content::RequestPeer* OnReceivedResponse(content::RequestPeer* current_peer,
+                                           const std::string& mime_type,
+                                           const GURL& url) override {
 #if defined(ENABLE_EXTENSIONS)
     return ExtensionLocalizationPeer::CreateExtensionLocalizationPeer(
         current_peer, RenderThread::Get(), mime_type, url);
@@ -113,43 +107,6 @@ class RendererResourceDelegate : public content::ResourceDispatcherDelegate {
 
   DISALLOW_COPY_AND_ASSIGN(RendererResourceDelegate);
 };
-
-#if defined(OS_WIN)
-static base::win::IATPatchFunction g_iat_patch_createdca;
-HDC WINAPI CreateDCAPatch(LPCSTR driver_name,
-                          LPCSTR device_name,
-                          LPCSTR output,
-                          const void* init_data) {
-  DCHECK(std::string("DISPLAY") == std::string(driver_name));
-  DCHECK(!device_name);
-  DCHECK(!output);
-  DCHECK(!init_data);
-
-  // CreateDC fails behind the sandbox, but not CreateCompatibleDC.
-  return CreateCompatibleDC(NULL);
-}
-
-static base::win::IATPatchFunction g_iat_patch_get_font_data;
-DWORD WINAPI GetFontDataPatch(HDC hdc,
-                              DWORD table,
-                              DWORD offset,
-                              LPVOID buffer,
-                              DWORD length) {
-  int rv = GetFontData(hdc, table, offset, buffer, length);
-  if (rv == GDI_ERROR && hdc) {
-    HFONT font = static_cast<HFONT>(GetCurrentObject(hdc, OBJ_FONT));
-
-    LOGFONT logfont;
-    if (GetObject(font, sizeof(LOGFONT), &logfont)) {
-      std::vector<char> font_data;
-      RenderThread::Get()->PreCacheFont(logfont);
-      rv = GetFontData(hdc, table, offset, buffer, length);
-      RenderThread::Get()->ReleaseCachedFonts();
-    }
-  }
-  return rv;
-}
-#endif  // OS_WIN
 
 static const int kWaitForWorkersStatsTimeoutMS = 20;
 
@@ -251,18 +208,19 @@ void HeapStatisticsCollector::SendStatsToBrowser(int round_id) {
 
 bool ChromeRenderProcessObserver::is_incognito_process_ = false;
 
-ChromeRenderProcessObserver::ChromeRenderProcessObserver(
-    ChromeContentRendererClient* client)
-    : client_(client),
-      webkit_initialized_(false) {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+ChromeRenderProcessObserver::ChromeRenderProcessObserver()
+    : webkit_initialized_(false) {
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
 
 #if defined(ENABLE_AUTOFILL_DIALOG)
   WebRuntimeFeatures::enableRequestAutocomplete(true);
 #endif
 
-  if (command_line.HasSwitch(switches::kEnableShowModalDialog))
-    WebRuntimeFeatures::enableShowModalDialog(true);
+  if (command_line.HasSwitch(switches::kDisableJavaScriptHarmonyShipping)) {
+    std::string flag("--noharmony-shipping");
+    v8::V8::SetFlagsFromString(flag.c_str(), static_cast<int>(flag.size()));
+  }
 
   if (command_line.HasSwitch(switches::kJavaScriptHarmony)) {
     std::string flag("--harmony");
@@ -276,19 +234,7 @@ ChromeRenderProcessObserver::ChromeRenderProcessObserver(
   // Configure modules that need access to resources.
   net::NetModule::SetResourceProvider(chrome_common_net::NetResourceProvider);
 
-#if defined(OS_WIN)
-  // Need to patch a few functions for font loading to work correctly.
-  base::FilePath pdf;
-  if (PathService::Get(chrome::FILE_PDF_PLUGIN, &pdf) &&
-      base::PathExists(pdf)) {
-    g_iat_patch_createdca.Patch(
-        pdf.value().c_str(), "gdi32.dll", "CreateDCA", CreateDCAPatch);
-    g_iat_patch_get_font_data.Patch(
-        pdf.value().c_str(), "gdi32.dll", "GetFontData", GetFontDataPatch);
-  }
-#endif
-
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && defined(USE_NSS)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && defined(USE_NSS_CERTS)
   // On platforms where we use system NSS shared libraries,
   // initialize NSS now because it won't be able to load the .so's
   // after we engage the sandbox.
@@ -301,6 +247,8 @@ ChromeRenderProcessObserver::ChromeRenderProcessObserver(
 #endif
   // Setup initial set of crash dump data for Field Trials in this renderer.
   chrome_variations::SetChildProcessLoggingVariationList();
+  // Listen for field trial activations to report them to the browser.
+  base::FieldTrialList::AddObserver(this);
 }
 
 ChromeRenderProcessObserver::~ChromeRenderProcessObserver() {
@@ -367,8 +315,8 @@ void ChromeRenderProcessObserver::OnSetFieldTrialGroup(
       base::FieldTrialList::CreateFieldTrial(field_trial_name, group_name);
   // TODO(mef): Remove this check after the investigation of 359406 is complete.
   CHECK(trial) << field_trial_name << ":" << group_name;
-  // Ensure the trial is marked as "used" by calling group() on it. This is
-  // needed to ensure the trial is properly reported in renderer crash reports.
+  // Ensure the trial is marked as "used" by calling group() on it if it is
+  // marked as activated.
   trial->group();
   chrome_variations::SetChildProcessLoggingVariationList();
 }
@@ -380,4 +328,11 @@ void ChromeRenderProcessObserver::OnGetV8HeapStats() {
 const RendererContentSettingRules*
 ChromeRenderProcessObserver::content_setting_rules() const {
   return &content_setting_rules_;
+}
+
+void ChromeRenderProcessObserver::OnFieldTrialGroupFinalized(
+    const std::string& trial_name,
+    const std::string& group_name) {
+  content::RenderThread::Get()->Send(
+      new ChromeViewHostMsg_FieldTrialActivated(trial_name));
 }

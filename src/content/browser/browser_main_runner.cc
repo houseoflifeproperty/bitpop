@@ -4,14 +4,16 @@
 
 #include "content/public/browser/browser_main_runner.h"
 
-#include "base/allocator/allocator_shim.h"
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/debug/leak_annotations.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/statistics_recorder.h"
+#include "base/profiler/scoped_profile.h"
+#include "base/profiler/scoped_tracker.h"
+#include "base/trace_event/trace_event.h"
+#include "base/tracked_objects.h"
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/browser_shutdown_profile_dumper.h"
 #include "content/browser/notification_service_impl.h"
@@ -25,6 +27,8 @@
 #include "net/cert/sha256_legacy_support_win.h"
 #include "sandbox/win/src/sidestep/preamble_patcher.h"
 #include "ui/base/win/scoped_ole_initializer.h"
+#include "ui/gfx/switches.h"
+#include "ui/gfx/win/direct_write.h"
 #endif
 
 bool g_exited_main_message_loop = false;
@@ -119,13 +123,19 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
   BrowserMainRunnerImpl()
       : initialization_started_(false), is_shutdown_(false) {}
 
-  virtual ~BrowserMainRunnerImpl() {
+  ~BrowserMainRunnerImpl() override {
     if (initialization_started_ && !is_shutdown_)
       Shutdown();
   }
 
-  virtual int Initialize(const MainFunctionParams& parameters) OVERRIDE {
+  int Initialize(const MainFunctionParams& parameters) override {
+    // TODO(vadimt, yiyaoliu): Remove all tracked_objects references below once
+    // crbug.com/453640 is fixed.
+    tracked_objects::ThreadData::InitializeThreadContext("CrBrowserMain");
+    TRACK_SCOPED_REGION(
+        "Startup", "BrowserMainRunnerImpl::Initialize");
     TRACE_EVENT0("startup", "BrowserMainRunnerImpl::Initialize");
+
     // On Android we normally initialize the browser in a series of UI thread
     // tasks. While this is happening a second request can come from the OS or
     // another application to start the browser. If this happens then we must
@@ -162,6 +172,8 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
       // (Text Services Framework) module can interact with the message pump
       // on Windows 8 Metro mode.
       ole_initializer_.reset(new ui::ScopedOleInitializer);
+      // Enable DirectWrite font rendering if needed.
+      gfx::win::MaybeInitializeDirectWrite();
 #endif  // OS_WIN
 
       main_loop_.reset(new BrowserMainLoop(parameters));
@@ -180,14 +192,6 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
 // are NOT deleted. If you need something to run during WM_ENDSESSION add it
 // to browser_shutdown::Shutdown or BrowserProcess::EndSession.
 
-#if defined(OS_WIN) && !defined(NO_TCMALLOC)
-      // When linking shared libraries, NO_TCMALLOC is defined, and dynamic
-      // allocator selection is not supported.
-
-      // Make this call before going multithreaded, or spawning any
-      // subprocesses.
-      base::allocator::SetupSubprocessAllocator();
-#endif
       ui::InitializeInputMethod();
     }
     main_loop_->CreateStartupTasks();
@@ -199,14 +203,14 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
     return -1;
   }
 
-  virtual int Run() OVERRIDE {
+  int Run() override {
     DCHECK(initialization_started_);
     DCHECK(!is_shutdown_);
     main_loop_->RunMainMessageLoopParts();
     return main_loop_->GetResultCode();
   }
 
-  virtual void Shutdown() OVERRIDE {
+  void Shutdown() override {
     DCHECK(initialization_started_);
     DCHECK(!is_shutdown_);
 #ifdef LEAK_SANITIZER
@@ -256,7 +260,8 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
       // Forcefully terminates the RunLoop inside MessagePumpForUI, ensuring
       // proper shutdown for content_browsertests. Shutdown() is not used by
       // the actual browser.
-      base::MessageLoop::current()->QuitNow();
+      if (base::MessageLoop::current()->is_running())
+        base::MessageLoop::current()->QuitNow();
   #endif
       main_loop_.reset(NULL);
 

@@ -13,12 +13,11 @@
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
+#include "base/trace_event/trace_event.h"
 #include "chrome/browser/extensions/extension_management.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/install_signer.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/manifest_url_handler.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/common/content_switches.h"
@@ -28,6 +27,7 @@
 #include "extensions/browser/pref_names.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/manifest.h"
+#include "extensions/common/manifest_url_handlers.h"
 #include "extensions/common/one_shot_event.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -56,8 +56,9 @@ VerifyStatus GetExperimentStatus() {
   const std::string group = base::FieldTrialList::FindFullName(
       kExperimentName);
 
-  std::string forced_trials = CommandLine::ForCurrentProcess()->
-      GetSwitchValueASCII(switches::kForceFieldTrials);
+  std::string forced_trials =
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          switches::kForceFieldTrials);
   if (forced_trials.find(kExperimentName) != std::string::npos) {
     // We don't want to allow turning off enforcement by forcing the field
     // trial group to something other than enforcement.
@@ -82,7 +83,7 @@ VerifyStatus GetExperimentStatus() {
 }
 
 VerifyStatus GetCommandLineStatus() {
-  const CommandLine* cmdline = CommandLine::ForCurrentProcess();
+  const base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
   if (!InstallSigner::GetForcedNotFromWebstore().empty())
     return ENFORCE;
 
@@ -106,10 +107,6 @@ VerifyStatus GetStatus() {
 
 bool ShouldFetchSignature() {
   return GetStatus() >= BOOTSTRAP;
-}
-
-bool ShouldEnforce() {
-  return GetStatus() >= ENFORCE;
 }
 
 enum InitResult {
@@ -183,6 +180,11 @@ InstallVerifier::InstallVerifier(ExtensionPrefs* prefs,
 InstallVerifier::~InstallVerifier() {}
 
 // static
+bool InstallVerifier::ShouldEnforce() {
+  return GetStatus() >= ENFORCE;
+}
+
+// static
 bool InstallVerifier::NeedsVerification(const Extension& extension) {
   return IsFromStore(extension) && CanUseExtensionApis(extension);
 }
@@ -204,6 +206,7 @@ bool InstallVerifier::IsFromStore(const Extension& extension) {
 }
 
 void InstallVerifier::Init() {
+  TRACE_EVENT0("browser,startup", "extensions::InstallVerifier::Init");
   UMA_HISTOGRAM_ENUMERATION("ExtensionInstallVerifier.ExperimentStatus",
                             GetExperimentStatus(), VERIFY_STATUS_MAX);
   UMA_HISTOGRAM_ENUMERATION("ExtensionInstallVerifier.ActualStatus",

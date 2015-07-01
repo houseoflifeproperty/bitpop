@@ -5,26 +5,32 @@
 #include <windows.h>
 #include <shlwapi.h>
 
+#include "base/base_paths.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/debug/trace_event.h"
 #include "base/environment.h"
 #include "base/file_version_info.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/rand_util.h"  // For PreRead experiment.
-#include "base/sha1.h"  // For PreRead experiment.
+#include "base/path_service.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "base/version.h"
+#include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
 #include "chrome/app/chrome_crash_reporter_client.h"
+#include "chrome/app/chrome_watcher_client_win.h"
+#include "chrome/app/chrome_watcher_command_line_win.h"
 #include "chrome/app/client_util.h"
 #include "chrome/app/image_pre_reader_win.h"
+#include "chrome/app/kasko_client.h"
+#include "chrome/chrome_watcher/chrome_watcher_main_api.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/env_vars.h"
@@ -47,162 +53,49 @@ typedef void (*RelaunchChromeBrowserWithNewCommandLineIfNeededFunc)();
 base::LazyInstance<chrome::ChromeCrashReporterClient>::Leaky
     g_chrome_crash_client = LAZY_INSTANCE_INITIALIZER;
 
-// Returns true if the build date for this module precedes the expiry date
-// for the pre-read experiment.
-bool PreReadExperimentIsActive() {
-  const int kPreReadExpiryYear = 2014;
-  const int kPreReadExpiryMonth = 7;
-  const int kPreReadExpiryDay = 1;
-  const char kBuildTimeStr[] = __DATE__ " " __TIME__;
-
-  // Get the timestamp of the build.
-  base::Time build_time;
-  bool result = base::Time::FromString(kBuildTimeStr, &build_time);
-  DCHECK(result);
-
-  // Get the timestamp at which the experiment expires.
-  base::Time::Exploded exploded = {0};
-  exploded.year = kPreReadExpiryYear;
-  exploded.month = kPreReadExpiryMonth;
-  exploded.day_of_month = kPreReadExpiryDay;
-  base::Time expiration_time = base::Time::FromLocalExploded(exploded);
-
-  // Return true if the build time predates the expiration time..
-  return build_time < expiration_time;
-}
-
-// Get random unit values, i.e., in the range (0, 1), denoting a die-toss for
-// being in an experiment population and experimental group thereof.
-void GetPreReadPopulationAndGroup(double* population, double* group) {
-  // By default we use the metrics id for the user as stable pseudo-random
-  // input to a hash.
-  scoped_ptr<metrics::ClientInfo> client_info =
-      GoogleUpdateSettings::LoadMetricsClientInfo();
-
-  // If this user has no metrics id, we fall back to a purely random value per
-  // browser session.
-  const size_t kLength = 16;
-  std::string random_value(client_info ? client_info->client_id
-                                       : base::RandBytesAsString(kLength));
-
-  // To interpret the value as a random number we hash it and read the first 8
-  // bytes of the hash as a unit-interval representing a die-toss for being in
-  // the experiment population and the second 8 bytes as a die-toss for being
-  // in various experiment groups.
-  unsigned char sha1_hash[base::kSHA1Length];
-  base::SHA1HashBytes(
-      reinterpret_cast<const unsigned char*>(random_value.c_str()),
-      random_value.size() * sizeof(random_value[0]),
-      sha1_hash);
-  COMPILE_ASSERT(2 * sizeof(uint64) < sizeof(sha1_hash), need_more_data);
-  const uint64* random_bits = reinterpret_cast<uint64*>(&sha1_hash[0]);
-
-  // Convert the bits into unit-intervals and return.
-  *population = base::BitsToOpenEndedUnitInterval(random_bits[0]);
-  *group = base::BitsToOpenEndedUnitInterval(random_bits[1]);
-}
-
-// Gets the amount of pre-read to use as well as the experiment group in which
-// the user falls.
-size_t InitPreReadPercentage() {
-  // By default use the old behaviour: read 100%.
-  const int kDefaultPercentage = 100;
-  const char kDefaultFormatStr[] = "%d-pct-default";
-  const char kControlFormatStr[] = "%d-pct-control";
-  const char kGroupFormatStr[] = "%d-pct";
-
-  COMPILE_ASSERT(kDefaultPercentage <= 100, default_percentage_too_large);
-  COMPILE_ASSERT(kDefaultPercentage % 5 == 0, default_percentage_not_mult_5);
-
-  // Roll the dice to determine if this user is in the experiment and if so,
-  // in which experimental group.
-  double population = 0.0;
-  double group = 0.0;
-  GetPreReadPopulationAndGroup(&population, &group);
-
-  // We limit experiment populations to 1% of the Stable and 10% of each of
-  // the other channels.
-  const base::string16 channel(GoogleUpdateSettings::GetChromeChannel(
-      GoogleUpdateSettings::IsSystemInstall()));
-  double threshold = (channel == installer::kChromeChannelStable) ? 0.01 : 0.10;
-
-  // If the experiment has expired use the default pre-read level. Otherwise,
-  // those not in the experiment population also use the default pre-read level.
-  size_t value = kDefaultPercentage;
-  const char* format_str = kDefaultFormatStr;
-  if (PreReadExperimentIsActive() && (population <= threshold)) {
-    // We divide the experiment population into groups pre-reading at 5 percent
-    // increments in the range [0, 100].
-    value = static_cast<size_t>(group * 21.0) * 5;
-    DCHECK_LE(value, 100u);
-    DCHECK_EQ(0u, value % 5);
-    format_str =
-        (value == kDefaultPercentage) ? kControlFormatStr : kGroupFormatStr;
-  }
-
-  // Generate the group name corresponding to this percentage value.
-  std::string group_name;
-  base::SStringPrintf(&group_name, format_str, value);
-
-  // Persist the group name to the environment so that it can be used for
-  // reporting.
-  scoped_ptr<base::Environment> env(base::Environment::Create());
-  env->SetVar(chrome::kPreReadEnvironmentVariable, group_name);
-
-  // Return the percentage value to be used.
-  return value;
-}
-
-// Expects that |dir| has a trailing backslash. |dir| is modified so it
-// contains the full path that was tried. Caller must check for the return
-// value not being null to determine if this path contains a valid dll.
-HMODULE LoadModuleWithDirectory(base::string16* dir,
-                                const wchar_t* dll_name,
-                                bool pre_read) {
-  ::SetCurrentDirectoryW(dir->c_str());
-  dir->append(dll_name);
+// Loads |module| after setting the CWD to |module|'s directory. Returns a
+// reference to the loaded module on success, or null on error.
+HMODULE LoadModuleWithDirectory(const base::FilePath& module, bool pre_read) {
+  ::SetCurrentDirectoryW(module.DirName().value().c_str());
 
   if (pre_read) {
-#if !defined(WIN_DISABLE_PREREAD)
     // We pre-read the binary to warm the memory caches (fewer hard faults to
     // page parts of the binary in).
     const size_t kStepSize = 1024 * 1024;
-    size_t percentage = InitPreReadPercentage();
-    ImagePreReader::PartialPreReadImage(dir->c_str(), percentage, kStepSize);
-#endif
+    size_t percent = 100;
+    ImagePreReader::PartialPreReadImage(module.value().c_str(), percent,
+                                        kStepSize);
   }
 
-  return ::LoadLibraryExW(dir->c_str(), NULL,
+  return ::LoadLibraryExW(module.value().c_str(), nullptr,
                           LOAD_WITH_ALTERED_SEARCH_PATH);
 }
 
-void RecordDidRun(const base::string16& dll_path) {
-  bool system_level = !InstallUtil::IsPerUserInstall(dll_path.c_str());
+void RecordDidRun(const base::FilePath& dll_path) {
+  bool system_level = !InstallUtil::IsPerUserInstall(dll_path);
   GoogleUpdateSettings::UpdateDidRunState(true, system_level);
 }
 
-void ClearDidRun(const base::string16& dll_path) {
-  bool system_level = !InstallUtil::IsPerUserInstall(dll_path.c_str());
+void ClearDidRun(const base::FilePath& dll_path) {
+  bool system_level = !InstallUtil::IsPerUserInstall(dll_path);
   GoogleUpdateSettings::UpdateDidRunState(false, system_level);
 }
 
 bool InMetroMode() {
   return (wcsstr(
-      ::GetCommandLineW(), L" -ServerName:DefaultBrowserServer") != NULL);
+      ::GetCommandLineW(), L" -ServerName:DefaultBrowserServer") != nullptr);
 }
 
 typedef int (*InitMetro)();
 
-}  // namespace
-
-base::string16 GetExecutablePath() {
-  wchar_t path[MAX_PATH];
-  ::GetModuleFileNameW(NULL, path, MAX_PATH);
-  if (!::PathRemoveFileSpecW(path))
-    return base::string16();
-  base::string16 exe_path(path);
-  return exe_path.append(1, L'\\');
+// Returns the directory in which the currently running executable resides.
+base::FilePath GetExecutableDir() {
+  base::char16 path[MAX_PATH];
+  ::GetModuleFileNameW(nullptr, path, MAX_PATH);
+  return base::FilePath(path).DirName();
 }
+
+}  // namespace
 
 base::string16 GetCurrentModuleVersion() {
   scoped_ptr<FileVersionInfo> file_version_info(
@@ -218,7 +111,7 @@ base::string16 GetCurrentModuleVersion() {
 //=============================================================================
 
 MainDllLoader::MainDllLoader()
-  : dll_(NULL), metro_mode_(InMetroMode()) {
+  : dll_(nullptr), metro_mode_(InMetroMode()) {
 }
 
 MainDllLoader::~MainDllLoader() {
@@ -230,35 +123,38 @@ MainDllLoader::~MainDllLoader() {
 // If that fails then we look at the version resource in the current
 // module. This is the expected path for chrome.exe browser instances in an
 // installed build.
-HMODULE MainDllLoader::Load(base::string16* version,
-                            base::string16* out_file) {
-  const base::string16 executable_dir(GetExecutablePath());
-  *out_file = executable_dir;
-
-  const wchar_t* dll_name = metro_mode_ ?
-      installer::kChromeMetroDll :
-#if !defined(CHROME_MULTIPLE_DLL)
-      installer::kChromeDll;
+HMODULE MainDllLoader::Load(base::string16* version, base::FilePath* module) {
+  const base::char16* dll_name = nullptr;
+  if (metro_mode_) {
+    dll_name = installer::kChromeMetroDll;
+  } else if (process_type_ == "service" || process_type_.empty()) {
+    dll_name = installer::kChromeDll;
+  } else if (process_type_ == "watcher") {
+    dll_name = kChromeWatcherDll;
+  } else {
+#if defined(CHROME_MULTIPLE_DLL)
+    dll_name = installer::kChromeChildDll;
 #else
-      (process_type_ == "service")  || process_type_.empty() ?
-          installer::kChromeDll :
-          installer::kChromeChildDll;
+    dll_name = installer::kChromeDll;
 #endif
+  }
+
   const bool pre_read = !metro_mode_;
-  HMODULE dll = LoadModuleWithDirectory(out_file, dll_name, pre_read);
+  base::FilePath module_dir = GetExecutableDir();
+  *module = module_dir.Append(dll_name);
+  HMODULE dll = LoadModuleWithDirectory(*module, pre_read);
   if (!dll) {
     base::string16 version_string(GetCurrentModuleVersion());
     if (version_string.empty()) {
       LOG(ERROR) << "No valid Chrome version found";
-      return NULL;
+      return nullptr;
     }
-    *out_file = executable_dir;
     *version = version_string;
-    out_file->append(version_string).append(1, L'\\');
-    dll = LoadModuleWithDirectory(out_file, dll_name, pre_read);
+    *module = module_dir.Append(version_string).Append(dll_name);
+    dll = LoadModuleWithDirectory(*module, pre_read);
     if (!dll) {
-      PLOG(ERROR) << "Failed to load Chrome DLL from " << *out_file;
-      return NULL;
+      PLOG(ERROR) << "Failed to load Chrome DLL from " << module->value();
+      return nullptr;
     }
   }
 
@@ -270,11 +166,11 @@ HMODULE MainDllLoader::Load(base::string16* version,
 // environment variable and just calling the entry point. Derived classes can
 // add custom code in the OnBeforeLaunch callback.
 int MainDllLoader::Launch(HINSTANCE instance) {
-  const CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& cmd_line = *base::CommandLine::ForCurrentProcess();
   process_type_ = cmd_line.GetSwitchValueASCII(switches::kProcessType);
 
   base::string16 version;
-  base::string16 file;
+  base::FilePath file;
 
   if (metro_mode_) {
     HMODULE metro_dll = Load(&version, &file);
@@ -284,6 +180,47 @@ int MainDllLoader::Launch(HINSTANCE instance) {
     InitMetro chrome_metro_main =
         reinterpret_cast<InitMetro>(::GetProcAddress(metro_dll, "InitMetro"));
     return chrome_metro_main();
+  }
+
+  if (process_type_ == "watcher") {
+    chrome::RegisterPathProvider();
+
+    base::win::ScopedHandle parent_process;
+    base::win::ScopedHandle on_initialized_event;
+    if (!InterpretChromeWatcherCommandLine(cmd_line, &parent_process,
+                                           &on_initialized_event)) {
+      return chrome::RESULT_CODE_UNSUPPORTED_PARAM;
+    }
+
+    base::FilePath default_user_data_directory;
+    if (!PathService::Get(chrome::DIR_USER_DATA, &default_user_data_directory))
+      return chrome::RESULT_CODE_MISSING_DATA;
+    // The actual user data directory may differ from the default according to
+    // policy and command-line arguments evaluated in the browser process.
+    // The hang monitor will simply be disabled if a window with this name is
+    // never instantiated by the browser process. Since this should be
+    // exceptionally rare it should not impact stability efforts.
+    base::string16 message_window_name = default_user_data_directory.value();
+
+    base::FilePath watcher_data_directory;
+    if (!PathService::Get(chrome::DIR_WATCHER_DATA, &watcher_data_directory))
+      return chrome::RESULT_CODE_MISSING_DATA;
+
+    base::string16 channel_name = GoogleUpdateSettings::GetChromeChannel(
+        !InstallUtil::IsPerUserInstall(cmd_line.GetProgram()));
+
+    // Intentionally leaked.
+    HMODULE watcher_dll = Load(&version, &file);
+    if (!watcher_dll)
+      return chrome::RESULT_CODE_MISSING_DATA;
+
+    ChromeWatcherMainFunction watcher_main =
+        reinterpret_cast<ChromeWatcherMainFunction>(
+            ::GetProcAddress(watcher_dll, kChromeWatcherDLLEntrypoint));
+    return watcher_main(chrome::kBrowserExitCodesRegistryPath,
+                        parent_process.Take(), on_initialized_event.Take(),
+                        watcher_data_directory.value().c_str(),
+                        message_window_name.c_str(), channel_name.c_str());
   }
 
   // Initialize the sandbox services.
@@ -309,11 +246,18 @@ int MainDllLoader::Launch(HINSTANCE instance) {
   scoped_ptr<base::Environment> env(base::Environment::Create());
   env->SetVar(chrome::kChromeVersionEnvVar, base::WideToUTF8(version));
 
-  OnBeforeLaunch(file);
+  OnBeforeLaunch(process_type_, file);
   DLL_MAIN chrome_main =
       reinterpret_cast<DLL_MAIN>(::GetProcAddress(dll_, "ChromeMain"));
   int rc = chrome_main(instance, &sandbox_info);
-  return OnBeforeExit(rc, file);
+  rc = OnBeforeExit(rc, file);
+  // Sandboxed processes close some system DLL handles after lockdown so ignore
+  // EXCEPTION_INVALID_HANDLE generated on Windows 10 during shutdown of these
+  // processes.
+  // TODO(wfh): Check whether MS have fixed this in Win10 RTM. crbug.com/456193
+  if (base::win::GetVersion() >= base::win::VERSION_WIN10)
+    breakpad::ConsumeInvalidHandleExceptions();
+  return rc;
 }
 
 void MainDllLoader::RelaunchChromeBrowserWithNewCommandLineIfNeeded() {
@@ -336,29 +280,78 @@ void MainDllLoader::RelaunchChromeBrowserWithNewCommandLineIfNeeded() {
 
 class ChromeDllLoader : public MainDllLoader {
  protected:
-  virtual void OnBeforeLaunch(const base::string16& dll_path) {
+  // MainDllLoader implementation.
+  void OnBeforeLaunch(const std::string& process_type,
+                      const base::FilePath& dll_path) override;
+  int OnBeforeExit(int return_code, const base::FilePath& dll_path) override;
+
+ private:
+  scoped_ptr<ChromeWatcherClient> chrome_watcher_client_;
+#if defined(KASKO)
+  scoped_ptr<KaskoClient> kasko_client_;
+#endif  // KASKO
+};
+
+void ChromeDllLoader::OnBeforeLaunch(const std::string& process_type,
+                                     const base::FilePath& dll_path) {
+  if (process_type.empty()) {
     RecordDidRun(dll_path);
+
+    // Launch the watcher process if stats collection consent has been granted.
+    if (g_chrome_crash_client.Get().GetCollectStatsConsent()) {
+      base::FilePath exe_path;
+      if (PathService::Get(base::FILE_EXE, &exe_path)) {
+        chrome_watcher_client_.reset(new ChromeWatcherClient(
+            base::Bind(&GenerateChromeWatcherCommandLine, exe_path)));
+        if (chrome_watcher_client_->LaunchWatcher()) {
+#if defined(KASKO)
+          kasko::api::MinidumpType minidump_type = kasko::api::SMALL_DUMP_TYPE;
+          if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+                  switches::kFullMemoryCrashReport)) {
+            minidump_type = kasko::api::FULL_DUMP_TYPE;
+          } else {
+            bool is_per_user_install =
+                g_chrome_crash_client.Get().GetIsPerUserInstall(
+                    base::FilePath(exe_path));
+            if (g_chrome_crash_client.Get().GetShouldDumpLargerDumps(
+                    is_per_user_install)){
+              minidump_type = kasko::api::LARGER_DUMP_TYPE;
+            }
+          }
+
+          kasko_client_.reset(
+              new KaskoClient(chrome_watcher_client_.get(), minidump_type));
+#endif  // KASKO
+        }
+      }
+    }
+  }
+}
+
+int ChromeDllLoader::OnBeforeExit(int return_code,
+                                  const base::FilePath& dll_path) {
+  // NORMAL_EXIT_CANCEL is used for experiments when the user cancels
+  // so we need to reset the did_run signal so omaha does not count
+  // this run as active usage.
+  if (chrome::RESULT_CODE_NORMAL_EXIT_CANCEL == return_code) {
+    ClearDidRun(dll_path);
   }
 
-  virtual int OnBeforeExit(int return_code, const base::string16& dll_path) {
-    // NORMAL_EXIT_CANCEL is used for experiments when the user cancels
-    // so we need to reset the did_run signal so omaha does not count
-    // this run as active usage.
-    if (chrome::RESULT_CODE_NORMAL_EXIT_CANCEL == return_code) {
-      ClearDidRun(dll_path);
-    }
-    return return_code;
-  }
-};
+#if defined(KASKO)
+  kasko_client_.reset();
+#endif  // KASKO
+  chrome_watcher_client_.reset();
+
+  return return_code;
+}
 
 //=============================================================================
 
 class ChromiumDllLoader : public MainDllLoader {
  protected:
-  virtual void OnBeforeLaunch(const base::string16& dll_path) OVERRIDE {
-  }
-  virtual int OnBeforeExit(int return_code,
-                           const base::string16& dll_path) OVERRIDE {
+  void OnBeforeLaunch(const std::string& process_type,
+                      const base::FilePath& dll_path) override {}
+  int OnBeforeExit(int return_code, const base::FilePath& dll_path) override {
     return return_code;
   }
 };

@@ -69,7 +69,7 @@ GetFileForSavingOperation::~GetFileForSavingOperation() {
 void GetFileForSavingOperation::GetFileForSaving(
     const base::FilePath& file_path,
     const GetFileCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!callback.is_null());
 
   create_file_operation_->CreateFile(
@@ -86,7 +86,7 @@ void GetFileForSavingOperation::GetFileForSavingAfterCreate(
     const base::FilePath& file_path,
     const GetFileCallback& callback,
     FileError error) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!callback.is_null());
 
   if (error != FILE_ERROR_OK) {
@@ -109,7 +109,7 @@ void GetFileForSavingOperation::GetFileForSavingAfterDownload(
     FileError error,
     const base::FilePath& cache_path,
     scoped_ptr<ResourceEntry> entry) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!callback.is_null());
 
   if (error != FILE_ERROR_OK) {
@@ -144,7 +144,7 @@ void GetFileForSavingOperation::GetFileForSavingAfterOpenForWrite(
     scoped_ptr<ResourceEntry> entry,
     scoped_ptr<base::ScopedClosureRunner>* file_closer,
     FileError error) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!callback.is_null());
 
   if (error != FILE_ERROR_OK) {
@@ -171,7 +171,7 @@ void GetFileForSavingOperation::GetFileForSavingAfterWatch(
     const base::FilePath& cache_path,
     scoped_ptr<ResourceEntry> entry,
     bool success) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!callback.is_null());
 
   logger_->Log(logging::LOG_INFO, "Started watching modification to %s [%s].",
@@ -193,7 +193,7 @@ void GetFileForSavingOperation::OnWriteEvent(
   logger_->Log(logging::LOG_INFO, "Detected modification to %s.",
                local_id.c_str());
 
-  delegate_->OnEntryUpdatedByOperation(local_id);
+  delegate_->OnEntryUpdatedByOperation(ClientContext(USER_INITIATED), local_id);
 
   // Clients may have enlarged the file. By FreeDiskpSpaceIfNeededFor(0),
   // we try to ensure (0 + the-minimum-safe-margin = 512MB as of now) space.

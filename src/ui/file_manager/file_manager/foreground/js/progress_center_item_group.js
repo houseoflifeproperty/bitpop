@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * Group of progress item in the progress center panels.
  *
@@ -12,6 +10,7 @@
  * @param {string} name Name of the group.
  * @param {boolean} quiet Whether the group is for quiet items or not.
  * @constructor
+ * @struct
  */
 function ProgressCenterItemGroup(name, quiet) {
   /**
@@ -79,8 +78,6 @@ function ProgressCenterItemGroup(name, quiet) {
    * @private
    */
   this.totalProgressValue_ = 0;
-
-  Object.seal(this);
 }
 
 /**
@@ -88,14 +85,14 @@ function ProgressCenterItemGroup(name, quiet) {
  * @enum {string}
  * @const
  */
-ProgressCenterItemGroup.State = Object.freeze({
+ProgressCenterItemGroup.State = {
   // Group has no items.
   EMPTY: 'empty',
   // Group has at least 1 progressing item.
   ACTIVE: 'active',
   // Group has no progressing items but still shows error items.
   INACTIVE: 'inactive'
-});
+};
 
 /**
  * Makes the summarized item for the groups.
@@ -105,10 +102,10 @@ ProgressCenterItemGroup.State = Object.freeze({
  * contains is used as a summarized item. But If all the group returns null, the
  * progress center panel generates the summarized item by using the method.
  *
- * @param {Array.<ProgressCenterItemGroup>} var_groups List of groups.
+ * @param {...ProgressCenterItemGroup} var_args List of groups.
  * @return {ProgressCenterItem} Summarized item.
  */
-ProgressCenterItemGroup.getSummarizedErrorItem = function(var_groups) {
+ProgressCenterItemGroup.getSummarizedErrorItem = function(var_args) {
   var groups = Array.prototype.slice.call(arguments);
   var errorItems = [];
   for (var i = 0; i < groups.length; i++) {
@@ -133,17 +130,25 @@ ProgressCenterItemGroup.getSummarizedErrorItem = function(var_groups) {
 };
 
 /**
- * Obtains Whether the item should be animated or not.
+ * Obtains whether the item should be animated or not.
  * @param {boolean} previousAnimated Whether the item is previously animated or
  *     not.
  * @param {ProgressCenterItem} previousItem Item before updating.
  * @param {ProgressCenterItem} item New item.
+ * @param {boolean} summarized If the item is summarized one or not.
  * @return {boolean} Whether the item should be animated or not.
  * @private
  */
 ProgressCenterItemGroup.shouldAnimate_ = function(
-    previousAnimated, previousItem, item) {
-  if (!previousItem || !item || previousItem.quiet || item.quiet)
+    previousAnimated, previousItem, item, summarized) {
+  // Check visibility of previous and current progress bar.
+  var previousShow =
+      previousItem && (!summarized || !previousItem.quiet);
+  var currentShow =
+      item && (!summarized || !item.quiet);
+  // If previous or current item does not show progress bar, we should not
+  // animate.
+  if (!previousShow || !currentShow)
     return false;
   if (previousItem.progressRateInPercent < item.progressRateInPercent)
     return true;
@@ -153,7 +158,7 @@ ProgressCenterItemGroup.shouldAnimate_ = function(
   return false;
 };
 
-ProgressCenterItemGroup.prototype = {
+ProgressCenterItemGroup.prototype = /** @struct */ {
   /**
    * @return {ProgressCenterItemGroup.State} State of the group.
    */
@@ -236,7 +241,8 @@ ProgressCenterItemGroup.prototype.update = function(item) {
       this.animated_[item.id] = ProgressCenterItemGroup.shouldAnimate_(
           !!this.animated_[item.id],
           previousItem,
-          item);
+          item,
+          /* summarized */ false);
       if (!this.animated_[item.id])
         this.completeItemAnimation(item.id);
       break;
@@ -256,7 +262,8 @@ ProgressCenterItemGroup.prototype.update = function(item) {
   this.summarizedItemAnimated_ = ProgressCenterItemGroup.shouldAnimate_(
       !!this.summarizedItemAnimated_,
       previousSummarizedItem,
-      this.summarizedItem_);
+      this.summarizedItem_,
+      /* summarized */ true);
   if (!this.summarizedItemAnimated_)
     this.completeSummarizedItemAnimation();
 };

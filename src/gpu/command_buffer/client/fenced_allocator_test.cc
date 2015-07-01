@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/memory/aligned_memory.h"
-#include "base/message_loop/message_loop.h"
 #include "gpu/command_buffer/client/cmd_buffer_helper.h"
 #include "gpu/command_buffer/client/fenced_allocator.h"
 #include "gpu/command_buffer/service/cmd_buffer_engine.h"
@@ -16,10 +15,6 @@
 #include "gpu/command_buffer/service/mocks.h"
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-#if defined(OS_MACOSX)
-#include "base/mac/scoped_nsautorelease_pool.h"
-#endif
 
 namespace gpu {
 
@@ -37,7 +32,7 @@ class BaseFencedAllocatorTest : public testing::Test {
   static const unsigned int kBufferSize = 1024;
   static const int kAllocAlignment = 16;
 
-  virtual void SetUp() {
+  void SetUp() override {
     api_mock_.reset(new AsyncAPIMock(true));
     // ignore noops in the mock - we don't want to inspect the internals of the
     // helper.
@@ -74,10 +69,6 @@ class BaseFencedAllocatorTest : public testing::Test {
     return command_buffer_->GetLastState().token;
   }
 
-#if defined(OS_MACOSX)
-  base::mac::ScopedNSAutoreleasePool autorelease_pool_;
-#endif
-  base::MessageLoop message_loop_;
   scoped_ptr<AsyncAPIMock> api_mock_;
   scoped_ptr<TransferBufferManagerInterface> transfer_buffer_manager_;
   scoped_ptr<CommandBufferService> command_buffer_;
@@ -100,14 +91,14 @@ void EmptyPoll() {
 // and SetToken are properly forwarded to the engine.
 class FencedAllocatorTest : public BaseFencedAllocatorTest {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     BaseFencedAllocatorTest::SetUp();
     allocator_.reset(new FencedAllocator(kBufferSize,
                                          helper_.get(),
                                          base::Bind(&EmptyPoll)));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     // If the GpuScheduler posts any tasks, this forces them to run.
     base::MessageLoop::current()->RunUntilIdle();
 
@@ -463,7 +454,7 @@ TEST_F(FencedAllocatorPollTest, TestPoll) {
 // forwarded to the engine.
 class FencedAllocatorWrapperTest : public BaseFencedAllocatorTest {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     BaseFencedAllocatorTest::SetUp();
 
     // Though allocating this buffer isn't strictly necessary, it makes
@@ -477,7 +468,7 @@ class FencedAllocatorWrapperTest : public BaseFencedAllocatorTest {
                                                 buffer_.get()));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     // If the GpuScheduler posts any tasks, this forces them to run.
     base::MessageLoop::current()->RunUntilIdle();
 

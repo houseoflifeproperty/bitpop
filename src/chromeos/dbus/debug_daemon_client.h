@@ -5,14 +5,15 @@
 #ifndef CHROMEOS_DBUS_DEBUG_DAEMON_CLIENT_H_
 #define CHROMEOS_DBUS_DEBUG_DAEMON_CLIENT_H_
 
+#include <map>
+
 #include "base/callback.h"
 #include "base/files/file.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/task_runner.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/dbus/dbus_client.h"
-
-#include <map>
+#include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace metrics {
 class PerfDataProto;
@@ -23,7 +24,7 @@ namespace chromeos {
 // DebugDaemonClient is used to communicate with the debug daemon.
 class CHROMEOS_EXPORT DebugDaemonClient : public DBusClient {
  public:
-  virtual ~DebugDaemonClient();
+  ~DebugDaemonClient() override;
 
   // Called once GetDebugLogs() is complete. Takes one parameter:
   // - succeeded: was the logs stored successfully.
@@ -145,8 +146,47 @@ class CHROMEOS_EXPORT DebugDaemonClient : public DBusClient {
       const std::map<std::string, std::string>& options,
       const TestICMPCallback& callback) = 0;
 
+  // Called once EnableDebuggingFeatures() is complete. |succeeded| will be true
+  // if debugging features have been successfully enabled.
+  typedef base::Callback<void(bool succeeded)> EnableDebuggingCallback;
+
+  // Enables debugging features (sshd, boot from USB). |password| is a new
+  // password for root user. Can be only called in dev mode.
+  virtual void EnableDebuggingFeatures(
+      const std::string& password,
+      const EnableDebuggingCallback& callback) = 0;
+
+  static const int DEV_FEATURE_NONE = 0;
+  static const int DEV_FEATURE_ALL_ENABLED =
+      debugd::DevFeatureFlag::DEV_FEATURE_ROOTFS_VERIFICATION_REMOVED |
+      debugd::DevFeatureFlag::DEV_FEATURE_BOOT_FROM_USB_ENABLED |
+      debugd::DevFeatureFlag::DEV_FEATURE_SSH_SERVER_CONFIGURED |
+      debugd::DevFeatureFlag::DEV_FEATURE_DEV_MODE_ROOT_PASSWORD_SET;
+
+  // Called once QueryDebuggingFeatures() is complete. |succeeded| will be true
+  // if debugging features have been successfully enabled. |feature_mask| is a
+  // bitmask made out of DebuggingFeature enum values.
+  typedef base::Callback<void(bool succeeded,
+                              int feature_mask)> QueryDevFeaturesCallback;
+  // Checks which debugging features have been already enabled.
+  virtual void QueryDebuggingFeatures(
+      const QueryDevFeaturesCallback& callback) = 0;
+
+  // Removes rootfs verification from the file system. Can be only called in
+  // dev mode.
+  virtual void RemoveRootfsVerification(
+      const EnableDebuggingCallback& callback) = 0;
+
   // Trigger uploading of crashes.
   virtual void UploadCrashes() = 0;
+
+  // A callback for WaitForServiceToBeAvailable().
+  typedef base::Callback<void(bool service_is_ready)>
+      WaitForServiceToBeAvailableCallback;
+
+  // Runs the callback as soon as the service becomes available.
+  virtual void WaitForServiceToBeAvailable(
+      const WaitForServiceToBeAvailableCallback& callback) = 0;
 
   // Factory function, creates a new instance and returns ownership.
   // For normal usage, access the singleton via DBusThreadManager::Get().

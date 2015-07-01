@@ -11,45 +11,52 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
-#include "media/base/media_export.h"
 #include "media/midi/midi_manager.h"
 #include "media/midi/usb_midi_device.h"
+#include "media/midi/usb_midi_export.h"
 #include "media/midi/usb_midi_input_stream.h"
 #include "media/midi/usb_midi_jack.h"
 #include "media/midi/usb_midi_output_stream.h"
 
 namespace media {
+namespace midi {
+
+class MidiScheduler;
 
 // MidiManager for USB-MIDI.
-class MEDIA_EXPORT MidiManagerUsb : public MidiManager,
-                                    public UsbMidiDeviceDelegate,
-                                    public UsbMidiInputStream::Delegate {
+class USB_MIDI_EXPORT MidiManagerUsb
+    : public MidiManager,
+      public UsbMidiDeviceDelegate,
+      NON_EXPORTED_BASE(public UsbMidiInputStream::Delegate) {
  public:
   explicit MidiManagerUsb(scoped_ptr<UsbMidiDevice::Factory> device_factory);
-  virtual ~MidiManagerUsb();
+  ~MidiManagerUsb() override;
 
   // MidiManager implementation.
-  virtual void StartInitialization() OVERRIDE;
-  virtual void DispatchSendMidiData(MidiManagerClient* client,
-                                    uint32 port_index,
-                                    const std::vector<uint8>& data,
-                                    double timestamp) OVERRIDE;
+  void StartInitialization() override;
+  void DispatchSendMidiData(MidiManagerClient* client,
+                            uint32 port_index,
+                            const std::vector<uint8>& data,
+                            double timestamp) override;
 
   // UsbMidiDeviceDelegate implementation.
-  virtual void ReceiveUsbMidiData(UsbMidiDevice* device,
-                                  int endpoint_number,
-                                  const uint8* data,
-                                  size_t size,
-                                  base::TimeTicks time) OVERRIDE;
+  void ReceiveUsbMidiData(UsbMidiDevice* device,
+                          int endpoint_number,
+                          const uint8* data,
+                          size_t size,
+                          base::TimeTicks time) override;
+  void OnDeviceAttached(scoped_ptr<UsbMidiDevice> device) override;
+  void OnDeviceDetached(size_t index) override;
 
   // UsbMidiInputStream::Delegate implementation.
-  virtual void OnReceivedData(size_t jack_index,
-                              const uint8* data,
-                              size_t size,
-                              base::TimeTicks time) OVERRIDE;
+  void OnReceivedData(size_t jack_index,
+                      const uint8* data,
+                      size_t size,
+                      base::TimeTicks time) override;
 
   const ScopedVector<UsbMidiOutputStream>& output_streams() const {
     return output_streams_;
@@ -67,6 +74,7 @@ class MEDIA_EXPORT MidiManagerUsb : public MidiManager,
 
  private:
   void OnEnumerateDevicesDone(bool result, UsbMidiDevice::Devices* devices);
+  bool AddPorts(UsbMidiDevice* device, int device_id);
 
   scoped_ptr<UsbMidiDevice::Factory> device_factory_;
   ScopedVector<UsbMidiDevice> devices_;
@@ -78,9 +86,12 @@ class MEDIA_EXPORT MidiManagerUsb : public MidiManager,
   // A map from <endpoint_number, cable_number> to the index of input jacks.
   base::hash_map<std::pair<int, int>, size_t> input_jack_dictionary_;
 
+  scoped_ptr<MidiScheduler> scheduler_;
+
   DISALLOW_COPY_AND_ASSIGN(MidiManagerUsb);
 };
 
+}  // namespace midi
 }  // namespace media
 
 #endif  // MEDIA_MIDI_MIDI_MANAGER_USB_H_

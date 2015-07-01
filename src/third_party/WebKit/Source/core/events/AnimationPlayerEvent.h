@@ -5,18 +5,12 @@
 #ifndef AnimationPlayerEvent_h
 #define AnimationPlayerEvent_h
 
+#include "core/events/AnimationPlayerEventInit.h"
 #include "core/events/Event.h"
 
 namespace blink {
 
-struct AnimationPlayerEventInit : public EventInit {
-    AnimationPlayerEventInit();
-
-    double currentTime;
-    double timelineTime;
-};
-
-class AnimationPlayerEvent FINAL : public Event {
+class AnimationPlayerEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<AnimationPlayerEvent> create()
@@ -37,9 +31,9 @@ public:
     double currentTime() const;
     double timelineTime() const;
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     AnimationPlayerEvent();

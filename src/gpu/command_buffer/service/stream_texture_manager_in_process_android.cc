@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "gpu/command_buffer/service/texture_manager.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gl/android/surface_texture.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_image.h"
@@ -23,23 +23,23 @@ class GLImageImpl : public gfx::GLImage {
               const base::Closure& release_callback);
 
   // implement gfx::GLImage
-  virtual void Destroy(bool have_context) OVERRIDE;
-  virtual gfx::Size GetSize() OVERRIDE;
-  virtual bool BindTexImage(unsigned target) OVERRIDE;
-  virtual void ReleaseTexImage(unsigned target) OVERRIDE;
-  virtual bool CopyTexImage(unsigned target) OVERRIDE;
-  virtual void WillUseTexImage() OVERRIDE;
-  virtual void DidUseTexImage() OVERRIDE {}
-  virtual void WillModifyTexImage() OVERRIDE {}
-  virtual void DidModifyTexImage() OVERRIDE {}
-  virtual bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
-                                    int z_order,
-                                    gfx::OverlayTransform transform,
-                                    const gfx::Rect& bounds_rect,
-                                    const gfx::RectF& crop_rect) OVERRIDE;
+  void Destroy(bool have_context) override;
+  gfx::Size GetSize() override;
+  bool BindTexImage(unsigned target) override;
+  void ReleaseTexImage(unsigned target) override;
+  bool CopyTexImage(unsigned target) override;
+  void WillUseTexImage() override;
+  void DidUseTexImage() override {}
+  void WillModifyTexImage() override {}
+  void DidModifyTexImage() override {}
+  bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                            int z_order,
+                            gfx::OverlayTransform transform,
+                            const gfx::Rect& bounds_rect,
+                            const gfx::RectF& crop_rect) override;
 
  private:
-  virtual ~GLImageImpl();
+  ~GLImageImpl() override;
 
   scoped_refptr<gfx::SurfaceTexture> surface_texture_;
   base::Closure release_callback_;
@@ -137,7 +137,8 @@ GLuint StreamTextureManagerInProcess::CreateStreamTexture(
                                 GL_RGBA,
                                 GL_UNSIGNED_BYTE,
                                 true);
-  texture_manager->SetLevelImage(texture, GL_TEXTURE_EXTERNAL_OES, 0, gl_image);
+  texture_manager->SetLevelImage(
+      texture, GL_TEXTURE_EXTERNAL_OES, 0, gl_image.get());
 
   {
     base::AutoLock lock(map_lock_);

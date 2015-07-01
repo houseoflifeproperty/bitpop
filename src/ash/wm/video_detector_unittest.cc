@@ -16,7 +16,7 @@
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/wm/public/window_types.h"
 
 namespace ash {
@@ -40,7 +40,7 @@ class TestVideoDetectorObserver : public VideoDetectorObserver {
   }
 
   // VideoDetectorObserver implementation.
-  virtual void OnVideoDetected(bool is_fullscreen) OVERRIDE {
+  void OnVideoDetected(bool is_fullscreen) override {
     num_invocations_++;
     if (is_fullscreen)
       num_fullscreens_++;
@@ -64,9 +64,9 @@ class TestVideoDetectorObserver : public VideoDetectorObserver {
 class VideoDetectorTest : public AshTestBase {
  public:
   VideoDetectorTest() {}
-  virtual ~VideoDetectorTest() {}
+  ~VideoDetectorTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     AshTestBase::SetUp();
     observer_.reset(new TestVideoDetectorObserver);
     detector_ = Shell::GetInstance()->video_detector();
@@ -76,7 +76,7 @@ class VideoDetectorTest : public AshTestBase {
     detector_->set_now_for_test(now_);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     detector_->RemoveObserver(observer_.get());
     AshTestBase::TearDown();
   }

@@ -9,8 +9,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "ui/gfx/animation/animation_delegate.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/rect.h"
 #include "ui/views/focus/focus_manager.h"
 
 class BrowserView;
@@ -45,7 +45,7 @@ class DropdownBarHost : public ui::AcceleratorTarget,
                         public gfx::AnimationDelegate {
  public:
   explicit DropdownBarHost(BrowserView* browser_view);
-  virtual ~DropdownBarHost();
+  ~DropdownBarHost() override;
 
   // Initializes the DropdownBarHost. This creates the widget that |view| paints
   // into.
@@ -76,21 +76,21 @@ class DropdownBarHost : public ui::AcceleratorTarget,
   // Moves the widget to the provided location, moves it to top
   // in the z-order (HWND_TOP, not HWND_TOPMOST for windows) and shows
   // the widget (if hidden).
-  virtual void SetDialogPosition(const gfx::Rect& new_pos, bool no_redraw) = 0;
+  virtual void SetDialogPosition(const gfx::Rect& new_pos) = 0;
 
   // Overridden from views::FocusChangeListener:
-  virtual void OnWillChangeFocus(views::View* focused_before,
-                                 views::View* focused_now) OVERRIDE;
-  virtual void OnDidChangeFocus(views::View* focused_before,
-                                views::View* focused_now) OVERRIDE;
+  void OnWillChangeFocus(views::View* focused_before,
+                         views::View* focused_now) override;
+  void OnDidChangeFocus(views::View* focused_before,
+                        views::View* focused_now) override;
 
   // Overridden from ui::AcceleratorTarget:
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) = 0;
-  virtual bool CanHandleAccelerators() const = 0;
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override = 0;
+  bool CanHandleAccelerators() const override = 0;
 
   // gfx::AnimationDelegate implementation:
-  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
-  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
+  void AnimationProgressed(const gfx::Animation* animation) override;
+  void AnimationEnded(const gfx::Animation* animation) override;
 
   // During testing we can disable animations by setting this flag to true,
   // so that opening and closing the dropdown bar is shown instantly, instead of
@@ -141,14 +141,6 @@ class DropdownBarHost : public ui::AcceleratorTarget,
   // returns the boundary of browser_view and the drop down
   // can be shown in any client area.
   virtual void GetWidgetBounds(gfx::Rect* bounds);
-
-  // Allows implementation to tweak widget position.
-  void SetWidgetPositionNative(const gfx::Rect& new_pos, bool no_redraw);
-
-  // Returns a keyboard event suitable for forwarding.
-  content::NativeWebKeyboardEvent GetKeyboardEvent(
-      const content::WebContents* contents,
-      const ui::KeyEvent& key_event);
 
   // Returns the animation for the dropdown.
   gfx::SlideAnimation* animation() {

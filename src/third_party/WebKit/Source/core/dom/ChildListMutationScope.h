@@ -49,7 +49,7 @@ class MutationObserverInterestGroup;
 // active ChildListMutationScopes for that Node. Once the last ChildListMutationScope
 // is destructed the accumulator enqueues a mutation record for the recorded
 // mutations and the accumulator can be garbage collected.
-class ChildListMutationAccumulator FINAL : public RefCountedWillBeGarbageCollected<ChildListMutationAccumulator> {
+class ChildListMutationAccumulator final : public RefCountedWillBeGarbageCollected<ChildListMutationAccumulator> {
     DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ChildListMutationAccumulator);
 public:
     static PassRefPtrWillBeRawPtr<ChildListMutationAccumulator> getOrCreate(Node&);
@@ -64,7 +64,7 @@ public:
     void enterMutationScope() { m_mutationScopes++; }
     void leaveMutationScope();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     ChildListMutationAccumulator(PassRefPtrWillBeRawPtr<Node>, PassOwnPtrWillBeRawPtr<MutationObserverInterestGroup>);
@@ -76,8 +76,8 @@ private:
 
     RefPtrWillBeMember<Node> m_target;
 
-    WillBeHeapVector<RefPtrWillBeMember<Node> > m_removedNodes;
-    WillBeHeapVector<RefPtrWillBeMember<Node> > m_addedNodes;
+    WillBeHeapVector<RefPtrWillBeMember<Node>> m_removedNodes;
+    WillBeHeapVector<RefPtrWillBeMember<Node>> m_addedNodes;
     RefPtrWillBeMember<Node> m_previousSibling;
     RefPtrWillBeMember<Node> m_nextSibling;
     RawPtrWillBeMember<Node> m_lastAdded;
@@ -87,7 +87,7 @@ private:
     unsigned m_mutationScopes;
 };
 
-class ChildListMutationScope FINAL {
+class ChildListMutationScope final {
     WTF_MAKE_NONCOPYABLE(ChildListMutationScope);
     STACK_ALLOCATED();
 public:

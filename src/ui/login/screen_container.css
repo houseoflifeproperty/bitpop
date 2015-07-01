@@ -54,6 +54,7 @@
 #oobe.autolaunch #inner-container,
 #oobe.confirm-password #inner-container,
 #oobe.connect #inner-container,
+#oobe.debugging #inner-container,
 #oobe.enrollment #inner-container,
 #oobe.eula #inner-container,
 #oobe.fatal-error #inner-container,
@@ -83,11 +84,6 @@
 
 }
 
-#oobe.account-picker.flying-pods #inner-container {
-  -webkit-transition: width 180ms ease,
-                      height 180ms ease;
-}
-
 /* Only play this animation when 'down' class is removed. */
 .oobe-display #inner-container:not(.down) {
   -webkit-transition: -webkit-transform 200ms ease-in-out;
@@ -106,10 +102,10 @@
 
 #progress-dots {
   -webkit-box-pack: center;
-  -webkit-margin-before: 15px;
   -webkit-transition: opacity 200ms ease-in-out,
                       visibility 200ms ease-in-out;
   display: -webkit-box;
+  margin-top: 15px;
 }
 
 /* Hidden for the duration of initial transition. */
@@ -135,6 +131,7 @@
 #autolaunch-dot,
 #confirm-password-dot,
 #controller-pairing-dot,
+#debugging-dot,
 #enrollment-dot,
 #error-message-dot,
 #fatal-error-dot,
@@ -165,7 +162,10 @@
   opacity: 1;
 }
 
-#oobe.reset #progress-dots {
+#oobe.debugging #progress-dots,
+#oobe.reset #progress-dots,
+#oobe.host-pairing #progress-dots,
+#oobe.controller-pairing #progress-dots {
   visibility: hidden;
 }
 

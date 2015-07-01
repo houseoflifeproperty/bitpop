@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_WEB_VIEW_CHROME_WEB_VIEW_INTERNAL_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_WEB_VIEW_CHROME_WEB_VIEW_INTERNAL_API_H_
 
-#include "extensions/browser/api/web_view/web_view_internal_api.h"
+#include "extensions/browser/api/guest_view/web_view/web_view_internal_api.h"
 #include "extensions/browser/extension_function.h"
 #include "extensions/browser/guest_view/web_view/web_view_guest.h"
 
@@ -23,10 +23,10 @@ class ChromeWebViewInternalContextMenusCreateFunction
   ChromeWebViewInternalContextMenusCreateFunction() {}
 
  protected:
-  virtual ~ChromeWebViewInternalContextMenusCreateFunction() {}
+  ~ChromeWebViewInternalContextMenusCreateFunction() override {}
 
   // ExtensionFunction implementation.
-  virtual bool RunAsync() OVERRIDE;
+  bool RunAsync() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ChromeWebViewInternalContextMenusCreateFunction);
@@ -40,10 +40,10 @@ class ChromeWebViewInternalContextMenusUpdateFunction
   ChromeWebViewInternalContextMenusUpdateFunction() {}
 
  protected:
-  virtual ~ChromeWebViewInternalContextMenusUpdateFunction() {}
+  ~ChromeWebViewInternalContextMenusUpdateFunction() override {}
 
   // ExtensionFunction implementation.
-  virtual bool RunAsync() OVERRIDE;
+  bool RunAsync() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ChromeWebViewInternalContextMenusUpdateFunction);
@@ -57,10 +57,10 @@ class ChromeWebViewInternalContextMenusRemoveFunction
   ChromeWebViewInternalContextMenusRemoveFunction() {}
 
  protected:
-  virtual ~ChromeWebViewInternalContextMenusRemoveFunction() {}
+  ~ChromeWebViewInternalContextMenusRemoveFunction() override {}
 
   // ExtensionFunction implementation.
-  virtual bool RunAsync() OVERRIDE;
+  bool RunAsync() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ChromeWebViewInternalContextMenusRemoveFunction);
@@ -74,10 +74,10 @@ class ChromeWebViewInternalContextMenusRemoveAllFunction
   ChromeWebViewInternalContextMenusRemoveAllFunction() {}
 
  protected:
-  virtual ~ChromeWebViewInternalContextMenusRemoveAllFunction() {}
+  ~ChromeWebViewInternalContextMenusRemoveAllFunction() override {}
 
   // ExtensionFunction implementation.
-  virtual bool RunAsync() OVERRIDE;
+  bool RunAsync() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ChromeWebViewInternalContextMenusRemoveAllFunction);
@@ -92,11 +92,11 @@ class ChromeWebViewInternalShowContextMenuFunction
   ChromeWebViewInternalShowContextMenuFunction();
 
  protected:
-  virtual ~ChromeWebViewInternalShowContextMenuFunction();
+  ~ChromeWebViewInternalShowContextMenuFunction() override;
 
  private:
   // WebViewInternalExtensionFunction implementation.
-  virtual bool RunAsyncSafe(WebViewGuest* guest) OVERRIDE;
+  bool RunAsyncSafe(WebViewGuest* guest) override;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeWebViewInternalShowContextMenuFunction);
 };

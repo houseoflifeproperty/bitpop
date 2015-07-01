@@ -23,9 +23,11 @@ WebGLImageConversion::DataFormat getDataFormat(GLenum destinationFormat, GLenum 
     case GL_UNSIGNED_BYTE:
         switch (destinationFormat) {
         case GL_RGB:
+        case GL_SRGB_EXT:
             dstFormat = WebGLImageConversion::DataFormatRGB8;
             break;
         case GL_RGBA:
+        case GL_SRGB_ALPHA_EXT:
             dstFormat = WebGLImageConversion::DataFormatRGBA8;
             break;
         case GL_ALPHA:
@@ -1414,22 +1416,22 @@ void FormatConverter::convert()
 
     const SrcType *srcRowStart = static_cast<const SrcType*>(m_srcStart);
     DstType* dstRowStart = static_cast<DstType*>(m_dstStart);
-    if (!trivialUnpack && trivialPack) {
+    if (trivialUnpack) {
+        for (size_t i = 0; i < m_height; ++i) {
+            pack<DstFormat, alphaOp>(srcRowStart, dstRowStart, m_width);
+            srcRowStart += srcStrideInElements;
+            dstRowStart += dstStrideInElements;
+        }
+    } else if (trivialPack) {
         for (size_t i = 0; i < m_height; ++i) {
             unpack<SrcFormat>(srcRowStart, dstRowStart, m_width);
             srcRowStart += srcStrideInElements;
             dstRowStart += dstStrideInElements;
         }
-    } else if (!trivialUnpack && !trivialPack) {
+    } else {
         for (size_t i = 0; i < m_height; ++i) {
             unpack<SrcFormat>(srcRowStart, reinterpret_cast<IntermediateSrcType*>(m_unpackedIntermediateSrcData.get()), m_width);
             pack<DstFormat, alphaOp>(reinterpret_cast<IntermediateSrcType*>(m_unpackedIntermediateSrcData.get()), dstRowStart, m_width);
-            srcRowStart += srcStrideInElements;
-            dstRowStart += dstStrideInElements;
-        }
-    } else {
-        for (size_t i = 0; i < m_height; ++i) {
-            pack<DstFormat, alphaOp>(srcRowStart, dstRowStart, m_width);
             srcRowStart += srcStrideInElements;
             dstRowStart += dstStrideInElements;
         }
@@ -1453,10 +1455,12 @@ bool WebGLImageConversion::computeFormatAndTypeParameters(GLenum format, GLenum 
         *componentsPerPixel = 2;
         break;
     case GL_RGB:
+    case GL_SRGB_EXT: // GL_EXT_sRGB
         *componentsPerPixel = 3;
         break;
     case GL_RGBA:
     case GL_BGRA_EXT: // GL_EXT_texture_format_BGRA8888
+    case GL_SRGB_ALPHA_EXT: // GL_EXT_sRGB
         *componentsPerPixel = 4;
         break;
     default:
@@ -1537,18 +1541,18 @@ WebGLImageConversion::ImageExtractor::ImageExtractor(Image* image, ImageHtmlDomS
 
 WebGLImageConversion::ImageExtractor::~ImageExtractor()
 {
-    if (m_skiaImage)
-        m_skiaImage->bitmap().unlockPixels();
+    if (!m_skiaBitmap.isNull())
+        m_skiaBitmap.unlockPixels();
 }
 
 bool WebGLImageConversion::ImageExtractor::extractImage(bool premultiplyAlpha, bool ignoreGammaAndColorProfile)
 {
     if (!m_image)
         return false;
-    m_skiaImage = m_image->nativeImageForCurrentFrame();
+    bool success = m_image->bitmapForCurrentFrame(&m_skiaBitmap);
     m_alphaOp = AlphaDoNothing;
-    bool hasAlpha = m_skiaImage ? !m_skiaImage->bitmap().isOpaque() : true;
-    if ((!m_skiaImage || ignoreGammaAndColorProfile || (hasAlpha && !premultiplyAlpha)) && m_image->data()) {
+    bool hasAlpha = success ? !m_skiaBitmap.isOpaque() : true;
+    if ((!success || ignoreGammaAndColorProfile || (hasAlpha && !premultiplyAlpha)) && m_image->data()) {
         // Attempt to get raw unpremultiplied image data.
         OwnPtr<ImageDecoder> decoder(ImageDecoder::create(
             *(m_image->data()), ImageSource::AlphaNotPremultiplied,
@@ -1562,12 +1566,12 @@ bool WebGLImageConversion::ImageExtractor::extractImage(bool premultiplyAlpha, b
         if (!frame || frame->status() != ImageFrame::FrameComplete)
             return false;
         hasAlpha = frame->hasAlpha();
-        m_nativeImage = frame->asNewNativeImage();
-        if (!m_nativeImage.get() || !m_nativeImage->isDataComplete() || !m_nativeImage->bitmap().width() || !m_nativeImage->bitmap().height())
+        m_bitmap = frame->bitmap();
+        if (m_bitmap.isNull() || !m_bitmap.isImmutable() || !m_bitmap.width() || !m_bitmap.height())
             return false;
-        if (m_nativeImage->bitmap().colorType() != kN32_SkColorType)
+        if (m_bitmap.colorType() != kN32_SkColorType)
             return false;
-        m_skiaImage = m_nativeImage.get();
+        m_skiaBitmap = m_bitmap;
         if (hasAlpha && premultiplyAlpha)
             m_alphaOp = AlphaDoPremultiply;
     } else if (!premultiplyAlpha && hasAlpha) {
@@ -1578,24 +1582,24 @@ bool WebGLImageConversion::ImageExtractor::extractImage(bool premultiplyAlpha, b
         if (m_imageHtmlDomSource != HtmlDomVideo)
             m_alphaOp = AlphaDoUnmultiply;
     }
-    if (!m_skiaImage)
+    if (!success)
         return false;
 
     m_imageSourceFormat = SK_B32_SHIFT ? DataFormatRGBA8 : DataFormatBGRA8;
-    m_imageWidth = m_skiaImage->bitmap().width();
-    m_imageHeight = m_skiaImage->bitmap().height();
+    m_imageWidth = m_skiaBitmap.width();
+    m_imageHeight = m_skiaBitmap.height();
     if (!m_imageWidth || !m_imageHeight) {
-        m_skiaImage.clear();
+        m_skiaBitmap.reset();
         return false;
     }
     // Fail if the image was downsampled because of memory limits.
     if (m_imageWidth != (unsigned)m_image->size().width() || m_imageHeight != (unsigned)m_image->size().height()) {
-        m_skiaImage.clear();
+        m_skiaBitmap.reset();
         return false;
     }
     m_imageSourceUnpackAlignment = 0;
-    m_skiaImage->bitmap().lockPixels();
-    m_imagePixelData = m_skiaImage->bitmap().getPixels();
+    m_skiaBitmap.lockPixels();
+    m_imagePixelData = m_skiaBitmap.getPixels();
     return true;
 }
 
@@ -1610,6 +1614,8 @@ unsigned WebGLImageConversion::getClearBitsByFormat(GLenum format)
     case GL_RGBA:
     case GL_RGBA4:
     case GL_RGB5_A1:
+    case GL_SRGB_EXT:
+    case GL_SRGB_ALPHA_EXT:
         return GL_COLOR_BUFFER_BIT;
     case GL_DEPTH_COMPONENT16:
     case GL_DEPTH_COMPONENT:
@@ -1634,10 +1640,12 @@ unsigned WebGLImageConversion::getChannelBitsByFormat(GLenum format)
         return ChannelRGBA;
     case GL_RGB:
     case GL_RGB565:
+    case GL_SRGB_EXT:
         return ChannelRGB;
     case GL_RGBA:
     case GL_RGBA4:
     case GL_RGB5_A1:
+    case GL_SRGB_ALPHA_EXT:
         return ChannelRGBA;
     case GL_DEPTH_COMPONENT16:
     case GL_DEPTH_COMPONENT:

@@ -5,12 +5,11 @@
 #ifndef REMOTING_PROTOCOL_HOST_CONTROL_DISPATCHER_H_
 #define REMOTING_PROTOCOL_HOST_CONTROL_DISPATCHER_H_
 
-#include "remoting/protocol/buffered_socket_writer.h"
 #include "remoting/protocol/channel_dispatcher_base.h"
 #include "remoting/protocol/client_stub.h"
 #include "remoting/protocol/clipboard_stub.h"
 #include "remoting/protocol/cursor_shape_stub.h"
-#include "remoting/protocol/message_reader.h"
+#include "remoting/protocol/protobuf_message_parser.h"
 
 namespace net {
 class StreamSocket;
@@ -31,20 +30,18 @@ class HostControlDispatcher : public ChannelDispatcherBase,
                               public ClientStub {
  public:
   HostControlDispatcher();
-  virtual ~HostControlDispatcher();
+  ~HostControlDispatcher() override;
 
   // ClientStub implementation.
-  virtual void SetCapabilities(const Capabilities& capabilities) OVERRIDE;
-  virtual void SetPairingResponse(
-      const PairingResponse& pairing_response) OVERRIDE;
-  virtual void DeliverHostMessage(
-      const ExtensionMessage& message) OVERRIDE;
+  void SetCapabilities(const Capabilities& capabilities) override;
+  void SetPairingResponse(const PairingResponse& pairing_response) override;
+  void DeliverHostMessage(const ExtensionMessage& message) override;
 
   // ClipboardStub implementation for sending clipboard data to client.
-  virtual void InjectClipboardEvent(const ClipboardEvent& event) OVERRIDE;
+  void InjectClipboardEvent(const ClipboardEvent& event) override;
 
   // CursorShapeStub implementation for sending cursor shape to client.
-  virtual void SetCursorShape(const CursorShapeInfo& cursor_shape) OVERRIDE;
+  void SetCursorShape(const CursorShapeInfo& cursor_shape) override;
 
   // Sets the ClipboardStub that will be called for each incoming clipboard
   // message. |clipboard_stub| must outlive this object.
@@ -56,10 +53,6 @@ class HostControlDispatcher : public ChannelDispatcherBase,
   // message. |host_stub| must outlive this object.
   void set_host_stub(HostStub* host_stub) { host_stub_ = host_stub; }
 
- protected:
-  // ChannelDispatcherBase overrides.
-  virtual void OnInitialized() OVERRIDE;
-
  private:
   void OnMessageReceived(scoped_ptr<ControlMessage> message,
                          const base::Closure& done_task);
@@ -67,8 +60,7 @@ class HostControlDispatcher : public ChannelDispatcherBase,
   ClipboardStub* clipboard_stub_;
   HostStub* host_stub_;
 
-  ProtobufMessageReader<ControlMessage> reader_;
-  BufferedSocketWriter writer_;
+  ProtobufMessageParser<ControlMessage> parser_;
 
   DISALLOW_COPY_AND_ASSIGN(HostControlDispatcher);
 };

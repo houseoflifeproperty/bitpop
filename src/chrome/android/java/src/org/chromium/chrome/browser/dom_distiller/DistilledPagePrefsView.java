@@ -4,9 +4,9 @@
 
 package org.chromium.chrome.browser.dom_distiller;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Typeface;
+import android.support.v7.app.AlertDialog;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -84,7 +84,7 @@ public class DistilledPagePrefsView extends LinearLayout
     }
 
     public static void showDialog(Context context) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        AlertDialog.Builder builder = new AlertDialog.Builder(context, R.style.AlertDialogTheme);
         builder.setView(DistilledPagePrefsView.create(context));
         builder.show();
     }
@@ -206,7 +206,7 @@ public class DistilledPagePrefsView extends LinearLayout
 
     @Override
     public void onChangeFontFamily(FontFamily fontFamily) {
-         mFontFamilySpinner.setSelection(fontFamily.ordinal());
+        mFontFamilySpinner.setSelection(fontFamily.ordinal());
     }
 
     /**

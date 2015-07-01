@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -179,10 +179,7 @@ bool NewFormatWithConstraints(
     // Subtract 0.0005 to avoid rounding problems. Same as above.
     const double kRoundingTruncation = 0.0005;
     return  (value >= ratio - kRoundingTruncation);
-  } else if (constraint.key == MediaConstraintsInterface::kNoiseReduction ||
-             constraint.key == MediaConstraintsInterface::kLeakyBucket ||
-             constraint.key ==
-                 MediaConstraintsInterface::kTemporalLayeredScreencast) {
+  } else if (constraint.key == MediaConstraintsInterface::kNoiseReduction) {
     // These are actually options, not constraints, so they can be satisfied
     // regardless of the format.
     return true;
@@ -294,12 +291,6 @@ bool ExtractVideoOptions(const MediaConstraintsInterface* all_constraints,
   all_valid &= ExtractOption(all_constraints,
       MediaConstraintsInterface::kNoiseReduction,
       &(options->video_noise_reduction));
-  all_valid &= ExtractOption(all_constraints,
-      MediaConstraintsInterface::kLeakyBucket,
-      &(options->video_leaky_bucket));
-  all_valid &= ExtractOption(all_constraints,
-      MediaConstraintsInterface::kTemporalLayeredScreencast,
-      &(options->video_temporal_layer_screencast));
 
   return all_valid;
 }
@@ -314,11 +305,9 @@ class FrameInputWrapper : public cricket::VideoRenderer {
   virtual ~FrameInputWrapper() {}
 
   // VideoRenderer implementation.
-  virtual bool SetSize(int width, int height, int reserved) OVERRIDE {
-    return true;
-  }
+  bool SetSize(int width, int height, int reserved) override { return true; }
 
-  virtual bool RenderFrame(const cricket::VideoFrame* frame) OVERRIDE {
+  bool RenderFrame(const cricket::VideoFrame* frame) override {
     if (!capturer_->IsRunning()) {
       return true;
     }
@@ -372,21 +361,21 @@ VideoSource::~VideoSource() {
 void VideoSource::Initialize(
     const webrtc::MediaConstraintsInterface* constraints) {
 
-  std::vector<cricket::VideoFormat> formats;
-  if (video_capturer_->GetSupportedFormats() &&
-      video_capturer_->GetSupportedFormats()->size() > 0) {
-    formats = *video_capturer_->GetSupportedFormats();
-  } else if (video_capturer_->IsScreencast()) {
-    // The screen capturer can accept any resolution and we will derive the
-    // format from the constraints if any.
-    // Note that this only affects tab capturing, not desktop capturing,
-    // since desktop capturer does not respect the VideoFormat passed in.
-    formats.push_back(cricket::VideoFormat(kDefaultFormat));
-  } else {
-    // The VideoCapturer implementation doesn't support capability enumeration.
-    // We need to guess what the camera support.
-    for (int i = 0; i < ARRAY_SIZE(kVideoFormats); ++i) {
-      formats.push_back(cricket::VideoFormat(kVideoFormats[i]));
+  std::vector<cricket::VideoFormat> formats =
+      channel_manager_->GetSupportedFormats(video_capturer_.get());
+  if (formats.empty()) {
+    if (video_capturer_->IsScreencast()) {
+      // The screen capturer can accept any resolution and we will derive the
+      // format from the constraints if any.
+      // Note that this only affects tab capturing, not desktop capturing,
+      // since the desktop capturer does not respect the VideoFormat passed in.
+      formats.push_back(cricket::VideoFormat(kDefaultFormat));
+    } else {
+      // The VideoCapturer implementation doesn't support capability
+      // enumeration. We need to guess what the camera supports.
+      for (int i = 0; i < ARRAY_SIZE(kVideoFormats); ++i) {
+        formats.push_back(cricket::VideoFormat(kVideoFormats[i]));
+      }
     }
   }
 
@@ -441,11 +430,27 @@ cricket::VideoRenderer* VideoSource::FrameInput() {
   return frame_input_.get();
 }
 
+void VideoSource::Stop() {
+  channel_manager_->StopVideoCapture(video_capturer_.get(), format_);
+}
+
+void VideoSource::Restart() {
+  if (!channel_manager_->StartVideoCapture(video_capturer_.get(), format_)) {
+    SetState(kEnded);
+    return;
+  }
+  for(cricket::VideoRenderer* sink : sinks_) {
+    channel_manager_->AddVideoRenderer(video_capturer_.get(), sink);
+  }
+}
+
 void VideoSource::AddSink(cricket::VideoRenderer* output) {
+  sinks_.push_back(output);
   channel_manager_->AddVideoRenderer(video_capturer_.get(), output);
 }
 
 void VideoSource::RemoveSink(cricket::VideoRenderer* output) {
+  sinks_.remove(output);
   channel_manager_->RemoveVideoRenderer(video_capturer_.get(), output);
 }
 

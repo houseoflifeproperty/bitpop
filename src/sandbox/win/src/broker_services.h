@@ -37,7 +37,7 @@ class PolicyBase;
 // of the associated TargetProcess interface. In this implementation
 // TargetProcess is a friend of BrokerServices where the later manages a
 // collection of the former.
-class BrokerServicesBase FINAL : public BrokerServices,
+class BrokerServicesBase final : public BrokerServices,
                                  public SingletonBase<BrokerServicesBase> {
  public:
   BrokerServicesBase();
@@ -45,17 +45,17 @@ class BrokerServicesBase FINAL : public BrokerServices,
   ~BrokerServicesBase();
 
   // BrokerServices interface.
-  virtual ResultCode Init() OVERRIDE;
-  virtual TargetPolicy* CreatePolicy() OVERRIDE;
-  virtual ResultCode SpawnTarget(const wchar_t* exe_path,
-                                 const wchar_t* command_line,
-                                 TargetPolicy* policy,
-                                 PROCESS_INFORMATION* target) OVERRIDE;
-  virtual ResultCode WaitForAllTargets() OVERRIDE;
-  virtual ResultCode AddTargetPeer(HANDLE peer_process) OVERRIDE;
-  virtual ResultCode InstallAppContainer(const wchar_t* sid,
-                                         const wchar_t* name) OVERRIDE;
-  virtual ResultCode UninstallAppContainer(const wchar_t* sid) OVERRIDE;
+  ResultCode Init() override;
+  TargetPolicy* CreatePolicy() override;
+  ResultCode SpawnTarget(const wchar_t* exe_path,
+                         const wchar_t* command_line,
+                         TargetPolicy* policy,
+                         PROCESS_INFORMATION* target) override;
+  ResultCode WaitForAllTargets() override;
+  ResultCode AddTargetPeer(HANDLE peer_process) override;
+  ResultCode InstallAppContainer(const wchar_t* sid,
+                                 const wchar_t* name) override;
+  ResultCode UninstallAppContainer(const wchar_t* sid) override;
 
   // Checks if the supplied process ID matches one of the broker's active
   // target processes

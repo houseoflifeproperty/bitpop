@@ -18,9 +18,9 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "extensions/browser/app_window/app_window_client.h"
-#include "extensions/browser/app_window/app_window_contents.h"
 #include "extensions/browser/app_window/app_window_registry.h"
 #include "extensions/browser/app_window/native_app_window.h"
+#include "extensions/browser/app_window/test_app_window_contents.h"
 #include "extensions/common/extension.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -35,9 +35,9 @@ using power::OriginPowerMapFactory;
 class BrowserProcessPowerTest : public BrowserWithTestWindowTest {
  public:
   BrowserProcessPowerTest() {}
-  virtual ~BrowserProcessPowerTest() {}
+  ~BrowserProcessPowerTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     BrowserWithTestWindowTest::SetUp();
     collector.reset(new ProcessPowerCollector);
 
@@ -55,7 +55,7 @@ class BrowserProcessPowerTest : public BrowserWithTestWindowTest {
     ASSERT_TRUE(profile_manager_->SetUp());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     collector.reset();
     BrowserWithTestWindowTest::TearDown();
   }
@@ -87,27 +87,6 @@ class BrowserProcessPowerTest : public BrowserWithTestWindowTest {
 
   scoped_ptr<ProcessPowerCollector> collector;
   scoped_ptr<TestingProfileManager> profile_manager_;
-};
-
-class TestAppWindowContents : public extensions::AppWindowContents {
- public:
-  explicit TestAppWindowContents(content::WebContents* web_contents)
-      : web_contents_(web_contents) {}
-
-  // apps:AppWindowContents
-  virtual void Initialize(content::BrowserContext* context,
-                          const GURL& url) OVERRIDE {}
-  virtual void LoadContents(int32 creator_process_id) OVERRIDE {}
-  virtual void NativeWindowChanged(
-      extensions::NativeAppWindow* native_app_window) OVERRIDE {}
-  virtual void NativeWindowClosed() OVERRIDE {}
-  virtual void DispatchWindowShownForTests() const OVERRIDE {}
-  virtual content::WebContents* GetWebContents() const OVERRIDE {
-    return web_contents_.get();
-  }
-
- private:
-  scoped_ptr<content::WebContents> web_contents_;
 };
 
 TEST_F(BrowserProcessPowerTest, NoSite) {
@@ -300,7 +279,7 @@ TEST_F(BrowserProcessPowerTest, AppsRecordPowerUsage) {
           content::SiteInstance::CreateForURL(current_profile, url))));
   window->SetAppWindowContentsForTesting(
       scoped_ptr<extensions::AppWindowContents>(
-          new TestAppWindowContents(web_contents)));
+          new extensions::TestAppWindowContents(web_contents)));
   extensions::AppWindowRegistry* app_registry =
       extensions::AppWindowRegistry::Get(current_profile);
   app_registry->AddAppWindow(window);
@@ -312,9 +291,6 @@ TEST_F(BrowserProcessPowerTest, AppsRecordPowerUsage) {
   collector->UpdatePowerConsumptionForTesting();
   EXPECT_EQ(1u, collector->metrics_map_for_testing()->size());
 
-  // Clear the AppWindowContents before trying to close.
-  window->SetAppWindowContentsForTesting(
-      scoped_ptr<extensions::AppWindowContents>());
   window->OnNativeClose();
   collector->UpdatePowerConsumptionForTesting();
   EXPECT_EQ(0u, collector->metrics_map_for_testing()->size());

@@ -30,7 +30,7 @@ namespace autofill {
 
 namespace {
 
-const std::string kAppLocale = "en-US";
+const char kAppLocale[] = "en-US";
 const AutofillManager::AutofillDownloadManagerState kDownloadState =
     AutofillManager::DISABLE_AUTOFILL_DOWNLOAD_MANAGER;
 
@@ -47,33 +47,33 @@ class MockAutofillManager : public AutofillManager {
 
 class TestContentAutofillDriver : public ContentAutofillDriver {
  public:
-  TestContentAutofillDriver(content::WebContents* contents,
+  TestContentAutofillDriver(content::RenderFrameHost* rfh,
                             AutofillClient* client)
-      : ContentAutofillDriver(contents, client, kAppLocale, kDownloadState) {
+      : ContentAutofillDriver(rfh, client, kAppLocale, kDownloadState) {
     scoped_ptr<AutofillManager> autofill_manager(
         new MockAutofillManager(this, client));
     SetAutofillManager(autofill_manager.Pass());
   }
-  virtual ~TestContentAutofillDriver() {}
+  ~TestContentAutofillDriver() override {}
 
   virtual MockAutofillManager* mock_autofill_manager() {
     return static_cast<MockAutofillManager*>(autofill_manager());
   }
 
-  using ContentAutofillDriver::DidNavigateMainFrame;
+  using ContentAutofillDriver::DidNavigateFrame;
 };
 
 class ContentAutofillDriverTest : public content::RenderViewHostTestHarness {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     content::RenderViewHostTestHarness::SetUp();
 
     test_autofill_client_.reset(new TestAutofillClient());
-    driver_.reset(new TestContentAutofillDriver(web_contents(),
+    driver_.reset(new TestContentAutofillDriver(web_contents()->GetMainFrame(),
                                                 test_autofill_client_.get()));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // Reset the driver now to cause all pref observers to be removed and avoid
     // crashes that otherwise occur in the destructor.
     driver_.reset();
@@ -91,13 +91,13 @@ class ContentAutofillDriverTest : public content::RenderViewHostTestHarness {
         process()->sink().GetFirstMessageMatching(kMsgID);
     if (!message)
       return false;
-    Tuple2<int, FormData> autofill_param;
+    Tuple<int, FormData> autofill_param;
     if (!AutofillMsg_FillForm::Read(message, &autofill_param))
       return false;
     if (page_id)
-      *page_id = autofill_param.a;
+      *page_id = get<0>(autofill_param);
     if (results)
-      *results = autofill_param.b;
+      *results = get<1>(autofill_param);
     process()->sink().ClearMessages();
     return true;
   }
@@ -112,13 +112,13 @@ class ContentAutofillDriverTest : public content::RenderViewHostTestHarness {
         process()->sink().GetFirstMessageMatching(kMsgID);
     if (!message)
       return false;
-    Tuple2<int, FormData> autofill_param;
+    Tuple<int, FormData> autofill_param;
     if (!AutofillMsg_PreviewForm::Read(message, &autofill_param))
       return false;
     if (page_id)
-      *page_id = autofill_param.a;
+      *page_id = get<0>(autofill_param);
     if (results)
-      *results = autofill_param.b;
+      *results = get<1>(autofill_param);
     process()->sink().ClearMessages();
     return true;
   }
@@ -135,12 +135,12 @@ class ContentAutofillDriverTest : public content::RenderViewHostTestHarness {
         process()->sink().GetFirstMessageMatching(kMsgID);
     if (!message)
       return false;
-    Tuple1<std::vector<FormDataPredictions> > autofill_param;
+    Tuple<std::vector<FormDataPredictions> > autofill_param;
     if (!AutofillMsg_FieldTypePredictionsAvailable::Read(message,
                                                          &autofill_param))
       return false;
     if (predictions)
-      *predictions = autofill_param.a;
+      *predictions = get<0>(autofill_param);
 
     process()->sink().ClearMessages();
     return true;
@@ -155,7 +155,7 @@ class ContentAutofillDriverTest : public content::RenderViewHostTestHarness {
         process()->sink().GetFirstMessageMatching(messageID);
     if (!message)
       return false;
-    Tuple1<base::string16> autofill_param;
+    Tuple<base::string16> autofill_param;
     switch (messageID) {
       case AutofillMsg_FillFieldWithValue::ID:
         if (!AutofillMsg_FillFieldWithValue::Read(message, &autofill_param))
@@ -174,7 +174,7 @@ class ContentAutofillDriverTest : public content::RenderViewHostTestHarness {
         NOTREACHED();
     }
     if (value)
-      *value = autofill_param.a;
+      *value = get<0>(autofill_param);
     process()->sink().ClearMessages();
     return true;
   }
@@ -210,7 +210,7 @@ TEST_F(ContentAutofillDriverTest, NavigatedToDifferentPage) {
   details.is_in_page = false;
   ASSERT_TRUE(details.is_navigation_to_different_page());
   content::FrameNavigateParams params = content::FrameNavigateParams();
-  driver_->DidNavigateMainFrame(details, params);
+  driver_->DidNavigateFrame(details, params);
 }
 
 TEST_F(ContentAutofillDriverTest, NavigatedWithinSamePage) {
@@ -219,7 +219,7 @@ TEST_F(ContentAutofillDriverTest, NavigatedWithinSamePage) {
   details.is_main_frame = false;
   ASSERT_TRUE(!details.is_navigation_to_different_page());
   content::FrameNavigateParams params = content::FrameNavigateParams();
-  driver_->DidNavigateMainFrame(details, params);
+  driver_->DidNavigateFrame(details, params);
 }
 
 TEST_F(ContentAutofillDriverTest, FormDataSentToRenderer_FillForm) {
@@ -235,7 +235,7 @@ TEST_F(ContentAutofillDriverTest, FormDataSentToRenderer_FillForm) {
       GetAutofillPreviewFormMessage(&output_page_id, &output_form_data));
   EXPECT_TRUE(GetAutofillFillFormMessage(&output_page_id, &output_form_data));
   EXPECT_EQ(input_page_id, output_page_id);
-  EXPECT_EQ(input_form_data, output_form_data);
+  EXPECT_TRUE(input_form_data.SameFormAs(output_form_data));
 }
 
 TEST_F(ContentAutofillDriverTest, FormDataSentToRenderer_PreviewForm) {
@@ -251,7 +251,7 @@ TEST_F(ContentAutofillDriverTest, FormDataSentToRenderer_PreviewForm) {
   EXPECT_TRUE(
       GetAutofillPreviewFormMessage(&output_page_id, &output_form_data));
   EXPECT_EQ(input_page_id, output_page_id);
-  EXPECT_EQ(input_form_data, output_form_data);
+  EXPECT_TRUE(input_form_data.SameFormAs(output_form_data));
 }
 
 TEST_F(ContentAutofillDriverTest,
@@ -265,15 +265,15 @@ TEST_F(ContentAutofillDriverTest,
 }
 
 TEST_F(ContentAutofillDriverTest, TypePredictionsSentToRendererWhenEnabled) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kShowAutofillTypePredictions);
 
   FormData form;
   test::CreateTestAddressFormData(&form);
   FormStructure form_structure(form);
   std::vector<FormStructure*> forms(1, &form_structure);
-  std::vector<FormDataPredictions> expected_type_predictions;
-  FormStructure::GetFieldTypePredictions(forms, &expected_type_predictions);
+  std::vector<FormDataPredictions> expected_type_predictions =
+      FormStructure::GetFieldTypePredictions(forms);
   driver_->SendAutofillTypePredictionsToRenderer(forms);
 
   std::vector<FormDataPredictions> output_type_predictions;

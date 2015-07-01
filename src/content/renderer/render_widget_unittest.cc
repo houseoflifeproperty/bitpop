@@ -13,14 +13,14 @@
 #include "ipc/ipc_test_sink.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace content {
 
 class RenderWidgetUnittest : public testing::Test {
  public:
   RenderWidgetUnittest() {}
-  virtual ~RenderWidgetUnittest() {}
+  ~RenderWidgetUnittest() override {}
 
  private:
   MockRenderProcess render_process_;
@@ -49,10 +49,10 @@ class TouchableRenderWidget : public RenderWidget {
   IPC::TestSink* sink() { return &sink_; }
 
  protected:
-  virtual ~TouchableRenderWidget() {}
+  ~TouchableRenderWidget() override {}
 
   // Overridden from RenderWidget:
-  virtual bool HasTouchEventHandlersAt(const gfx::Point& point) const OVERRIDE {
+  bool HasTouchEventHandlersAt(const gfx::Point& point) const override {
     for (std::vector<gfx::Rect>::const_iterator iter = rects_.begin();
          iter != rects_.end(); ++iter) {
       if ((*iter).Contains(point))
@@ -61,7 +61,7 @@ class TouchableRenderWidget : public RenderWidget {
     return false;
   }
 
-  virtual bool Send(IPC::Message* msg) OVERRIDE {
+  bool Send(IPC::Message* msg) override {
     sink_.OnMessageReceived(*msg);
     delete msg;
     return true;
@@ -89,7 +89,7 @@ TEST_F(RenderWidgetUnittest, TouchHitTestSinglePoint) {
   EXPECT_EQ(InputHostMsg_HandleInputEvent_ACK::ID, message->type());
   InputHostMsg_HandleInputEvent_ACK::Param params;
   InputHostMsg_HandleInputEvent_ACK::Read(message, &params);
-  InputEventAckState ack_state = params.a.state;
+  InputEventAckState ack_state = get<0>(params).state;
   EXPECT_EQ(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS, ack_state);
   widget->sink()->ClearMessages();
 
@@ -103,7 +103,7 @@ TEST_F(RenderWidgetUnittest, TouchHitTestSinglePoint) {
   message = widget->sink()->GetMessageAt(0);
   EXPECT_EQ(InputHostMsg_HandleInputEvent_ACK::ID, message->type());
   InputHostMsg_HandleInputEvent_ACK::Read(message, &params);
-  ack_state = params.a.state;
+  ack_state = get<0>(params).state;
   EXPECT_EQ(INPUT_EVENT_ACK_STATE_NOT_CONSUMED, ack_state);
   widget->sink()->ClearMessages();
 }
@@ -127,7 +127,7 @@ TEST_F(RenderWidgetUnittest, TouchHitTestMultiplePoints) {
   EXPECT_EQ(InputHostMsg_HandleInputEvent_ACK::ID, message->type());
   InputHostMsg_HandleInputEvent_ACK::Param params;
   InputHostMsg_HandleInputEvent_ACK::Read(message, &params);
-  InputEventAckState ack_state = params.a.state;
+  InputEventAckState ack_state = get<0>(params).state;
   EXPECT_EQ(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS, ack_state);
   widget->sink()->ClearMessages();
 
@@ -138,7 +138,7 @@ TEST_F(RenderWidgetUnittest, TouchHitTestMultiplePoints) {
   message = widget->sink()->GetMessageAt(0);
   EXPECT_EQ(InputHostMsg_HandleInputEvent_ACK::ID, message->type());
   InputHostMsg_HandleInputEvent_ACK::Read(message, &params);
-  ack_state = params.a.state;
+  ack_state = get<0>(params).state;
   EXPECT_EQ(INPUT_EVENT_ACK_STATE_NOT_CONSUMED, ack_state);
   widget->sink()->ClearMessages();
 }

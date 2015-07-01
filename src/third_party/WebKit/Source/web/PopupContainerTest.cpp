@@ -32,11 +32,11 @@ using namespace blink;
 
 class MockPopupContent : public PopupContent {
 public:
-    virtual void setMaxHeight(int max) OVERRIDE { maxHeight = max; }
-    virtual int popupContentHeight() const OVERRIDE { return height; }
+    virtual void setMaxHeight(int max) override { maxHeight = max; }
+    virtual int popupContentHeight() const override { return height; }
     virtual ~MockPopupContent() { }
 
-    virtual void layout() OVERRIDE
+    virtual void layout() override
     {
         layoutCount++;
         width = std::min(maxWidth, width);
@@ -44,7 +44,7 @@ public:
         height -= height % 16;
     }
 
-    virtual void setMaxWidthAndLayout(int max) OVERRIDE
+    virtual void setMaxWidthAndLayout(int max) override
     {
         maxWidth = max;
         layout();
@@ -76,17 +76,17 @@ static IntRect calculatePositionWithTransformAndRTL(const IntRect& initialRect, 
 {
     const bool isRTL = true;
     const int targetControlHeight = 20;
-    const FloatRect screenRect(0, 0, screenMaxX, screenMaxY);
-    const FloatRect windowRect(0, 0, 512, 512);
+    const IntRect screenRect(0, 0, screenMaxX, screenMaxY);
+    const IntRect windowRect(0, 0, 512, 512);
     int rtlOffset = targetControlWidth - initialRect.width();
     bool needToResizeView = false;
     return PopupContainer::layoutAndCalculateWidgetRectInternal(initialRect, targetControlHeight, windowRect, screenRect, !isRTL, rtlOffset, verticalOffset, transformOffset, content, needToResizeView);
 }
 
-static IntRect calculatePosition(const IntRect& initialRect, PopupContent* content, FloatRect windowRect = FloatRect(0, 0, 512, 512), bool isRTL = true)
+static IntRect calculatePosition(const IntRect& initialRect, PopupContent* content, IntRect windowRect = IntRect(0, 0, 512, 512), bool isRTL = true)
 {
     const int targetControlHeight = 20;
-    const FloatRect screenRect(0, 0, screenMaxX, screenMaxY);
+    const IntRect screenRect(0, 0, screenMaxX, screenMaxY);
     int rtlOffset = (targetControlWidth - initialRect.width()) * (isRTL ? 1 : -1);
     bool needToResizeView = false;
     return PopupContainer::layoutAndCalculateWidgetRectInternal(initialRect, targetControlHeight, windowRect, screenRect, !isRTL, rtlOffset, 0, IntSize(), content, needToResizeView);
@@ -170,12 +170,12 @@ TEST(PopupContainerTest, PopupPosition)
         // There is not enough room to the right, so open the popup menu to the left.
         IntRect initialRect(screenMaxX - targetControlWidth - 6, 100, targetControlWidth * 2, 100);
         MockPopupContent content(initialRect.size());
-        IntRect resultRect = calculatePosition(initialRect, &content, FloatRect(0, 0, screenMaxX, screenMaxY), false);
+        IntRect resultRect = calculatePosition(initialRect, &content, IntRect(0, 0, screenMaxX, screenMaxY), false);
         EXPECT_EQ(IntRect(758, 100, 260, 100), resultRect);
     }
 
     {
-        // Test for --webkit-transform:rotate(53deg).
+        // Test for transform:rotate(53deg).
         IntRect initialRect(100, 700, targetControlWidth, 258);
         MockPopupContent content(initialRect.size());
         IntSize transformOffset(-4, -8);
@@ -185,7 +185,7 @@ TEST(PopupContainerTest, PopupPosition)
     }
 
     {
-        // Test for --webkit-transform:rotate(-53deg).
+        // Test for transform:rotate(-53deg).
         IntRect initialRect(100, 700, targetControlWidth, 258);
         MockPopupContent content(initialRect.size());
         IntSize transformOffset(4, -8);

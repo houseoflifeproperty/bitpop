@@ -10,12 +10,26 @@
 namespace cc {
 
 PixelTestOutputSurface::PixelTestOutputSurface(
-    scoped_refptr<ContextProvider> context_provider)
-    : OutputSurface(context_provider), external_stencil_test_(false) {}
+    scoped_refptr<ContextProvider> context_provider,
+    scoped_refptr<ContextProvider> worker_context_provider,
+    bool flipped_output_surface)
+    : OutputSurface(context_provider, worker_context_provider),
+      external_stencil_test_(false) {
+  capabilities_.flipped_output_surface = flipped_output_surface;
+}
+
+PixelTestOutputSurface::PixelTestOutputSurface(
+    scoped_refptr<ContextProvider> context_provider,
+    bool flipped_output_surface)
+    : PixelTestOutputSurface(context_provider,
+                             nullptr,
+                             flipped_output_surface) {
+}
 
 PixelTestOutputSurface::PixelTestOutputSurface(
     scoped_ptr<SoftwareOutputDevice> software_device)
-    : OutputSurface(software_device.Pass()), external_stencil_test_(false) {}
+    : OutputSurface(software_device.Pass()), external_stencil_test_(false) {
+}
 
 void PixelTestOutputSurface::Reshape(const gfx::Size& size,
                                      float scale_factor) {
@@ -26,6 +40,11 @@ void PixelTestOutputSurface::Reshape(const gfx::Size& size,
 
 bool PixelTestOutputSurface::HasExternalStencilTest() const {
   return external_stencil_test_;
+}
+
+void PixelTestOutputSurface::SwapBuffers(CompositorFrame* frame) {
+  PostSwapBuffersComplete();
+  client_->DidSwapBuffers();
 }
 
 }  // namespace cc

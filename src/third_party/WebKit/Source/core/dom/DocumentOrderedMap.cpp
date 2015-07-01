@@ -121,11 +121,11 @@ inline Element* DocumentOrderedMap::get(const AtomicString& key, const TreeScope
         return entry->element;
 
     // We know there's at least one node that matches; iterate to find the first one.
-    for (Element* element = ElementTraversal::firstWithin(scope->rootNode()); element; element = ElementTraversal::next(*element)) {
-        if (!keyMatches(key, *element))
+    for (Element& element : ElementTraversal::startsAfter(scope->rootNode())) {
+        if (!keyMatches(key, element))
             continue;
-        entry->element = element;
-        return element;
+        entry->element = &element;
+        return &element;
     }
     ASSERT_NOT_REACHED();
     return 0;
@@ -136,11 +136,11 @@ Element* DocumentOrderedMap::getElementById(const AtomicString& key, const TreeS
     return get<keyMatchesId>(key, scope);
 }
 
-const WillBeHeapVector<RawPtrWillBeMember<Element> >& DocumentOrderedMap::getAllElementsById(const AtomicString& key, const TreeScope* scope) const
+const WillBeHeapVector<RawPtrWillBeMember<Element>>& DocumentOrderedMap::getAllElementsById(const AtomicString& key, const TreeScope* scope) const
 {
     ASSERT(key);
     ASSERT(scope);
-    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<WillBeHeapVector<RawPtrWillBeMember<Element> > >, emptyVector, (adoptPtrWillBeNoop(new WillBeHeapVector<RawPtrWillBeMember<Element> >())));
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<WillBeHeapVector<RawPtrWillBeMember<Element>>>, emptyVector, (adoptPtrWillBeNoop(new WillBeHeapVector<RawPtrWillBeMember<Element>>())));
 
     Map::iterator it = m_map.find(key);
     if (it == m_map.end())
@@ -179,14 +179,14 @@ Element* DocumentOrderedMap::getElementByLabelForAttribute(const AtomicString& k
     return get<keyMatchesLabelForAttribute>(key, scope);
 }
 
-void DocumentOrderedMap::trace(Visitor* visitor)
+DEFINE_TRACE(DocumentOrderedMap)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_map);
 #endif
 }
 
-void DocumentOrderedMap::MapEntry::trace(Visitor* visitor)
+DEFINE_TRACE(DocumentOrderedMap::MapEntry)
 {
     visitor->trace(element);
 #if ENABLE(OILPAN)

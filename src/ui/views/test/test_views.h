@@ -6,6 +6,7 @@
 #define UI_VIEWS_TEST_TEST_VIEWS_H_
 
 #include "base/memory/scoped_ptr.h"
+#include "ui/events/event_constants.h"
 #include "ui/views/view.h"
 
 namespace views {
@@ -14,9 +15,9 @@ namespace views {
 class StaticSizedView : public View {
  public:
   explicit StaticSizedView(const gfx::Size& size);
-  virtual ~StaticSizedView();
+  ~StaticSizedView() override;
 
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
 
  private:
   gfx::Size size_;
@@ -28,12 +29,12 @@ class StaticSizedView : public View {
 class ProportionallySizedView : public View {
  public:
   explicit ProportionallySizedView(int factor);
-  virtual ~ProportionallySizedView();
+  ~ProportionallySizedView() override;
 
   void set_preferred_width(int width) { preferred_width_ = width; }
 
-  virtual int GetHeightForWidth(int w) const OVERRIDE;
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  int GetHeightForWidth(int w) const override;
+  gfx::Size GetPreferredSize() const override;
 
  private:
   // The multiplicative factor between width and height, i.e.
@@ -44,6 +45,21 @@ class ProportionallySizedView : public View {
   int preferred_width_;
 
   DISALLOW_COPY_AND_ASSIGN(ProportionallySizedView);
+};
+
+// Class that closes the widget (which ends up deleting it immediately) when the
+// appropriate event is received.
+class CloseWidgetView : public View {
+ public:
+  explicit CloseWidgetView(ui::EventType event_type);
+
+  // ui::EventHandler override:
+  void OnEvent(ui::Event* event) override;
+
+ private:
+  const ui::EventType event_type_;
+
+  DISALLOW_COPY_AND_ASSIGN(CloseWidgetView);
 };
 
 }  // namespace views

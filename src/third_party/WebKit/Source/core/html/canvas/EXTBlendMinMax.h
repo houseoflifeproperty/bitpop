@@ -5,13 +5,12 @@
 #ifndef EXTBlendMinMax_h
 #define EXTBlendMinMax_h
 
-#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
 #include "wtf/PassRefPtr.h"
 
 namespace blink {
 
-class EXTBlendMinMax FINAL : public WebGLExtension, public ScriptWrappable {
+class EXTBlendMinMax final : public WebGLExtension {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<EXTBlendMinMax> create(WebGLRenderingContextBase*);
@@ -19,7 +18,7 @@ public:
     static const char* extensionName();
 
     virtual ~EXTBlendMinMax();
-    virtual WebGLExtensionName name() const OVERRIDE;
+    virtual WebGLExtensionName name() const override;
 
 private:
     explicit EXTBlendMinMax(WebGLRenderingContextBase*);

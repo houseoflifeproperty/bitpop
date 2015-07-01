@@ -1,9 +1,0 @@
-[
-  {
-    "cmd": [
-      "echo",
-      "Linux builders (temporarily) disabled [crbug.com/402664]"
-    ],
-    "name": "Linux builders (temporarily) disabled [crbug.com/402664]"
-  }
-]

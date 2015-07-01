@@ -5,6 +5,7 @@
 #include "chrome/browser/chromeos/login/startup_utils.h"
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_registry_simple.h"
@@ -12,8 +13,12 @@
 #include "base/sys_info.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/chromeos_switches.h"
+#include "components/web_resource/web_resource_pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -54,6 +59,9 @@ void StartupUtils::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterIntegerPref(prefs::kDeviceRegistered, -1);
   registry->RegisterBooleanPref(prefs::kEnrollmentRecoveryRequired, false);
   registry->RegisterStringPref(prefs::kInitialLocale, "en-US");
+  registry->RegisterBooleanPref(prefs::kNewOobe, false);
+  registry->RegisterBooleanPref(prefs::kWebviewSigninDisabled, false);
+  registry->RegisterBooleanPref(prefs::kNewLoginUIPopup, false);
 }
 
 // static
@@ -158,12 +166,6 @@ void StartupUtils::MarkDeviceRegistered(const base::Closure& done_callback) {
 }
 
 // static
-bool StartupUtils::IsEnrollmentRecoveryRequired() {
-  return g_browser_process->local_state()
-      ->GetBoolean(prefs::kEnrollmentRecoveryRequired);
-}
-
-// static
 void StartupUtils::MarkEnrollmentRecoveryRequired() {
   SaveBoolPreferenceForced(prefs::kEnrollmentRecoveryRequired, true);
 }
@@ -178,11 +180,62 @@ std::string StartupUtils::GetInitialLocale() {
 }
 
 // static
+bool StartupUtils::IsWebviewSigninAllowed() {
+  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableWebviewSigninFlow);
+}
+
+// static
+bool StartupUtils::IsWebviewSigninEnabled() {
+  policy::DeviceCloudPolicyManagerChromeOS* policy_manager =
+      g_browser_process
+          ? g_browser_process->platform_part()
+                ->browser_policy_connector_chromeos()
+                ->GetDeviceCloudPolicyManager()
+          : nullptr;
+
+  bool is_remora_or_shark_requisition =
+      policy_manager
+          ? policy_manager->IsRemoraRequisition() ||
+                policy_manager->IsSharkRequisition()
+          : false;
+
+  bool is_webview_disabled_pref = g_browser_process->local_state()->GetBoolean(
+      prefs::kWebviewSigninDisabled);
+
+  // TODO(dzhioev): Re-enable webview signin for remora/shark requisition
+  // http://crbug.com/464049
+  return !is_remora_or_shark_requisition && IsWebviewSigninAllowed() &&
+         !is_webview_disabled_pref;
+}
+
+// static
+bool StartupUtils::EnableWebviewSignin(bool is_enabled) {
+  if (is_enabled && !IsWebviewSigninAllowed())
+    return false;
+
+  g_browser_process->local_state()->SetBoolean(prefs::kWebviewSigninDisabled,
+                                               !is_enabled);
+  return true;
+}
+
+// static
 void StartupUtils::SetInitialLocale(const std::string& locale) {
   if (l10n_util::IsValidLocaleSyntax(locale))
     SaveStringPreferenceForced(prefs::kInitialLocale, locale);
   else
     NOTREACHED();
+}
+
+// static
+bool StartupUtils::IsNewOobeAllowed() {
+  return extensions::GetCurrentChannel() <= chrome::VersionInfo::CHANNEL_DEV;
+}
+
+// static
+bool StartupUtils::IsNewOobeActivated() {
+  return g_browser_process->local_state()->GetBoolean(prefs::kNewOobe) &&
+      IsNewOobeAllowed();
 }
 
 }  // namespace chromeos

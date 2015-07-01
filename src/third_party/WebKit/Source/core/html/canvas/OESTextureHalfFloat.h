@@ -26,13 +26,12 @@
 #ifndef OESTextureHalfFloat_h
 #define OESTextureHalfFloat_h
 
-#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
 #include "wtf/PassRefPtr.h"
 
 namespace blink {
 
-class OESTextureHalfFloat FINAL : public WebGLExtension, public ScriptWrappable {
+class OESTextureHalfFloat final : public WebGLExtension {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<OESTextureHalfFloat> create(WebGLRenderingContextBase*);
@@ -40,7 +39,7 @@ public:
     static const char* extensionName();
 
     virtual ~OESTextureHalfFloat();
-    virtual WebGLExtensionName name() const OVERRIDE;
+    virtual WebGLExtensionName name() const override;
 
 private:
     explicit OESTextureHalfFloat(WebGLRenderingContextBase*);

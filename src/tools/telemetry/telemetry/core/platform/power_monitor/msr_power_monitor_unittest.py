@@ -6,13 +6,13 @@ import logging
 import time
 import unittest
 
-from telemetry import decorators
-from telemetry.core.platform import win_platform_backend
 from telemetry.core.platform.power_monitor import msr_power_monitor
+from telemetry.core.platform import win_platform_backend
+from telemetry import decorators
 
 
 class MsrPowerMonitorTest(unittest.TestCase):
-  @decorators.Enabled('win')
+  @decorators.Enabled('xp', 'win7', 'win8')  # http://crbug.com/479337
   def testMsrRuns(self):
     platform_backend = win_platform_backend.WinPlatformBackend()
     power_monitor = msr_power_monitor.MsrPowerMonitor(platform_backend)

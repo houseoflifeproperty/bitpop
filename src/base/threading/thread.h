@@ -11,8 +11,8 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/message_loop/timer_slack.h"
+#include "base/single_thread_task_runner.h"
 #include "base/threading/platform_thread.h"
 
 namespace base {
@@ -72,7 +72,7 @@ class BASE_EXPORT Thread : PlatformThread::Delegate {
   // vtable, and the thread's ThreadMain calling the virtual method Run().  It
   // also ensures that the CleanUp() virtual method is called on the subclass
   // before it is destructed.
-  virtual ~Thread();
+  ~Thread() override;
 
 #if defined(OS_WIN)
   // Causes the thread to initialize COM.  This must be called before calling
@@ -156,7 +156,7 @@ class BASE_EXPORT Thread : PlatformThread::Delegate {
   // hold on to this even after the thread is gone; in this situation, attempts
   // to PostTask() will fail.
   scoped_refptr<SingleThreadTaskRunner> task_runner() const {
-    return message_loop_proxy();
+    return message_loop_->task_runner();
   }
 
   // Returns the name of this thread (for display in debugger too).
@@ -201,7 +201,7 @@ class BASE_EXPORT Thread : PlatformThread::Delegate {
 #endif
 
   // PlatformThread::Delegate methods:
-  virtual void ThreadMain() OVERRIDE;
+  void ThreadMain() override;
 
 #if defined(OS_WIN)
   // Whether this thread needs to initialize COM, and if so, in what mode.

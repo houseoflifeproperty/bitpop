@@ -27,66 +27,46 @@
 #ifndef LocalDOMWindow_h
 #define LocalDOMWindow_h
 
+#include "core/CoreExport.h"
+#include "core/dom/MessagePort.h"
 #include "core/events/EventTarget.h"
-#include "core/frame/DOMWindowBase64.h"
-#include "core/frame/FrameDestructionObserver.h"
-#include "platform/LifecycleContext.h"
+#include "core/frame/DOMWindow.h"
+#include "core/frame/DOMWindowLifecycleNotifier.h"
+#include "core/frame/DOMWindowLifecycleObserver.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/LocalFrameLifecycleObserver.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
-#include "platform/scroll/ScrollableArea.h"
 
+#include "wtf/Assertions.h"
 #include "wtf/Forward.h"
 
 namespace blink {
 
-class ApplicationCache;
-class BarProp;
-class CSSRuleList;
-class CSSStyleDeclaration;
-class Console;
-class DOMSelection;
-class DOMWindowCSS;
 class DOMWindowEventQueue;
-class DOMWindowLifecycleNotifier;
 class DOMWindowProperty;
-class Document;
 class DocumentInit;
-class Element;
 class EventListener;
 class EventQueue;
 class ExceptionState;
-class FloatRect;
 class FrameConsole;
-class History;
-class LocalFrame;
-class Location;
-class MediaQueryList;
-class Navigator;
+class IntRect;
+class MessageEvent;
 class Page;
-class Performance;
 class PostMessageTimer;
-class RequestAnimationFrameCallback;
-class Screen;
-class ScrollOptions;
 class ScriptCallStack;
 class SecurityOrigin;
-class SerializedScriptValue;
-class Storage;
-class StyleMedia;
-
-typedef WillBeHeapVector<RefPtrWillBeMember<MessagePort>, 1> MessagePortArray;
 
 enum PageshowEventPersistence {
     PageshowEventNotPersisted = 0,
     PageshowEventPersisted = 1
 };
 
-enum SetLocationLocking { LockHistoryBasedOnGestureState, LockHistoryAndBackForwardList };
-
-class LocalDOMWindow FINAL : public RefCountedWillBeGarbageCollectedFinalized<LocalDOMWindow>, public EventTargetWithInlineData, public DOMWindowBase64, public FrameDestructionObserver, public WillBeHeapSupplementable<LocalDOMWindow>, public LifecycleContext<LocalDOMWindow> {
-    DEFINE_WRAPPERTYPEINFO();
-    REFCOUNTED_EVENT_TARGET(LocalDOMWindow);
+// Note: if you're thinking of returning something DOM-related by reference,
+// please ping dcheng@chromium.org first. You probably don't want to do that.
+class CORE_EXPORT LocalDOMWindow final : public DOMWindow, public WillBeHeapSupplementable<LocalDOMWindow>, public DOMWindowLifecycleNotifier {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(LocalDOMWindow);
+    WILL_BE_USING_PRE_FINALIZER(LocalDOMWindow, dispose);
 public:
     static PassRefPtrWillBeRawPtr<Document> createDocument(const String& mimeType, const DocumentInit&, bool forceXHTML);
     static PassRefPtrWillBeRawPtr<LocalDOMWindow> create(LocalFrame& frame)
@@ -94,216 +74,121 @@ public:
         return adoptRefWillBeNoop(new LocalDOMWindow(frame));
     }
     virtual ~LocalDOMWindow();
+    void dispose();
 
     PassRefPtrWillBeRawPtr<Document> installNewDocument(const String& mimeType, const DocumentInit&, bool forceXHTML = false);
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
+    // EventTarget overrides:
+    virtual ExecutionContext* executionContext() const override;
+    virtual LocalDOMWindow* toDOMWindow() override;
 
-    virtual LocalDOMWindow* toDOMWindow() OVERRIDE;
+    // DOMWindow overrides:
+    DECLARE_VIRTUAL_TRACE();
+    bool isLocalDOMWindow() const override { return true; }
+    virtual LocalFrame* frame() const override;
+    Screen* screen() const override;
+    History* history() const override;
+    BarProp* locationbar() const override;
+    BarProp* menubar() const override;
+    BarProp* personalbar() const override;
+    BarProp* scrollbars() const override;
+    BarProp* statusbar() const override;
+    BarProp* toolbar() const override;
+    Navigator* navigator() const override;
+    bool offscreenBuffering() const override;
+    int outerHeight() const override;
+    int outerWidth() const override;
+    int innerHeight() const override;
+    int innerWidth() const override;
+    int screenX() const override;
+    int screenY() const override;
+    double scrollX() const override;
+    double scrollY() const override;
+    const AtomicString& name() const override;
+    void setName(const AtomicString&) override;
+    String status() const override;
+    void setStatus(const String&) override;
+    String defaultStatus() const override;
+    void setDefaultStatus(const String&) override;
+    Document* document() const override;
+    StyleMedia* styleMedia() const override;
+    double devicePixelRatio() const override;
+    ApplicationCache* applicationCache() const override;
+    int orientation() const override;
+    Console* console() const override;
+    DOMWindowCSS* css() const override;
+    DOMSelection* getSelection() override;
+    void focus(ExecutionContext*) override;
+    void blur() override;
+    void close(ExecutionContext*) override;
+    void print() override;
+    void stop() override;
+    void alert(const String& message = String()) override;
+    bool confirm(const String& message) override;
+    String prompt(const String& message, const String& defaultValue) override;
+    bool find(const String&, bool caseSensitive, bool backwards, bool wrap, bool wholeWord, bool searchInFrames, bool showDialog) const override;
+
+    // FIXME: ScrollBehaviorSmooth is currently unsupported in PinchViewport.
+    // crbug.com/434497
+    void scrollBy(double x, double y, ScrollBehavior = ScrollBehaviorAuto) const override;
+    void scrollBy(const ScrollToOptions&) const override;
+    void scrollTo(double x, double y) const override;
+    void scrollTo(const ScrollToOptions&) const override;
+
+    void moveBy(int x, int y, bool hasX, bool hasY) const override;
+    void moveTo(int x, int y, bool hasX, bool hasY) const override;
+    void resizeBy(int x, int y, bool hasX, bool hasY) const override;
+    void resizeTo(int width, int height, bool hasWidth, bool hasHeight) const override;
+    PassRefPtrWillBeRawPtr<MediaQueryList> matchMedia(const String&) override;
+    PassRefPtrWillBeRawPtr<CSSStyleDeclaration> getComputedStyle(Element*, const String& pseudoElt) const override;
+    PassRefPtrWillBeRawPtr<CSSRuleList> getMatchedCSSRules(Element*, const String& pseudoElt) const override;
+    int requestAnimationFrame(FrameRequestCallback*) override;
+    int webkitRequestAnimationFrame(FrameRequestCallback*) override;
+    void cancelAnimationFrame(int id) override;
+    void schedulePostMessage(PassRefPtrWillBeRawPtr<MessageEvent>, LocalDOMWindow* source, SecurityOrigin* target, PassRefPtrWillBeRawPtr<ScriptCallStack> stackTrace);
 
     void registerProperty(DOMWindowProperty*);
     void unregisterProperty(DOMWindowProperty*);
 
     void reset();
 
-    PassRefPtrWillBeRawPtr<MediaQueryList> matchMedia(const String&);
-
     unsigned pendingUnloadEventListeners() const;
-
-    static FloatRect adjustWindowRect(LocalFrame&, const FloatRect& pendingChanges);
 
     bool allowPopUp(); // Call on first window, not target window.
     static bool allowPopUp(LocalFrame& firstFrame);
-    static bool canShowModalDialogNow(const LocalFrame*);
-
-    // DOM Level 0
-
-    Screen& screen() const;
-    History& history() const;
-    BarProp& locationbar() const;
-    BarProp& menubar() const;
-    BarProp& personalbar() const;
-    BarProp& scrollbars() const;
-    BarProp& statusbar() const;
-    BarProp& toolbar() const;
-    Navigator& navigator() const;
-    Navigator& clientInformation() const { return navigator(); }
-
-    Location& location() const;
-    void setLocation(const String& location, LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow,
-        SetLocationLocking = LockHistoryBasedOnGestureState);
-
-    DOMSelection* getSelection();
 
     Element* frameElement() const;
 
-    void focus(ExecutionContext* = 0);
-    void blur();
-    void close(ExecutionContext* = 0);
-    void print();
-    void stop();
-
-    PassRefPtrWillBeRawPtr<LocalDOMWindow> open(const String& urlString, const AtomicString& frameName, const String& windowFeaturesString,
+    PassRefPtrWillBeRawPtr<DOMWindow> open(const String& urlString, const AtomicString& frameName, const String& windowFeaturesString,
         LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow);
 
-    typedef void (*PrepareDialogFunction)(LocalDOMWindow*, void* context);
-    void showModalDialog(const String& urlString, const String& dialogFeaturesString,
-        LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, PrepareDialogFunction, void* functionContext);
-
-    void alert(const String& message = String());
-    bool confirm(const String& message);
-    String prompt(const String& message, const String& defaultValue);
-
-    bool find(const String&, bool caseSensitive, bool backwards, bool wrap, bool wholeWord, bool searchInFrames, bool showDialog) const;
-
-    bool offscreenBuffering() const;
-
-    int outerHeight() const;
-    int outerWidth() const;
-    int innerHeight() const;
-    int innerWidth() const;
-    int screenX() const;
-    int screenY() const;
-    int screenLeft() const { return screenX(); }
-    int screenTop() const { return screenY(); }
-    double scrollX() const;
-    double scrollY() const;
-    double pageXOffset() const { return scrollX(); }
-    double pageYOffset() const { return scrollY(); }
-
-    bool closed() const;
-
-    unsigned length() const;
-
-    const AtomicString& name() const;
-    void setName(const AtomicString&);
-
-    String status() const;
-    void setStatus(const String&);
-    String defaultStatus() const;
-    void setDefaultStatus(const String&);
-
-    // Self-referential attributes
-
-    LocalDOMWindow* self() const;
-    LocalDOMWindow* window() const { return self(); }
-    LocalDOMWindow* frames() const { return self(); }
-
-    LocalDOMWindow* opener() const;
-    LocalDOMWindow* parent() const;
-    LocalDOMWindow* top() const;
-
-    // DOM Level 2 AbstractView Interface
-
-    Document* document() const;
-
-    // CSSOM View Module
-
-    StyleMedia& styleMedia() const;
-
-    // DOM Level 2 Style Interface
-
-    PassRefPtrWillBeRawPtr<CSSStyleDeclaration> getComputedStyle(Element*, const String& pseudoElt) const;
-
-    // WebKit extensions
-
-    PassRefPtrWillBeRawPtr<CSSRuleList> getMatchedCSSRules(Element*, const String& pseudoElt) const;
-    double devicePixelRatio() const;
-
-    Console& console() const;
     FrameConsole* frameConsole() const;
 
     void printErrorMessage(const String&);
-    String crossDomainAccessErrorMessage(LocalDOMWindow* callingWindow);
-    String sanitizedCrossDomainAccessErrorMessage(LocalDOMWindow* callingWindow);
 
-    void postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, const String& targetOrigin, LocalDOMWindow* source, ExceptionState&);
     void postMessageTimerFired(PostMessageTimer*);
     void dispatchMessageEventWithOriginCheck(SecurityOrigin* intendedTargetOrigin, PassRefPtrWillBeRawPtr<Event>, PassRefPtrWillBeRawPtr<ScriptCallStack>);
 
-    void scrollBy(double x, double y, ScrollBehavior = ScrollBehaviorAuto) const;
-    void scrollBy(double x, double y, const ScrollOptions&, ExceptionState&) const;
-    void scrollTo(double x, double y, ScrollBehavior = ScrollBehaviorAuto) const;
-    void scrollTo(double x, double y, const ScrollOptions&, ExceptionState&) const;
-    void scroll(double x, double y) const { scrollTo(x, y); }
-    void scroll(double x, double y, const ScrollOptions& scrollOptions, ExceptionState& exceptionState) const { scrollTo(x, y, scrollOptions, exceptionState); }
-
-    void moveBy(float x, float y) const;
-    void moveTo(float x, float y) const;
-
-    void resizeBy(float x, float y) const;
-    void resizeTo(float width, float height) const;
-
-    // WebKit animation extensions
-    int requestAnimationFrame(RequestAnimationFrameCallback*);
-    int webkitRequestAnimationFrame(RequestAnimationFrameCallback*);
-    void cancelAnimationFrame(int id);
-
-    DOMWindowCSS& css() const;
-
     // Events
     // EventTarget API
-    virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) OVERRIDE;
-    virtual bool removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) OVERRIDE;
-    virtual void removeAllEventListeners() OVERRIDE;
+    virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
+    virtual bool removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
+    virtual void removeAllEventListeners() override;
 
     using EventTarget::dispatchEvent;
     bool dispatchEvent(PassRefPtrWillBeRawPtr<Event> prpEvent, PassRefPtrWillBeRawPtr<EventTarget> prpTarget);
 
     void dispatchLoadEvent();
 
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(animationend);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(animationiteration);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(animationstart);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(search);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(transitionend);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(wheel);
-
-    DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkitanimationstart, webkitAnimationStart);
-    DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkitanimationiteration, webkitAnimationIteration);
-    DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkitanimationend, webkitAnimationEnd);
-    DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkittransitionend, webkitTransitionEnd);
-
-    void captureEvents() { }
-    void releaseEvents() { }
-
     void finishedLoading();
 
-    // HTML 5 key/value storage
-    Storage* sessionStorage(ExceptionState&) const;
-    Storage* localStorage(ExceptionState&) const;
-    Storage* optionalSessionStorage() const { return m_sessionStorage.get(); }
-    Storage* optionalLocalStorage() const { return m_localStorage.get(); }
-
-    ApplicationCache* applicationCache() const;
     ApplicationCache* optionalApplicationCache() const { return m_applicationCache.get(); }
 
-    // This is the interface orientation in degrees. Some examples are:
-    //  0 is straight up; -90 is when the device is rotated 90 clockwise;
-    //  90 is when rotated counter clockwise.
-    int orientation() const;
-
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(orientationchange);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchstart);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchmove);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchend);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchcancel);
-
-    Performance& performance() const;
-
-    // FIXME: When this LocalDOMWindow is no longer the active LocalDOMWindow (i.e.,
-    // when its document is no longer the document that is displayed in its
-    // frame), we would like to zero out m_frame to avoid being confused
-    // by the document that is currently active in m_frame.
-    bool isCurrentlyDisplayedInFrame() const;
+    // Dispatch the (deprecated) orientationchange event to this DOMWindow and
+    // recurse on its child frames.
+    void sendOrientationChangeEvent();
 
     void willDetachDocumentFromFrame();
-    LocalDOMWindow* anonymousIndexedGetter(uint32_t);
-
-    bool isInsecureScriptAccess(LocalDOMWindow& callingWindow, const String& urlString);
-
-    PassOwnPtr<LifecycleNotifier<LocalDOMWindow> > createLifecycleNotifier();
 
     EventQueue* eventQueue() const;
     void enqueueWindowEvent(PassRefPtrWillBeRawPtr<Event>);
@@ -320,36 +205,44 @@ public:
 
     void acceptLanguagesChanged();
 
-    virtual void trace(Visitor*) OVERRIDE;
-
-    virtual v8::Handle<v8::Object> wrap(v8::Handle<v8::Object> creationContext, v8::Isolate*) OVERRIDE;
-
-protected:
-    DOMWindowLifecycleNotifier& lifecycleNotifier();
-
 private:
+    // Rather than simply inheriting LocalFrameLifecycleObserver like most other
+    // classes, LocalDOMWindow hides its LocalFrameLifecycleObserver with
+    // composition. This prevents conflicting overloads between DOMWindow, which
+    // has a frame() accessor that returns Frame* for bindings code, and
+    // LocalFrameLifecycleObserver, which has a frame() accessor that returns a
+    // LocalFrame*.
+    class WindowFrameObserver final : public NoBaseWillBeGarbageCollected<WindowFrameObserver>, public LocalFrameLifecycleObserver {
+        WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(WindowFrameObserver);
+        WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WindowFrameObserver);
+        DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(WindowFrameObserver);
+    public:
+        static PassOwnPtrWillBeRawPtr<WindowFrameObserver> create(LocalDOMWindow*, LocalFrame&);
+
+        DECLARE_VIRTUAL_TRACE();
+
+    private:
+        WindowFrameObserver(LocalDOMWindow*, LocalFrame&);
+
+        // LocalFrameLifecycleObserver overrides:
+        void willDetachFrameHost() override;
+        void contextDestroyed() override;
+
+        RawPtrWillBeMember<LocalDOMWindow> m_window;
+    };
+    friend WTF::OwnedPtrDeleter<WindowFrameObserver>;
+
     explicit LocalDOMWindow(LocalFrame&);
 
     Page* page();
 
-    // FrameDestructionObserver
-    virtual void willDetachFrameHost() OVERRIDE;
-
     void clearDocument();
     void willDestroyDocumentInFrame();
 
-    // FIXME: Oilpan: the need for this internal method will fall
-    // away when EventTargets are no longer using refcounts and
-    // window properties are also on the heap. Inline the minimal
-    // do-not-broadcast handling then and remove the enum +
-    // removeAllEventListenersInternal().
-    enum BroadcastListenerRemoval {
-        DoNotBroadcastListenerRemoval,
-        DoBroadcastListenerRemoval
-    };
+    void willDetachFrameHost();
+    void frameDestroyed();
 
-    void removeAllEventListenersInternal(BroadcastListenerRemoval);
-
+    OwnPtrWillBeMember<WindowFrameObserver> m_frameObserver;
     RefPtrWillBeMember<Document> m_document;
 
     bool m_shouldPrintWhenFinishedLoading;
@@ -357,37 +250,34 @@ private:
     bool m_hasBeenReset;
 #endif
 
-    WillBeHeapHashSet<RawPtrWillBeWeakMember<DOMWindowProperty> > m_properties;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<DOMWindowProperty>> m_properties;
 
-    mutable RefPtrWillBeMember<Screen> m_screen;
-    mutable RefPtrWillBeMember<History> m_history;
+    mutable PersistentWillBeMember<Screen> m_screen;
+    mutable PersistentWillBeMember<History> m_history;
     mutable RefPtrWillBeMember<BarProp> m_locationbar;
     mutable RefPtrWillBeMember<BarProp> m_menubar;
     mutable RefPtrWillBeMember<BarProp> m_personalbar;
     mutable RefPtrWillBeMember<BarProp> m_scrollbars;
     mutable RefPtrWillBeMember<BarProp> m_statusbar;
     mutable RefPtrWillBeMember<BarProp> m_toolbar;
-    mutable RefPtrWillBeMember<Console> m_console;
-    mutable RefPtrWillBeMember<Navigator> m_navigator;
-    mutable RefPtrWillBeMember<Location> m_location;
+    mutable PersistentWillBeMember<Console> m_console;
+    mutable PersistentWillBeMember<Navigator> m_navigator;
     mutable RefPtrWillBeMember<StyleMedia> m_media;
 
     String m_status;
     String m_defaultStatus;
 
-    mutable RefPtrWillBeMember<Storage> m_sessionStorage;
-    mutable RefPtrWillBeMember<Storage> m_localStorage;
     mutable RefPtrWillBeMember<ApplicationCache> m_applicationCache;
-
-    mutable RefPtrWillBeMember<Performance> m_performance;
 
     mutable RefPtrWillBeMember<DOMWindowCSS> m_css;
 
     RefPtrWillBeMember<DOMWindowEventQueue> m_eventQueue;
     RefPtr<SerializedScriptValue> m_pendingStateObject;
 
-    HashSet<OwnPtr<PostMessageTimer> > m_postMessageTimers;
+    WillBeHeapHashSet<OwnPtrWillBeMember<PostMessageTimer>> m_postMessageTimers;
 };
+
+DEFINE_TYPE_CASTS(LocalDOMWindow, DOMWindow, x, x->isLocalDOMWindow(), x.isLocalDOMWindow());
 
 inline String LocalDOMWindow::status() const
 {

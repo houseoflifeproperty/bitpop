@@ -15,8 +15,6 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.View;
-import android.view.accessibility.AccessibilityEvent;
-import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityNodeProvider;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
@@ -39,7 +37,7 @@ public class AwTestContainerView extends FrameLayout {
     private AwContents.NativeGLDelegate mNativeGLDelegate;
     private AwContents.InternalAccessDelegate mInternalAccessDelegate;
 
-    HardwareView mHardwareView = null;
+    private HardwareView mHardwareView = null;
     private boolean mAttachedContents = false;
 
     private class HardwareView extends GLSurfaceView {
@@ -204,11 +202,12 @@ public class AwTestContainerView extends FrameLayout {
                     mSyncLock.notifyAll();
                 }
             }
-            if (draw) {
+            if (process) {
+                DrawGL.drawGL(mDrawGL, mViewContext, width, height, 0, 0, MODE_PROCESS);
+            }
+            if (process || draw) {
                 DrawGL.drawGL(mDrawGL, mViewContext, width, height,
                         mCommittedScrollX, mCommittedScrollY, MODE_DRAW);
-            } else if (process) {
-                DrawGL.drawGL(mDrawGL, mViewContext, width, height, 0, 0, MODE_PROCESS);
             }
 
             if (waitForCompletion) {
@@ -227,18 +226,18 @@ public class AwTestContainerView extends FrameLayout {
         return new HardwareView(context);
     }
 
-    public AwTestContainerView(Context context, boolean hardwareAccelerated) {
+    public AwTestContainerView(Context context, boolean allowHardwareAcceleration) {
         super(context);
-        if (hardwareAccelerated) {
+        if (allowHardwareAcceleration) {
             mHardwareView = createHardwareViewOnlyOnce(context);
         }
-        if (mHardwareView != null) {
+        if (isBackedByHardwareView()) {
             addView(mHardwareView,
                     new FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.MATCH_PARENT,
                         FrameLayout.LayoutParams.MATCH_PARENT));
         } else {
-          setLayerType(LAYER_TYPE_SOFTWARE, null);
+            setLayerType(LAYER_TYPE_SOFTWARE, null);
         }
         mNativeGLDelegate = new NativeGLDelegate();
         mInternalAccessDelegate = new InternalAccessAdapter();
@@ -249,10 +248,14 @@ public class AwTestContainerView extends FrameLayout {
 
     public void initialize(AwContents awContents) {
         mAwContents = awContents;
-        if (mHardwareView != null) {
+        if (isBackedByHardwareView()) {
             mHardwareView.initialize(
                     mAwContents.getAwDrawGLFunction(), mAwContents.getAwDrawGLViewContext());
         }
+    }
+
+    public boolean isBackedByHardwareView() {
+        return mHardwareView != null;
     }
 
     public ContentViewCore getContentViewCore() {
@@ -289,6 +292,7 @@ public class AwTestContainerView extends FrameLayout {
             mAttachedContents = true;
         } else {
             mHardwareView.setReadyToRenderCallback(new Runnable() {
+                @Override
                 public void run() {
                     assert !mAttachedContents;
                     mAwContents.onAttachedToWindow();
@@ -378,8 +382,20 @@ public class AwTestContainerView extends FrameLayout {
     }
 
     @Override
+    public boolean onGenericMotionEvent(MotionEvent ev) {
+        super.onGenericMotionEvent(ev);
+        return mAwContents.onGenericMotionEvent(ev);
+    }
+
+    @Override
+    public boolean onHoverEvent(MotionEvent ev) {
+        super.onHoverEvent(ev);
+        return mAwContents.onHoverEvent(ev);
+    }
+
+    @Override
     public void onDraw(Canvas canvas) {
-        if (mHardwareView != null) {
+        if (isBackedByHardwareView()) {
             mHardwareView.updateScroll(getScrollX(), getScrollY());
         }
         mAwContents.onDraw(canvas);
@@ -389,22 +405,8 @@ public class AwTestContainerView extends FrameLayout {
     @Override
     public AccessibilityNodeProvider getAccessibilityNodeProvider() {
         AccessibilityNodeProvider provider =
-            mAwContents.getAccessibilityNodeProvider();
+                mAwContents.getAccessibilityNodeProvider();
         return provider == null ? super.getAccessibilityNodeProvider() : provider;
-    }
-
-    @Override
-    public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
-        super.onInitializeAccessibilityNodeInfo(info);
-        info.setClassName(AwContents.class.getName());
-        mAwContents.onInitializeAccessibilityNodeInfo(info);
-    }
-
-    @Override
-    public void onInitializeAccessibilityEvent(AccessibilityEvent event) {
-        super.onInitializeAccessibilityEvent(event);
-        event.setClassName(AwContents.class.getName());
-        mAwContents.onInitializeAccessibilityEvent(event);
     }
 
     @Override
@@ -416,14 +418,14 @@ public class AwTestContainerView extends FrameLayout {
         @Override
         public boolean requestDrawGL(Canvas canvas, boolean waitForCompletion,
                 View containerview) {
-            if (mHardwareView == null) return false;
+            if (!isBackedByHardwareView()) return false;
             mHardwareView.requestRender(canvas, waitForCompletion);
             return true;
         }
 
         @Override
         public void detachGLFunctor() {
-            if (mHardwareView != null) mHardwareView.detachGLFunctor();
+            if (isBackedByHardwareView()) mHardwareView.detachGLFunctor();
         }
     }
 
@@ -465,7 +467,7 @@ public class AwTestContainerView extends FrameLayout {
         public void super_scrollTo(int scrollX, int scrollY) {
             // We're intentionally not calling super.scrollTo here to make testing easier.
             AwTestContainerView.this.scrollTo(scrollX, scrollY);
-            if (mHardwareView != null) {
+            if (isBackedByHardwareView()) {
                 // Undo the scroll that will be applied because of mHardwareView
                 // being a child of |this|.
                 mHardwareView.setTranslationX(scrollX);

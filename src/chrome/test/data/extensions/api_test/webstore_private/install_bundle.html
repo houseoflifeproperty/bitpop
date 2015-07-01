@@ -32,13 +32,15 @@ var bundleItems = [
 runTests([
   function successfulInstall() {
     chrome.webstorePrivate.installBundle(
-        bundleItems, callbackPass(function() {
-      bundleItems.forEach(function(item) {
-        checkItemInstalled(
-            item.id,
-            callbackPass(function(result) { assertTrue(result); }));
-      });
-    }));
+        { localizedName: 'MyBundle' },
+        bundleItems,
+        callbackPass(function() {
+          bundleItems.forEach(function(item) {
+            checkItemInstalled(
+                item.id,
+                callbackPass(function(result) { assertTrue(result); }));
+          });
+        }));
   }
 ]);
 

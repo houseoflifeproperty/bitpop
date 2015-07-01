@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/macros.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/url_canon.h"
 #include "url/url_canon_stdstring.h"
@@ -159,7 +160,7 @@ TEST(URLUtilTest, DecodeURLEscapeSequences) {
     {"%e4%bd%a0%e5%a5%bd", "\xe4\xbd\xa0\xe5\xa5\xbd"},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(decode_cases); i++) {
+  for (size_t i = 0; i < arraysize(decode_cases); i++) {
     const char* input = decode_cases[i].input;
     RawCanonOutputT<base::char16> output;
     DecodeURLEscapeSequences(input, strlen(input), &output);
@@ -209,7 +210,7 @@ TEST(URLUtilTest, TestEncodeURIComponent) {
      "pqrstuvwxyz%7B%7C%7D~%7F"},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(encode_cases); i++) {
+  for (size_t i = 0; i < arraysize(encode_cases); i++) {
     const char* input = encode_cases[i].input;
     RawCanonOutputT<char> buffer;
     EncodeURIComponent(input, strlen(input), &buffer);
@@ -233,7 +234,7 @@ TEST(URLUtilTest, TestResolveRelativeWithNonStandardBase) {
       // URL doesn't alter the authority section.
     {"scheme://Authority/", "../path", true, "scheme://Authority/path"},
       // A non-standard hierarchical base is resolved with path URL
-      // canoncialization rules.
+      // canonicalization rules.
     {"data:/Blah:Blah/", "file.html", true, "data:/Blah:Blah/file.html"},
     {"data:/Path/../part/part2", "file.html", true,
       "data:/Path/../part/file.html"},
@@ -272,9 +273,18 @@ TEST(URLUtilTest, TestResolveRelativeWithNonStandardBase) {
       // any URL scheme is we might break javascript: URLs by doing so...
     {"javascript:alert('foo#bar')", "#badfrag", true,
       "javascript:alert('foo#badfrag" },
+      // In this case, the backslashes will not be canonicalized because it's a
+      // non-standard URL, but they will be treated as a path separators,
+      // giving the base URL here a path of "\".
+      //
+      // The result here is somewhat arbitrary. One could argue it should be
+      // either "aaa://a\" or "aaa://a/" since the path is being replaced with
+      // the "current directory". But in the context of resolving on data URLs,
+      // adding the requested dot doesn't seem wrong either.
+    {"aaa://a\\", "aaa:.", true, "aaa://a\\." }
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(resolve_non_standard_cases); i++) {
+  for (size_t i = 0; i < arraysize(resolve_non_standard_cases); i++) {
     const ResolveRelativeCase& test_data = resolve_non_standard_cases[i];
     Parsed base_parsed;
     ParsePathURL(test_data.base, strlen(test_data.base), false, &base_parsed);
@@ -292,6 +302,27 @@ TEST(URLUtilTest, TestResolveRelativeWithNonStandardBase) {
     if (test_data.is_valid && valid)
       EXPECT_EQ(test_data.out, resolved) << i;
   }
+}
+
+TEST(URLUtilTest, TestNoRefComponent) {
+  // The hash-mark must be ignored when mailto: scheme is
+  // parsed, even if the url has a base and relative part.
+  const char* base = "mailto://to/";
+  const char* rel = "any#body";
+
+  Parsed base_parsed;
+  ParsePathURL(base, strlen(base), false, &base_parsed);
+
+  std::string resolved;
+  StdStringCanonOutput output(&resolved);
+  Parsed resolved_parsed;
+
+  bool valid = ResolveRelative(base, strlen(base),
+                               base_parsed, rel,
+                               strlen(rel), NULL, &output,
+                               &resolved_parsed);
+  EXPECT_TRUE(valid);
+  EXPECT_FALSE(resolved_parsed.ref.is_valid());
 }
 
 }  // namespace url

@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_COCOA_BROWSER_WINDOW_CONTROLLER_PRIVATE_H_
 
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
+#import "chrome/browser/ui/cocoa/browser_window_layout.h"
 #import "chrome/browser/ui/cocoa/presentation_mode_controller.h"
 
 @class BrowserWindowLayout;
@@ -40,12 +41,8 @@
 - (void)showFullscreenExitBubbleIfNecessary;
 - (void)destroyFullscreenExitBubbleIfNecessary;
 
-// Lays out the tab strip at the given maximum y-coordinate, with the given
-// width, possibly for fullscreen mode; returns the new maximum y (below the
-// tab strip). This is safe to call even when there is no tab strip.
-- (CGFloat)layoutTabStripAtMaxY:(CGFloat)maxY
-                          width:(CGFloat)width
-                     fullscreen:(BOOL)fullscreen;
+// Lays out the tab strip and avatar button.
+- (void)applyTabStripLayout:(const chrome::TabStripLayout&)layout;
 
 // Returns YES if the bookmark bar should be placed below the infobar, NO
 // otherwise.
@@ -98,14 +95,6 @@
 // The opacity for the toolbar divider; 0 means that it shouldn't be shown.
 - (CGFloat)toolbarDividerOpacity;
 
-// When a view does not have a layer, but it has multiple subviews with layers,
-// the ordering of the layers is not well defined. Removing a subview and
-// re-adding it to the same position has the side effect of updating the layer
-// ordering to better reflect the subview ordering.
-// This is a hack needed because NSThemeFrame is not layer backed, but it has
-// multiple direct subviews which are. http://crbug.com/413009
-- (void)updateLayerOrdering:(NSView*)view;
-
 // Update visibility of the infobar tip, depending on the state of the window.
 - (void)updateInfoBarTipVisibility;
 
@@ -135,6 +124,11 @@
 - (void)enterAppKitFullscreen;
 - (void)exitAppKitFullscreen;
 
+// Returns where the fullscreen button should be positioned in the window.
+// Returns NSZeroRect if there is no fullscreen button (if currently in
+// fullscreen, or if running 10.6 or 10.10+).
+- (NSRect)fullscreenButtonFrame;
+
 // Updates |layout| with the full set of parameters required to statelessly
 // determine the layout of the views managed by this controller.
 - (void)updateLayoutParameters:(BrowserWindowLayout*)layout;
@@ -156,9 +150,19 @@
 // to prevent redraws.
 - (void)setContentViewSubviews:(NSArray*)subviews;
 
-// A hack required to get NSThemeFrame sub layers to order correctly. See
-// implementation for more details.
-- (void)updateSubviewZOrderHack;
+// There is a bug in Mavericks for applications linked against OSX 10.8 and
+// earlier. The bug requires Screens Have Separate Spaces to be enabled, and
+// for the window to be on a secondary screen. When AppKit Fullscreen is
+// invoked on the window, its final frame is 22pt too short. These methods
+// detect when the relevant conditions have been met so that a hack can be
+// applied to fix the size of the window.
+// http://crbug.com/396980
++ (BOOL)systemSettingsRequireMavericksAppKitFullscreenHack;
+- (BOOL)shouldUseMavericksAppKitFullscreenHack;
+
+// Whether the instance should use a custom transition when animating into and
+// out of AppKit Fullscreen.
+- (BOOL)shouldUseCustomAppKitFullscreenTransition;
 
 @end  // @interface BrowserWindowController(Private)
 

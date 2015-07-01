@@ -149,7 +149,7 @@ bool HTMLElementStack::ElementRecord::isAbove(ElementRecord* other) const
     return false;
 }
 
-void HTMLElementStack::ElementRecord::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLElementStack::ElementRecord)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_item);
@@ -395,7 +395,7 @@ HTMLStackItem* HTMLElementStack::oneBelowTop() const
     ASSERT(m_top->next());
     if (m_top->next()->stackItem()->isElementNode())
         return m_top->next()->stackItem().get();
-    return 0;
+    return nullptr;
 }
 
 void HTMLElementStack::removeHTMLHeadElement(Element* element)
@@ -425,7 +425,7 @@ HTMLElementStack::ElementRecord* HTMLElementStack::find(Element* element) const
         if (pos->node() == element)
             return pos;
     }
-    return 0;
+    return nullptr;
 }
 
 HTMLElementStack::ElementRecord* HTMLElementStack::topmost(const AtomicString& tagName) const
@@ -434,7 +434,7 @@ HTMLElementStack::ElementRecord* HTMLElementStack::topmost(const AtomicString& t
         if (pos->stackItem()->matchesHTMLTag(tagName))
             return pos;
     }
-    return 0;
+    return nullptr;
 }
 
 bool HTMLElementStack::contains(Element* element) const
@@ -613,10 +613,10 @@ HTMLElementStack::ElementRecord* HTMLElementStack::furthestBlockForFormattingEle
             furthestBlock = pos;
     }
     ASSERT_NOT_REACHED();
-    return 0;
+    return nullptr;
 }
 
-void HTMLElementStack::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLElementStack)
 {
     visitor->trace(m_top);
     visitor->trace(m_rootNode);

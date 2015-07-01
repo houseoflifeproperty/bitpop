@@ -10,8 +10,8 @@
 #include "base/mac/scoped_nsobject.h"
 #include "ui/aura/aura_export.h"
 #include "ui/aura/window_tree_host.h"
-#include "ui/gfx/insets.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/insets.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace ui {
 class MouseEvent;
@@ -26,29 +26,28 @@ class TouchEventCalibrate;
 class AURA_EXPORT WindowTreeHostMac : public WindowTreeHost {
  public:
   explicit WindowTreeHostMac(const gfx::Rect& bounds);
-  virtual ~WindowTreeHostMac();
+  ~WindowTreeHostMac() override;
 
  private:
   // WindowTreeHost Overrides.
-  virtual ui::EventSource* GetEventSource() OVERRIDE;
-  virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
-  virtual void Show() OVERRIDE;
-  virtual void Hide() OVERRIDE;
-  virtual void ToggleFullScreen() OVERRIDE;
-  virtual gfx::Rect GetBounds() const OVERRIDE;
-  virtual void SetBounds(const gfx::Rect& bounds) OVERRIDE;
-  virtual gfx::Insets GetInsets() const OVERRIDE;
-  virtual void SetInsets(const gfx::Insets& insets) OVERRIDE;
-  virtual gfx::Point GetLocationOnNativeScreen() const OVERRIDE;
-  virtual void SetCapture() OVERRIDE;
-  virtual void ReleaseCapture() OVERRIDE;
-  virtual bool ConfineCursorToRootWindow() OVERRIDE;
-  virtual void UnConfineCursor() OVERRIDE;
-  virtual void SetCursorNative(gfx::NativeCursor cursor_type) OVERRIDE;
-  virtual void MoveCursorToNative(const gfx::Point& location) OVERRIDE;
-  virtual void OnCursorVisibilityChangedNative(bool show) OVERRIDE;
-  virtual void PostNativeEvent(const base::NativeEvent& event) OVERRIDE;
-  virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
+  ui::EventSource* GetEventSource() override;
+  gfx::AcceleratedWidget GetAcceleratedWidget() override;
+  void Show() override;
+  void Hide() override;
+  void ToggleFullScreen() override;
+  gfx::Rect GetBounds() const override;
+  void SetBounds(const gfx::Rect& bounds) override;
+  gfx::Insets GetInsets() const override;
+  void SetInsets(const gfx::Insets& insets) override;
+  gfx::Point GetLocationOnNativeScreen() const override;
+  void SetCapture() override;
+  void ReleaseCapture() override;
+  bool ConfineCursorToRootWindow() override;
+  void UnConfineCursor() override;
+  void SetCursorNative(gfx::NativeCursor cursor_type) override;
+  void MoveCursorToNative(const gfx::Point& location) override;
+  void OnCursorVisibilityChangedNative(bool show) override;
+  void OnDeviceScaleFactorChanged(float device_scale_factor) override;
 
  private:
   base::scoped_nsobject<NSWindow> window_;

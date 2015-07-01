@@ -10,6 +10,10 @@
       'werror%': '-Werror',
       # 1 to use goma.
       'use_goma%': 0,
+      # Set to 1 to use nacl-clang rather than gcc newlib toolchain.
+      # This is designed to be set globally by GYP_DEFINES and currently
+      # only affects x86-32 and x86-64 newlib builds.
+      'use_nacl_clang%': 0,
     },
     'common_args': [
       'python',
@@ -25,7 +29,11 @@
       # would just make things uglier.
       '--product-dir', '<(PRODUCT_DIR)/xyz',
       '--config-name', '<(CONFIGURATION_NAME)',
-      '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+      '-t', '<(DEPTH)/native_client/toolchain/',
+    ],
+    'common_inputs': [
+      '<(DEPTH)/native_client/build/build_nexe.py',
+      '<(DEPTH)/native_client/build/build_nexe_tools.py',
     ],
     # Default C compiler defines.
     'nacl_default_defines': [
@@ -53,6 +61,15 @@
       ['use_goma==0', {
         'gomadir%': '',
       }],
+      ['use_nacl_clang==1', {
+        'newlib_nlib_arg': 'newlib_nlib_clang',
+        'newlib_nexe_arg': 'newlib_nexe_clang',
+        'arm_compile_flags': '',
+      }, {
+        'newlib_nlib_arg': 'newlib_nlib',
+        'newlib_nexe_arg': 'newlib_nexe',
+        'arm_compile_flags': '-Wno-unused-local-typedefs -Wno-psabi',
+      }],
       ['OS=="android"', {
         'TOOLCHAIN_OS': 'linux',
       }, {
@@ -76,6 +93,7 @@
           'build_newlib': 0,
           'build_glibc': 0,
           'build_irt': 0,
+          'build_nonsfi_helper': 0,
           'disable_glibc%': 0,
           'disable_bionic%': 1,
           'extra_args': [],
@@ -84,14 +102,16 @@
           'enable_arm': 0,
           'enable_mips': 0,
           'enable_x86_32_nonsfi': 0,
-          'nacl_glibc_tc_root': '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_glibc',
-          'nacl_newlib_tc_root': '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib',
+          'enable_arm_nonsfi': 0,
+          'nacl_glibc_tc_root': '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_glibc',
+          'nacl_newlib_tc_root': '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib',
           'tc_lib_dir_newlib32': '<(SHARED_INTERMEDIATE_DIR)/tc_newlib/lib32',
           'tc_lib_dir_newlib64': '<(SHARED_INTERMEDIATE_DIR)/tc_newlib/lib64',
           'tc_lib_dir_glibc32': '<(SHARED_INTERMEDIATE_DIR)/tc_glibc/lib32',
           'tc_lib_dir_glibc64': '<(SHARED_INTERMEDIATE_DIR)/tc_glibc/lib64',
           'tc_lib_dir_irt32': '<(SHARED_INTERMEDIATE_DIR)/tc_irt/lib32',
           'tc_lib_dir_irt64': '<(SHARED_INTERMEDIATE_DIR)/tc_irt/lib64',
+          'tc_lib_dir_nonsfi_helper32': '<(SHARED_INTERMEDIATE_DIR)/tc_nonsfi_helper/lib32',
           'tc_include_dir_newlib': '<(SHARED_INTERMEDIATE_DIR)/tc_newlib/include',
           'tc_include_dir_glibc': '<(SHARED_INTERMEDIATE_DIR)/tc_glibc/include',
           'extra_deps': [],
@@ -99,6 +119,7 @@
           'extra_deps_newlib32': [],
           'extra_deps_glibc64': [],
           'extra_deps_glibc32': [],
+          'extra_deps_newlib32_nonsfi': [],
           'include_dirs': ['<(DEPTH)'],
           'defines': [
             '<@(nacl_default_defines)',
@@ -129,6 +150,7 @@
           'build_newlib': 0,
           'build_glibc': 0,
           'build_irt': 0,
+          'build_nonsfi_helper': 0,
           'disable_glibc%': 1,
           'disable_bionic%': 1,
           'extra_args': [],
@@ -137,15 +159,18 @@
           'enable_arm': 1,
           'enable_mips': 0,
           'enable_x86_32_nonsfi': 0,
+          'enable_arm_nonsfi': 0,
           'extra_deps': [],
           'extra_deps_newlib_arm': [],
+          'extra_deps_newlib_arm_nonsfi': [],
           'extra_deps_bionic_arm': [],
           'native_sources': [],
-          'nacl_glibc_tc_root': '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_arm_glibc',
-          'nacl_newlib_tc_root': '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_arm_newlib',
+          'nacl_glibc_tc_root': '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_arm_glibc',
+          'nacl_newlib_tc_root': '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_arm_newlib',
           'tc_lib_dir_bionic_arm': '<(SHARED_INTERMEDIATE_DIR)/tc_bionic/libarm',
           'tc_lib_dir_newlib_arm': '<(SHARED_INTERMEDIATE_DIR)/tc_newlib/libarm',
           'tc_lib_dir_irt_arm': '<(SHARED_INTERMEDIATE_DIR)/tc_irt/libarm',
+          'tc_lib_dir_nonsfi_helper_arm': '<(SHARED_INTERMEDIATE_DIR)/tc_nonsfi_helper/libarm',
           'tc_include_dir_newlib': '<(SHARED_INTERMEDIATE_DIR)/tc_newlib/include',
           'tc_include_dir_bionic': '<(SHARED_INTERMEDIATE_DIR)/tc_bionic/include',
           'include_dirs': ['<(DEPTH)'],
@@ -173,6 +198,7 @@
           'build_newlib': 0,
           'build_glibc': 0,
           'build_irt': 0,
+          'build_nonsfi_helper': 0,
           'disable_glibc%': 1,
           'disable_bionic%': 1,
           'extra_args': [],
@@ -181,11 +207,12 @@
           'enable_arm': 0,
           'enable_mips': 1,
           'enable_x86_32_nonsfi': 0,
+          'enable_arm_nonsfi': 0,
           'extra_deps': [],
           'extra_deps_newlib_mips': [],
           'native_sources': [],
-          'nacl_glibc_tc_root': '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_mips_glibc',
-          'nacl_newlib_tc_root': '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_mips_newlib',
+          'nacl_glibc_tc_root': '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_mips_glibc',
+          'nacl_newlib_tc_root': '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_mips_newlib',
           'tc_lib_dir_newlib_mips': '<(SHARED_INTERMEDIATE_DIR)/tc_newlib/libmips',
           'tc_lib_dir_irt_mips': '<(SHARED_INTERMEDIATE_DIR)/tc_irt/libmips',
           'tc_include_dir_newlib': '<(SHARED_INTERMEDIATE_DIR)/tc_newlib/include',
@@ -218,26 +245,26 @@
                  'msvs_cygwin_shell': 0,
                  'description': 'building >(out_newlib64)',
                  'inputs': [
-                    '<(DEPTH)/native_client/build/build_nexe.py',
+                    '<@(common_inputs)',
                     '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_newlib64)',
                     '^(source_list_newlib64)',
-                    '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/stamp.prep',
+                    '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/nacl_x86_newlib.json',
                  ],
                  'outputs': ['>(out_newlib64)'],
                  'action': [
                    '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-64',
-                   '--build', 'newlib_nexe',
+                   '--build', '<(newlib_nexe_arg)',
                    '--name', '>(out_newlib64)',
                    '--objdir', '>(objdir_newlib64)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
                    '--compile_flags=-m64 ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                    '--gomadir', '<(gomadir)',
                    '--defines=^(defines) >(_defines)',
-                   '--link_flags=-B>(tc_lib_dir_newlib64) ^(link_flags) >(_link_flags)',
+                   '--link_flags=-B>(tc_lib_dir_newlib64) -L>(tc_lib_dir_newlib64) ^(link_flags) >(_link_flags)',
                    '--source-list=^(source_list_newlib64)',
                  ],
                },
@@ -259,19 +286,19 @@
                  'msvs_cygwin_shell': 0,
                  'description': 'building >(out_newlib64)',
                  'inputs': [
-                    '<(DEPTH)/native_client/build/build_nexe.py',
+                    '<@(common_inputs)',
                     '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_newlib64)',
                     '^(source_list_newlib64)',
-                    '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/stamp.prep',
+                    '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/nacl_x86_newlib.json',
                  ],
                  'outputs': ['>(out_newlib64)'],
                  'action': [
                    '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-64',
-                   '--build', 'newlib_nlib',
+                   '--build', '<(newlib_nlib_arg)',
                    '--name', '>(out_newlib64)',
                    '--objdir', '>(objdir_newlib64)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
@@ -300,12 +327,13 @@
                  'msvs_cygwin_shell': 0,
                  'description': 'building >(out_newlib64)',
                  'inputs': [
-                    '<(DEPTH)/native_client/build/build_nexe.py',
+                    '<@(common_inputs)',
+                    '<(DEPTH)/native_client/build/link_irt.py',
                     '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_newlib64)',
                     '^(source_list_newlib64)',
-                    '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/stamp.prep',
+                    '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/nacl_x86_newlib.json',
                     '<(PRODUCT_DIR)/tls_edit<(EXECUTABLE_SUFFIX)',
                  ],
                  'outputs': ['>(out_newlib64)'],
@@ -317,13 +345,13 @@
                    '--name', '>(out_newlib64)',
                    '--objdir', '>(objdir_newlib64)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
-                   '--compile_flags=--target=x86_64-unknown-nacl -stdlib=libstdc++ ^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                   '--compile_flags=--target=x86_64-unknown-nacl ^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                    '--gomadir', '<(gomadir)',
                    '--defines=^(defines) >(_defines)',
-                   '--link_flags=--target=x86_64-unknown-nacl -stdlib=libstdc++ -arch x86-64 --pnacl-allow-translate --pnacl-allow-native -B>(tc_lib_dir_irt64) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags)',
+                   '--link_flags=--target=x86_64-unknown-nacl -arch x86-64 --pnacl-allow-translate --pnacl-allow-native -B>(tc_lib_dir_irt64) -L>(tc_lib_dir_irt64) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags) >(libcpp_irt_stdlibs)',
                    '--source-list=^(source_list_newlib64)',
                    '--tls-edit=<(PRODUCT_DIR)/tls_edit<(EXECUTABLE_SUFFIX)',
-                   '--irt-layout',
+                   '--irt-linker=<(DEPTH)/native_client/build/link_irt.py',
                  ],
                },
              ],
@@ -344,12 +372,12 @@
                  'msvs_cygwin_shell': 0,
                  'description': 'building >(out_newlib64)',
                  'inputs': [
-                    '<(DEPTH)/native_client/build/build_nexe.py',
+                    '<@(common_inputs)',
                     '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_newlib64)',
                     '^(source_list_newlib64)',
-                    '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/stamp.prep',
+                    '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/nacl_x86_newlib.json',
                  ],
                  'outputs': ['>(out_newlib64)'],
                  'action': [
@@ -360,10 +388,10 @@
                    '--name', '>(out_newlib64)',
                    '--objdir', '>(objdir_newlib64)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
-                   '--compile_flags=--target=x86_64-unknown-nacl -stdlib=libstdc++ ^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                   '--compile_flags=--target=x86_64-unknown-nacl ^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                    '--gomadir', '<(gomadir)',
                    '--defines=^(defines) >(_defines)',
-                   '--link_flags=--target=x86_64-unknown-nacl -stdlib=libstdc++ -B>(tc_lib_dir_irt64) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags)',
+                   '--link_flags=--target=x86_64-unknown-nacl -B>(tc_lib_dir_irt64) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags)',
                    '--source-list=^(source_list_newlib64)',
                  ],
                },
@@ -385,26 +413,26 @@
                  'msvs_cygwin_shell': 0,
                  'description': 'building >(out_newlib32)',
                  'inputs': [
-                    '<(DEPTH)/native_client/build/build_nexe.py',
+                    '<@(common_inputs)',
                     '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_newlib32)',
                     '^(source_list_newlib32)',
-                    '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/stamp.prep',
+                    '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/nacl_x86_newlib.json',
                  ],
                  'outputs': ['>(out_newlib32)'],
                  'action': [
                    '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-32',
-                   '--build', 'newlib_nexe',
+                   '--build', '<(newlib_nexe_arg)',
                    '--name', '>(out_newlib32)',
                    '--objdir', '>(objdir_newlib32)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
                    '--compile_flags=-m32 ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                    '--gomadir', '<(gomadir)',
                    '--defines=^(defines) >(_defines)',
-                   '--link_flags=-m32 -B>(tc_lib_dir_newlib32) ^(link_flags) >(_link_flags)',
+                   '--link_flags=-m32 -B>(tc_lib_dir_newlib32) -L>(tc_lib_dir_newlib32) ^(link_flags) >(_link_flags)',
                    '--source-list=^(source_list_newlib32)',
                  ],
                },
@@ -426,19 +454,19 @@
                  'msvs_cygwin_shell': 0,
                  'description': 'building >(out_newlib32)',
                  'inputs': [
-                    '<(DEPTH)/native_client/build/build_nexe.py',
+                    '<@(common_inputs)',
                     '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_newlib32)',
                     '^(source_list_newlib32)',
-                    '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/stamp.prep',
+                    '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/nacl_x86_newlib.json',
                  ],
                  'outputs': ['>(out_newlib32)'],
                  'action': [
                    '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-32',
-                   '--build', 'newlib_nlib',
+                   '--build', '<(newlib_nlib_arg)',
                    '--name', '>(out_newlib32)',
                    '--objdir', '>(objdir_newlib32)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
@@ -467,12 +495,13 @@
                  'msvs_cygwin_shell': 0,
                  'description': 'building >(out_newlib32)',
                  'inputs': [
-                    '<(DEPTH)/native_client/build/build_nexe.py',
+                    '<@(common_inputs)',
+                    '<(DEPTH)/native_client/build/link_irt.py',
                     '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_newlib32)',
                     '^(source_list_newlib32)',
-                    '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/stamp.prep',
+                    '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/nacl_x86_newlib.json',
                     '<(PRODUCT_DIR)/tls_edit<(EXECUTABLE_SUFFIX)',
                  ],
                  'outputs': ['>(out_newlib32)'],
@@ -484,14 +513,13 @@
                    '--name', '>(out_newlib32)',
                    '--objdir', '>(objdir_newlib32)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
-                   '--compile_flags=--target=i686-unknown-nacl -stdlib=libstdc++ ^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                   '--compile_flags=--target=i686-unknown-nacl ^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                    '--gomadir', '<(gomadir)',
                    '--defines=^(defines) >(_defines)',
-
-                   '--link_flags=--target=i686-unknown-nacl -stdlib=libstdc++ -arch x86-32 --pnacl-allow-translate --pnacl-allow-native >(irt_flags_x86_32) -B>(tc_lib_dir_irt32) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags)',
+                   '--link_flags=--target=i686-unknown-nacl -arch x86-32 --pnacl-allow-translate --pnacl-allow-native >(irt_flags_x86_32) -B>(tc_lib_dir_irt32) -L>(tc_lib_dir_irt32) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags) >(libcpp_irt_stdlibs)',
                    '--source-list=^(source_list_newlib32)',
                    '--tls-edit=<(PRODUCT_DIR)/tls_edit<(EXECUTABLE_SUFFIX)',
-                   '--irt-layout',
+                   '--irt-linker=<(DEPTH)/native_client/build/link_irt.py',
                  ],
                },
              ],
@@ -512,12 +540,12 @@
                  'msvs_cygwin_shell': 0,
                  'description': 'building >(out_newlib32)',
                  'inputs': [
-                    '<(DEPTH)/native_client/build/build_nexe.py',
+                    '<@(common_inputs)',
                     '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_newlib32)',
                     '^(source_list_newlib32)',
-                    '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/stamp.prep',
+                    '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/nacl_x86_newlib.json',
                  ],
                  'outputs': ['>(out_newlib32)'],
                  'action': [
@@ -528,10 +556,10 @@
                    '--name', '>(out_newlib32)',
                    '--objdir', '>(objdir_newlib32)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
-                   '--compile_flags=--target=i686-unknown-nacl -stdlib=libstdc++ >(irt_flags_x86_32) ^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                   '--compile_flags=--target=i686-unknown-nacl >(irt_flags_x86_32) ^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                    '--gomadir', '<(gomadir)',
                    '--defines=^(defines) >(_defines)',
-                   '--link_flags=--target=i686-unknown-nacl -stdlib=libstdc++ -B>(tc_lib_dir_irt32) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags)',
+                   '--link_flags=--target=i686-unknown-nacl -B>(tc_lib_dir_irt32) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags)',
                    '--source-list=^(source_list_newlib32)',
                  ],
                },
@@ -540,6 +568,112 @@
         ],
       },
     }], # end x86 gcc nexe/nlib actions
+    ['(target_arch=="ia32" or target_arch=="x64") and OS=="linux"', {
+      'target_defaults': {
+        'target_conditions': [
+          # x86-32 non-SFI helper nexe build.
+          ['nexe_target!="" and build_nonsfi_helper!=0', {
+            'variables': {
+              'tool_name': 'nonsfi_helper',
+              'out_newlib32_nonsfi%': '<(PRODUCT_DIR)/>(nexe_target)_newlib_x32_nonsfi.nexe',
+              'objdir_newlib32_nonsfi%': '>(INTERMEDIATE_DIR)/<(tool_name)-x86-32/>(_target_name)',
+            },
+            'actions': [
+              {
+                'action_name': 'build non-SFI helper x86-32 nexe',
+                'variables': {
+                  'source_list_newlib32_nonsfi%': '^|(<(tool_name)-x86-32-nonsfi.>(_target_name).source_list.gypcmd ^(_sources) ^(sources))',
+                  'stdlibs': ['-lc++', '-lm', '-lnacl', '-lc', '-lpnaclmm'],
+                },
+                'msvs_cygwin_shell': 0,
+                'description': 'building >(out_newlib32_nonsfi)',
+                'inputs': [
+                  '<@(common_inputs)',
+                  '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
+                  '>@(extra_deps)',
+                  '>@(extra_deps_newlib32_nonsfi)',
+                  '^(source_list_newlib32_nonsfi)',
+                  '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/nacl_x86_newlib.json',
+                  '>(tc_lib_dir_nonsfi_helper32)/libnacl_sys_private.a',
+                ],
+                'outputs': ['>(out_newlib32_nonsfi)'],
+                'action': [
+                  '<@(common_args)',
+                  '>@(extra_args)',
+                  '--arch', 'x86-32-nonsfi',
+                  '--build', 'newlib_nexe_pnacl',
+                  '--name', '>(out_newlib32_nonsfi)',
+                  '--objdir', '>(objdir_newlib32_nonsfi)',
+                  '--include-dirs=>(tc_include_dir_newlib) <(DEPTH)/native_client/src/public/linux_syscalls ^(include_dirs) >(_include_dirs)',
+                  '--compile_flags=--target=i686-unknown-nacl --pnacl-bias=x86-32-nonsfi ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                  '--gomadir', '<(gomadir)',
+                  '--defines=^(defines) >(_defines)',
+                  # Both -Wl,--noirt and -Wt,--noirt are needed here. The
+                  # former is to prevent linking to irt. The latter controls
+                  # the entry point for Non-SFI NaCl in pnacl-translate.
+                  # "-nodefaultlibs -Wl,--start-group, ... -Wl,--end-group"
+                  # is the flags to exclude -lpthread, otherwise it causes
+                  # library not found error. Note that pthread related code
+                  # is contained in libnacl_sys_private.a, which is
+                  # automatically linked.
+                  # Place >@(stdlibs) early and group it with libraries from
+                  # link_flags. The mixture of native libs and bitcode started
+                  # having problems in LLVM 3.6, when stdlibs were grouped
+                  # separately and placed later. See:
+                  # https://code.google.com/p/nativeclient/issues/detail?id=4067
+                  # TODO(jvoung): get to the bottom of this.
+                  '--link_flags=--target=i686-unknown-nacl -arch x86-32-nonsfi --pnacl-allow-translate --pnacl-allow-native -Wl,--noirt -Wt,--noirt -Wt,--noirtshim -nodefaultlibs -B>(tc_lib_dir_nonsfi_helper32) -Wl,--start-group >@(stdlibs) ^(link_flags) >(_link_flags) -Wl,--end-group',
+                  '--source-list=^(source_list_newlib32_nonsfi)',
+                ],
+              },
+            ],
+          }],
+
+          # x86-32 non-SFI helper library build or PNaCl PPAPI shim for nonsfi
+          # build.
+          ['nlib_target!="" and (build_nonsfi_helper!=0 or (pnacl_native_biased!=0 and enable_x86_32_nonsfi==1))', {
+            'variables': {
+              'tool_name': 'nonsfi_helper',
+              'out_newlib32_nonsfi%': '<(SHARED_INTERMEDIATE_DIR)/tc_<(tool_name)/lib32/>(nlib_target)',
+              'objdir_newlib32_nonsfi%': '>(INTERMEDIATE_DIR)/<(tool_name)-x86-32-nonsfi/>(_target_name)',
+            },
+            'actions': [
+              {
+                'action_name': 'build nonsfi_helper x86-32 nlib',
+                'variables': {
+                  'source_list_newlib32_nonsfi%': '^|(<(tool_name)-x86-32-nonsfi.>(_target_name).source_list.gypcmd ^(_sources) ^(sources))',
+                },
+                'msvs_cygwin_shell': 0,
+                'description': 'building >(out_newlib32_nonsfi)',
+                'inputs': [
+                  '<@(common_inputs)',
+                  '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
+                  '>@(extra_deps)',
+                  '>@(extra_deps_newlib32_nonsfi)',
+                  '^(source_list_newlib32_nonsfi)',
+                  '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/nacl_x86_newlib.json',
+                ],
+                'outputs': ['>(out_newlib32_nonsfi)'],
+                'action': [
+                  '<@(common_args)',
+                  '>@(extra_args)',
+                  '--arch', 'x86-32-nonsfi',
+                  '--build', 'newlib_nlib_pnacl',
+                  '--name', '>(out_newlib32_nonsfi)',
+                  '--objdir', '>(objdir_newlib32_nonsfi)',
+                  '--include-dirs=>(tc_include_dir_newlib) <(DEPTH)/native_client/src/public/linux_syscalls ^(include_dirs) >(_include_dirs)',
+                  '--compile_flags=--target=i686-unknown-nacl --pnacl-bias=x86-32-nonsfi --pnacl-allow-translate --pnacl-allow-native -arch x86-32-nonsfi ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                  '--gomadir', '<(gomadir)',
+                  '--defines=^(defines) >(_defines)',
+                  '--link_flags=-B>(tc_lib_dir_nonsfi_helper32) ^(link_flags) >(_link_flags)',
+                  '--source-list=^(source_list_newlib32_nonsfi)',
+                ],
+              },
+            ],
+          }],
+        ],
+      },
+    }],  # end x86-32 Non-SFI helper nexe / library actions.
     ['target_arch=="arm"', {
       'target_defaults': {
         'target_conditions': [
@@ -559,26 +693,26 @@
                 'msvs_cygwin_shell': 0,
                 'description': 'building >(out_newlib_arm)',
                 'inputs': [
-                   '<(DEPTH)/native_client/build/build_nexe.py',
+                   '<@(common_inputs)',
                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources) >(native_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_newlib_arm)',
                    '^(source_list_newlib_arm)',
-                   '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_arm_newlib/stamp.prep',
+                   '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_arm_newlib/nacl_arm_newlib.json',
                 ],
                 'outputs': ['>(out_newlib_arm)'],
                 'action': [
                   '<@(common_args)',
                   '>@(extra_args)',
                   '--arch', 'arm',
-                  '--build', 'newlib_nexe',
+                  '--build', '<(newlib_nexe_arg)',
                   '--name', '>(out_newlib_arm)',
                   '--objdir', '>(objdir_newlib_arm)',
                   '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
-                  '--compile_flags=-Wno-unused-local-typedefs -Wno-psabi ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
+                  '--compile_flags=<(arm_compile_flags) ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                   '--gomadir', '<(gomadir)',
                   '--defines=^(defines) >(_defines)',
-                  '--link_flags=-B>(tc_lib_dir_newlib_arm) ^(link_flags) >(_link_flags)',
+                  '--link_flags=-B>(tc_lib_dir_newlib_arm) -L>(tc_lib_dir_newlib_arm) ^(link_flags) >(_link_flags)',
                   '--source-list=^(source_list_newlib_arm)',
                 ],
               },
@@ -600,23 +734,23 @@
                 'msvs_cygwin_shell': 0,
                 'description': 'building >(out_newlib_arm)',
                 'inputs': [
-                   '<(DEPTH)/native_client/build/build_nexe.py',
+                   '<@(common_inputs)',
                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources) >(native_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_newlib_arm)',
                    '^(source_list_newlib_arm)',
-                   '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_arm_newlib/stamp.prep',
+                   '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_arm_newlib/nacl_arm_newlib.json',
                 ],
                 'outputs': ['>(out_newlib_arm)'],
                 'action': [
                   '<@(common_args)',
                   '>@(extra_args)',
                   '--arch', 'arm',
-                  '--build', 'newlib_nlib',
+                  '--build', '<(newlib_nlib_arg)',
                   '--name', '>(out_newlib_arm)',
                   '--objdir', '>(objdir_newlib_arm)',
                   '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
-                  '--compile_flags=-Wno-unused-local-typedefs -Wno-psabi ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
+                  '--compile_flags=<(arm_compile_flags) ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                   '--gomadir', '<(gomadir)',
                   '--defines=^(defines) >(_defines)',
                   '--link_flags=-B>(tc_lib_dir_newlib_arm) ^(link_flags) >(_link_flags)',
@@ -640,12 +774,12 @@
                 'msvs_cygwin_shell': 0,
                 'description': 'building >(out_bionic_arm)',
                 'inputs': [
-                   '<(DEPTH)/native_client/build/build_nexe.py',
+                   '<@(common_inputs)',
                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources) >(native_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_bionic_arm)',
                    '^(source_list_bionic_arm)',
-                   '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86_nacl_arm/nacl_arm_bionic',
+                   '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86_nacl_arm/nacl_arm_bionic',
                 ],
                 'outputs': ['>(out_bionic_arm)'],
                 'action': [
@@ -681,12 +815,13 @@
                 'msvs_cygwin_shell': 0,
                 'description': 'building >(out_newlib_arm)',
                 'inputs': [
-                   '<(DEPTH)/native_client/build/build_nexe.py',
+                   '<@(common_inputs)',
+                   '<(DEPTH)/native_client/build/link_irt.py',
                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources) >(native_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_newlib_arm)',
                    '^(source_list_newlib_arm)',
-                   '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_arm_newlib/stamp.prep',
+                   '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_arm_newlib/nacl_arm_newlib.json',
                    '<(PRODUCT_DIR)/tls_edit<(EXECUTABLE_SUFFIX)',
                 ],
                 'outputs': ['>(out_newlib_arm)'],
@@ -704,7 +839,7 @@
                   '--link_flags=-B>(tc_lib_dir_irt_arm) ^(gcc_irt_link_flags) ^(link_flags) >(_link_flags)',
                   '--source-list=^(source_list_newlib_arm)',
                   '--tls-edit=<(PRODUCT_DIR)/tls_edit<(EXECUTABLE_SUFFIX)',
-                   '--irt-layout',
+                  '--irt-linker=<(DEPTH)/native_client/build/link_irt.py',
                 ],
               },
             ],
@@ -725,12 +860,12 @@
                 'msvs_cygwin_shell': 0,
                 'description': 'building >(out_newlib_arm)',
                 'inputs': [
-                   '<(DEPTH)/native_client/build/build_nexe.py',
+                   '<@(common_inputs)',
                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources) >(native_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_newlib_arm)',
                    '^(source_list_newlib_arm)',
-                   '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_arm_newlib/stamp.prep',
+                   '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_arm_newlib/nacl_arm_newlib.json',
                 ],
                 'outputs': ['>(out_newlib_arm)'],
                 'action': [
@@ -746,6 +881,104 @@
                   '--defines=^(defines) >(_defines)',
                   '--link_flags=-B>(tc_lib_dir_irt_arm) ^(gcc_irt_link_flags) ^(link_flags) >(_link_flags)',
                   '--source-list=^(source_list_newlib_arm)',
+                ],
+              },
+            ],
+          }],
+          # ARM non-SFI helper nexe build.
+          ['nexe_target!="" and build_nonsfi_helper!=0', {
+            'variables': {
+              'tool_name': 'nonsfi_helper',
+              'out_newlib_arm_nonsfi%': '<(PRODUCT_DIR)/>(nexe_target)_newlib_arm_nonsfi.nexe',
+              'objdir_newlib_arm_nonsfi%': '>(INTERMEDIATE_DIR)/<(tool_name)-arm-nonsfi/>(_target_name)',
+            },
+            'actions': [
+              {
+                'action_name': 'build non-SFI helper ARM nexe',
+                'variables': {
+                  'source_list_newlib_arm_nonsfi%': '^|(<(tool_name)-arm-nonsfi.>(_target_name).source_list.gypcmd ^(_sources) ^(sources))',
+                  'stdlibs': ['-lc++', '-lm', '-lnacl', '-lc', '-lpnaclmm'],
+                },
+                'msvs_cygwin_shell': 0,
+                'description': 'building >(out_newlib_arm_nonsfi)',
+                'inputs': [
+                  '<@(common_inputs)',
+                  '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
+                  '>@(extra_deps)',
+                  '>@(extra_deps_newlib_arm_nonsfi)',
+                  '^(source_list_newlib_arm_nonsfi)',
+                  '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_arm_newlib/nacl_arm_newlib.json',
+                  '>(tc_lib_dir_nonsfi_helper_arm)/libnacl_sys_private.a',
+                ],
+                'outputs': ['>(out_newlib_arm_nonsfi)'],
+                'action': [
+                  '<@(common_args)',
+                  '>@(extra_args)',
+                  '--arch', 'arm-nonsfi',
+                  '--build', 'newlib_nexe_pnacl',
+                  '--name', '>(out_newlib_arm_nonsfi)',
+                  '--objdir', '>(objdir_newlib_arm_nonsfi)',
+                  '--include-dirs=>(tc_include_dir_newlib) <(DEPTH)/native_client/src/public/linux_syscalls ^(include_dirs) >(_include_dirs)',
+                  '--compile_flags=--target=armv7-unknown-nacl-gnueabihf --pnacl-bias=arm-nonsfi ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                  '--gomadir', '<(gomadir)',
+                  '--defines=^(defines) >(_defines)',
+                  # Both -Wl,--noirt and -Wt,--noirt are needed here. The
+                  # former is to prevent linking to irt. The latter controls
+                  # the entry point for Non-SFI NaCl in pnacl-translate.
+                  # "-nodefaultlibs -Wl,--start-group, ... -Wl,--end-group"
+                  # is the flags to exclude -lpthread, otherwise it causes
+                  # library not found error. Note that pthread related code
+                  # is contained in libnacl_sys_private.a, which is
+                  # automatically linked.
+                  # Place >@(stdlibs) early and group it with libraries from
+                  # link_flags. The mixture of native libs and bitcode started
+                  # having problems in LLVM 3.6, when stdlibs were grouped
+                  # separately and placed later. See:
+                  # https://code.google.com/p/nativeclient/issues/detail?id=4067
+                  # TODO(jvoung): get to the bottom of this.
+                  '--link_flags=--target=armv7-unknown-nacl-gnueabihf -arch arm-nonsfi --pnacl-allow-translate --pnacl-allow-native -Wl,--noirt -Wt,--noirt -Wt,--noirtshim -nodefaultlibs -B>(tc_lib_dir_nonsfi_helper_arm) -Wl,--start-group >@(stdlibs) ^(link_flags) >(_link_flags) -Wl,--end-group',
+                  '--source-list=^(source_list_newlib_arm_nonsfi)',
+                ],
+              },
+            ],
+          }],
+          # ARM non-SFI helper library and PNaCl PPAPI shim for nonsfi build.
+          ['nlib_target!="" and (build_nonsfi_helper!=0 or (pnacl_native_biased!=0 and enable_arm_nonsfi==1))', {
+            'variables': {
+              'tool_name': 'nonsfi_helper',
+              'out_newlib_arm_nonsfi%': '<(SHARED_INTERMEDIATE_DIR)/tc_<(tool_name)/libarm/>(nlib_target)',
+              'objdir_newlib_arm_nonsfi%': '>(INTERMEDIATE_DIR)/<(tool_name)-arm-nonsfi/>(_target_name)',
+            },
+            'actions': [
+              {
+                'action_name': 'build nonsfi_helper arm nlib',
+                'variables': {
+                  'source_list_newlib_arm_nonsfi%': '^|(<(tool_name)-arm-nonsfi.>(_target_name).source_list.gypcmd ^(_sources) ^(sources))',
+                },
+                'msvs_cygwin_shell': 0,
+                'description': 'building >(out_newlib_arm_nonsfi)',
+                'inputs': [
+                  '<@(common_inputs)',
+                  '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
+                  '>@(extra_deps)',
+                  '>@(extra_deps_newlib_arm_nonsfi)',
+                  '^(source_list_newlib_arm_nonsfi)',
+                  '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_arm_newlib/nacl_arm_newlib.json',
+                ],
+                'outputs': ['>(out_newlib_arm_nonsfi)'],
+                'action': [
+                  '<@(common_args)',
+                  '>@(extra_args)',
+                  '--arch', 'arm-nonsfi',
+                  '--build', 'newlib_nlib_pnacl',
+                  '--name', '>(out_newlib_arm_nonsfi)',
+                  '--objdir', '>(objdir_newlib_arm_nonsfi)',
+                  '--include-dirs=>(tc_include_dir_newlib) <(DEPTH)/native_client/src/public/linux_syscalls ^(include_dirs) >(_include_dirs)',
+                  '--compile_flags=--target=armv7-unknown-nacl-gnueabihf --pnacl-bias=arm-nonsfi --pnacl-allow-translate --pnacl-allow-native -arch arm-nonsfi -mfloat-abi=hard ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                  '--gomadir', '<(gomadir)',
+                  '--defines=^(defines) >(_defines)',
+                  '--link_flags=-B>(tc_lib_dir_nonsfi_helper_arm) ^(link_flags) >(_link_flags)',
+                  '--source-list=^(source_list_newlib_arm_nonsfi)',
                 ],
               },
             ],
@@ -772,12 +1005,12 @@
                 'msvs_cygwin_shell': 0,
                 'description': 'building >(out_newlib_mips)',
                 'inputs': [
-                   '<(DEPTH)/native_client/build/build_nexe.py',
+                   '<@(common_inputs)',
                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources) >(native_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_newlib_mips)',
                    '^(source_list_newlib_mips)',
-                   '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/pnacl_newlib/stamp.prep',
+                   '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/pnacl_newlib/pnacl_newlib.json',
                 ],
                 'outputs': ['>(out_newlib_mips)'],
                 'action': [
@@ -813,12 +1046,12 @@
                 'msvs_cygwin_shell': 0,
                 'description': 'building >(out_newlib_mips)',
                 'inputs': [
-                   '<(DEPTH)/native_client/build/build_nexe.py',
+                   '<@(common_inputs)',
                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_newlib_mips)',
                    '^(source_list_newlib_mips)',
-                   '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/pnacl_newlib/stamp.prep',
+                   '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/pnacl_newlib/pnacl_newlib.json',
                 ],
                 'outputs': ['>(out_newlib_mips)'],
                 'action': [
@@ -854,12 +1087,13 @@
                 'msvs_cygwin_shell': 0,
                 'description': 'building >(out_newlib_mips)',
                 'inputs': [
-                   '<(DEPTH)/native_client/build/build_nexe.py',
+                   '<@(common_inputs)',
+                   '<(DEPTH)/native_client/build/link_irt.py',
                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_newlib_mips)',
                    '^(source_list_newlib_mips)',
-                   '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/pnacl_newlib/stamp.prep',
+                   '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/pnacl_newlib/pnacl_newlib.json',
                    '<(PRODUCT_DIR)/tls_edit<(EXECUTABLE_SUFFIX)',
                 ],
                 'outputs': ['>(out_newlib_mips)'],
@@ -871,13 +1105,13 @@
                   '--name', '>(out_newlib_mips)',
                   '--objdir', '>(objdir_newlib_mips)',
                   '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
-                  '--compile_flags=-stdlib=libstdc++ ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                  '--compile_flags=^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                   '--gomadir', '<(gomadir)',
                   '--defines=^(defines) >(_defines)',
-                  '--link_flags=-arch mips -stdlib=libstdc++ --pnacl-allow-translate --pnacl-allow-native -Wt,-mtls-use-call --pnacl-disable-abi-check -B>(tc_lib_dir_irt_mips) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags)',
+                  '--link_flags=-arch mips --pnacl-allow-translate --pnacl-allow-native -Wt,-mtls-use-call --pnacl-disable-abi-check -B>(tc_lib_dir_irt_mips) -L>(tc_lib_dir_irt_mips) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags) >(libcpp_irt_stdlibs)',
                   '--source-list=^(source_list_newlib_mips)',
                   '--tls-edit=<(PRODUCT_DIR)/tls_edit<(EXECUTABLE_SUFFIX)',
-                   '--irt-layout',
+                  '--irt-linker=<(DEPTH)/native_client/build/link_irt.py',
                 ],
               },
             ],
@@ -898,12 +1132,12 @@
                 'msvs_cygwin_shell': 0,
                 'description': 'building >(out_newlib_mips)',
                 'inputs': [
-                   '<(DEPTH)/native_client/build/build_nexe.py',
+                   '<@(common_inputs)',
                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_newlib_mips)',
                    '^(source_list_newlib_mips)',
-                   '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/pnacl_newlib/stamp.prep',
+                   '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/pnacl_newlib/pnacl_newlib.json',
                 ],
                 'outputs': ['>(out_newlib_mips)'],
                 'action': [
@@ -914,10 +1148,10 @@
                   '--name', '>(out_newlib_mips)',
                   '--objdir', '>(objdir_newlib_mips)',
                   '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
-                  '--compile_flags=-stdlib=libstdc++ ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                  '--compile_flags=-Wt,-mtls-use-call ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                   '--gomadir', '<(gomadir)',
                   '--defines=^(defines) >(_defines)',
-                  '--link_flags=-stdlib=libstdc++ -B>(tc_lib_dir_irt_mips) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags)',
+                  '--link_flags=-B>(tc_lib_dir_irt_mips) -L>(tc_lib_dir_irt_mips) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags)',
                   '--source-list=^(source_list_newlib_mips)',
                 ],
               },
@@ -945,12 +1179,12 @@
                  'msvs_cygwin_shell': 0,
                  'description': 'building >(out_glibc64)',
                  'inputs': [
-                    '<(DEPTH)/native_client/build/build_nexe.py',
+                    '<@(common_inputs)',
                     '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_glibc64)',
                     '^(source_list_glibc64)',
-                    '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_glibc/stamp.prep',
+                    '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_glibc/nacl_x86_glibc.json',
                  ],
                  'outputs': ['>(out_glibc64)'],
                  'action': [
@@ -986,12 +1220,12 @@
                  'msvs_cygwin_shell': 0,
                  'description': 'building >(out_glibc32)',
                  'inputs': [
-                    '<(DEPTH)/native_client/build/build_nexe.py',
+                    '<@(common_inputs)',
                     '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_glibc32)',
                     '^(source_list_glibc32)',
-                    '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_glibc/stamp.prep',
+                    '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_glibc/nacl_x86_glibc.json',
                  ],
                  'outputs': ['>(out_glibc32)'],
                  'action': [
@@ -1027,12 +1261,12 @@
                  'msvs_cygwin_shell': 0,
                  'description': 'building >(out_glibc64)',
                  'inputs': [
-                    '<(DEPTH)/native_client/build/build_nexe.py',
+                    '<@(common_inputs)',
                     '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_glibc64)',
                     '^(source_list_glibc64)',
-                    '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_glibc/stamp.prep',
+                    '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_glibc/nacl_x86_glibc.json',
                  ],
                  'outputs': ['>(out_glibc64)'],
                  'action': [
@@ -1068,12 +1302,12 @@
                  'msvs_cygwin_shell': 0,
                  'description': 'building >(out_glibc32)',
                  'inputs': [
-                    '<(DEPTH)/native_client/build/build_nexe.py',
+                    '<@(common_inputs)',
                     '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_glibc32)',
                     '^(source_list_glibc32)',
-                    '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_glibc/stamp.prep',
+                    '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_glibc/nacl_x86_glibc.json',
                  ],
                  'outputs': ['>(out_glibc32)'],
                  'action': [
@@ -1109,12 +1343,12 @@
                  'msvs_cygwin_shell': 0,
                  'description': 'building >(out_glibc64)',
                  'inputs': [
-                    '<(DEPTH)/native_client/build/build_nexe.py',
+                    '<@(common_inputs)',
                     '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_glibc64)',
                     '^(source_list_glibc64)',
-                    '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_glibc/stamp.prep',
+                    '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_glibc/nacl_x86_glibc.json',
                  ],
                  'outputs': ['>(out_glibc64)'],
                  'action': [
@@ -1150,12 +1384,12 @@
                  'msvs_cygwin_shell': 0,
                  'description': 'building >(out_glibc32)',
                  'inputs': [
-                    '<(DEPTH)/native_client/build/build_nexe.py',
+                    '<@(common_inputs)',
                     '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_glibc32)',
                     '^(source_list_glibc32)',
-                    '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_glibc/stamp.prep',
+                    '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_x86_glibc/nacl_x86_glibc.json',
                  ],
                  'outputs': ['>(out_glibc32)'],
                  'action': [
@@ -1215,6 +1449,7 @@
         '-Wno-unused-private-field',
         '-Wno-char-subscripts',
         '-Wno-unused-function',
+        '-std=gnu++11',
       ],
       # IRT compile/link flags to make the binary smaller.
       # Omitted from non-IRT libraries to keep the libraries themselves small.
@@ -1230,6 +1465,21 @@
         '-Wt,-fdata-sections',
         '-Wn,--gc-sections',
       ],
+      # The clang driver automatically injects -lpthread when using libc++, but
+      # the toolchain doesn't have it yet.  To get around this, use
+      # -nodefaultlibs and explicitly link irt_browser_lib to satisfy libc++'s
+      # pthread dependency.
+      'libcpp_irt_stdlibs': [
+        '-nodefaultlibs',
+        '-lc++',
+        '-lm',
+        '-lirt_browser',
+        '-Wl,--start-group',
+        '-lc',
+        '-lnacl',
+        '-lgcc',
+        '-Wl,--end-group'
+      ],
     },
     'target_conditions': [
       # pnacl actions for building pexes and translating them
@@ -1241,6 +1491,7 @@
            'out_pnacl_newlib_arm_nexe%': '<(PRODUCT_DIR)/>(nexe_target)_pnacl_newlib_arm.nexe',
            'out_pnacl_newlib_mips_nexe%': '<(PRODUCT_DIR)/>(nexe_target)_pnacl_newlib_mips32.nexe',
            'out_pnacl_newlib_x86_32_nonsfi_nexe%': '<(PRODUCT_DIR)/>(nexe_target)_pnacl_newlib_x32_nonsfi.nexe',
+           'out_pnacl_newlib_arm_nonsfi_nexe%': '<(PRODUCT_DIR)/>(nexe_target)_pnacl_newlib_arm_nonsfi.nexe',
            'tool_name': 'pnacl_newlib',
            'inst_dir': '<(SHARED_INTERMEDIATE_DIR)/tc_pnacl_newlib',
            'out_pnacl_newlib%': '<(PRODUCT_DIR)/>(nexe_target)_newlib.pexe',
@@ -1259,14 +1510,17 @@
              'msvs_cygwin_shell': 0,
              'description': 'building >(out_pnacl_newlib)',
              'inputs': [
-               '<(DEPTH)/native_client/build/build_nexe.py',
+               '<@(common_inputs)',
                '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                '>@(extra_deps)',
                '>@(extra_deps_pnacl_newlib)',
                '^(source_list_pnacl_newlib)',
-               '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/pnacl_newlib/stamp.prep',
+               '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/pnacl_newlib/pnacl_newlib.json',
              ],
-             'outputs': ['>(out_pnacl_newlib)'],
+             'outputs': [
+               '>(out_pnacl_newlib)',
+               '>(out_pnacl_newlib).debug',
+             ],
              'action': [
                '<@(common_args)',
                '>@(extra_args)',
@@ -1291,9 +1545,7 @@
                'msvs_cygwin_shell': 0,
                'description': 'translating >(out_pnacl_newlib_x86_32_nexe)',
                'inputs': [
-                 # Having this in the input somehow causes devenv warnings
-                 # when building pnacl browser tests.
-                 # '<(DEPTH)/native_client/build/build_nexe.py',
+                 # Depending on out_pnacl_newlib helps depend on common_inputs.
                  '>(out_pnacl_newlib)',
                ],
                'outputs': [ '>(out_pnacl_newlib_x86_32_nexe)' ],
@@ -1313,9 +1565,7 @@
                'msvs_cygwin_shell': 0,
                'description': 'translating >(out_pnacl_newlib_x86_32_nonsfi_nexe)',
                'inputs': [
-                 # Having this in the input somehow causes devenv warnings
-                 # when building pnacl browser tests.
-                 # '<(DEPTH)/native_client/build/build_nexe.py',
+                 # Depending on out_pnacl_newlib helps depend on common_inputs.
                  '>(out_pnacl_newlib)',
                ],
                'outputs': [ '>(out_pnacl_newlib_x86_32_nonsfi_nexe)' ],
@@ -1335,9 +1585,7 @@
                'msvs_cygwin_shell': 0,
                'description': 'translating >(out_pnacl_newlib_x86_64_nexe)',
                'inputs': [
-                 # Having this in the input somehow causes devenv warnings
-                 # when building pnacl browser tests.
-                 # '<(DEPTH)/native_client/build/build_nexe.py',
+                 # Depending on out_pnacl_newlib helps depend on common_inputs.
                  '>(out_pnacl_newlib)',
                ],
                'outputs': [ '>(out_pnacl_newlib_x86_64_nexe)' ],
@@ -1357,9 +1605,7 @@
                'msvs_cygwin_shell': 0,
                'description': 'translating >(out_pnacl_newlib_arm_nexe)',
                'inputs': [
-                 # Having this in the input somehow causes devenv warnings
-                 # when building pnacl browser tests.
-                 # '<(DEPTH)/native_client/build/build_nexe.py',
+                 # Depending on out_pnacl_newlib helps depend on common_inputs.
                  '>(out_pnacl_newlib)',
                ],
                'outputs': [ '>(out_pnacl_newlib_arm_nexe)' ],
@@ -1373,15 +1619,33 @@
                ],
              }],
            }],
+           [ 'enable_arm_nonsfi!=0 and translate_pexe_with_build!=0', {
+             'actions': [{
+               'action_name': 'translate newlib pexe to ARM-nonsfi nexe',
+               'msvs_cygwin_shell': 0,
+               'description': 'translating >(out_pnacl_newlib_arm_nonsfi_nexe)',
+               'inputs': [
+                 # Depending on out_pnacl_newlib helps depend on common_inputs.
+                 '>(out_pnacl_newlib)',
+               ],
+               'outputs': [ '>(out_pnacl_newlib_arm_nonsfi_nexe)' ],
+               'action' : [
+                 '<@(common_args)',
+                 '--arch', 'arm-nonsfi',
+                 '--build', 'newlib_translate',
+                 '--name', '>(out_pnacl_newlib_arm_nonsfi_nexe)',
+                 '--link_flags=^(translate_flags) >(translate_flags) -Wl,-L>(tc_lib_dir_pnacl_translate)/lib-arm-nonsfi',
+                 '>(out_pnacl_newlib)',
+               ],
+             }],
+           }],
            [ 'enable_mips!=0 and translate_pexe_with_build!=0', {
              'actions': [{
                'action_name': 'translate newlib pexe to MIPS nexe',
                'msvs_cygwin_shell': 0,
                'description': 'translating >(out_pnacl_newlib_mips_nexe)',
                'inputs': [
-                 # Having this in the input somehow causes devenv warnings
-                 # when building pnacl browser tests.
-                 # '<(DEPTH)/native_client/build/build_nexe.py',
+                 # Depending on out_pnacl_newlib helps depend on common_inputs.
                  '>(out_pnacl_newlib)',
                ],
                'outputs': [ '>(out_pnacl_newlib_mips_nexe)' ],
@@ -1414,12 +1678,12 @@
              'msvs_cygwin_shell': 0,
              'description': 'building >(out_pnacl_newlib)',
              'inputs': [
-               '<(DEPTH)/native_client/build/build_nexe.py',
+               '<@(common_inputs)',
                '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                '>@(extra_deps)',
                '>@(extra_deps_pnacl_newlib)',
                '^(source_list_pnacl_newlib)',
-               '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/pnacl_newlib/stamp.prep',
+               '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/pnacl_newlib/pnacl_newlib.json',
              ],
              'outputs': ['>(out_pnacl_newlib)'],
              'action': [
@@ -1462,12 +1726,12 @@
                 'msvs_cygwin_shell': 0,
                 'description': 'building >(out_pnacl_newlib_arm)',
                 'inputs': [
-                  '<(DEPTH)/native_client/build/build_nexe.py',
+                  '<@(common_inputs)',
                   '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                   '>@(extra_deps)',
                   '>@(extra_deps_pnacl_newlib)',
                   '^(source_list_pnacl_newlib_arm)',
-                  '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/pnacl_newlib/stamp.prep'
+                  '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/pnacl_newlib/pnacl_newlib.json'
                 ],
                 'outputs': ['>(out_pnacl_newlib_arm)'],
                 'action': [
@@ -1509,12 +1773,12 @@
                  'msvs_cygwin_shell': 0,
                  'description': 'building >(out_pnacl_newlib_x86_64)',
                  'inputs': [
-                   '<(DEPTH)/native_client/build/build_nexe.py',
+                   '<@(common_inputs)',
                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_pnacl_newlib)',
                    '^(source_list_pnacl_newlib_x86_64)',
-                   '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/pnacl_newlib/stamp.prep'
+                   '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/pnacl_newlib/pnacl_newlib.json'
                  ],
                  'outputs': ['>(out_pnacl_newlib_x86_64)'],
                  'action': [
@@ -1551,12 +1815,12 @@
                  'msvs_cygwin_shell': 0,
                  'description': 'building >(out_pnacl_newlib_x86_32)',
                  'inputs': [
-                   '<(DEPTH)/native_client/build/build_nexe.py',
+                   '<@(common_inputs)',
                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_pnacl_newlib)',
                    '^(source_list_pnacl_newlib_x86_32)',
-                   '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/pnacl_newlib/stamp.prep'
+                   '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/pnacl_newlib/pnacl_newlib.json'
                  ],
                  'outputs': ['>(out_pnacl_newlib_x86_32)'],
                  'action': [
@@ -1576,52 +1840,6 @@
                },
              ],
            }], # end ia32
-          # Non-SFI mode for ia32.
-          ['enable_x86_32_nonsfi!=0 and disable_pnacl==0 and '
-           'pnacl_native_biased==1 and nlib_target!="" and '
-           'build_pnacl_newlib!=0', {
-             'variables': {
-               'tool_name': 'pnacl_newlib_x86_32',
-               # TODO(hidehiko): replace with (tc_lib_dir_pnacl_translate)/
-               # lib-x86-32-nonsfi/>(nlib_target) to be more consistent with
-               # similar configs.
-               'out_pnacl_newlib_x86_32_nonsfi%': '<(SHARED_INTERMEDIATE_DIR)/tc_<(tool_name)/lib-x86-32-nonsfi/>(nlib_target)',
-               'objdir_pnacl_newlib_x86_32_nonsfi%': '>(INTERMEDIATE_DIR)/<(tool_name)-nonsfi/>(_target_name)',
-             },
-             'actions': [
-               {
-                 'action_name': 'build newlib x86-32-nonsfi nlib (via pnacl)',
-                 'variables': {
-                   'source_list_pnacl_newlib_x86_32_nonsfi%': '^|(<(tool_name).>(_target_name).source_list.gypcmd ^(_sources) ^(sources))',
-                 },
-                 'msvs_cygwin_shell': 0,
-                 'description': 'building >(out_pnacl_newlib_x86_32_nonsfi)',
-                 'inputs': [
-                   '<(DEPTH)/native_client/build/build_nexe.py',
-                   '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
-                   '>@(extra_deps)',
-                   '>@(extra_deps_pnacl_newlib)',
-                   '^(source_list_pnacl_newlib_x86_32_nonsfi)',
-                   '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/pnacl_newlib/stamp.prep'
-                 ],
-                 'outputs': ['>(out_pnacl_newlib_x86_32_nonsfi)'],
-                 'action': [
-                   '<@(common_args)',
-                   '>@(extra_args)',
-                   '--arch', 'x86-32-nonsfi',
-                   '--build', 'newlib_nlib_pnacl',
-                   '--name', '>(out_pnacl_newlib_x86_32_nonsfi)',
-                   '--objdir', '>(objdir_pnacl_newlib_x86_32_nonsfi)',
-                   '--include-dirs=>(tc_include_dir_pnacl_newlib) ^(include_dirs) >(_include_dirs)',
-                   '--compile_flags=--target=i686-unknown-nacl --pnacl-allow-native --pnacl-allow-translate -arch x86-32-nonsfi ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
-                   '--gomadir', '<(gomadir)',
-                   '--defines=^(defines) >(_defines)',
-                   '--link_flags=-B>(tc_lib_dir_pnacl_newlib) ^(link_flags) >(_link_flags)',
-                   '--source-list=^(source_list_pnacl_newlib_x86_32_nonsfi)',
-                 ],
-               },
-             ],
-           }], # end ia32 Non-SFI mode.
         ], # end ia32 or x64
       }],
       # MIPS
@@ -1643,12 +1861,12 @@
                 'msvs_cygwin_shell': 0,
                 'description': 'building >(out_pnacl_newlib_mips)',
                 'inputs': [
-                  '<(DEPTH)/native_client/build/build_nexe.py',
+                  '<@(common_inputs)',
                   '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                   '>@(extra_deps)',
                   '>@(extra_deps_pnacl_newlib)',
                   '^(source_list_pnacl_newlib_mips)',
-                  '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/pnacl_newlib/stamp.prep'
+                  '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/pnacl_newlib/pnacl_newlib.json'
                 ],
                 'outputs': ['>(out_pnacl_newlib_mips)'],
                 'action': [

@@ -41,7 +41,7 @@ class NameServerClassifierTest : public testing::Test {
     for (std::vector<std::string>::const_iterator it = server_strings.begin();
          it != server_strings.end();
          ++it) {
-      if (*it == "")
+      if (it->empty())
         continue;
 
       IPAddressNumber address;
@@ -121,8 +121,8 @@ class DnsConfigServiceTest : public testing::Test {
  protected:
   class TestDnsConfigService : public DnsConfigService {
    public:
-    virtual void ReadNow() OVERRIDE {}
-    virtual bool StartWatching() OVERRIDE { return true; }
+    void ReadNow() override {}
+    bool StartWatching() override { return true; }
 
     // Expose the protected methods to this test suite.
     void InvalidateConfig() {
@@ -176,7 +176,7 @@ class DnsConfigServiceTest : public testing::Test {
     return hosts;
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     quit_on_config_ = false;
 
     service_.reset(new TestDnsConfigService());
@@ -335,6 +335,10 @@ TEST_F(DnsConfigServiceTest, WatchFailure) {
 #if (defined(OS_POSIX) && !defined(OS_ANDROID)) || defined(OS_WIN)
 // TODO(szym): This is really an integration test and can time out if HOSTS is
 // huge. http://crbug.com/107810
+// On Android the hosts file is not user modifyable, so it's always tiny,
+// however devices used for testing are likely to have no network connectivity
+// and hence no DNS configuration so this test will just fail to find a valid
+// config.
 TEST_F(DnsConfigServiceTest, DISABLED_GetSystemConfig) {
   service_.reset();
   scoped_ptr<DnsConfigService> service(DnsConfigService::CreateSystemService());

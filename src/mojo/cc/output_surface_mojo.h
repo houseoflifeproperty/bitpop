@@ -5,10 +5,10 @@
 #ifndef MOJO_CC_OUTPUT_SURFACE_MOJO_H_
 #define MOJO_CC_OUTPUT_SURFACE_MOJO_H_
 
+#include "base/macros.h"
 #include "cc/output/output_surface.h"
 #include "cc/surfaces/surface_id.h"
-#include "cc/surfaces/surface_id_allocator.h"
-#include "mojo/services/public/interfaces/surfaces/surfaces.mojom.h"
+#include "components/surfaces/public/interfaces/surfaces.mojom.h"
 
 namespace mojo {
 
@@ -19,28 +19,26 @@ class OutputSurfaceMojoClient {
   virtual void DidCreateSurface(cc::SurfaceId id) = 0;
 };
 
-class OutputSurfaceMojo : public cc::OutputSurface, public SurfaceClient {
+class OutputSurfaceMojo : public cc::OutputSurface {
  public:
   OutputSurfaceMojo(OutputSurfaceMojoClient* client,
                     const scoped_refptr<cc::ContextProvider>& context_provider,
-                    SurfacePtr surface,
-                    uint32_t id_namespace);
-
-  // SurfaceClient implementation.
-  virtual void ReturnResources(Array<ReturnedResourcePtr> resources) OVERRIDE;
+                    SurfacePtr surface);
 
   // cc::OutputSurface implementation.
-  virtual void SwapBuffers(cc::CompositorFrame* frame) OVERRIDE;
-  virtual bool BindToClient(cc::OutputSurfaceClient* client) OVERRIDE;
+  void SwapBuffers(cc::CompositorFrame* frame) override;
+  bool BindToClient(cc::OutputSurfaceClient* client) override;
 
  protected:
-  virtual ~OutputSurfaceMojo();
+  ~OutputSurfaceMojo() override;
 
  private:
+  void SetIdNamespace(uint32_t id_namespace);
+
   OutputSurfaceMojoClient* output_surface_mojo_client_;
   SurfacePtr surface_;
-  cc::SurfaceIdAllocator id_allocator_;
-  cc::SurfaceId surface_id_;
+  uint32_t id_namespace_;
+  uint32_t local_id_;
   gfx::Size surface_size_;
 
   DISALLOW_COPY_AND_ASSIGN(OutputSurfaceMojo);

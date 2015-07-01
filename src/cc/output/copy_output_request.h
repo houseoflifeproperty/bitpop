@@ -10,7 +10,7 @@
 #include "cc/base/cc_export.h"
 #include "cc/resources/single_release_callback.h"
 #include "cc/resources/texture_mailbox.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 class SkBitmap;
 
@@ -40,6 +40,12 @@ class CC_EXPORT CopyOutputRequest {
   ~CopyOutputRequest();
 
   bool IsEmpty() const { return result_callback_.is_null(); }
+
+  // Optionally specify the source of this copy request.  If set when this copy
+  // request is submitted to a layer, a prior uncommitted copy request from the
+  // same |source| will be aborted.
+  void set_source(void* source) { source_ = source; }
+  void* source() const { return source_; }
 
   bool force_bitmap_result() const { return force_bitmap_result_; }
 
@@ -73,6 +79,7 @@ class CC_EXPORT CopyOutputRequest {
   CopyOutputRequest(bool force_bitmap_result,
                     const CopyOutputRequestCallback& result_callback);
 
+  void* source_;
   bool force_bitmap_result_;
   bool has_area_;
   bool has_texture_mailbox_;

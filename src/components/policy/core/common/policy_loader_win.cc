@@ -74,6 +74,7 @@ const char kExpectedWebStoreUrl[] =
 const char kBlockedExtensionPrefix[] = "[BLOCKED]";
 
 // List of policies that are considered only if the user is part of a AD domain.
+// Please document any new additions in policy_templates.json!
 const char* kInsecurePolicies[] = {
     key::kMetricsReportingEnabled,
     key::kDefaultSearchProviderEnabled,
@@ -139,7 +140,7 @@ void FilterUntrustedPolicy(PolicyMap* policy) {
 
   int invalid_policies = 0;
   const PolicyMap::Entry* map_entry =
-      policy->Get(policy::key::kExtensionInstallForcelist);
+      policy->Get(key::kExtensionInstallForcelist);
   if (map_entry && map_entry->value) {
     const base::ListValue* policy_list_value = NULL;
     if (!map_entry->value->GetAsList(&policy_list_value))
@@ -163,13 +164,13 @@ void FilterUntrustedPolicy(PolicyMap* policy) {
       filtered_values->AppendString(entry);
     }
     if (invalid_policies) {
-      policy->Set(policy::key::kExtensionInstallForcelist,
+      policy->Set(key::kExtensionInstallForcelist,
                   map_entry->level, map_entry->scope,
                   filtered_values.release(),
                   map_entry->external_data_fetcher);
 
-      const PolicyDetails* details = policy::GetChromePolicyDetails(
-          policy::key::kExtensionInstallForcelist);
+      const PolicyDetails* details = GetChromePolicyDetails(
+          key::kExtensionInstallForcelist);
       UMA_HISTOGRAM_SPARSE_SLOWLY("EnterpriseCheck.InvalidPolicies",
                                   details->id);
     }
@@ -181,7 +182,7 @@ void FilterUntrustedPolicy(PolicyMap* policy) {
       policy->Erase(kInsecurePolicies[i]);
       invalid_policies++;
       const PolicyDetails* details =
-          policy::GetChromePolicyDetails(kInsecurePolicies[i]);
+          GetChromePolicyDetails(kInsecurePolicies[i]);
       UMA_HISTOGRAM_SPARSE_SLOWLY("EnterpriseCheck.InvalidPolicies",
                                   details->id);
     }
@@ -217,7 +218,7 @@ class Wow64Functions {
     return is_wow_64_process_ &&
         wow_64_disable_wow_64_fs_redirection_ &&
         wow_64_revert_wow_64_fs_redirection_;
- }
+  }
 
   bool IsWow64() {
     BOOL result = 0;
@@ -284,19 +285,19 @@ class ScopedDisableWow64Redirection {
 // AppliedGPOListProvider implementation that calls actual Windows APIs.
 class WinGPOListProvider : public AppliedGPOListProvider {
  public:
-  virtual ~WinGPOListProvider() {}
+  ~WinGPOListProvider() override {}
 
   // AppliedGPOListProvider:
-  virtual DWORD GetAppliedGPOList(DWORD flags,
-                                  LPCTSTR machine_name,
-                                  PSID sid_user,
-                                  GUID* extension_guid,
-                                  PGROUP_POLICY_OBJECT* gpo_list) OVERRIDE {
+  DWORD GetAppliedGPOList(DWORD flags,
+                          LPCTSTR machine_name,
+                          PSID sid_user,
+                          GUID* extension_guid,
+                          PGROUP_POLICY_OBJECT* gpo_list) override {
     return ::GetAppliedGPOList(flags, machine_name, sid_user, extension_guid,
                                gpo_list);
   }
 
-  virtual BOOL FreeGPOList(PGROUP_POLICY_OBJECT gpo_list) OVERRIDE {
+  BOOL FreeGPOList(PGROUP_POLICY_OBJECT gpo_list) override {
     return ::FreeGPOList(gpo_list);
   }
 };
@@ -460,9 +461,10 @@ scoped_ptr<PolicyBundle> PolicyLoaderWin::Load() {
     // timeout on it more aggressively. For now, there's no justification for
     // the additional effort this would introduce.
 
-    if (is_enterprise || !ReadPolicyFromGPO(scope, &gpo_dict, &status)) {
-      VLOG_IF(1, !is_enterprise) << "Failed to read GPO files for " << scope
-                                 << " falling back to registry.";
+    bool is_registry_forced = is_enterprise || gpo_provider_ == nullptr;
+    if (is_registry_forced || !ReadPolicyFromGPO(scope, &gpo_dict, &status)) {
+      VLOG_IF(1, !is_registry_forced) << "Failed to read GPO files for "
+                                      << scope << " falling back to registry.";
       gpo_dict.ReadRegistry(kScopes[i].hive, chrome_policy_key_);
     }
 

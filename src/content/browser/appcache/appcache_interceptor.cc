@@ -10,23 +10,21 @@
 #include "content/browser/appcache/appcache_service_impl.h"
 #include "content/browser/appcache/appcache_url_request_job.h"
 #include "content/common/appcache_interfaces.h"
+#include "net/url_request/url_request.h"
+
+static int kHandlerKey;  // Value is not used.
 
 namespace content {
 
-// static
-AppCacheInterceptor* AppCacheInterceptor::GetInstance() {
-  return Singleton<AppCacheInterceptor>::get();
-}
-
 void AppCacheInterceptor::SetHandler(net::URLRequest* request,
                                      AppCacheRequestHandler* handler) {
-  request->SetUserData(GetInstance(), handler);  // request takes ownership
+  request->SetUserData(&kHandlerKey, handler);  // request takes ownership
 }
 
 AppCacheRequestHandler* AppCacheInterceptor::GetHandler(
     net::URLRequest* request) {
-  return reinterpret_cast<AppCacheRequestHandler*>(
-      request->GetUserData(GetInstance()));
+  return static_cast<AppCacheRequestHandler*>(
+      request->GetUserData(&kHandlerKey));
 }
 
 void AppCacheInterceptor::SetExtraRequestInfo(
@@ -34,7 +32,8 @@ void AppCacheInterceptor::SetExtraRequestInfo(
     AppCacheServiceImpl* service,
     int process_id,
     int host_id,
-    ResourceType resource_type) {
+    ResourceType resource_type,
+    bool should_reset_appcache) {
   if (!service || (host_id == kAppCacheNoHostId))
     return;
 
@@ -50,7 +49,7 @@ void AppCacheInterceptor::SetExtraRequestInfo(
 
   // Create a handler for this request and associate it with the request.
   AppCacheRequestHandler* handler =
-      host->CreateRequestHandler(request, resource_type);
+      host->CreateRequestHandler(request, resource_type, should_reset_appcache);
   if (handler)
     SetHandler(request, handler);
 }
@@ -86,16 +85,23 @@ void AppCacheInterceptor::CompleteCrossSiteTransfer(
                                      new_host_id);
 }
 
+void AppCacheInterceptor::MaybeCompleteCrossSiteTransferInOldProcess(
+    net::URLRequest* request,
+    int process_id) {
+  AppCacheRequestHandler* handler = GetHandler(request);
+  if (!handler)
+    return;
+  handler->MaybeCompleteCrossSiteTransferInOldProcess(process_id);
+}
+
 AppCacheInterceptor::AppCacheInterceptor() {
-  net::URLRequest::Deprecated::RegisterRequestInterceptor(this);
 }
 
 AppCacheInterceptor::~AppCacheInterceptor() {
-  net::URLRequest::Deprecated::UnregisterRequestInterceptor(this);
 }
 
-net::URLRequestJob* AppCacheInterceptor::MaybeIntercept(
-    net::URLRequest* request, net::NetworkDelegate* network_delegate) {
+net::URLRequestJob* AppCacheInterceptor::MaybeInterceptRequest(
+    net::URLRequest* request, net::NetworkDelegate* network_delegate) const {
   AppCacheRequestHandler* handler = GetHandler(request);
   if (!handler)
     return NULL;
@@ -105,7 +111,7 @@ net::URLRequestJob* AppCacheInterceptor::MaybeIntercept(
 net::URLRequestJob* AppCacheInterceptor::MaybeInterceptRedirect(
     net::URLRequest* request,
     net::NetworkDelegate* network_delegate,
-    const GURL& location) {
+    const GURL& location) const {
   AppCacheRequestHandler* handler = GetHandler(request);
   if (!handler)
     return NULL;
@@ -114,7 +120,7 @@ net::URLRequestJob* AppCacheInterceptor::MaybeInterceptRedirect(
 }
 
 net::URLRequestJob* AppCacheInterceptor::MaybeInterceptResponse(
-    net::URLRequest* request, net::NetworkDelegate* network_delegate) {
+    net::URLRequest* request, net::NetworkDelegate* network_delegate) const {
   AppCacheRequestHandler* handler = GetHandler(request);
   if (!handler)
     return NULL;

@@ -5,11 +5,44 @@
 #include "base/test/histogram_tester.h"
 #include "chrome/test/nacl/nacl_browsertest_util.h"
 #include "components/nacl/browser/nacl_browser.h"
+#include "components/nacl/renderer/platform_info.h"
+#include "components/nacl/renderer/ppb_nacl_private.h"
 #include "content/public/test/browser_test_utils.h"
 #include "native_client/src/trusted/service_runtime/nacl_error_code.h"
-#include "ppapi/c/private/ppb_nacl_private.h"
 
 namespace {
+
+void CheckPNaClLoadUMAs(base::HistogramTester& histograms,
+                        const std::string& compiler_suffix) {
+  // The histograms that do not vary by compiler (so no compiler_suffix).
+  histograms.ExpectTotalCount("NaCl.Perf.PNaClLoadTime.LoadLinker", 1);
+  histograms.ExpectTotalCount("NaCl.Perf.PNaClLoadTime.LinkTime", 1);
+  histograms.ExpectTotalCount("NaCl.Perf.Size.Manifest", 1);
+  histograms.ExpectTotalCount("NaCl.Perf.Size.Pexe", 1);
+  // The histograms that vary by compiler.
+  histograms.ExpectTotalCount("NaCl.Options.PNaCl.OptLevel" + compiler_suffix,
+                              1);
+  histograms.ExpectTotalCount(
+      "NaCl.Perf.Size.PNaClTranslatedNexe" + compiler_suffix, 1);
+  histograms.ExpectTotalCount(
+      "NaCl.Perf.Size.PexeNexeSizePct" + compiler_suffix, 1);
+  histograms.ExpectTotalCount(
+      "NaCl.Perf.PNaClLoadTime.LoadCompiler" + compiler_suffix, 1);
+  histograms.ExpectTotalCount(
+      "NaCl.Perf.PNaClLoadTime.CompileTime" + compiler_suffix, 1);
+  histograms.ExpectTotalCount(
+      "NaCl.Perf.PNaClLoadTime.CompileKBPerSec" + compiler_suffix, 1);
+  histograms.ExpectTotalCount(
+      "NaCl.Perf.PNaClLoadTime.PctCompiledWhenFullyDownloaded" +
+          compiler_suffix,
+      1);
+  histograms.ExpectTotalCount(
+      "NaCl.Perf.PNaClLoadTime.TotalUncachedTime" + compiler_suffix, 1);
+  histograms.ExpectTotalCount(
+      "NaCl.Perf.PNaClLoadTime.TotalUncachedKBPerSec" + compiler_suffix, 1);
+  histograms.ExpectTotalCount("NaCl.Perf.PNaClCache.IsHit" + compiler_suffix,
+                              1);
+}
 
 NACL_BROWSER_TEST_F(NaClBrowserTest, SuccessfulLoadUMA, {
   base::HistogramTester histograms;
@@ -30,16 +63,18 @@ NACL_BROWSER_TEST_F(NaClBrowserTest, SuccessfulLoadUMA, {
 
   // Check validation cache usage:
   if (IsAPnaclTest()) {
-    // Should have received 3 validation queries:
-    // - One for IRT for actual application
-    // - Two for two translator nexes
-    // The translators don't currently use the IRT, so there is no IRT cache
-    // query for those two loads. The PNaCl main nexe comes from a
-    // delete-on-close temp file, so it doesn't have a stable identity
-    // for validation caching. All three query results should be misses.
-    histograms.ExpectUniqueSample("NaCl.ValidationCache.Query",
-                                  nacl::NaClBrowser::CACHE_MISS, 3);
-    // Should have received a cache setting afterwards for IRT and translators.
+    // Should have received 4 validation queries:
+    // - Two for the IRT: the app and one of the translator nexes use the IRT.
+    // - Two for the two PNaCl translator nexes.
+    // The PNaCl app nexe comes from a delete-on-close temp file, so it
+    // doesn't have a stable identity for validation caching. Overall, there
+    // are 3 eligible nexes. The first 3 queries for these eligible nexes
+    // are misses, and one of the IRT queries is a hit.
+    histograms.ExpectBucketCount("NaCl.ValidationCache.Query",
+                               nacl::NaClBrowser::CACHE_MISS, 3);
+    histograms.ExpectBucketCount("NaCl.ValidationCache.Query",
+                               nacl::NaClBrowser::CACHE_HIT, 1);
+    // Should have received a cache setting afterwards (IRT set only once).
     histograms.ExpectUniqueSample("NaCl.ValidationCache.Set",
                                   nacl::NaClBrowser::CACHE_HIT, 3);
   } else {
@@ -60,29 +95,43 @@ NACL_BROWSER_TEST_F(NaClBrowserTest, SuccessfulLoadUMA, {
     histograms.ExpectTotalCount("NaCl.Perf.Size.Manifest", 1);
     histograms.ExpectTotalCount("NaCl.Perf.Size.Nexe", 1);
   } else {
-    histograms.ExpectTotalCount("NaCl.Options.PNaCl.OptLevel", 1);
-    histograms.ExpectTotalCount("NaCl.Perf.Size.Manifest", 1);
-    histograms.ExpectTotalCount("NaCl.Perf.Size.Pexe", 1);
-    histograms.ExpectTotalCount("NaCl.Perf.Size.PNaClTranslatedNexe", 1);
-    histograms.ExpectTotalCount("NaCl.Perf.Size.PexeNexeSizePct", 1);
-    histograms.ExpectTotalCount("NaCl.Perf.PNaClLoadTime.LoadCompiler", 1);
-    histograms.ExpectTotalCount("NaCl.Perf.PNaClLoadTime.LoadLinker", 1);
-    histograms.ExpectTotalCount("NaCl.Perf.PNaClLoadTime.CompileTime", 1);
-    histograms.ExpectTotalCount("NaCl.Perf.PNaClLoadTime.CompileKBPerSec", 1);
-    histograms.ExpectTotalCount("NaCl.Perf.PNaClLoadTime.LinkTime", 1);
-    histograms.ExpectTotalCount(
-        "NaCl.Perf.PNaClLoadTime.PctCompiledWhenFullyDownloaded", 1);
-    histograms.ExpectTotalCount("NaCl.Perf.PNaClLoadTime.TotalUncachedTime", 1);
-    histograms.ExpectTotalCount(
-        "NaCl.Perf.PNaClLoadTime.TotalUncachedKBPerSec", 1);
-    histograms.ExpectTotalCount("NaCl.Perf.PNaClCache.IsHit", 1);
+    // There should be the total (suffix-free), and the LLC bucket.
+    // Subzero is tested separately.
+    CheckPNaClLoadUMAs(histograms, "");
+    CheckPNaClLoadUMAs(histograms, ".LLC");
   }
 })
+
+// Test that a successful load adds stats to Subzero buckets.
+IN_PROC_BROWSER_TEST_F(NaClBrowserTestPnaclSubzero, SuccessfulLoadUMA) {
+  // Only test where Subzero is supported.
+  if (strcmp(nacl::GetSandboxArch(), "x86-32") != 0)
+    return;
+
+  base::HistogramTester histograms;
+  // Run a load test that uses the -O0 NMF option.
+  RunLoadTest(FILE_PATH_LITERAL("pnacl_options.html?use_nmf=o_0"));
+
+  // Make sure histograms from child processes have been accumulated in the
+  // browser brocess.
+  content::FetchHistogramsFromChildProcesses();
+
+  // Did the plugin report success?
+  histograms.ExpectUniqueSample("NaCl.LoadStatus.Plugin",
+                                PP_NACL_ERROR_LOAD_SUCCESS, 1);
+
+  // Did the sel_ldr report success?
+  histograms.ExpectUniqueSample("NaCl.LoadStatus.SelLdr", LOAD_OK, 1);
+
+  // There should be the total (suffix-free), and the Subzero bucket.
+  CheckPNaClLoadUMAs(histograms, "");
+  CheckPNaClLoadUMAs(histograms, ".Subzero");
+}
 
 class NaClBrowserTestNewlibVcacheExtension:
       public NaClBrowserTestNewlibExtension {
  public:
-  virtual base::FilePath::StringType Variant() OVERRIDE {
+  base::FilePath::StringType Variant() override {
     return FILE_PATH_LITERAL("extension_vcache_test/newlib");
   }
 };
@@ -128,13 +177,13 @@ IN_PROC_BROWSER_TEST_F(NaClBrowserTestNewlibVcacheExtension,
 class NaClBrowserTestGLibcVcacheExtension:
       public NaClBrowserTestGLibcExtension {
  public:
-  virtual base::FilePath::StringType Variant() OVERRIDE {
+  base::FilePath::StringType Variant() override {
     return FILE_PATH_LITERAL("extension_vcache_test/glibc");
   }
 };
 
 IN_PROC_BROWSER_TEST_F(NaClBrowserTestGLibcVcacheExtension,
-                       ValidationCacheOfMainNexe) {
+                       MAYBE_GLIBC(ValidationCacheOfMainNexe)) {
   // Make sure histograms from child processes have been accumulated in the
   // browser process.
   base::HistogramTester histograms;
@@ -182,16 +231,18 @@ IN_PROC_BROWSER_TEST_F(NaClBrowserTestPnacl,
   RunLoadTest(FILE_PATH_LITERAL("pnacl_options.html?use_nmf=o_0"));
 
   content::FetchHistogramsFromChildProcesses();
-  // Should have received 3 validation queries:
-  // - One for IRT for actual application
-  // - Two for two translator nexes
-  // The translators don't currently use the IRT, so there is no IRT cache
-  // query for those two loads. The PNaCl main nexe comes from a
-  // delete-on-close temp file, so it doesn't have a stable identity
-  // for validation caching. All three query results should be misses.
-  histograms.ExpectUniqueSample("NaCl.ValidationCache.Query",
-                                nacl::NaClBrowser::CACHE_MISS, 3);
-  // Should have received a cache setting afterwards for IRT and translators.
+  // Should have received 4 validation queries:
+  // - Two for the IRT: the app and one of the translator nexes use the IRT.
+  // - Two for the two PNaCl translator nexes.
+  // The PNaCl app nexe comes from a delete-on-close temp file, so it
+  // doesn't have a stable identity for validation caching. Overall, there
+  // are 3 eligible nexes. The first 3 queries for these eligible nexes
+  // are misses, and one of the IRT queries is a hit.
+  histograms.ExpectBucketCount("NaCl.ValidationCache.Query",
+                               nacl::NaClBrowser::CACHE_MISS, 3);
+  histograms.ExpectBucketCount("NaCl.ValidationCache.Query",
+                               nacl::NaClBrowser::CACHE_HIT, 1);
+  // Should have received a cache setting afterwards.
   histograms.ExpectUniqueSample("NaCl.ValidationCache.Set",
                                nacl::NaClBrowser::CACHE_HIT, 3);
 
@@ -201,14 +252,14 @@ IN_PROC_BROWSER_TEST_F(NaClBrowserTestPnacl,
   // cache hits!)
   RunLoadTest(FILE_PATH_LITERAL("pnacl_options.html?use_nmf=o_2"));
 
-  // Should now have 3 more queries on top of the previous ones.
-  histograms.ExpectTotalCount("NaCl.ValidationCache.Query", 6);
-  // With the 3 extra queries being cache hits.
+  // Should now have 4 more queries on top of the previous ones.
+  histograms.ExpectTotalCount("NaCl.ValidationCache.Query", 8);
+  // With the extra queries being cache hits.
   histograms.ExpectBucketCount("NaCl.ValidationCache.Query",
-                               nacl::NaClBrowser::CACHE_HIT, 3);
+                               nacl::NaClBrowser::CACHE_HIT, 5);
   // No extra cache settings.
   histograms.ExpectUniqueSample("NaCl.ValidationCache.Set",
-                               nacl::NaClBrowser::CACHE_HIT, 3);
+                                nacl::NaClBrowser::CACHE_HIT, 3);
 }
 
 

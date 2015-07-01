@@ -5,15 +5,10 @@
 #include "cc/layers/io_surface_layer_impl.h"
 
 #include "base/strings/stringprintf.h"
-#include "cc/output/gl_renderer.h"  // For the GLC() macro.
 #include "cc/output/output_surface.h"
 #include "cc/quads/io_surface_draw_quad.h"
 #include "cc/trees/layer_tree_impl.h"
-#include "cc/trees/occlusion_tracker.h"
-#include "gpu/GLES2/gl2extchromium.h"
-#include "gpu/command_buffer/client/gles2_interface.h"
-#include "third_party/khronos/GLES2/gl2.h"
-#include "third_party/khronos/GLES2/gl2ext.h"
+#include "cc/trees/occlusion.h"
 
 namespace cc {
 
@@ -38,7 +33,7 @@ void IOSurfaceLayerImpl::DestroyResource() {
 
 scoped_ptr<LayerImpl> IOSurfaceLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return IOSurfaceLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return IOSurfaceLayerImpl::Create(tree_impl, id());
 }
 
 void IOSurfaceLayerImpl::PushPropertiesTo(LayerImpl* layer) {
@@ -66,7 +61,6 @@ bool IOSurfaceLayerImpl::WillDraw(DrawMode draw_mode,
 
 void IOSurfaceLayerImpl::AppendQuads(
     RenderPass* render_pass,
-    const OcclusionTracker<LayerImpl>& occlusion_tracker,
     AppendQuadsData* append_quads_data) {
   SharedQuadState* shared_quad_state =
       render_pass->CreateAndAppendSharedQuadState();
@@ -78,9 +72,8 @@ void IOSurfaceLayerImpl::AppendQuads(
   gfx::Rect quad_rect(content_bounds());
   gfx::Rect opaque_rect(contents_opaque() ? quad_rect : gfx::Rect());
   gfx::Rect visible_quad_rect =
-      occlusion_tracker.GetCurrentOcclusionForLayer(
-                            draw_properties().target_space_transform)
-          .GetUnoccludedContentRect(quad_rect);
+      draw_properties().occlusion_in_content_space.GetUnoccludedContentRect(
+          quad_rect);
   if (visible_quad_rect.IsEmpty())
     return;
 
@@ -93,6 +86,7 @@ void IOSurfaceLayerImpl::AppendQuads(
                io_surface_size_,
                io_surface_resource_id_,
                IOSurfaceDrawQuad::FLIPPED);
+  ValidateQuadResources(quad);
 }
 
 void IOSurfaceLayerImpl::ReleaseResources() {

@@ -24,11 +24,14 @@ class PageForPolymerLoad(page.Page):
     ''' % ready_event
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.NavigateToPage(self)
-    action_runner.WaitForJavaScriptCondition('window.__polymer_ready')
+   super(PageForPolymerLoad, self).RunNavigateSteps(action_runner)
+   action_runner.WaitForJavaScriptCondition('window.__polymer_ready')
 
 
 class PolymerLoadMeasurement(page_test.PageTest):
+  def __init__(self):
+    super(PolymerLoadMeasurement, self).__init__()
+
   def ValidateAndMeasurePage(self, _, tab, results):
     result = int(tab.EvaluateJavaScript('__polymer_ready_time'))
     results.AddValue(scalar.ScalarValue(

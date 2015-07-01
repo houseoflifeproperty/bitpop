@@ -6,31 +6,37 @@
 
 #if defined(OS_WIN)
 #include <windows.h>
+#elif defined(OS_IOS)
+#include <CoreGraphics/CoreGraphics.h>
+#elif defined(OS_MACOSX)
+#include <ApplicationServices/ApplicationServices.h>
 #endif
 
 #include "base/strings/stringprintf.h"
 
 namespace gfx {
 
-template class PointBase<Point, int, Vector2d>;
-
 #if defined(OS_WIN)
-Point::Point(DWORD point) : PointBase<Point, int, Vector2d>(0, 0){
+Point::Point(DWORD point) {
   POINTS points = MAKEPOINTS(point);
-  set_x(points.x);
-  set_y(points.y);
+  x_ = points.x;
+  y_ = points.y;
 }
 
-Point::Point(const POINT& point)
-    : PointBase<Point, int, Vector2d>(point.x, point.y) {
+Point::Point(const POINT& point) : x_(point.x), y_(point.y) {
 }
 
 Point& Point::operator=(const POINT& point) {
-  set_x(point.x);
-  set_y(point.y);
+  x_ = point.x;
+  y_ = point.y;
   return *this;
 }
+#elif defined(OS_MACOSX)
+Point::Point(const CGPoint& point) : x_(point.x), y_(point.y) {
+}
+#endif
 
+#if defined(OS_WIN)
 POINT Point::ToPOINT() const {
   POINT p;
   p.x = x();
@@ -38,14 +44,20 @@ POINT Point::ToPOINT() const {
   return p;
 }
 #elif defined(OS_MACOSX)
-Point::Point(const CGPoint& point)
-    : PointBase<Point, int, Vector2d>(point.x, point.y) {
-}
-
 CGPoint Point::ToCGPoint() const {
   return CGPointMake(x(), y());
 }
 #endif
+
+void Point::SetToMin(const Point& other) {
+  x_ = x_ <= other.x_ ? x_ : other.x_;
+  y_ = y_ <= other.y_ ? y_ : other.y_;
+}
+
+void Point::SetToMax(const Point& other) {
+  x_ = x_ >= other.x_ ? x_ : other.x_;
+  y_ = y_ >= other.y_ ? y_ : other.y_;
+}
 
 std::string Point::ToString() const {
   return base::StringPrintf("%d,%d", x(), y());

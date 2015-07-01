@@ -9,11 +9,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
 #include "content/public/test/test_file_system_context.h"
+#include "storage/browser/blob/scoped_file.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/fileapi/file_system_operation_context.h"
 #include "storage/browser/fileapi/isolated_context.h"
 #include "storage/browser/fileapi/transient_file_util.h"
-#include "storage/common/blob/scoped_file.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using storage::FileSystemURL;
@@ -23,9 +23,9 @@ namespace content {
 class TransientFileUtilTest : public testing::Test {
  public:
   TransientFileUtilTest() {}
-  virtual ~TransientFileUtilTest() {}
+  ~TransientFileUtilTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     file_system_context_ = CreateFileSystemContextForTesting(
         NULL, base::FilePath(FILE_PATH_LITERAL("dummy")));
     transient_file_util_.reset(new storage::TransientFileUtil);
@@ -33,7 +33,7 @@ class TransientFileUtilTest : public testing::Test {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     file_system_context_ = NULL;
     base::RunLoop().RunUntilIdle();
   }

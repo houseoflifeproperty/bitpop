@@ -6,11 +6,13 @@
 #define TOOLS_GN_NINJA_BUILD_WRITER_H_
 
 #include <iosfwd>
+#include <set>
 #include <vector>
 
 #include "tools/gn/path_output.h"
 
 class BuildSettings;
+class Err;
 class Settings;
 class Target;
 class Toolchain;
@@ -24,7 +26,8 @@ class NinjaBuildWriter {
       const BuildSettings* settings,
       const std::vector<const Settings*>& all_settings,
       const Toolchain* default_toolchain,
-      const std::vector<const Target*>& default_toolchain_targets);
+      const std::vector<const Target*>& default_toolchain_targets,
+      Err* err);
 
  private:
   NinjaBuildWriter(const BuildSettings* settings,
@@ -35,15 +38,19 @@ class NinjaBuildWriter {
                    std::ostream& dep_out);
   ~NinjaBuildWriter();
 
-  void Run();
+  bool Run(Err* err);
 
   void WriteNinjaRules();
   void WriteLinkPool();
   void WriteSubninjas();
-  void WritePhonyAndAllRules();
+  bool WritePhonyAndAllRules(Err* err);
 
-  void WritePhonyRule(const Target* target, const OutputFile& target_file,
-                      const std::string& phony_name);
+  // Writes a phony rule for the given target with the given name. Adds the new
+  // name to the given set. If the name is already in the set, does nothing.
+  void WritePhonyRule(const Target* target,
+                      const OutputFile& target_file,
+                      const std::string& phony_name,
+                      std::set<std::string>* written_rules);
 
   const BuildSettings* build_settings_;
   std::vector<const Settings*> all_settings_;
@@ -56,5 +63,5 @@ class NinjaBuildWriter {
   DISALLOW_COPY_AND_ASSIGN(NinjaBuildWriter);
 };
 
-#endif  // TOOLS_GN_NINJA_BUILD_GENERATOR_H_
+#endif  // TOOLS_GN_NINJA_BUILD_WRITER_H_
 

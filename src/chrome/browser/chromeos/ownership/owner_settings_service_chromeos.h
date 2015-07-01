@@ -5,21 +5,28 @@
 #ifndef CHROME_BROWSER_CHROMEOS_OWNERSHIP_OWNER_SETTINGS_SERVICE_CHROMEOS_H_
 #define CHROME_BROWSER_CHROMEOS_OWNERSHIP_OWNER_SETTINGS_SERVICE_CHROMEOS_H_
 
-#include <deque>
+#include <string>
 #include <vector>
 
 #include "base/callback_forward.h"
-#include "base/compiler_specific.h"
+#include "base/containers/scoped_ptr_hash_map.h"
 #include "base/macros.h"
+#include "base/values.h"
+#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/ownership/owner_key_util.h"
 #include "components/ownership/owner_settings_service.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
 class Profile;
+
+namespace content {
+class WebUI;
+}
 
 namespace ownership {
 class OwnerKeyUtil;
@@ -27,7 +34,7 @@ class OwnerKeyUtil;
 
 namespace chromeos {
 
-class SessionManagerOperation;
+class FakeOwnerSettingsService;
 
 // The class is a profile-keyed service which holds public/private
 // keypair corresponds to a profile. The keypair is reloaded automatically when
@@ -38,24 +45,55 @@ class SessionManagerOperation;
 // (crbug.com/230018).
 class OwnerSettingsServiceChromeOS : public ownership::OwnerSettingsService,
                                      public content::NotificationObserver,
-                                     public SessionManagerClient::Observer {
+                                     public SessionManagerClient::Observer,
+                                     public DeviceSettingsService::Observer {
  public:
-  virtual ~OwnerSettingsServiceChromeOS();
+  typedef base::Callback<void(bool success)> OnManagementSettingsSetCallback;
+
+  struct ManagementSettings {
+    ManagementSettings();
+    ~ManagementSettings();
+
+    policy::ManagementMode management_mode;
+    std::string request_token;
+    std::string device_id;
+  };
+
+  ~OwnerSettingsServiceChromeOS() override;
+
+  static OwnerSettingsServiceChromeOS* FromWebUI(content::WebUI* web_ui);
 
   void OnTPMTokenReady(bool tpm_token_enabled);
 
+  bool HasPendingChanges() const;
+
   // ownership::OwnerSettingsService implementation:
-  virtual void SignAndStorePolicyAsync(
-      scoped_ptr<enterprise_management::PolicyData> policy,
-      const base::Closure& callback) OVERRIDE;
+  bool HandlesSetting(const std::string& setting) override;
+  bool Set(const std::string& setting, const base::Value& value) override;
+  bool AppendToList(const std::string& setting,
+                    const base::Value& value) override;
+  bool RemoveFromList(const std::string& setting,
+                      const base::Value& value) override;
+  bool CommitTentativeDeviceSettings(
+      scoped_ptr<enterprise_management::PolicyData> policy) override;
 
   // NotificationObserver implementation:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // SessionManagerClient::Observer:
-  virtual void OwnerKeySet(bool success) OVERRIDE;
+  void OwnerKeySet(bool success) override;
+
+  // DeviceSettingsService::Observer:
+  void OwnershipStatusChanged() override;
+  void DeviceSettingsUpdated() override;
+  void OnDeviceSettingsServiceShutdown() override;
+
+  // Sets the management related settings.
+  virtual void SetManagementSettings(
+      const ManagementSettings& settings,
+      const OnManagementSettingsSetCallback& callback);
 
   // Checks if the user is the device owner, without the user profile having to
   // been initialized. Should be used only if login state is in safe mode.
@@ -64,34 +102,67 @@ class OwnerSettingsServiceChromeOS : public ownership::OwnerSettingsService,
       const scoped_refptr<ownership::OwnerKeyUtil>& owner_key_util,
       const IsOwnerCallback& callback);
 
-  static void SetDeviceSettingsServiceForTesting(
-      DeviceSettingsService* device_settings_service);
+  // Assembles PolicyData based on |settings|, |policy_data|, |user_id| and
+  // |pending_management_settings|. Applies local-owner policy fixups if needed.
+  static scoped_ptr<enterprise_management::PolicyData> AssemblePolicy(
+      const std::string& user_id,
+      const enterprise_management::PolicyData* policy_data,
+      bool apply_pending_mangement_settings,
+      const ManagementSettings& pending_management_settings,
+      enterprise_management::ChromeDeviceSettingsProto* settings);
+
+  // Updates device |settings|.
+  static void UpdateDeviceSettings(
+      const std::string& path,
+      const base::Value& value,
+      enterprise_management::ChromeDeviceSettingsProto& settings);
+
+ protected:
+  OwnerSettingsServiceChromeOS(
+      DeviceSettingsService* device_settings_service,
+      Profile* profile,
+      const scoped_refptr<ownership::OwnerKeyUtil>& owner_key_util);
 
  private:
   friend class OwnerSettingsServiceChromeOSFactory;
 
-  OwnerSettingsServiceChromeOS(
-      Profile* profile,
-      const scoped_refptr<ownership::OwnerKeyUtil>& owner_key_util);
+  // Perform fixups required to ensure sensical local-owner device policy:
+  //  1) user whitelisting must be explicitly allowed or disallowed, and
+  //  2) the owner user must be on the whitelist, if it's enforced.
+  static void FixupLocalOwnerPolicy(
+      const std::string& user_id,
+      enterprise_management::ChromeDeviceSettingsProto* settings);
 
   // OwnerSettingsService protected interface overrides:
 
-  // Reloads private key from profile's NSS slots, responds via |callback|.
-  virtual void ReloadKeypairImpl(const base::Callback<
+  // Reloads private key from profile's NSS slots, responds via |callback|. On
+  // success, |private_key| is non-null, but if the private key doesn't exist,
+  // |private_key->key()| may be null.
+  void ReloadKeypairImpl(const base::Callback<
       void(const scoped_refptr<ownership::PublicKey>& public_key,
            const scoped_refptr<ownership::PrivateKey>& private_key)>& callback)
-      OVERRIDE;
+      override;
 
   // Possibly notifies DeviceSettingsService that owner's keypair is loaded.
-  virtual void OnPostKeypairLoadedActions() OVERRIDE;
+  void OnPostKeypairLoadedActions() override;
 
-  // Performs next operation in the queue.
-  void StartNextOperation();
+  // Tries to apply recent changes to device settings proto, sign it and store.
+  void StorePendingChanges();
 
-  // Called when sign-and-store operation completes it's work.
-  void HandleCompletedOperation(const base::Closure& callback,
-                                SessionManagerOperation* operation,
-                                DeviceSettingsService::Status status);
+  // Called when current device settings are successfully signed.
+  // Sends signed settings for storage.
+  void OnPolicyAssembledAndSigned(
+      scoped_ptr<enterprise_management::PolicyFetchResponse> policy_response);
+
+  // Called by DeviceSettingsService when modified and signed device
+  // settings are stored.
+  void OnSignedPolicyStored(bool success);
+
+  // Report status to observers and tries to continue storing pending chages to
+  // device settings.
+  void ReportStatusAndContinueStoring(bool success);
+
+  DeviceSettingsService* device_settings_service_;
 
   // Profile this service instance belongs to.
   Profile* profile_;
@@ -105,13 +176,32 @@ class OwnerSettingsServiceChromeOS : public ownership::OwnerSettingsService,
   // Whether TPM token still needs to be initialized.
   bool waiting_for_tpm_token_;
 
-  // The queue of pending sign-and-store operations. The first operation on the
-  // queue is currently active; it gets removed and destroyed once it completes.
-  std::deque<SessionManagerOperation*> pending_operations_;
+  // True if local-owner policy fixups are still pending.
+  bool has_pending_fixups_;
+
+  // A set of pending changes to device settings.
+  base::ScopedPtrHashMap<std::string, scoped_ptr<base::Value>> pending_changes_;
+
+  // True if there're pending changes to management settings.
+  bool has_pending_management_settings_;
+
+  // A set of pending changes to management settings.
+  ManagementSettings pending_management_settings_;
+
+  // A set of callbacks that need to be run after management settings
+  // are set and policy is stored.
+  std::vector<OnManagementSettingsSetCallback>
+      pending_management_settings_callbacks_;
+
+  // A protobuf containing pending changes to device settings.
+  scoped_ptr<enterprise_management::ChromeDeviceSettingsProto>
+      tentative_settings_;
 
   content::NotificationRegistrar registrar_;
 
   base::WeakPtrFactory<OwnerSettingsServiceChromeOS> weak_factory_;
+
+  base::WeakPtrFactory<OwnerSettingsServiceChromeOS> store_settings_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(OwnerSettingsServiceChromeOS);
 };

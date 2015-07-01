@@ -12,6 +12,8 @@
  * OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. */
 
+#include <openssl/base.h>
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -19,11 +21,17 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#if defined(OPENSSL_WINDOWS)
+#include <io.h>
+#else
 #include <unistd.h>
+#endif
 
 #include <openssl/bytestring.h>
+#include <openssl/err.h>
 #include <openssl/pem.h>
 #include <openssl/pkcs8.h>
 #include <openssl/stack.h>
@@ -31,12 +39,19 @@
 #include "internal.h"
 
 
+#if defined(OPENSSL_WINDOWS)
+typedef int read_result_t;
+#else
+typedef ssize_t read_result_t;
+#endif
+
 static const struct argument kArguments[] = {
     {
-     "-dump", false, "Dump the key and contents of the given file to stdout",
+     "-dump", kOptionalArgument,
+     "Dump the key and contents of the given file to stdout",
     },
     {
-     "", false, "",
+     "", kOptionalArgument, "",
     },
 };
 
@@ -64,7 +79,7 @@ bool DoPKCS12(const std::vector<std::string> &args) {
   const size_t size = st.st_size;
 
   std::unique_ptr<uint8_t[]> contents(new uint8_t[size]);
-  ssize_t n;
+  read_result_t n;
   size_t off = 0;
   do {
     n = read(fd, &contents[off], size - off);
@@ -109,7 +124,7 @@ bool DoPKCS12(const std::vector<std::string> &args) {
 
   if (!PKCS12_get_key_and_certs(&key, certs, &pkcs12, password)) {
     fprintf(stderr, "Failed to parse PKCS#12 data:\n");
-    BIO_print_errors_fp(stderr);
+    ERR_print_errors_fp(stderr);
     return false;
   }
 

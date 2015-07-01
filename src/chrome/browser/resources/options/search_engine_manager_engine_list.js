@@ -10,7 +10,7 @@
  *            displayName: string,
  *            extension: (Object|undefined),
  *            iconURL: (string|undefined),
- *            isExtension: boolean,
+ *            isOmniboxExtension: boolean,
  *            keyword: string,
  *            modelIndex: string,
  *            name: string,
@@ -111,6 +111,7 @@ cr.define('options.search_engines', function() {
         this.classList.add('default');
 
       this.deletable = engine.canBeRemoved;
+      this.closeButtonFocusAllowed = true;
 
       // Construct the name column.
       var nameColEl = this.ownerDocument.createElement('div');
@@ -139,8 +140,9 @@ cr.define('options.search_engines', function() {
 
       // And the URL column.
       var urlEl = this.createEditableTextCell(engine.url);
+      var makeDefaultButtonEl = null;
       // Extensions should not display a URL column.
-      if (!engine.isExtension) {
+      if (!engine.isOmniboxExtension) {
         var urlWithButtonEl = this.ownerDocument.createElement('div');
         urlWithButtonEl.appendChild(urlEl);
         urlWithButtonEl.className = 'url-column';
@@ -150,7 +152,7 @@ cr.define('options.search_engines', function() {
         // re-ordering is implemented. When this is removed, remove the extra
         // div above.
         if (engine.canBeDefault) {
-          var makeDefaultButtonEl = this.ownerDocument.createElement('button');
+          makeDefaultButtonEl = this.ownerDocument.createElement('button');
           makeDefaultButtonEl.className =
               'custom-appearance list-inline-button';
           makeDefaultButtonEl.textContent =
@@ -180,9 +182,6 @@ cr.define('options.search_engines', function() {
       if (engine.urlLocked)
         this.urlField_.disabled = true;
 
-      if (engine.isExtension)
-        this.nameField_.disabled = true;
-
       if (this.isPlaceholder) {
         this.nameField_.placeholder =
             loadTimeData.getString('searchEngineTableNamePlaceholder');
@@ -191,6 +190,12 @@ cr.define('options.search_engines', function() {
         this.urlField_.placeholder =
             loadTimeData.getString('searchEngineTableURLPlaceholder');
       }
+
+      this.setFocusableColumnIndex(this.nameField_, 0);
+      this.setFocusableColumnIndex(this.keywordField_, 1);
+      this.setFocusableColumnIndex(this.urlField_, 2);
+      this.setFocusableColumnIndex(makeDefaultButtonEl, 3);
+      this.setFocusableColumnIndex(this.closeButtonElement, 4);
 
       var fields = [this.nameField_, this.keywordField_, this.urlField_];
         for (var i = 0; i < fields.length; i++) {

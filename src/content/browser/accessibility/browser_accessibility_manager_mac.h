@@ -22,25 +22,24 @@ class CONTENT_EXPORT BrowserAccessibilityManagerMac
 
   static ui::AXTreeUpdate GetEmptyDocument();
 
-  virtual BrowserAccessibility* GetFocus(BrowserAccessibility* root) OVERRIDE;
+  BrowserAccessibility* GetFocus(BrowserAccessibility* root) override;
 
   // Implementation of BrowserAccessibilityManager.
-  virtual void NotifyAccessibilityEvent(
-      ui::AXEvent event_type, BrowserAccessibility* node) OVERRIDE;
+  void NotifyAccessibilityEvent(ui::AXEvent event_type,
+                                BrowserAccessibility* node) override;
 
   NSView* parent_view() { return parent_view_; }
 
  private:
-  virtual void OnNodeCreationFinished(ui::AXNode* node) OVERRIDE;
-  virtual void OnTreeUpdateFinished() OVERRIDE;
+  void OnAtomicUpdateFinished(
+      bool root_changed,
+      const std::vector<ui::AXTreeDelegate::Change>& changes) override;
 
   // This gives BrowserAccessibilityManager::Create access to the class
   // constructor.
   friend class BrowserAccessibilityManager;
 
   NSView* parent_view_;
-
-  bool created_live_region_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserAccessibilityManagerMac);
 };

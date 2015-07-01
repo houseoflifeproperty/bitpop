@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Spec: Non-standard
+// Spec: http://http://dev.w3.org/csswg/cssom-view#extensions-to-the-window-interface
 
-[
-    GarbageCollected
-] dictionary ScrollOptions {
-    DOMString behavior;
+enum ScrollBehavior { "auto", "instant", "smooth" };
+
+dictionary ScrollOptions {
+    ScrollBehavior behavior = "auto";
 };

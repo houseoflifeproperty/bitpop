@@ -10,6 +10,10 @@
 #include <string>
 
 #include "content/common/content_export.h"
+#include "content/common/service_worker/service_worker_types.h"
+#include "content/public/common/referrer.h"
+#include "content/public/common/request_context_frame_type.h"
+#include "content/public/common/request_context_type.h"
 #include "content/public/common/resource_type.h"
 #include "net/base/request_priority.h"
 #include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
@@ -33,12 +37,8 @@ struct CONTENT_EXPORT RequestInfo {
   // third-party cookie blocking policy.
   GURL first_party_for_cookies;
 
-  // Optional parameter, a URL with similar constraints in how it must be
-  // encoded as the url member.
-  GURL referrer;
-
-  // The referrer policy that applies to the referrer.
-  blink::WebReferrerPolicy referrer_policy;
+  // Optional parameter, the referrer to use for the request for the url member.
+  Referrer referrer;
 
   // For HTTP(S) requests, the headers parameter can be a \r\n-delimited and
   // \r\n-terminated list of MIME headers.  They should be ASCII-encoded using
@@ -55,6 +55,8 @@ struct CONTENT_EXPORT RequestInfo {
   // Indicates if the current request is the main frame load, a sub-frame
   // load, or a sub objects load.
   ResourceType request_type;
+  RequestContextType fetch_request_context_type;
+  RequestContextFrameType fetch_frame_type;
 
   // Indicates the priority of this request, as determined by WebKit.
   net::RequestPriority priority;
@@ -78,9 +80,25 @@ struct CONTENT_EXPORT RequestInfo {
   // True if the request should not be handled by the ServiceWorker.
   bool skip_service_worker;
 
+  // True if corresponding AppCache group should be resetted.
+  bool should_reset_appcache;
+
+  // The request mode passed to the ServiceWorker.
+  FetchRequestMode fetch_request_mode;
+
+  // The credentials mode passed to the ServiceWorker.
+  FetchCredentialsMode fetch_credentials_mode;
+
   // TODO(mmenke): Investigate if enable_load_timing is safe to remove.
   // True if load timing data should be collected for the request.
   bool enable_load_timing;
+
+  // True if upload progress should be available.
+  bool enable_upload_progress;
+
+  // True if login prompts for this request should be supressed. Cached
+  // credentials or default credentials may still be used for authentication.
+  bool do_not_prompt_for_login;
 
   // Extra data associated with this request.  We do not own this pointer.
   blink::WebURLRequest::ExtraData* extra_data;

@@ -20,9 +20,12 @@
  */
 
 [
-    TypeChecking=Interface,
     ImplementedAs=SVGTransformTearOff,
+    MeasureAs=SVG1DOM,
+    RuntimeEnabled=SVG1DOM,
     SetWrapperReferenceTo(SVGElement contextElement),
+    TypeChecking=Interface,
+    WillBeGarbageCollected,
 ] interface SVGTransform {
     // Transform Types
     const unsigned short SVG_TRANSFORM_UNKNOWN = 0;
@@ -44,4 +47,3 @@
     [RaisesException] void setSkewX(float angle);
     [RaisesException] void setSkewY(float angle);
 };
-

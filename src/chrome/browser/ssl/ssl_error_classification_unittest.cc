@@ -28,46 +28,6 @@ class SSLErrorClassificationTest : public ChromeRenderViewHostTestHarness {
   }
 };
 
-TEST_F(SSLErrorClassificationTest, TestDateInvalidScore) {
-  base::FilePath certs_dir = net::GetTestCertsDirectory();
-  scoped_refptr<net::X509Certificate> expired_cert =
-      net::ImportCertFromFile(certs_dir, "expired_cert.pem");
-  base::Time time;
-  GURL origin("https://example.com");
-  int cert_error = net::ERR_CERT_DATE_INVALID;
-  WebContents* contents = web_contents();
-
-  {
-    EXPECT_TRUE(base::Time::FromString("Wed, 03 Jan 2007 12:00:00 GMT", &time));
-    SSLErrorClassification ssl_error(contents,
-                                     time,
-                                     origin,
-                                     cert_error,
-                                     *expired_cert);
-    EXPECT_FLOAT_EQ(0.2f, ssl_error.CalculateScoreTimePassedSinceExpiry());
-  }
-
-  {
-    EXPECT_TRUE(base::Time::FromString("Sat, 06 Jan 2007 12:00:00 GMT", &time));
-    SSLErrorClassification ssl_error(contents,
-                                     time,
-                                     origin,
-                                     cert_error,
-                                     *expired_cert);
-    EXPECT_FLOAT_EQ(0.3f, ssl_error.CalculateScoreTimePassedSinceExpiry());
-  }
-
-  {
-    EXPECT_TRUE(base::Time::FromString("Mon, 08 Jan 2007 12:00:00 GMT", &time));
-    SSLErrorClassification ssl_error(contents,
-                                     time,
-                                     origin,
-                                     cert_error,
-                                     *expired_cert);
-    EXPECT_FLOAT_EQ(0.4f, ssl_error.CalculateScoreTimePassedSinceExpiry());
-  }
-}
-
 TEST_F(SSLErrorClassificationTest, TestNameMismatch) {
   scoped_refptr<net::X509Certificate> google_cert(
       net::X509Certificate::CreateFromBytes(
@@ -199,10 +159,16 @@ TEST_F(SSLErrorClassificationTest, TestNameMismatch) {
 }
 
 TEST_F(SSLErrorClassificationTest, TestHostNameHasKnownTLD) {
-  std::string url1 = "www.google.com";
-  std::string url2 = "b.appspot.com";
-  std::string url3 = "a.private";
-  EXPECT_TRUE(SSLErrorClassification::IsHostNameKnownTLD(url1));
-  EXPECT_TRUE(SSLErrorClassification::IsHostNameKnownTLD(url2));
-  EXPECT_FALSE(SSLErrorClassification::IsHostNameKnownTLD(url3));
+  EXPECT_TRUE(SSLErrorClassification::IsHostNameKnownTLD("www.google.com"));
+  EXPECT_TRUE(SSLErrorClassification::IsHostNameKnownTLD("b.appspot.com"));
+  EXPECT_FALSE(SSLErrorClassification::IsHostNameKnownTLD("a.private"));
+}
+
+TEST_F(SSLErrorClassificationTest, TestPrivateURL) {
+  EXPECT_FALSE(SSLErrorClassification::IsHostnameNonUniqueOrDotless(
+      "www.foogoogle.com."));
+  EXPECT_TRUE(SSLErrorClassification::IsHostnameNonUniqueOrDotless("go"));
+  EXPECT_TRUE(
+      SSLErrorClassification::IsHostnameNonUniqueOrDotless("172.17.108.108"));
+  EXPECT_TRUE(SSLErrorClassification::IsHostnameNonUniqueOrDotless("foo.blah"));
 }

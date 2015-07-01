@@ -1,28 +1,12 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2014 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Chromium presubmit script for src/net.
+"""Top-level presubmit script for src/net.
 
 See http://dev.chromium.org/developers/how-tos/depottools/presubmit-scripts
-for more details on the presubmit API built into gcl.
+for more details about the presubmit API built into depot_tools.
 """
 
-def GetPreferredTryMasters(project, change):
-  masters = {
-    'tryserver.chromium.linux': {
-      'linux_chromium_rel_swarming': set(['defaulttests']),
-    },
-    'tryserver.chromium.mac': {
-      'mac_chromium_rel_swarming': set(['defaulttests']),
-    },
-    'tryserver.chromium.win': {
-      'win_chromium_rel_swarming': set(['defaulttests']),
-    }
-  }
-  # Changes that touch NSS files will likely need a corresponding OpenSSL edit.
-  # Conveniently, this one glob also matches _openssl.* changes too.
-  if any('nss' in f.LocalPath() for f in change.AffectedFiles()):
-    masters['tryserver.chromium.linux'].setdefault(
-      'linux_redux', set()).add('defaulttests')
-  return masters
+def CheckChangeOnUpload(input_api, output_api):
+  return input_api.canned_checks.CheckPatchFormatted(input_api, output_api)

@@ -29,7 +29,7 @@ namespace policy {
 namespace {
 
 enterprise_management::DeviceRegisterRequest::Type GetRegistrationType() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kFakeCloudPolicyType))
     return enterprise_management::DeviceRegisterRequest::BROWSER;
 #if defined(OS_IOS)
@@ -193,8 +193,7 @@ void UserPolicySigninService::RegisterCloudPolicyService() {
   // If the user signed-out while this task was waiting then Shutdown() would
   // have been called, which would have invalidated this task. Since we're here
   // then the user must still be signed-in.
-  const std::string& username = signin_manager()->GetAuthenticatedUsername();
-  DCHECK(!username.empty());
+  DCHECK(signin_manager()->IsAuthenticated());
   DCHECK(!policy_manager()->IsClientRegistered());
   DCHECK(policy_manager()->core()->client());
 
@@ -207,7 +206,7 @@ void UserPolicySigninService::RegisterCloudPolicyService() {
       GetRegistrationType()));
   registration_helper_->StartRegistration(
       oauth2_token_service_,
-      username,
+      signin_manager()->GetAuthenticatedUsername(),
       base::Bind(&UserPolicySigninService::OnRegistrationDone,
                  base::Unretained(this)));
 }

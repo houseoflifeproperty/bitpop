@@ -17,52 +17,50 @@
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 #define IPC_MESSAGE_START MidiMsgStart
 
-IPC_STRUCT_TRAITS_BEGIN(media::MidiPortInfo)
+IPC_ENUM_TRAITS_MAX_VALUE(media::midi::MidiPortState,
+                          media::midi::MIDI_PORT_STATE_LAST)
+
+IPC_STRUCT_TRAITS_BEGIN(media::midi::MidiPortInfo)
   IPC_STRUCT_TRAITS_MEMBER(id)
   IPC_STRUCT_TRAITS_MEMBER(manufacturer)
   IPC_STRUCT_TRAITS_MEMBER(name)
   IPC_STRUCT_TRAITS_MEMBER(version)
+  IPC_STRUCT_TRAITS_MEMBER(state)
 IPC_STRUCT_TRAITS_END()
 
-IPC_ENUM_TRAITS_MAX_VALUE(media::MidiResult, media::MIDI_RESULT_LAST)
-
-// Messages for IPC between MidiDispatcher and MidiDispatcherHost.
-
-// Renderer request to browser for using system exclusive messages.
-IPC_MESSAGE_ROUTED3(MidiHostMsg_RequestSysExPermission,
-                    int /* client id */,
-                    GURL /* origin */,
-                    bool /* user_gesture */)
-
-// Renderer request to browser for canceling a previous permission request.
-IPC_MESSAGE_ROUTED2(MidiHostMsg_CancelSysExPermissionRequest,
-                     int /* bridge_id */,
-                     GURL /* GURL of the frame */)
-
-// Messages sent from the browser to the renderer.
-
-IPC_MESSAGE_ROUTED2(MidiMsg_SysExPermissionApproved,
-                    int /* client id */,
-                    bool /* is_allowed */)
+IPC_ENUM_TRAITS_MAX_VALUE(media::midi::MidiResult,
+                          media::midi::MIDI_RESULT_LAST)
 
 // Messages for IPC between MidiMessageFilter and MidiHost.
 
 // Renderer request to browser for access to MIDI services.
-IPC_MESSAGE_CONTROL1(MidiHostMsg_StartSession,
-                     int /* client id */)
+IPC_MESSAGE_CONTROL0(MidiHostMsg_StartSession)
 
 IPC_MESSAGE_CONTROL3(MidiHostMsg_SendData,
                      uint32 /* port */,
                      std::vector<uint8> /* data */,
                      double /* timestamp */)
 
+IPC_MESSAGE_CONTROL0(MidiHostMsg_EndSession)
+
 // Messages sent from the browser to the renderer.
 
-IPC_MESSAGE_CONTROL4(MidiMsg_SessionStarted,
-                     int /* client id */,
-                     media::MidiResult /* result */,
-                     media::MidiPortInfoList /* input ports */,
-                     media::MidiPortInfoList /* output ports */)
+IPC_MESSAGE_CONTROL1(MidiMsg_AddInputPort,
+                     media::midi::MidiPortInfo /* input port */)
+
+IPC_MESSAGE_CONTROL1(MidiMsg_AddOutputPort,
+                     media::midi::MidiPortInfo /* output port */)
+
+IPC_MESSAGE_CONTROL2(MidiMsg_SetInputPortState,
+                     uint32 /* port */,
+                     media::midi::MidiPortState /* state */)
+
+IPC_MESSAGE_CONTROL2(MidiMsg_SetOutputPortState,
+                     uint32 /* port */,
+                     media::midi::MidiPortState /* state */)
+
+IPC_MESSAGE_CONTROL1(MidiMsg_SessionStarted,
+                     media::midi::MidiResult /* result */)
 
 IPC_MESSAGE_CONTROL3(MidiMsg_DataReceived,
                      uint32 /* port */,

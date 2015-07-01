@@ -57,7 +57,7 @@ static GUID RdpClientModuleLibid = {
 class RdpClientModule : public ATL::CAtlModuleT<RdpClientModule> {
  public:
   RdpClientModule();
-  virtual ~RdpClientModule();
+  ~RdpClientModule() override;
 
   DECLARE_LIBID(RdpClientModuleLibid)
 
@@ -71,7 +71,7 @@ RdpClientModule::RdpClientModule() {
 
 RdpClientModule::~RdpClientModule() {
   AtlAxWinTerm();
-  ATL::_pAtlModule = NULL;
+  ATL::_pAtlModule = nullptr;
 }
 
 }  // namespace
@@ -79,10 +79,10 @@ RdpClientModule::~RdpClientModule() {
 class RdpClientTest : public testing::Test {
  public:
   RdpClientTest();
-  virtual ~RdpClientTest();
+  ~RdpClientTest() override;
 
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   // Caaled when an RDP connection is established.
   void OnRdpConnected();
@@ -165,7 +165,7 @@ TEST_F(RdpClientTest, Basic) {
       task_runner_, task_runner_,
       webrtc::DesktopSize(kDefaultWidth, kDefaultHeight),
       terminal_id_, &event_handler_));
-  task_runner_ = NULL;
+  task_runner_ = nullptr;
 
   run_loop_.Run();
 }

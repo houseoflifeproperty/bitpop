@@ -136,24 +136,17 @@ enum MetricEnrollment {
   // Registration / policy fetch failed: DM server reports that the serial
   // number we try to register is not assigned to the domain used.
   kMetricEnrollmentRegisterPolicyInvalidSerial = 8,
-  // Auto-enrollment started automatically after the user signed in.
-  kMetricEnrollmentAutoStarted = 9,
-  // Auto-enrollment failed.
-  kMetricEnrollmentAutoFailed = 10,
-  // Auto-enrollment was retried after having failed before.
-  kMetricEnrollmentAutoRestarted = 11,
-  // Auto-enrollment was canceled through the opt-out dialog.
-  kMetricEnrollmentAutoCancelled = 12,
-  // Auto-enrollment succeeded.
-  kMetricEnrollmentAutoOK = 13,
+  /* kMetricEnrollmentAutoStarted = 9 REMOVED */
+  /* kMetricEnrollmentAutoFailed = 10 REMOVED */
+  /* kMetricEnrollmentAutoRestarted = 11 REMOVED */
+  /* kMetricEnrollmentAutoCancelled = 12 REMOVED */
+  /* kMetricEnrollmentAutoOK = 13 REMOVED */
   // Registration failed: DM server returns unknown/disallowed enrollment mode.
   kMetricEnrollmentInvalidEnrollmentMode = 14,
-  // Auto-enrollment is not supported for the mode supplied by the server.  This
-  // presently means trying to auto-enroll in kiosk mode.
-  kMetricEnrollmentAutoEnrollmentNotSupported = 15,
-  // Enrollment failed: lockbox initialization took too long to complete.
+  /* kMetricEnrollmentAutoEnrollmentNotSupported = 15 REMOVED */
+  // Lockbox initialization took too long to complete.
   kMetricEnrollmentLockboxTimeoutError = 16,
-  // Re-enrollment device lock failed: domain does not match install attributes.
+  // Lockbox error at re-enrollment: domain does not match install attributes.
   kMetricEnrollmentLockDomainMismatch = 17,
   // Registration / policy fetch failed: DM server reports licenses expired or
   // exhausted.
@@ -182,8 +175,7 @@ enum MetricEnrollment {
   kMetricEnrollmentPolicyValidationFailed = 28,
   // Failed due to error in CloudPolicyStore.
   kMetricEnrollmentCloudPolicyStoreError = 29,
-  // Failed to lock device.
-  kMetricEnrollmentLockBackendError = 30,
+  /* kMetricEnrollmentLockBackendError = 30 REMOVED */
   // Registration / policy fetch failed: DM server reports invalid request
   // payload.
   kMetricEnrollmentRegisterPolicyPayloadInvalid = 31,
@@ -213,7 +205,21 @@ enum MetricEnrollment {
   // OAuth token fetch failed: account disabled.
   kMetricEnrollmentAccountDisabled = 43,
   // Re-enrollment pre-check failed: domain does not match install attributes.
-  kMetricEnrollmentPrecheckDomainMismatch = 44
+  kMetricEnrollmentPrecheckDomainMismatch = 44,
+  // Lockbox backend failed to initialize.
+  kMetricEnrollmentLockBackendInvalid = 45,
+  // Lockbox backend (TPM) already locked.
+  kMetricEnrollmentLockAlreadyLocked = 46,
+  // Lockbox failure setting attributes.
+  kMetricEnrollmentLockSetError = 47,
+  // Lockbox failure during locking.
+  kMetricEnrollmentLockFinalizeError = 48,
+  // Lockbox read back is inconsistent.
+  kMetricEnrollmentLockReadbackError = 49,
+  // Failed to update device attributes.
+  kMetricEnrollmentAttributeUpdateFailed = 50,
+  // Lockbox error at re-enrollment: mode does not match install attributes.
+  kMetricEnrollmentLockModeMismatch = 51,
 };
 
 // Events related to policy refresh.

@@ -26,15 +26,18 @@
 
 namespace blink {
 
-class CSSUnknownRule FINAL : public CSSRule {
+class CSSUnknownRule final : public CSSRule {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     CSSUnknownRule() : CSSRule(0) { }
     virtual ~CSSUnknownRule() { }
 
-    virtual CSSRule::Type type() const OVERRIDE { return UNKNOWN_RULE; }
-    virtual String cssText() const OVERRIDE { return String(); }
-    virtual void reattach(StyleRuleBase*) OVERRIDE { }
-    virtual void trace(Visitor* visitor) OVERRIDE { CSSRule::trace(visitor); }
+    virtual String cssText() const override { return String(); }
+    virtual void reattach(StyleRuleBase*) override { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { CSSRule::trace(visitor); }
+
+private:
+    virtual CSSRule::Type type() const override { return UNKNOWN_RULE; }
 };
 
 } // namespace blink

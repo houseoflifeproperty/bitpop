@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "sandbox/win/src/crosscall_server.h"
+
 #include <string>
 #include <vector>
 
-#include "sandbox/win/src/crosscall_server.h"
 #include "sandbox/win/src/crosscall_params.h"
 #include "sandbox/win/src/crosscall_client.h"
 #include "base/logging.h"
@@ -215,7 +216,7 @@ bool CrossCallParamsEx::GetParameter32(uint32 index, uint32* param) {
   uint32 size = 0;
   ArgType type;
   void* start = GetRawParameter(index, &size, &type);
-  if ((NULL == start) || (4 != size) || (ULONG_TYPE != type)) {
+  if ((NULL == start) || (4 != size) || (UINT32_TYPE != type)) {
     return false;
   }
   // Copy the 4 bytes.
@@ -295,6 +296,12 @@ Dispatcher* Dispatcher::OnMessageReady(IPCParams* ipc,
     }
   }
   return NULL;
+}
+
+Dispatcher::Dispatcher() {
+}
+
+Dispatcher::~Dispatcher() {
 }
 
 }  // namespace sandbox

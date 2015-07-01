@@ -4,6 +4,7 @@
 
 package org.chromium.android_webview.test;
 
+import android.os.Build;
 import android.test.MoreAsserts;
 import android.test.suitebuilder.annotation.MediumTest;
 import android.util.Pair;
@@ -17,6 +18,7 @@ import org.chromium.android_webview.AwSettings;
 import org.chromium.android_webview.test.util.CookieUtils;
 import org.chromium.android_webview.test.util.JSUtils;
 import org.chromium.base.test.util.Feature;
+import org.chromium.base.test.util.MinAndroidSdkLevel;
 import org.chromium.net.test.util.TestWebServer;
 
 import java.util.ArrayList;
@@ -30,6 +32,7 @@ import java.util.concurrent.Callable;
 /**
  * Tests for the CookieManager.
  */
+@MinAndroidSdkLevel(Build.VERSION_CODES.KITKAT)
 public class CookieManagerTest extends AwTestBase {
 
     private AwCookieManager mCookieManager;
@@ -65,9 +68,8 @@ public class CookieManagerTest extends AwTestBase {
     @MediumTest
     @Feature({"AndroidWebView", "Privacy"})
     public void testAcceptCookie() throws Throwable {
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
-            webServer = new TestWebServer(false);
             String path = "/cookie_test.html";
             String responseStr =
                     "<html><head><title>TEST!</title></head><body>HELLO!</body></html>";
@@ -108,7 +110,7 @@ public class CookieManagerTest extends AwTestBase {
             assertNotNull(cookie);
             validateCookies(cookie, "test2", "header-test2");
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 
@@ -117,10 +119,10 @@ public class CookieManagerTest extends AwTestBase {
         JSUtils.executeJavaScriptAndWaitForResult(
                 this, mAwContents,
                 mContentsClient.getOnEvaluateJavaScriptResultHelper(),
-                "var expirationDate = new Date();" +
-                "expirationDate.setDate(expirationDate.getDate() + 5);" +
-                "document.cookie='" + name + "=" + value +
-                        "; expires=' + expirationDate.toUTCString();");
+                "var expirationDate = new Date();"
+                + "expirationDate.setDate(expirationDate.getDate() + 5);"
+                + "document.cookie='" + name + "=" + value
+                + "; expires=' + expirationDate.toUTCString();");
     }
 
     @MediumTest
@@ -356,20 +358,17 @@ public class CookieManagerTest extends AwTestBase {
     @MediumTest
     @Feature({"AndroidWebView", "Privacy"})
     public void testThirdPartyCookie() throws Throwable {
-        TestWebServer webServer = null;
+        // In theory we need two servers to test this, one server ('the first party') which returns
+        // a response with a link to a second server ('the third party') at different origin. This
+        // second server attempts to set a cookie which should fail if AcceptThirdPartyCookie() is
+        // false.
+        // Strictly according to the letter of RFC6454 it should be possible to set this situation
+        // up with two TestServers on different ports (these count as having different origins) but
+        // Chrome is not strict about this and does not check the port. Instead we cheat making some
+        // of the urls come from localhost and some from 127.0.0.1 which count (both in theory and
+        // pratice) as having different origins.
+        TestWebServer webServer = TestWebServer.start();
         try {
-            // In theory we need two servers to test this, one server ('the first party')
-            // which returns a response with a link to a second server ('the third party')
-            // at different origin. This second server attempts to set a cookie which should
-            // fail if AcceptThirdPartyCookie() is false.
-            // Strictly according to the letter of RFC6454 it should be possible to set this
-            // situation up with two TestServers on different ports (these count as having
-            // different origins) but Chrome is not strict about this and does not check the
-            // port. Instead we cheat making some of the urls come from localhost and some
-            // from 127.0.0.1 which count (both in theory and pratice) as having different
-            // origins.
-            webServer = new TestWebServer(false);
-
             // Turn global allow on.
             mCookieManager.setAcceptCookie(true);
             assertTrue(mCookieManager.acceptCookie());
@@ -401,7 +400,7 @@ public class CookieManagerTest extends AwTestBase {
             assertNotNull(cookie);
             validateCookies(cookie, "test2");
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 
@@ -417,7 +416,7 @@ public class CookieManagerTest extends AwTestBase {
         String response = "";
         List<Pair<String, String>> responseHeaders = new ArrayList<Pair<String, String>>();
         responseHeaders.add(
-            Pair.create("Set-Cookie", key + "=" + value + "; path=" + path));
+                Pair.create("Set-Cookie", key + "=" + value + "; path=" + path));
         return webServer.setResponse(path, response, responseHeaders);
     }
 
@@ -429,20 +428,19 @@ public class CookieManagerTest extends AwTestBase {
      * @return  the url which gets the response
      */
     private String makeScriptLinkUrl(TestWebServer webServer, String path, String url) {
-        String responseStr = "<html><head><title>Content!</title></head>" +
-                    "<body><script src=" + url + "></script></body></html>";
+        String responseStr = "<html><head><title>Content!</title></head>"
+                + "<body><script src=" + url + "></script></body></html>";
         return webServer.setResponse(path, responseStr, null);
     }
 
     @MediumTest
     @Feature({"AndroidWebView", "Privacy"})
     public void testThirdPartyJavascriptCookie() throws Throwable {
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
             // This test again uses 127.0.0.1/localhost trick to simulate a third party.
-            webServer = new TestWebServer(false);
-            ThirdPartyCookiesTestHelper thirdParty
-                    = new ThirdPartyCookiesTestHelper(webServer);
+            ThirdPartyCookiesTestHelper thirdParty =
+                    new ThirdPartyCookiesTestHelper(webServer);
 
             mCookieManager.setAcceptCookie(true);
             assertTrue(mCookieManager.acceptCookie());
@@ -461,16 +459,15 @@ public class CookieManagerTest extends AwTestBase {
             // ...we can set third party cookies.
             thirdParty.assertThirdPartyIFrameCookieResult("2", true);
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 
     @MediumTest
     @Feature({"AndroidWebView", "Privacy"})
     public void testThirdPartyCookiesArePerWebview() throws Throwable {
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
-            webServer = new TestWebServer(false);
             mCookieManager.setAcceptCookie(true);
             mCookieManager.removeAllCookie();
             assertTrue(mCookieManager.acceptCookie());
@@ -504,7 +501,7 @@ public class CookieManagerTest extends AwTestBase {
             helperOne.assertThirdPartyIFrameCookieResult("7", true);
             helperTwo.assertThirdPartyIFrameCookieResult("8", false);
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 
@@ -549,7 +546,7 @@ public class CookieManagerTest extends AwTestBase {
             mWebServer = webServer;
             mContentsClient = new TestAwContentsClient();
             final AwTestContainerView containerView =
-                createAwTestContainerViewOnMainSync(mContentsClient);
+                    createAwTestContainerViewOnMainSync(mContentsClient);
             mAwContents = containerView.getAwContents();
             mAwContents.getSettings().setJavaScriptEnabled(true);
         }
@@ -603,8 +600,8 @@ public class CookieManagerTest extends AwTestBase {
      * @return  the url which gets the response
      */
     private String makeIframeUrl(TestWebServer webServer, String path, String url) {
-        String responseStr = "<html><head><title>Content!</title></head>" +
-                    "<body><iframe src=" + url + "></iframe></body></html>";
+        String responseStr = "<html><head><title>Content!</title></head>"
+                + "<body><iframe src=" + url + "></iframe></body></html>";
         return webServer.setResponse(path, responseStr, null);
     }
 
@@ -618,8 +615,8 @@ public class CookieManagerTest extends AwTestBase {
      */
     private String makeCookieScriptUrl(TestWebServer webServer, String path, String key,
             String value) {
-        String response = "<html><head></head><body>" +
-            "<script>document.cookie = \"" + key + "=" + value + "\";</script></body></html>";
+        String response = "<html><head></head><body>"
+                + "<script>document.cookie = \"" + key + "=" + value + "\";</script></body></html>";
         return webServer.setResponse(path, response, null);
     }
 

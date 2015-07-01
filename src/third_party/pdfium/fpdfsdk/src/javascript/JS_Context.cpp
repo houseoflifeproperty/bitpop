@@ -72,18 +72,18 @@ FX_BOOL CJS_Context::DoJob(int nMode, const CFX_WideString& script, CFX_WideStri
 	{
 		if (nMode == 0)
 		{
-			nRet = JS_Execute(*m_pRuntime, this, script, script.GetLength(), &error);
+			nRet = JS_Execute(*m_pRuntime, this, script.c_str(), script.GetLength(), &error);
 		}
 		else
 		{
-			nRet = JS_Parse(*m_pRuntime, this, script, script.GetLength(), &error);
+			nRet = JS_Parse(*m_pRuntime, this, script.c_str(), script.GetLength(), &error);
 		}
 	}
 
 	if (nRet < 0)
 	{
 		CFX_WideString sLine;
-		sLine.Format((FX_LPCWSTR)L"[ Line: %05d { %s } ] : %s",error.linnum-1,error.srcline,error.message);
+		sLine.Format(L"[ Line: %05d { %s } ] : %s",error.linnum-1,error.srcline,error.message);
 
 //			TRACE(L"/* -------------- JS Error -------------- */\n");
 //			TRACE(sLine);

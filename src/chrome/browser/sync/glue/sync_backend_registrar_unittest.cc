@@ -60,21 +60,21 @@ class SyncBackendRegistrarTest : public testing::Test {
 
  protected:
   SyncBackendRegistrarTest()
-      : sync_thread_(NULL),
-        thread_bundle_(content::TestBrowserThreadBundle::REAL_DB_THREAD |
+      : thread_bundle_(content::TestBrowserThreadBundle::REAL_DB_THREAD |
                        content::TestBrowserThreadBundle::REAL_FILE_THREAD |
-                       content::TestBrowserThreadBundle::REAL_IO_THREAD) {}
+                       content::TestBrowserThreadBundle::REAL_IO_THREAD),
+        sync_thread_(NULL) {}
 
-  virtual ~SyncBackendRegistrarTest() {}
+  ~SyncBackendRegistrarTest() override {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     test_user_share_.SetUp();
     registrar_.reset(new SyncBackendRegistrar("test", &profile_,
                                               scoped_ptr<base::Thread>()));
     sync_thread_ = registrar_->sync_thread();
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     registrar_->RequestWorkerStopOnUIThread();
     test_user_share_.TearDown();
     sync_thread_->message_loop()->PostTask(
@@ -101,12 +101,12 @@ class SyncBackendRegistrarTest : public testing::Test {
     }
   }
 
+  content::TestBrowserThreadBundle thread_bundle_;
   syncer::TestUserShare test_user_share_;
   TestingProfile profile_;
   scoped_ptr<SyncBackendRegistrar> registrar_;
 
   base::Thread* sync_thread_;
-  content::TestBrowserThreadBundle thread_bundle_;
 };
 
 TEST_F(SyncBackendRegistrarTest, ConstructorEmpty) {
@@ -277,7 +277,7 @@ class SyncBackendRegistrarShutdownTest : public testing::Test {
     quit_closure_ = run_loop_.QuitClosure();
   }
 
-  virtual ~SyncBackendRegistrarShutdownTest() {}
+  ~SyncBackendRegistrarShutdownTest() override {}
 
   void PostQuitOnUIMessageLoop() {
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, quit_closure_);
@@ -299,7 +299,7 @@ class TestRegistrar : public SyncBackendRegistrar {
       : SyncBackendRegistrar("test", profile, scoped_ptr<base::Thread>()),
         test_(test) {}
 
-  virtual ~TestRegistrar() { test_->PostQuitOnUIMessageLoop(); }
+  ~TestRegistrar() override { test_->PostQuitOnUIMessageLoop(); }
 
  private:
   SyncBackendRegistrarShutdownTest* test_;

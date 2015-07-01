@@ -10,7 +10,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
-#include "third_party/libjingle/source/talk/p2p/base/packetsocketfactory.h"
+#include "third_party/webrtc/p2p/base/packetsocketfactory.h"
 
 namespace base {
 class SingleThreadTaskRunner;
@@ -27,7 +27,7 @@ class FakeNetworkDispatcher
  public:
   class Node {
    public:
-    virtual ~Node() {};
+    virtual ~Node() {}
 
     // Return thread on which ReceivePacket() should be called.
     virtual const scoped_refptr<base::SingleThreadTaskRunner>& GetThread()

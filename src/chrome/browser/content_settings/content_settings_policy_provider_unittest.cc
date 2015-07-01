@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/content_settings/content_settings_policy_provider.h"
+#include "components/content_settings/core/browser/content_settings_policy_provider.h"
 
 #include <string>
 
@@ -12,37 +12,26 @@
 #include "base/message_loop/message_loop.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/content_settings/content_settings_mock_observer.h"
-#include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/content_settings/core/browser/content_settings_rule.h"
-#include "content/public/test/test_browser_thread.h"
+#include "components/content_settings/core/browser/content_settings_utils.h"
+#include "components/content_settings/core/test/content_settings_test_utils.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
 using ::testing::_;
-using content::BrowserThread;
 
 namespace content_settings {
 
 typedef std::vector<Rule> Rules;
 
 class PolicyProviderTest : public testing::Test {
- public:
-  PolicyProviderTest()
-      : ui_thread_(BrowserThread::UI, &message_loop_) {
-  }
-
- protected:
-  // TODO(markusheintz): Check if it's possible to derive the provider class
-  // from NonThreadSafe and to use native thread identifiers instead of
-  // BrowserThread IDs. Then we could get rid of the message_loop and ui_thread
-  // fields.
-  base::MessageLoop message_loop_;
-  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThreadBundle thread_bundle_;
 };
 
 TEST_F(PolicyProviderTest, DefaultGeolocationContentSetting) {

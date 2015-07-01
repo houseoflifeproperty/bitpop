@@ -16,12 +16,14 @@ class SolidColorContentLayerClient : public ContentLayerClient {
   explicit SolidColorContentLayerClient(SkColor color) : color_(color) {}
 
   // ContentLayerClient implementation.
-  virtual void DidChangeLayerCanUseLCDText() OVERRIDE {}
-  virtual void PaintContents(
-      SkCanvas* canvas,
-      const gfx::Rect& rect,
-      ContentLayerClient::GraphicsContextStatus gc_status) OVERRIDE;
-  virtual bool FillsBoundsCompletely() const OVERRIDE;
+  void PaintContents(SkCanvas* canvas,
+                     const gfx::Rect& rect,
+                     PaintingControlSetting painting_control) override;
+  void PaintContentsToDisplayList(
+      DisplayItemList* display_list,
+      const gfx::Rect& clip,
+      PaintingControlSetting painting_control) override;
+  bool FillsBoundsCompletely() const override;
 
  private:
   SkColor color_;

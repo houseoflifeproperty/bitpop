@@ -10,16 +10,15 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 
-class HistoryService;
-
 namespace history {
 struct HistoryAddPageArgs;
+class HistoryService;
 }
 
 class HistoryTabHelper : public content::WebContentsObserver,
                          public content::WebContentsUserData<HistoryTabHelper> {
  public:
-  virtual ~HistoryTabHelper();
+  ~HistoryTabHelper() override;
 
   // Updates history with the specified navigation. This is called by
   // OnMsgNavigate to update history state.
@@ -36,6 +35,7 @@ class HistoryTabHelper : public content::WebContentsObserver,
       const GURL& virtual_url,
       base::Time timestamp,
       bool did_replace_entry,
+      int nav_entry_id,
       const content::FrameNavigateParams& params);
 
  private:
@@ -43,18 +43,17 @@ class HistoryTabHelper : public content::WebContentsObserver,
   friend class content::WebContentsUserData<HistoryTabHelper>;
 
   // content::WebContentsObserver implementation.
-  virtual void DidNavigateMainFrame(
+  void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
-      const content::FrameNavigateParams& params) OVERRIDE;
-  virtual void DidNavigateAnyFrame(
-      const content::LoadCommittedDetails& details,
-      const content::FrameNavigateParams& params) OVERRIDE;
-  virtual void TitleWasSet(content::NavigationEntry* entry,
-                           bool explicit_set) OVERRIDE;
-  virtual void WebContentsDestroyed() OVERRIDE;
+      const content::FrameNavigateParams& params) override;
+  void DidNavigateAnyFrame(content::RenderFrameHost* render_frame_host,
+                           const content::LoadCommittedDetails& details,
+                           const content::FrameNavigateParams& params) override;
+  void TitleWasSet(content::NavigationEntry* entry, bool explicit_set) override;
+  void WebContentsDestroyed() override;
 
   // Helper function to return the history service.  May return NULL.
-  HistoryService* GetHistoryService();
+  history::HistoryService* GetHistoryService();
 
   // Whether we have a (non-empty) title for the current page.
   // Used to prevent subsequent title updates from affecting history. This

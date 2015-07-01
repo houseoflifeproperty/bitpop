@@ -19,18 +19,14 @@ class MockDisplayObserver : public DisplayObserver {
       latest_metrics_change_(DisplayObserver::DISPLAY_METRIC_NONE)
   {}
 
-  virtual ~MockDisplayObserver() { }
+  ~MockDisplayObserver() override {}
 
-  virtual void OnDisplayAdded(const Display& display) OVERRIDE {
-    display_added_++;
-  }
+  void OnDisplayAdded(const Display& display) override { display_added_++; }
 
-  virtual void OnDisplayRemoved(const Display& display) OVERRIDE {
-    display_removed_++;
-  }
+  void OnDisplayRemoved(const Display& display) override { display_removed_++; }
 
-  virtual void OnDisplayMetricsChanged(const Display& display,
-                                       uint32_t metrics) OVERRIDE {
+  void OnDisplayMetricsChanged(const Display& display,
+                               uint32_t metrics) override {
     display_changed_++;
     latest_metrics_change_ = metrics;
   }
@@ -74,13 +70,6 @@ TEST(DisplayChangeNotifierTest, AddObserver_Smoke) {
   EXPECT_EQ(1, observer.display_added());
 }
 
-TEST(DisplayChangeNotifierTest, AddObserver_Null) {
-  DisplayChangeNotifier change_notifier;
-
-  change_notifier.AddObserver(NULL);
-  // Should not crash.
-}
-
 TEST(DisplayChangeNotifier, RemoveObserver_Smoke) {
   DisplayChangeNotifier change_notifier;
   MockDisplayObserver observer;
@@ -95,13 +84,6 @@ TEST(DisplayChangeNotifier, RemoveObserver_Smoke) {
   change_notifier.NotifyDisplaysChanged(
     std::vector<Display>(), std::vector<Display>(1, Display()));
   EXPECT_EQ(0, observer.display_added());
-}
-
-TEST(DisplayChangeNotifierTest, RemoveObserver_Null) {
-  DisplayChangeNotifier change_notifier;
-
-  change_notifier.RemoveObserver(NULL);
-  // Should not crash.
 }
 
 TEST(DisplayChangeNotifierTest, RemoveObserver_Unknown) {

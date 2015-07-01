@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "tools/gn/err.h"
 #include "tools/gn/token.h"
@@ -16,15 +15,16 @@
 
 class AccessorNode;
 class BinaryOpNode;
+class BlockCommentNode;
 class BlockNode;
 class ConditionNode;
+class EndNode;
 class FunctionCallNode;
 class IdentifierNode;
 class ListNode;
 class LiteralNode;
 class Scope;
 class UnaryOpNode;
-class BlockCommentNode;
 
 class Comments {
  public:
@@ -32,23 +32,18 @@ class Comments {
   virtual ~Comments();
 
   const std::vector<Token>& before() const { return before_; }
-  void append_before(Token c) {
-    before_.push_back(c);
-  }
+  void append_before(Token c) { before_.push_back(c); }
+  void clear_before() { before_.clear(); }
 
   const std::vector<Token>& suffix() const { return suffix_; }
-  void append_suffix(Token c) {
-    suffix_.push_back(c);
-  }
+  void append_suffix(Token c) { suffix_.push_back(c); }
   // Reverse the order of the suffix comments. When walking the tree in
   // post-order we append suffix comments in reverse order, so this fixes them
   // up.
   void ReverseSuffix();
 
   const std::vector<Token>& after() const { return after_; }
-  void append_after(Token c) {
-    after_.push_back(c);
-  }
+  void append_after(Token c) { after_.push_back(c); }
 
  private:
   // Whole line comments before the expression.
@@ -74,14 +69,15 @@ class ParseNode {
 
   virtual const AccessorNode* AsAccessor() const;
   virtual const BinaryOpNode* AsBinaryOp() const;
+  virtual const BlockCommentNode* AsBlockComment() const;
   virtual const BlockNode* AsBlock() const;
   virtual const ConditionNode* AsConditionNode() const;
+  virtual const EndNode* AsEnd() const;
   virtual const FunctionCallNode* AsFunctionCall() const;
   virtual const IdentifierNode* AsIdentifier() const;
   virtual const ListNode* AsList() const;
   virtual const LiteralNode* AsLiteral() const;
   virtual const UnaryOpNode* AsUnaryOp() const;
-  virtual const BlockCommentNode* AsBlockComment() const;
 
   virtual Value Execute(Scope* scope, Err* err) const = 0;
 
@@ -135,15 +131,15 @@ class ParseNode {
 class AccessorNode : public ParseNode {
  public:
   AccessorNode();
-  virtual ~AccessorNode();
+  ~AccessorNode() override;
 
-  virtual const AccessorNode* AsAccessor() const OVERRIDE;
-  virtual Value Execute(Scope* scope, Err* err) const OVERRIDE;
-  virtual LocationRange GetRange() const OVERRIDE;
-  virtual Err MakeErrorDescribing(
+  const AccessorNode* AsAccessor() const override;
+  Value Execute(Scope* scope, Err* err) const override;
+  LocationRange GetRange() const override;
+  Err MakeErrorDescribing(
       const std::string& msg,
-      const std::string& help = std::string()) const OVERRIDE;
-  virtual void Print(std::ostream& out, int indent) const OVERRIDE;
+      const std::string& help = std::string()) const override;
+  void Print(std::ostream& out, int indent) const override;
 
   // Base is the thing on the left of the [] or dot, currently always required
   // to be an identifier token.
@@ -158,6 +154,8 @@ class AccessorNode : public ParseNode {
   // null if the index is set.
   const IdentifierNode* member() const { return member_.get(); }
   void set_member(scoped_ptr<IdentifierNode> i) { member_ = i.Pass(); }
+
+  void SetNewLocation(int line_number);
 
  private:
   Value ExecuteArrayAccess(Scope* scope, Err* err) const;
@@ -178,15 +176,15 @@ class AccessorNode : public ParseNode {
 class BinaryOpNode : public ParseNode {
  public:
   BinaryOpNode();
-  virtual ~BinaryOpNode();
+  ~BinaryOpNode() override;
 
-  virtual const BinaryOpNode* AsBinaryOp() const OVERRIDE;
-  virtual Value Execute(Scope* scope, Err* err) const OVERRIDE;
-  virtual LocationRange GetRange() const OVERRIDE;
-  virtual Err MakeErrorDescribing(
+  const BinaryOpNode* AsBinaryOp() const override;
+  Value Execute(Scope* scope, Err* err) const override;
+  LocationRange GetRange() const override;
+  Err MakeErrorDescribing(
       const std::string& msg,
-      const std::string& help = std::string()) const OVERRIDE;
-  virtual void Print(std::ostream& out, int indent) const OVERRIDE;
+      const std::string& help = std::string()) const override;
+  void Print(std::ostream& out, int indent) const override;
 
   const Token& op() const { return op_; }
   void set_op(const Token& t) { op_ = t; }
@@ -213,35 +211,31 @@ class BinaryOpNode : public ParseNode {
 
 class BlockNode : public ParseNode {
  public:
-  // Set has_scope if this block introduces a nested scope.
-  explicit BlockNode(bool has_scope);
-  virtual ~BlockNode();
+  BlockNode();
+  ~BlockNode() override;
 
-  virtual const BlockNode* AsBlock() const OVERRIDE;
-  virtual Value Execute(Scope* scope, Err* err) const OVERRIDE;
-  virtual LocationRange GetRange() const OVERRIDE;
-  virtual Err MakeErrorDescribing(
+  const BlockNode* AsBlock() const override;
+  Value Execute(Scope* scope, Err* err) const override;
+  LocationRange GetRange() const override;
+  Err MakeErrorDescribing(
       const std::string& msg,
-      const std::string& help = std::string()) const OVERRIDE;
-  virtual void Print(std::ostream& out, int indent) const OVERRIDE;
+      const std::string& help = std::string()) const override;
+  void Print(std::ostream& out, int indent) const override;
 
   void set_begin_token(const Token& t) { begin_token_ = t; }
-  void set_end_token(const Token& t) { end_token_ = t; }
+  void set_end(scoped_ptr<EndNode> e) { end_ = e.Pass(); }
+  const EndNode* End() const { return end_.get(); }
 
   const std::vector<ParseNode*>& statements() const { return statements_; }
   void append_statement(scoped_ptr<ParseNode> s) {
     statements_.push_back(s.release());
   }
 
-  // Doesn't create a nested scope.
-  Value ExecuteBlockInScope(Scope* our_scope, Err* err) const;
-
  private:
-  bool has_scope_;
-
-  // Tokens corresponding to { and }, if any (may be NULL).
+  // Tokens corresponding to { and }, if any (may be NULL). The end is stored
+  // in a custom parse node so that it can have comments hung off of it.
   Token begin_token_;
-  Token end_token_;
+  scoped_ptr<EndNode> end_;
 
   // Owning pointers, use unique_ptr when we can use C++11.
   std::vector<ParseNode*> statements_;
@@ -254,15 +248,15 @@ class BlockNode : public ParseNode {
 class ConditionNode : public ParseNode {
  public:
   ConditionNode();
-  virtual ~ConditionNode();
+  ~ConditionNode() override;
 
-  virtual const ConditionNode* AsConditionNode() const OVERRIDE;
-  virtual Value Execute(Scope* scope, Err* err) const OVERRIDE;
-  virtual LocationRange GetRange() const OVERRIDE;
-  virtual Err MakeErrorDescribing(
+  const ConditionNode* AsConditionNode() const override;
+  Value Execute(Scope* scope, Err* err) const override;
+  LocationRange GetRange() const override;
+  Err MakeErrorDescribing(
       const std::string& msg,
-      const std::string& help = std::string()) const OVERRIDE;
-  virtual void Print(std::ostream& out, int indent) const OVERRIDE;
+      const std::string& help = std::string()) const override;
+  void Print(std::ostream& out, int indent) const override;
 
   void set_if_token(const Token& token) { if_token_ = token; }
 
@@ -299,15 +293,15 @@ class ConditionNode : public ParseNode {
 class FunctionCallNode : public ParseNode {
  public:
   FunctionCallNode();
-  virtual ~FunctionCallNode();
+  ~FunctionCallNode() override;
 
-  virtual const FunctionCallNode* AsFunctionCall() const OVERRIDE;
-  virtual Value Execute(Scope* scope, Err* err) const OVERRIDE;
-  virtual LocationRange GetRange() const OVERRIDE;
-  virtual Err MakeErrorDescribing(
+  const FunctionCallNode* AsFunctionCall() const override;
+  Value Execute(Scope* scope, Err* err) const override;
+  LocationRange GetRange() const override;
+  Err MakeErrorDescribing(
       const std::string& msg,
-      const std::string& help = std::string()) const OVERRIDE;
-  virtual void Print(std::ostream& out, int indent) const OVERRIDE;
+      const std::string& help = std::string()) const override;
+  void Print(std::ostream& out, int indent) const override;
 
   const Token& function() const { return function_; }
   void set_function(Token t) { function_ = t; }
@@ -331,19 +325,21 @@ class FunctionCallNode : public ParseNode {
 class IdentifierNode : public ParseNode {
  public:
   IdentifierNode();
-  IdentifierNode(const Token& token);
-  virtual ~IdentifierNode();
+  explicit IdentifierNode(const Token& token);
+  ~IdentifierNode() override;
 
-  virtual const IdentifierNode* AsIdentifier() const OVERRIDE;
-  virtual Value Execute(Scope* scope, Err* err) const OVERRIDE;
-  virtual LocationRange GetRange() const OVERRIDE;
-  virtual Err MakeErrorDescribing(
+  const IdentifierNode* AsIdentifier() const override;
+  Value Execute(Scope* scope, Err* err) const override;
+  LocationRange GetRange() const override;
+  Err MakeErrorDescribing(
       const std::string& msg,
-      const std::string& help = std::string()) const OVERRIDE;
-  virtual void Print(std::ostream& out, int indent) const OVERRIDE;
+      const std::string& help = std::string()) const override;
+  void Print(std::ostream& out, int indent) const override;
 
   const Token& value() const { return value_; }
   void set_value(const Token& t) { value_ = t; }
+
+  void SetNewLocation(int line_number);
 
  private:
   Token value_;
@@ -356,28 +352,49 @@ class IdentifierNode : public ParseNode {
 class ListNode : public ParseNode {
  public:
   ListNode();
-  virtual ~ListNode();
+  ~ListNode() override;
 
-  virtual const ListNode* AsList() const OVERRIDE;
-  virtual Value Execute(Scope* scope, Err* err) const OVERRIDE;
-  virtual LocationRange GetRange() const OVERRIDE;
-  virtual Err MakeErrorDescribing(
+  const ListNode* AsList() const override;
+  Value Execute(Scope* scope, Err* err) const override;
+  LocationRange GetRange() const override;
+  Err MakeErrorDescribing(
       const std::string& msg,
-      const std::string& help = std::string()) const OVERRIDE;
-  virtual void Print(std::ostream& out, int indent) const OVERRIDE;
+      const std::string& help = std::string()) const override;
+  void Print(std::ostream& out, int indent) const override;
 
   void set_begin_token(const Token& t) { begin_token_ = t; }
-  void set_end_token(const Token& t) { end_token_ = t; }
+  void set_end(scoped_ptr<EndNode> e) { end_ = e.Pass(); }
+  const EndNode* End() const { return end_.get(); }
 
   void append_item(scoped_ptr<ParseNode> s) {
     contents_.push_back(s.release());
   }
   const std::vector<const ParseNode*>& contents() const { return contents_; }
 
+  void SortAsStringsList();
+
+  // During formatting, do we want this list to always be multliline? This is
+  // used to make assignments to deps, sources, etc. always be multiline lists,
+  // rather than collapsed to a single line when they're one element.
+  bool prefer_multiline() const { return prefer_multiline_; }
+  void set_prefer_multiline(bool prefer_multiline) {
+    prefer_multiline_ = prefer_multiline;
+  }
+
+  struct SortRange {
+    size_t begin;
+    size_t end;
+    SortRange(size_t begin, size_t end) : begin(begin), end(end) {}
+  };
+  // Only public for testing.
+  std::vector<SortRange> GetSortRanges() const;
+
  private:
-  // Tokens corresponding to the [ and ].
+  // Tokens corresponding to the [ and ]. The end token is stored in inside an
+  // custom parse node so that it can have comments hung off of it.
   Token begin_token_;
-  Token end_token_;
+  scoped_ptr<EndNode> end_;
+  bool prefer_multiline_;
 
   // Owning pointers, use unique_ptr when we can use C++11.
   std::vector<const ParseNode*> contents_;
@@ -390,19 +407,21 @@ class ListNode : public ParseNode {
 class LiteralNode : public ParseNode {
  public:
   LiteralNode();
-  LiteralNode(const Token& token);
-  virtual ~LiteralNode();
+  explicit LiteralNode(const Token& token);
+  ~LiteralNode() override;
 
-  virtual const LiteralNode* AsLiteral() const OVERRIDE;
-  virtual Value Execute(Scope* scope, Err* err) const OVERRIDE;
-  virtual LocationRange GetRange() const OVERRIDE;
-  virtual Err MakeErrorDescribing(
+  const LiteralNode* AsLiteral() const override;
+  Value Execute(Scope* scope, Err* err) const override;
+  LocationRange GetRange() const override;
+  Err MakeErrorDescribing(
       const std::string& msg,
-      const std::string& help = std::string()) const OVERRIDE;
-  virtual void Print(std::ostream& out, int indent) const OVERRIDE;
+      const std::string& help = std::string()) const override;
+  void Print(std::ostream& out, int indent) const override;
 
   const Token& value() const { return value_; }
   void set_value(const Token& t) { value_ = t; }
+
+  void SetNewLocation(int line_number);
 
  private:
   Token value_;
@@ -415,15 +434,15 @@ class LiteralNode : public ParseNode {
 class UnaryOpNode : public ParseNode {
  public:
   UnaryOpNode();
-  virtual ~UnaryOpNode();
+  ~UnaryOpNode() override;
 
-  virtual const UnaryOpNode* AsUnaryOp() const OVERRIDE;
-  virtual Value Execute(Scope* scope, Err* err) const OVERRIDE;
-  virtual LocationRange GetRange() const OVERRIDE;
-  virtual Err MakeErrorDescribing(
+  const UnaryOpNode* AsUnaryOp() const override;
+  Value Execute(Scope* scope, Err* err) const override;
+  LocationRange GetRange() const override;
+  Err MakeErrorDescribing(
       const std::string& msg,
-      const std::string& help = std::string()) const OVERRIDE;
-  virtual void Print(std::ostream& out, int indent) const OVERRIDE;
+      const std::string& help = std::string()) const override;
+  void Print(std::ostream& out, int indent) const override;
 
   const Token& op() const { return op_; }
   void set_op(const Token& t) { op_ = t; }
@@ -450,15 +469,15 @@ class UnaryOpNode : public ParseNode {
 class BlockCommentNode : public ParseNode {
  public:
   BlockCommentNode();
-  virtual ~BlockCommentNode();
+  ~BlockCommentNode() override;
 
-  virtual const BlockCommentNode* AsBlockComment() const OVERRIDE;
-  virtual Value Execute(Scope* scope, Err* err) const OVERRIDE;
-  virtual LocationRange GetRange() const OVERRIDE;
-  virtual Err MakeErrorDescribing(
+  const BlockCommentNode* AsBlockComment() const override;
+  Value Execute(Scope* scope, Err* err) const override;
+  LocationRange GetRange() const override;
+  Err MakeErrorDescribing(
       const std::string& msg,
-      const std::string& help = std::string()) const OVERRIDE;
-  virtual void Print(std::ostream& out, int indent) const OVERRIDE;
+      const std::string& help = std::string()) const override;
+  void Print(std::ostream& out, int indent) const override;
 
   const Token& comment() const { return comment_; }
   void set_comment(const Token& t) { comment_ = t; }
@@ -467,6 +486,34 @@ class BlockCommentNode : public ParseNode {
   Token comment_;
 
   DISALLOW_COPY_AND_ASSIGN(BlockCommentNode);
+};
+
+// EndNode ---------------------------------------------------------------------
+
+// This node type is used as the end_ object for lists and blocks (rather than
+// just the end ']', '}', or ')' token). This is so that during formatting
+// traversal there is a node that appears at the end of the block to which
+// comments can be attached.
+class EndNode : public ParseNode {
+ public:
+  explicit EndNode(const Token& token);
+  ~EndNode() override;
+
+  const EndNode* AsEnd() const override;
+  Value Execute(Scope* scope, Err* err) const override;
+  LocationRange GetRange() const override;
+  Err MakeErrorDescribing(
+      const std::string& msg,
+      const std::string& help = std::string()) const override;
+  void Print(std::ostream& out, int indent) const override;
+
+  const Token& value() const { return value_; }
+  void set_value(const Token& t) { value_ = t; }
+
+ private:
+  Token value_;
+
+  DISALLOW_COPY_AND_ASSIGN(EndNode);
 };
 
 #endif  // TOOLS_GN_PARSE_TREE_H_

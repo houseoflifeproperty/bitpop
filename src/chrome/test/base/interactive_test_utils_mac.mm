@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
@@ -54,6 +55,13 @@ bool IsViewFocused(const Browser* browser, ViewID vid) {
   if (firstResponder == static_cast<NSResponder*>(view))
     return true;
 
+  // Handle special case for VIEW_ID_TAB_CONTAINER.  The tab container NSView
+  // always transfers first responder status to its subview, so test whether
+  // |firstResponder| is a descendant.
+  if (vid == VIEW_ID_TAB_CONTAINER &&
+      [firstResponder isKindOfClass:[NSView class]])
+    return [static_cast<NSView*>(firstResponder) isDescendantOf:view];
+
   // Handle the special case of focusing a TextField.
   if ([firstResponder isKindOfClass:[NSTextView class]]) {
     NSView* delegate = static_cast<NSView*>([(NSTextView*)firstResponder
@@ -97,6 +105,15 @@ bool ShowAndFocusNativeWindow(gfx::NativeWindow window) {
   SetFrontProcess(&psn);
 
   [window makeKeyAndOrderFront:nil];
+
+  // Wait until |window| becomes key window, then make sure the shortcuts for
+  // "Close Window" and "Close Tab" are updated.
+  // This is because normal AppKit menu updating does not get invoked when
+  // events are sent via ui_test_utils::SendKeyPressSync.
+  base::RunLoop().RunUntilIdle();
+  NSMenu* file_menu = [[[NSApp mainMenu] itemWithTag:IDC_FILE_MENU] submenu];
+  [[file_menu delegate] menuNeedsUpdate:file_menu];
+
   return true;
 }
 

@@ -14,6 +14,11 @@
 #include "chromeos/login/auth/auth_attempt_state_resolver.h"
 #include "chromeos/login/auth/user_context.h"
 
+namespace base {
+// TODO(skyostil): Migrate to SingleThreadTaskRunner (crbug.com/465354).
+class MessageLoopProxy;
+}
+
 namespace net {
 class URLRequestContextGetter;
 }
@@ -34,7 +39,7 @@ class CHROMEOS_EXPORT OnlineAttemptHost : public AuthAttemptStateResolver {
   };
 
   explicit OnlineAttemptHost(Delegate* delegate);
-  virtual ~OnlineAttemptHost();
+  ~OnlineAttemptHost() override;
 
   // Performs an online check of the credentials in |request_context| and
   // invokes
@@ -50,7 +55,7 @@ class CHROMEOS_EXPORT OnlineAttemptHost : public AuthAttemptStateResolver {
 
   // AuthAttemptStateResolver overrides.
   // Executed on IO thread.
-  virtual void Resolve() OVERRIDE;
+  void Resolve() override;
 
   // Does an actual resolve on UI thread.
   void ResolveOnUIThread(bool success);

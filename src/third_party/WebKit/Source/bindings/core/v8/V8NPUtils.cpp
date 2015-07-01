@@ -43,7 +43,7 @@
 
 namespace blink {
 
-void convertV8ObjectToNPVariant(v8::Local<v8::Value> object, NPObject* owner, NPVariant* result, v8::Isolate* isolate)
+void convertV8ObjectToNPVariant(v8::Isolate* isolate, v8::Local<v8::Value> object, NPObject* owner, NPVariant* result)
 {
     VOID_TO_NPVARIANT(*result);
 
@@ -55,29 +55,29 @@ void convertV8ObjectToNPVariant(v8::Local<v8::Value> object, NPObject* owner, NP
         return;
 
     if (object->IsNumber()) {
-        DOUBLE_TO_NPVARIANT(object->NumberValue(), *result);
+        DOUBLE_TO_NPVARIANT(object.As<v8::Number>()->Value(), *result);
     } else if (object->IsBoolean()) {
-        BOOLEAN_TO_NPVARIANT(object->BooleanValue(), *result);
+        BOOLEAN_TO_NPVARIANT(object.As<v8::Boolean>()->Value(), *result);
     } else if (object->IsNull()) {
         NULL_TO_NPVARIANT(*result);
     } else if (object->IsUndefined()) {
         VOID_TO_NPVARIANT(*result);
     } else if (object->IsString()) {
-        v8::Handle<v8::String> str = object.As<v8::String>();
+        v8::Local<v8::String> str = object.As<v8::String>();
         int length = str->Utf8Length() + 1;
         char* utf8Chars = reinterpret_cast<char*>(malloc(length));
         str->WriteUtf8(utf8Chars, length, 0, v8::String::HINT_MANY_WRITES_EXPECTED);
         STRINGN_TO_NPVARIANT(utf8Chars, length-1, *result);
     } else if (object->IsObject()) {
         LocalDOMWindow* window = currentDOMWindow(isolate);
-        NPObject* npobject = npCreateV8ScriptObject(0, v8::Handle<v8::Object>::Cast(object), window, isolate);
+        NPObject* npobject = npCreateV8ScriptObject(isolate, 0, v8::Local<v8::Object>::Cast(object), window);
         if (npobject)
             _NPN_RegisterObject(npobject, owner);
         OBJECT_TO_NPVARIANT(npobject, *result);
     }
 }
 
-v8::Handle<v8::Value> convertNPVariantToV8Object(const NPVariant* variant, NPObject* owner, v8::Isolate* isolate)
+v8::Local<v8::Value> convertNPVariantToV8Object(v8::Isolate* isolate, const NPVariant* variant, NPObject* owner)
 {
     NPVariantType type = variant->type;
 
@@ -94,13 +94,13 @@ v8::Handle<v8::Value> convertNPVariantToV8Object(const NPVariant* variant, NPObj
         return v8::Undefined(isolate);
     case NPVariantType_String: {
         NPString src = NPVARIANT_TO_STRING(*variant);
-        return v8::String::NewFromUtf8(isolate, src.UTF8Characters, v8::String::kNormalString, src.UTF8Length);
+        return v8AtomicString(isolate, src.UTF8Characters, src.UTF8Length);
     }
     case NPVariantType_Object: {
         NPObject* object = NPVARIANT_TO_OBJECT(*variant);
         if (V8NPObject* v8Object = npObjectToV8NPObject(object))
             return v8::Local<v8::Object>::New(isolate, v8Object->v8Object);
-        return createV8ObjectForNPObject(object, owner, isolate);
+        return createV8ObjectForNPObject(isolate, object, owner);
     }
     default:
         return v8::Undefined(isolate);
@@ -108,7 +108,7 @@ v8::Handle<v8::Value> convertNPVariantToV8Object(const NPVariant* variant, NPObj
 }
 
 // Helper function to create an NPN String Identifier from a v8 string.
-NPIdentifier getStringIdentifier(v8::Handle<v8::String> str)
+NPIdentifier getStringIdentifier(v8::Local<v8::String> str)
 {
     const int kStackBufferSize = 100;
 

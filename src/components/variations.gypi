@@ -15,6 +15,7 @@
         # List of dependencies is intentionally very minimal. Please avoid
         # adding extra dependencies without first checking with OWNERS.
         '../base/base.gyp:base',
+        '../base/base.gyp:base_prefs',
         '../third_party/mt19937ar/mt19937ar.gyp:mt19937ar',
       ],
       'sources': [
@@ -62,7 +63,7 @@
       ],
     },
     {
-      # GN version: //components/variations_http_provider
+      # GN version: //components/variations/net:net
       'target_name': 'variations_http_provider',
       'type': 'static_library',
       'include_dirs': [
@@ -70,12 +71,18 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        '../net/net.gyp:net',
+        '../url/url.gyp:url_lib',
         'components.gyp:google_core_browser',
+        "components.gyp:metrics",
         'variations',
       ],
+      'export_dependent_settings': [
+        "components.gyp:metrics",
+      ],
       'sources': [
-        'variations/variations_http_header_provider.cc',
-        'variations/variations_http_header_provider.h',
+        'variations/net/variations_http_header_provider.cc',
+        'variations/net/variations_http_header_provider.h',
       ],
     },
   ],
@@ -83,6 +90,7 @@
     ['OS=="android"', {
       'targets': [
         {
+          # GN version: //components/variations/android:variations_java
           'target_name': 'variations_java',
           'type': 'none',
           'dependencies': [
@@ -94,7 +102,7 @@
           'includes': [ '../build/java.gypi' ],
         },
         {
-          # GN version: //components/variations:variations_java
+          # GN version: //components/variations:jni
           'target_name': 'variations_jni_headers',
           'type': 'none',
           'sources': [

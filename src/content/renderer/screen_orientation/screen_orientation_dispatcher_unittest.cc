@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "screen_orientation_dispatcher.h"
+#include "content/renderer/screen_orientation/screen_orientation_dispatcher.h"
 
 #include <list>
 
@@ -23,8 +23,7 @@ namespace content {
 // callback is resolved, it will be killed so we use the
 // LockOrientationResultHolder to know in which state the callback object is at
 // any time.
-class MockLockOrientationCallback :
-    public blink::WebLockOrientationCallback {
+class MockLockOrientationCallback : public blink::WebLockOrientationCallback {
  public:
   struct LockOrientationResultHolder {
     LockOrientationResultHolder()
@@ -59,16 +58,14 @@ class ScreenOrientationDispatcherWithSink : public ScreenOrientationDispatcher {
       :ScreenOrientationDispatcher(NULL) , sink_(sink) {
   }
 
-  virtual bool Send(IPC::Message* message) OVERRIDE {
-    return sink_->Send(message);
-  }
+  bool Send(IPC::Message* message) override { return sink_->Send(message); }
 
   IPC::TestSink* sink_;
 };
 
 class ScreenOrientationDispatcherTest : public testing::Test {
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     dispatcher_.reset(new ScreenOrientationDispatcherWithSink(&sink_));
   }
 
@@ -77,9 +74,9 @@ class ScreenOrientationDispatcherTest : public testing::Test {
         ScreenOrientationHostMsg_LockRequest::ID);
     EXPECT_TRUE(msg != NULL);
 
-    Tuple2<blink::WebScreenOrientationLockType,int> params;
+    Tuple<blink::WebScreenOrientationLockType,int> params;
     ScreenOrientationHostMsg_LockRequest::Read(msg, &params);
-    return params.b;
+    return get<1>(params);
   }
 
   IPC::TestSink& sink() {

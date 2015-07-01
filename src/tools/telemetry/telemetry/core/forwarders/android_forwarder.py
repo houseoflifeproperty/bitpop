@@ -9,18 +9,19 @@ import socket
 import struct
 import subprocess
 
+from telemetry.core.backends import adb_commands
 from telemetry.core import forwarders
 from telemetry.core import platform
 from telemetry.core import util
-from telemetry.core.backends import adb_commands
-from telemetry.util import cloud_storage
-from telemetry.util import path
+from telemetry.util import support_binaries
 
 util.AddDirToPythonPath(util.GetChromiumSrcDir(), 'build', 'android')
 try:
   from pylib import forwarder  # pylint: disable=F0401
-except Exception:
+except ImportError:
   forwarder = None
+
+from pylib.device import device_errors  # pylint: disable=F0401
 
 
 class AndroidForwarderFactory(forwarders.ForwarderFactory):
@@ -54,13 +55,19 @@ class AndroidForwarder(forwarders.Forwarder):
   def __init__(self, adb, port_pairs):
     super(AndroidForwarder, self).__init__(port_pairs)
     self._device = adb.device()
-    forwarder.Forwarder.Map([p for p in port_pairs if p], self._device)
+    forwarder.Forwarder.Map([(p.remote_port, p.local_port)
+                             for p in port_pairs if p], self._device)
+    self._port_pairs = forwarders.PortPairs(*[
+        forwarders.PortPair(
+            p.local_port,
+            forwarder.Forwarder.DevicePortForHostPort(p.local_port))
+        if p else None for p in port_pairs])
     # TODO(tonyg): Verify that each port can connect to host.
 
   def Close(self):
     for port_pair in self._port_pairs:
       if port_pair:
-        forwarder.Forwarder.UnmapDevicePort(port_pair.local_port, self._device)
+        forwarder.Forwarder.UnmapDevicePort(port_pair.remote_port, self._device)
     super(AndroidForwarder, self).Close()
 
 
@@ -78,6 +85,7 @@ class AndroidRndisForwarder(forwarders.Forwarder):
     self._RedirectPorts(port_pairs)
     if port_pairs.dns:
       self._OverrideDns()
+      self._OverrideDefaultGateway()
       # Need to override routing policy again since call to setifdns
       # sometimes resets policy table
       self._rndis_configurator.OverrideRoutingPolicy()
@@ -90,6 +98,7 @@ class AndroidRndisForwarder(forwarders.Forwarder):
   def Close(self):
     self._rndis_configurator.RestoreRoutingPolicy()
     self._SetDns(*self._original_dns)
+    self._RestoreDefaultGateway()
     super(AndroidRndisForwarder, self).Close()
 
   def _RedirectPorts(self, port_pairs):
@@ -107,11 +116,6 @@ class AndroidRndisForwarder(forwarders.Forwarder):
   def _OverrideDns(self):
     """Overrides DNS on device to point at the host."""
     self._original_dns = self._GetCurrentDns()
-    if not self._original_dns[0]:
-      # No default route. Install one via the host. This is needed because
-      # getaddrinfo in bionic uses routes to determine AI_ADDRCONFIG.
-      self._adb.RunShellCommand('route add default gw %s dev %s' %
-                                (self.host_ip, self._device_iface))
     self._SetDns(self._device_iface, self.host_ip, self.host_ip)
 
   def _SetDns(self, iface, dns1, dns2):
@@ -129,7 +133,7 @@ class AndroidRndisForwarder(forwarders.Forwarder):
     self._adb.device().SetProp('net.dns2', dns2)
     dnschange = self._adb.device().GetProp('net.dnschange')
     if dnschange:
-      self._adb.device().SetProp('net.dnschange', int(dnschange) + 1)
+      self._adb.device().SetProp('net.dnschange', str(int(dnschange) + 1))
     # Since commit 8b47b3601f82f299bb8c135af0639b72b67230e6 to frameworks/base
     # the net.dns1 properties have been replaced with explicit commands for netd
     self._adb.RunShellCommand('netd resolver setifdns %s %s %s' %
@@ -148,6 +152,22 @@ class AndroidRndisForwarder(forwarders.Forwarder):
       self._adb.device().GetProp('net.dns2'),
     )
 
+  def _OverrideDefaultGateway(self):
+    """Force traffic to go through RNDIS interface.
+
+    Override any default gateway route. Without this traffic may go through
+    the wrong interface.
+
+    This introduces the risk that _RestoreDefaultGateway() is not called
+    (e.g. Telemetry crashes). A power cycle or "adb reboot" is a simple
+    workaround around in that case.
+    """
+    self._adb.RunShellCommand('route add default gw %s dev %s' %
+                              (self.host_ip, self._device_iface))
+
+  def _RestoreDefaultGateway(self):
+    self._adb.RunShellCommand('netcfg %s down' % self._device_iface)
+
 
 class AndroidRndisConfigurator(object):
   """Configures a linux host to connect to an android device via RNDIS.
@@ -165,8 +185,11 @@ class AndroidRndisConfigurator(object):
   def __init__(self, adb):
     self._device = adb.device()
 
-    is_root_enabled = self._device.old_interface.EnableAdbRoot()
-    assert is_root_enabled, 'RNDIS forwarding requires a rooted device.'
+    try:
+      self._device.EnableRoot()
+    except device_errors.CommandFailedError:
+      logging.error('RNDIS forwarding requires a rooted device.')
+      raise
 
     self._device_ip = None
     self._host_iface = None
@@ -174,7 +197,7 @@ class AndroidRndisConfigurator(object):
     self.device_iface = None
 
     if platform.GetHostPlatform().GetOSName() == 'mac':
-      self._InstallHorndis()
+      self._InstallHorndis(platform.GetHostPlatform().GetArchName())
 
     assert self._IsRndisSupported(), 'Device does not support RNDIS.'
     self._CheckConfigureNetwork()
@@ -186,9 +209,6 @@ class AndroidRndisConfigurator(object):
   def _IsRndisSupported(self):
     """Checks that the device has RNDIS support in the kernel."""
     return self._device.FileExists('%s/f_rndis/device' % self._RNDIS_DEVICE)
-
-  def _WaitForDevice(self):
-    self._device.old_interface.Adb().SendCommand('wait-for-device')
 
   def _FindDeviceRndisInterface(self):
     """Returns the name of the RNDIS network interface if present."""
@@ -211,7 +231,7 @@ class AndroidRndisConfigurator(object):
     """Returns the name of the host-side network interface."""
     interface_list = self._EnumerateHostInterfaces()
     ether_address = self._device.ReadFile(
-        '%s/f_rndis/ethaddr' % self._RNDIS_DEVICE)[0]
+        '%s/f_rndis/ethaddr' % self._RNDIS_DEVICE).strip()
     interface_name = None
     for line in interface_list:
       if not line.startswith((' ', '\t')):
@@ -221,21 +241,45 @@ class AndroidRndisConfigurator(object):
 
   def _WriteProtectedFile(self, file_path, contents):
     subprocess.check_call(
-        ['sudo', 'bash', '-c', 'echo -e "%s" > %s' % (contents, file_path)])
+        ['/usr/bin/sudo', 'bash', '-c',
+         'echo -e "%s" > %s' % (contents, file_path)])
 
-  def _InstallHorndis(self):
-    if 'HoRNDIS' in subprocess.check_output(['kextstat']):
+  def _LoadInstalledHoRNDIS(self):
+    """Attempt to load HoRNDIS if installed.
+    If kext could not be loaded or if HoRNDIS is not installed, return False.
+    """
+    if not os.path.isdir('/System/Library/Extensions/HoRNDIS.kext'):
+      logging.info('HoRNDIS not present on system.')
+      return False
+
+    def HoRNDISLoaded():
+      return 'HoRNDIS' in subprocess.check_output(['kextstat'])
+
+    if HoRNDISLoaded():
+      return True
+
+    logging.info('HoRNDIS installed but not running, trying to load manually.')
+    subprocess.check_call(
+        ['/usr/bin/sudo', 'kextload', '-b', 'com.joshuawise.kexts.HoRNDIS'])
+
+    return HoRNDISLoaded()
+
+  def _InstallHorndis(self, arch_name):
+    if self._LoadInstalledHoRNDIS():
+      logging.info('HoRNDIS kext loaded successfully.')
       return
     logging.info('Installing HoRNDIS...')
-    pkg_path = os.path.join(
-        path.GetTelemetryDir(), 'bin', 'mac', 'HoRNDIS-rel5.pkg')
-    cloud_storage.GetIfChanged(pkg_path, bucket=cloud_storage.PUBLIC_BUCKET)
+    pkg_path = support_binaries.FindPath('HoRNDIS-rel5.pkg', arch_name, 'mac')
     subprocess.check_call(
-        ['sudo', 'installer', '-pkg', pkg_path, '-target', '/'])
+        ['/usr/bin/sudo', 'installer', '-pkg', pkg_path, '-target', '/'])
 
   def _DisableRndis(self):
-    self._device.SetProp('sys.usb.config', 'adb')
-    self._WaitForDevice()
+    try:
+      self._device.SetProp('sys.usb.config', 'adb')
+    except device_errors.AdbCommandFailedError:
+      # Ignore exception due to USB connection being reset.
+      pass
+    self._device.adb.WaitForDevice()
 
   def _EnableRndis(self):
     """Enables the RNDIS network interface."""
@@ -272,13 +316,13 @@ function doit() {
 
 doit &
     """ % {'dev': self._RNDIS_DEVICE, 'functions': 'rndis,adb',
-           'prefix': script_prefix }
+           'prefix': script_prefix}
     self._device.WriteFile('%s.sh' % script_prefix, script)
     # TODO(szym): run via su -c if necessary.
     self._device.RunShellCommand('rm %s.log' % script_prefix)
     self._device.RunShellCommand('. %s.sh' % script_prefix)
-    self._WaitForDevice()
-    result = self._device.ReadFile('%s.log' % script_prefix)
+    self._device.adb.WaitForDevice()
+    result = self._device.ReadFile('%s.log' % script_prefix).splitlines()
     assert any('DONE' in line for line in result), 'RNDIS script did not run!'
 
   def _CheckEnableRndis(self, force):
@@ -320,13 +364,13 @@ doit &
     for line in interface_list:
       if not line.startswith((' ', '\t')):
         found_iface = iface in line
-      match = re.search('(?<=inet )\S+', line)
+      match = re.search(r'(?<=inet )\S+', line)
       if match:
         address = match.group(0)
         if '/' in address:
           address = self._IpPrefix2AddressMask(address)
         else:
-          match = re.search('(?<=netmask )\S+', line)
+          match = re.search(r'(?<=netmask )\S+', line)
           address = self._Ip2Long(address), int(match.group(0), 16)
         if found_iface:
           assert not iface_address, (
@@ -378,10 +422,10 @@ doit &
         if 'Telemetry' not in subprocess.check_output(
             ['networksetup', '-listallnetworkservices']):
           subprocess.check_call(
-              ['sudo', 'networksetup',
+              ['/usr/bin/sudo', 'networksetup',
                '-createnetworkservice', 'Telemetry', host_iface])
           subprocess.check_call(
-              ['sudo', 'networksetup',
+              ['/usr/bin/sudo', 'networksetup',
                '-setmanual', 'Telemetry', '192.168.123.1', '255.255.255.0'])
       elif platform.GetHostPlatform().GetOSName() == 'linux':
         with open(self._NETWORK_INTERFACES) as f:
@@ -397,8 +441,9 @@ doit &
         if not os.path.exists(interface_conf_file):
           interface_conf_dir = os.path.dirname(interface_conf_file)
           if not interface_conf_dir:
-            subprocess.call(['sudo', '/bin/mkdir', interface_conf_dir])
-            subprocess.call(['sudo', '/bin/chmod', '755', interface_conf_dir])
+            subprocess.call(['/usr/bin/sudo', '/bin/mkdir', interface_conf_dir])
+            subprocess.call(
+                ['/usr/bin/sudo', '/bin/chmod', '755', interface_conf_dir])
           interface_conf = '\n'.join([
               '# Added by Telemetry for RNDIS forwarding.',
               'allow-hotplug %s' % host_iface,
@@ -407,19 +452,14 @@ doit &
               '  netmask 255.255.255.0',
               ])
           self._WriteProtectedFile(interface_conf_file, interface_conf)
-          subprocess.check_call(['sudo', '/etc/init.d/networking', 'restart'])
-        if 'stop/waiting' not in subprocess.check_output(
-            ['status', 'network-manager']):
-          logging.info('Stopping network-manager...')
-          subprocess.call(['sudo', 'stop', 'network-manager'])
-
+          subprocess.check_call(['/usr/bin/sudo', 'ifup', host_iface])
       logging.info('Waiting for RNDIS connectivity...')
-      util.WaitFor(HasHostAddress, 10)
+      util.WaitFor(HasHostAddress, 30)
 
     addresses, host_address = self._GetHostAddresses(host_iface)
     assert host_address, 'Interface %s could not be configured.' % host_iface
 
-    host_ip, netmask = host_address
+    host_ip, netmask = host_address  # pylint: disable=unpacking-non-sequence
     network = host_ip & netmask
 
     if not _IsNetworkUnique(network, addresses):
@@ -449,7 +489,7 @@ doit &
     self._device.RunShellCommand(
         'ifconfig %s %s netmask %s up' % (device_iface, device_ip, netmask))
     # Enabling the interface sometimes breaks adb.
-    self._WaitForDevice()
+    self._device.adb.WaitForDevice()
     self._host_iface = host_iface
     self._host_ip = host_ip
     self.device_iface = device_iface
@@ -465,7 +505,7 @@ doit &
     packets from reaching the rndis interface
     """
     policies = self._device.RunShellCommand('ip rule')
-    if len(policies) > 1 and not ('lookup main' in policies[1]):
+    if len(policies) > 1 and not 'lookup main' in policies[1]:
       self._device.RunShellCommand('ip rule add prio 1 from all table main')
       self._device.RunShellCommand('ip route flush cache')
 
@@ -482,8 +522,10 @@ doit &
       device_iface, host_iface = self._CheckEnableRndis(force)
       self._ConfigureNetwork(device_iface, host_iface)
       self.OverrideRoutingPolicy()
-      if self._TestConnectivity():
-        return
+      # Sometimes the first packet will wake up the connection.
+      for _ in range(3):
+        if self._TestConnectivity():
+          return
       force = True
     self.RestoreRoutingPolicy()
     raise Exception('No connectivity, giving up.')

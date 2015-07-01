@@ -13,7 +13,6 @@
 #include "base/metrics/histogram_samples.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/time/time.h"
-#include "sql/connection.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -54,10 +53,10 @@ namespace precache {
 class PrecacheDatabaseTest : public testing::Test {
  public:
   PrecacheDatabaseTest() {}
-  virtual ~PrecacheDatabaseTest() {}
+  ~PrecacheDatabaseTest() override {}
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     base::StatisticsRecorder::Initialize();
     precache_database_ = new PrecacheDatabase();
 

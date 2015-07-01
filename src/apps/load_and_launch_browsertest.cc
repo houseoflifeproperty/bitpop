@@ -13,12 +13,22 @@
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_switches.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/test/test_launcher.h"
 #include "extensions/test/extension_test_message_listener.h"
 
 using extensions::PlatformAppBrowserTest;
 
 namespace apps {
+
+namespace {
+
+const char* kSwitchesToCopy[] = {
+    switches::kUserDataDir,
+    switches::kNoSandbox,
+};
+
+}  // namespace
 
 // TODO(jackhou): Enable this test once it works on OSX. It currently does not
 // work for the same reason --app-id doesn't. See http://crbug.com/148465
@@ -34,13 +44,10 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
                        MAYBE_LoadAndLaunchAppChromeRunning) {
   ExtensionTestMessageListener launched_listener("Launched", false);
 
-  const CommandLine& cmdline = *CommandLine::ForCurrentProcess();
-  CommandLine new_cmdline(cmdline.GetProgram());
-
-  const char* kSwitchNames[] = {
-    switches::kUserDataDir,
-  };
-  new_cmdline.CopySwitchesFrom(cmdline, kSwitchNames, arraysize(kSwitchNames));
+  const base::CommandLine& cmdline = *base::CommandLine::ForCurrentProcess();
+  base::CommandLine new_cmdline(cmdline.GetProgram());
+  new_cmdline.CopySwitchesFrom(cmdline, kSwitchesToCopy,
+                               arraysize(kSwitchesToCopy));
 
   base::FilePath app_path = test_data_dir_
       .AppendASCII("platform_apps")
@@ -50,13 +57,15 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
                                  app_path.value());
 
   new_cmdline.AppendSwitch(content::kLaunchAsBrowser);
-  base::ProcessHandle process;
-  base::LaunchProcess(new_cmdline, base::LaunchOptionsForTest(), &process);
-  ASSERT_NE(base::kNullProcessHandle, process);
+  base::Process process =
+      base::LaunchProcess(new_cmdline, base::LaunchOptionsForTest());
+  ASSERT_TRUE(process.IsValid());
 
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
-  ASSERT_TRUE(base::WaitForSingleProcess(
-      process, TestTimeouts::action_timeout()));
+  int exit_code;
+  ASSERT_TRUE(process.WaitForExitWithTimeout(TestTimeouts::action_timeout(),
+                                             &exit_code));
+  ASSERT_EQ(0, exit_code);
 }
 
 // TODO(jackhou): Enable this test once it works on OSX. It currently does not
@@ -71,13 +80,10 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
                        MAYBE_LoadAndLaunchAppWithFile) {
   ExtensionTestMessageListener launched_listener("Launched", false);
 
-  const CommandLine& cmdline = *CommandLine::ForCurrentProcess();
-  CommandLine new_cmdline(cmdline.GetProgram());
-
-  const char* kSwitchNames[] = {
-    switches::kUserDataDir,
-  };
-  new_cmdline.CopySwitchesFrom(cmdline, kSwitchNames, arraysize(kSwitchNames));
+  const base::CommandLine& cmdline = *base::CommandLine::ForCurrentProcess();
+  base::CommandLine new_cmdline(cmdline.GetProgram());
+  new_cmdline.CopySwitchesFrom(cmdline, kSwitchesToCopy,
+                               arraysize(kSwitchesToCopy));
 
   base::FilePath app_path = test_data_dir_
       .AppendASCII("platform_apps")
@@ -93,13 +99,15 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   new_cmdline.AppendSwitch(content::kLaunchAsBrowser);
   new_cmdline.AppendArgPath(test_file_path);
 
-  base::ProcessHandle process;
-  base::LaunchProcess(new_cmdline, base::LaunchOptionsForTest(), &process);
-  ASSERT_NE(base::kNullProcessHandle, process);
+  base::Process process =
+      base::LaunchProcess(new_cmdline, base::LaunchOptionsForTest());
+  ASSERT_TRUE(process.IsValid());
 
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
-  ASSERT_TRUE(base::WaitForSingleProcess(
-      process, TestTimeouts::action_timeout()));
+  int exit_code;
+  ASSERT_TRUE(process.WaitForExitWithTimeout(TestTimeouts::action_timeout(),
+                                             &exit_code));
+  ASSERT_EQ(0, exit_code);
 }
 
 namespace {
@@ -109,7 +117,7 @@ class PlatformAppLoadAndLaunchBrowserTest : public PlatformAppBrowserTest {
  protected:
   PlatformAppLoadAndLaunchBrowserTest() {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     PlatformAppBrowserTest::SetUpCommandLine(command_line);
     app_path_ = test_data_dir_
         .AppendASCII("platform_apps")

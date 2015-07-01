@@ -28,6 +28,9 @@
     ImplementedAs=SVGLengthListTearOff,
     SetWrapperReferenceTo(SVGElement contextElement),
     TypeChecking=Interface,
+    RuntimeEnabled=SVG1DOM,
+    MeasureAs=SVG1DOM,
+    WillBeGarbageCollected,
 ] interface SVGLengthList {
     readonly attribute unsigned long length;
     [ImplementedAs=length] readonly attribute unsigned long numberOfItems;
@@ -41,4 +44,3 @@
     [RaisesException] SVGLength removeItem(unsigned long index);
     [RaisesException] SVGLength appendItem(SVGLength item);
 };
-

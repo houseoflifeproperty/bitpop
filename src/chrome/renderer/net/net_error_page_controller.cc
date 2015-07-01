@@ -19,7 +19,7 @@ gin::WrapperInfo NetErrorPageController::kWrapperInfo = {
 void NetErrorPageController::Install(content::RenderFrame* render_frame) {
   v8::Isolate* isolate = blink::mainThreadIsolate();
   v8::HandleScope handle_scope(isolate);
-  v8::Handle<v8::Context> context =
+  v8::Local<v8::Context> context =
       render_frame->GetWebFrame()->mainWorldScriptContext();
   if (context.IsEmpty())
     return;
@@ -31,19 +31,19 @@ void NetErrorPageController::Install(content::RenderFrame* render_frame) {
   if (controller.IsEmpty())
     return;
 
-  v8::Handle<v8::Object> global = context->Global();
+  v8::Local<v8::Object> global = context->Global();
   global->Set(gin::StringToV8(isolate, "errorPageController"),
               controller.ToV8());
 }
 
-bool NetErrorPageController::LoadStaleButtonClick() {
+bool NetErrorPageController::ShowSavedCopyButtonClick() {
   if (!render_frame())
     return false;
 
   NetErrorHelper* net_error_helper =
       content::RenderFrameObserverTracker<NetErrorHelper>::Get(render_frame());
   DCHECK(net_error_helper);
-  net_error_helper->LoadStaleButtonPressed();
+  net_error_helper->ShowSavedCopyButtonPressed();
 
   return true;
 }
@@ -86,6 +86,16 @@ bool NetErrorPageController::TrackClick(const gin::Arguments& args) {
   return true;
 }
 
+void NetErrorPageController::TrackEasterEgg() {
+  if (!render_frame())
+    return;
+
+  NetErrorHelper* net_error_helper =
+      content::RenderFrameObserverTracker<NetErrorHelper>::Get(render_frame());
+  DCHECK(net_error_helper);
+  net_error_helper->TrackActivatedEasterEgg();
+}
+
 NetErrorPageController::NetErrorPageController(
     content::RenderFrame* render_frame) : RenderFrameObserver(render_frame) {}
 
@@ -95,14 +105,16 @@ gin::ObjectTemplateBuilder NetErrorPageController::GetObjectTemplateBuilder(
     v8::Isolate* isolate) {
   return gin::Wrappable<NetErrorPageController>::GetObjectTemplateBuilder(
              isolate)
-      .SetMethod("loadStaleButtonClick",
-                 &NetErrorPageController::LoadStaleButtonClick)
+      .SetMethod("showSavedCopyButtonClick",
+                 &NetErrorPageController::ShowSavedCopyButtonClick)
       .SetMethod("reloadButtonClick",
                  &NetErrorPageController::ReloadButtonClick)
       .SetMethod("detailsButtonClick",
                  &NetErrorPageController::DetailsButtonClick)
       .SetMethod("trackClick",
-                 &NetErrorPageController::TrackClick);
+                 &NetErrorPageController::TrackClick)
+      .SetMethod("trackEasterEgg",
+                 &NetErrorPageController::TrackEasterEgg);
 }
 
 void NetErrorPageController::OnDestruct() {}

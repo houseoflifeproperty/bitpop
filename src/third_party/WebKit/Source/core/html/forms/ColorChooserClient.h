@@ -33,22 +33,22 @@
 
 #include "platform/ColorSuggestion.h"
 #include "platform/geometry/IntRect.h"
-#include "wtf/OwnPtr.h"
-#include "wtf/PassOwnPtr.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Vector.h"
 
 namespace blink {
 
 class Element;
 
-class ColorChooserClient {
+class ColorChooserClient : public WillBeGarbageCollectedMixin {
 public:
     virtual ~ColorChooserClient();
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
     virtual void didChooseColor(const Color&) = 0;
     virtual void didEndChooser() = 0;
     virtual Element& ownerElement() const = 0;
-    virtual IntRect elementRectRelativeToRootView() const = 0;
+    virtual IntRect elementRectRelativeToViewport() const = 0;
     virtual Color currentColor() = 0;
     virtual bool shouldShowSuggestions() const = 0;
     virtual Vector<ColorSuggestion> suggestions() const = 0;

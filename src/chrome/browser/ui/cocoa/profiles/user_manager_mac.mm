@@ -8,7 +8,9 @@
 #include "chrome/app/chrome_command_ids.h"
 #import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #import "chrome/browser/ui/cocoa/browser_window_utils.h"
@@ -16,11 +18,27 @@
 #include "chrome/browser/ui/user_manager.h"
 #include "chrome/grit/chromium_strings.h"
 #include "content/public/browser/native_web_keyboard_event.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
+namespace {
+
+// Update the App Controller with a new Profile. Used when a Profile is locked
+// to set the Controller to the Guest profile so the old Profile's bookmarks,
+// etc... cannot be accessed.
+void ChangeAppControllerForProfile(Profile* profile,
+                                   Profile::CreateStatus status) {
+  if (status == Profile::CREATE_STATUS_INITIALIZED) {
+    AppController* controller =
+        base::mac::ObjCCast<AppController>([NSApp delegate]);
+    [controller windowChangedToProfile:profile];
+  }
+}
+
+}  // namespace
 
 // An open User Manager window. There can only be one open at a time. This
 // is reset to NULL when the window is closed.
@@ -33,9 +51,9 @@ class UserManagerWebContentsDelegate : public content::WebContentsDelegate {
 
   // WebContentsDelegate implementation. Forwards all unhandled keyboard events
   // to the current window.
-  virtual void HandleKeyboardEvent(
+  void HandleKeyboardEvent(
       content::WebContents* source,
-      const content::NativeWebKeyboardEvent& event) OVERRIDE {
+      const content::NativeWebKeyboardEvent& event) override {
     if (![BrowserWindowUtils shouldHandleKeyboardEvent:event])
       return;
 
@@ -128,6 +146,9 @@ class UserManagerWebContentsDelegate : public content::WebContentsDelegate {
   webContents_->GetController().LoadURL(url, content::Referrer(),
                                         ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
                                         std::string());
+  content::RenderWidgetHostView* rwhv = webContents_->GetRenderWidgetHostView();
+  if (rwhv)
+    rwhv->SetBackgroundColor(profiles::kUserManagerBackgroundColor);
   [self show];
 }
 
@@ -136,11 +157,13 @@ class UserManagerWebContentsDelegate : public content::WebContentsDelegate {
   // will not trigger a -windowChangedToProfile and update the menu bar.
   // This is only important if the active profile is Guest, which may have
   // happened after locking a profile.
-  Profile* guestProfile = profiles::SetActiveProfileToGuestIfLocked();
-  if (guestProfile && guestProfile->IsGuestSession()) {
-    AppController* controller =
-        base::mac::ObjCCast<AppController>([NSApp delegate]);
-    [controller windowChangedToProfile:guestProfile];
+  if (profiles::SetActiveProfileToGuestIfLocked()) {
+    g_browser_process->profile_manager()->CreateProfileAsync(
+        ProfileManager::GetGuestProfilePath(),
+        base::Bind(&ChangeAppControllerForProfile),
+        base::string16(),
+        base::string16(),
+        std::string());
   }
   [[self window] makeKeyAndOrderFront:self];
 }
@@ -166,20 +189,23 @@ void UserManager::Show(
     const base::FilePath& profile_path_to_focus,
     profiles::UserManagerTutorialMode tutorial_mode,
     profiles::UserManagerProfileSelected profile_open_action) {
-  ProfileMetrics::LogProfileSwitchUser(ProfileMetrics::OPEN_USER_MANAGER);
+  DCHECK(profile_path_to_focus != ProfileManager::GetGuestProfilePath());
+
+  ProfileMetrics::LogProfileOpenMethod(ProfileMetrics::OPEN_USER_MANAGER);
   if (instance_) {
     // If there's a user manager window open already, just activate it.
     [instance_->window_controller() show];
+    instance_->set_user_manager_started_showing(base::Time::Now());
     return;
   }
 
   // Create the guest profile, if necessary, and open the User Manager
   // from the guest profile.
-  profiles::CreateGuestProfileForUserManager(
+  profiles::CreateSystemProfileForUserManager(
       profile_path_to_focus,
       tutorial_mode,
       profile_open_action,
-      base::Bind(&UserManagerMac::OnGuestProfileCreated));
+      base::Bind(&UserManagerMac::OnSystemProfileCreated, base::Time::Now()));
 }
 
 void UserManager::Hide() {
@@ -191,6 +217,11 @@ bool UserManager::IsShowing() {
   return instance_ ? [instance_->window_controller() isVisible]: false;
 }
 
+void UserManager::OnUserManagerShown() {
+  if (instance_)
+    instance_->LogTimeToOpen();
+}
+
 UserManagerMac::UserManagerMac(Profile* profile) {
   window_controller_.reset([[UserManagerWindowController alloc]
       initWithProfile:profile withObserver:this]);
@@ -200,11 +231,22 @@ UserManagerMac::~UserManagerMac() {
 }
 
 // static
-void UserManagerMac::OnGuestProfileCreated(Profile* guest_profile,
-                                           const std::string& url) {
+void UserManagerMac::OnSystemProfileCreated(const base::Time& start_time,
+                                            Profile* system_profile,
+                                            const std::string& url) {
   DCHECK(!instance_);
-  instance_ = new UserManagerMac(guest_profile);
+  instance_ = new UserManagerMac(system_profile);
+  instance_->set_user_manager_started_showing(start_time);
   [instance_->window_controller() showURL:GURL(url)];
+}
+
+void UserManagerMac::LogTimeToOpen() {
+  if (user_manager_started_showing_ == base::Time())
+    return;
+
+  ProfileMetrics::LogTimeToOpenUserManager(
+      base::Time::Now() - user_manager_started_showing_);
+  user_manager_started_showing_ = base::Time();
 }
 
 void UserManagerMac::WindowWasClosed() {

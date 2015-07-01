@@ -3,19 +3,21 @@
 # found in the LICENSE file.
 import unittest
 
-from telemetry.core import browser_options
 from telemetry.core.backends.chrome import ios_browser_finder
-from telemetry.unittest import test
+from telemetry.core import browser_options
+from telemetry.core.platform import ios_device
+from telemetry import decorators
 
 
 class IosBrowserFinderUnitTest(unittest.TestCase):
   # TODO(baxley): Currently the tests require a device with Chrome running.
   # This should be stubbed out so it runs on any system, with no device
   # dependencies.
-  @test.Enabled('ios')
+  @decorators.Enabled('ios')
   def testFindIosChrome(self):
     finder_options = browser_options.BrowserFinderOptions()
-    browsers = ios_browser_finder.FindAllAvailableBrowsers(finder_options)
+    browsers = ios_browser_finder.FindAllAvailableBrowsers(
+      finder_options, ios_device.IOSDevice())
     self.assertTrue(browsers)
     for browser in browsers:
       self.assertEqual('ios-chrome', browser.browser_type)

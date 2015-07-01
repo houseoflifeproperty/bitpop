@@ -40,11 +40,11 @@ class BufferingFrameProvider : public CodedFrameProvider {
       size_t max_buffer_size,
       size_t max_frame_size,
       const FrameBufferedCB& frame_buffered_cb);
-  virtual ~BufferingFrameProvider();
+  ~BufferingFrameProvider() override;
 
   // CodedFrameProvider implementation.
-  virtual void Read(const ReadCB& read_cb) OVERRIDE;
-  virtual void Flush(const base::Closure& flush_cb) OVERRIDE;
+  void Read(const ReadCB& read_cb) override;
+  void Flush(const base::Closure& flush_cb) override;
 
  private:
   class BufferWithConfig {
@@ -105,8 +105,8 @@ class BufferingFrameProvider : public CodedFrameProvider {
   // Pending read callback.
   ReadCB read_cb_;
 
-  base::WeakPtrFactory<BufferingFrameProvider> weak_factory_;
   base::WeakPtr<BufferingFrameProvider> weak_this_;
+  base::WeakPtrFactory<BufferingFrameProvider> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BufferingFrameProvider);
 };

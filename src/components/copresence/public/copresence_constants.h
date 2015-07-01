@@ -2,31 +2,35 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef COMPONENTS_COPRESENCE_PUBLIC_COPRESENCE_CONSTANTS_
-#define COMPONENTS_COPRESENCE_PUBLIC_COPRESENCE_CONSTANTS_
+#ifndef COMPONENTS_COPRESENCE_PUBLIC_COPRESENCE_CONSTANTS_H_
+#define COMPONENTS_COPRESENCE_PUBLIC_COPRESENCE_CONSTANTS_H_
 
+#include <google/protobuf/repeated_field.h>
+
+#include <string>
+#include <vector>
+
+#include "base/callback_forward.h"
+#include "base/memory/ref_counted.h"
+#include "components/copresence/tokens.h"
 #include "media/base/channel_layout.h"
+
+namespace media {
+class AudioBusRefCounted;
+}
 
 namespace copresence {
 
-// Audio constants. Currently used from the AudioPlayer/AudioRecorder.
-// TODO(rkc): Make these values configurable then remove them from here.
-// Number of repetitions of the audio token in one sequence of samples.
-extern const int kDefaultRepetitions;
+class Directive;
+class SubscribedMessage;
 
-// The default sample rate. We need to ensure that both the recorder and the
-// player on _all platforms use the same rate.
-extern const float kDefaultSampleRate;
-extern const int kDefaultBitsPerSample;
+// Callback to pass a list of directives back to CopresenceState.
+using DirectivesCallback = base::Callback<void(const std::vector<Directive>&)>;
 
-// 18500 for ultrasound, needs to be consistent between platforms.
-extern const float kDefaultCarrierFrequency;
-
-// The next two really need to be configurable since they don't need to be
-// consistent across platforms, or even playing/recording.
-extern const int kDefaultChannels;
-extern const media::ChannelLayout kDefaultChannelLayout;
+// Callback to pass around a list of SubscribedMessages.
+using MessagesCallback = base::Callback<void(
+    const google::protobuf::RepeatedPtrField<SubscribedMessage>&)>;
 
 }  // namespace copresence
 
-#endif  // COMPONENTS_COPRESENCE_PUBLIC_COPRESENCE_CONSTANTS_
+#endif  // COMPONENTS_COPRESENCE_PUBLIC_COPRESENCE_CONSTANTS_H_

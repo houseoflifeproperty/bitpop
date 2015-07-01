@@ -27,6 +27,7 @@
 #define FileList_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "core/fileapi/File.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
@@ -36,12 +37,12 @@
 
 namespace blink {
 
-class FileList FINAL : public RefCountedWillBeGarbageCollected<FileList>, public ScriptWrappable {
+class CORE_EXPORT FileList final : public GarbageCollected<FileList>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<FileList> create()
+    static FileList* create()
     {
-        return adoptRefWillBeNoop(new FileList);
+        return new FileList;
     }
 
     unsigned length() const { return m_files.size(); }
@@ -49,15 +50,15 @@ public:
 
     bool isEmpty() const { return m_files.isEmpty(); }
     void clear() { m_files.clear(); }
-    void append(PassRefPtrWillBeRawPtr<File> file) { m_files.append(file); }
+    void append(File* file) { m_files.append(file); }
     Vector<String> pathsForUserVisibleFiles() const;
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     FileList();
 
-    WillBeHeapVector<RefPtrWillBeMember<File> > m_files;
+    HeapVector<Member<File>> m_files;
 };
 
 } // namespace blink

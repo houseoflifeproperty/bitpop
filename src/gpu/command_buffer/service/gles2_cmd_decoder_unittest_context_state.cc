@@ -8,7 +8,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
-#include "gpu/command_buffer/common/id_allocator.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_delegate_mock.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager_mock.h"
@@ -100,7 +99,6 @@ void GLES2DecoderRestoreStateTest::InitializeContextState(
 
 TEST_P(GLES2DecoderRestoreStateTest, NullPreviousStateBGR) {
   InitState init;
-  init.gl_version = "3.0";
   init.bind_generates_resource = true;
   InitDecoder(init);
   SetupTexture();
@@ -129,7 +127,6 @@ TEST_P(GLES2DecoderRestoreStateTest, NullPreviousStateBGR) {
 
 TEST_P(GLES2DecoderRestoreStateTest, NullPreviousState) {
   InitState init;
-  init.gl_version = "3.0";
   InitDecoder(init);
   SetupTexture();
 
@@ -154,7 +151,6 @@ TEST_P(GLES2DecoderRestoreStateTest, NullPreviousState) {
 
 TEST_P(GLES2DecoderRestoreStateTest, WithPreviousStateBGR) {
   InitState init;
-  init.gl_version = "3.0";
   init.bind_generates_resource = true;
   InitDecoder(init);
   SetupTexture();
@@ -179,7 +175,6 @@ TEST_P(GLES2DecoderRestoreStateTest, WithPreviousStateBGR) {
 
 TEST_P(GLES2DecoderRestoreStateTest, WithPreviousState) {
   InitState init;
-  init.gl_version = "3.0";
   InitDecoder(init);
   SetupTexture();
 
@@ -203,7 +198,6 @@ TEST_P(GLES2DecoderRestoreStateTest, WithPreviousState) {
 
 TEST_P(GLES2DecoderRestoreStateTest, ActiveUnit1) {
   InitState init;
-  init.gl_version = "3.0";
   InitDecoder(init);
 
   // Bind a non-default texture to GL_TEXTURE1 unit.
@@ -234,7 +228,6 @@ TEST_P(GLES2DecoderRestoreStateTest, ActiveUnit1) {
 
 TEST_P(GLES2DecoderRestoreStateTest, NonDefaultUnit0BGR) {
   InitState init;
-  init.gl_version = "3.0";
   init.bind_generates_resource = true;
   InitDecoder(init);
 
@@ -273,7 +266,6 @@ TEST_P(GLES2DecoderRestoreStateTest, NonDefaultUnit0BGR) {
 
 TEST_P(GLES2DecoderRestoreStateTest, NonDefaultUnit1BGR) {
   InitState init;
-  init.gl_version = "3.0";
   init.bind_generates_resource = true;
   InitDecoder(init);
 
@@ -306,7 +298,6 @@ TEST_P(GLES2DecoderRestoreStateTest, NonDefaultUnit1BGR) {
 
 TEST_P(GLES2DecoderRestoreStateTest, DefaultUnit0) {
   InitState init;
-  init.gl_version = "3.0";
   InitDecoder(init);
 
   // Bind a non-default texture to GL_TEXTURE1 unit.
@@ -343,7 +334,6 @@ TEST_P(GLES2DecoderRestoreStateTest, DefaultUnit0) {
 
 TEST_P(GLES2DecoderRestoreStateTest, DefaultUnit1) {
   InitState init;
-  init.gl_version = "3.0";
   InitDecoder(init);
 
   // Bind a non-default texture to GL_TEXTURE0 unit.
@@ -392,7 +382,6 @@ TEST_P(GLES2DecoderManualInitTest, ContextStateCapabilityCaching) {
                      {0, false, false}};
 
   InitState init;
-  init.gl_version = "2.1";
   InitDecoder(init);
 
   for (int i = 0; test[i].gl_enum; i++) {

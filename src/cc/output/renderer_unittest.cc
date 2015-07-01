@@ -15,6 +15,29 @@
 namespace cc {
 namespace {
 
+class TestOutputSurface : public OutputSurface {
+ public:
+  explicit TestOutputSurface(
+      const scoped_refptr<ContextProvider>& context_provider);
+  ~TestOutputSurface() override;
+
+  // OutputSurface implementation
+  void SwapBuffers(CompositorFrame* frame) override;
+};
+
+TestOutputSurface::TestOutputSurface(
+    const scoped_refptr<ContextProvider>& context_provider)
+    : OutputSurface(context_provider) {
+}
+
+TestOutputSurface::~TestOutputSurface() {
+}
+
+void TestOutputSurface::SwapBuffers(CompositorFrame* frame) {
+  client_->DidSwapBuffers();
+  client_->DidSwapBuffersComplete();
+}
+
 class MockContextProvider : public TestContextProvider {
  public:
   explicit MockContextProvider(scoped_ptr<TestWebGraphicsContext3D> context)
@@ -27,30 +50,28 @@ class MockContextProvider : public TestContextProvider {
 
 template <class T>
 scoped_ptr<Renderer> CreateRenderer(RendererClient* client,
-                                    const LayerTreeSettings* settings,
+                                    const RendererSettings* settings,
                                     OutputSurface* output_surface,
                                     ResourceProvider* resource_provider);
 
 template <>
 scoped_ptr<Renderer> CreateRenderer<DelegatingRenderer>(
     RendererClient* client,
-    const LayerTreeSettings* settings,
+    const RendererSettings* settings,
     OutputSurface* output_surface,
     ResourceProvider* resource_provider) {
   return DelegatingRenderer::Create(
-             client, settings, output_surface, resource_provider)
-      .PassAs<Renderer>();
+      client, settings, output_surface, resource_provider);
 }
 
 template <>
 scoped_ptr<Renderer> CreateRenderer<GLRenderer>(
     RendererClient* client,
-    const LayerTreeSettings* settings,
+    const RendererSettings* settings,
     OutputSurface* output_surface,
     ResourceProvider* resource_provider) {
   return GLRenderer::Create(
-             client, settings, output_surface, resource_provider, NULL, 0)
-      .PassAs<Renderer>();
+      client, settings, output_surface, resource_provider, NULL, 0);
 }
 
 template <typename T>
@@ -59,10 +80,10 @@ class RendererTest : public ::testing::Test {
   virtual void SetUp() {
     context_provider_ =
         new MockContextProvider(TestWebGraphicsContext3D::Create());
-    output_surface_.reset(new OutputSurface(context_provider_));
+    output_surface_.reset(new TestOutputSurface(context_provider_));
     output_surface_->BindToClient(&output_surface_client_);
     resource_provider_ = ResourceProvider::Create(
-        output_surface_.get(), NULL, NULL, 0, false, 1, false);
+        output_surface_.get(), NULL, NULL, NULL, 0, false, 1);
     renderer_ = CreateRenderer<T>(&renderer_client_,
                                   &tree_settings_,
                                   output_surface_.get(),
@@ -70,7 +91,7 @@ class RendererTest : public ::testing::Test {
   }
 
   FakeRendererClient renderer_client_;
-  LayerTreeSettings tree_settings_;
+  RendererSettings tree_settings_;
   FakeOutputSurfaceClient output_surface_client_;
   scoped_refptr<MockContextProvider> context_provider_;
   scoped_ptr<OutputSurface> output_surface_;

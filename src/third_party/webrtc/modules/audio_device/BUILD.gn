@@ -37,8 +37,6 @@ source_set("audio_device") {
     "dummy/file_audio_device.h",
   ]
 
-  direct_dependent_configs = [ ":audio_device_config"]
-
   include_dirs = []
   if (is_linux) {
     include_dirs += [ "linux" ]
@@ -91,6 +89,8 @@ source_set("audio_device") {
       "android/audio_device_template.h",
       "android/audio_device_utility_android.cc",
       "android/audio_device_utility_android.h",
+      "android/audio_manager.cc",
+      "android/audio_manager.h",
       "android/audio_manager_jni.cc",
       "android/audio_manager_jni.h",
       "android/audio_record_jni.cc",
@@ -143,6 +143,7 @@ source_set("audio_device") {
       libs = [
         "AudioToolbox.framework",
         "AVFoundation.framework",
+        "Foundation.framework",
       ]
     }
     if (is_win) {
@@ -166,6 +167,12 @@ source_set("audio_device") {
     ]
   }
 
+  configs += [ "../..:common_config" ]
+  public_configs = [
+    "../..:common_inherited_config",
+     ":audio_device_config",
+  ]
+
   if (is_clang) {
     # Suppress warnings from Chrome's Clang plugins.
     # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
@@ -173,6 +180,8 @@ source_set("audio_device") {
   }
 
   deps = [
+    "../..:webrtc_common",
+    "../../base:rtc_base_approved",
     "../../common_audio",
     "../../system_wrappers",
     "../utility",

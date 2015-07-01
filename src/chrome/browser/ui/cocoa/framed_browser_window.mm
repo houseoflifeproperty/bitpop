@@ -12,7 +12,6 @@
 #include "chrome/browser/themes/theme_service.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/browser_window_utils.h"
-#import "chrome/browser/ui/cocoa/custom_frame_view.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_controller.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #include "grit/theme_resources.h"
@@ -28,8 +27,6 @@
 
 namespace {
 
-const CGFloat kBrowserFrameViewPaintHeight = 60.0;
-
 // Size of the gradient. Empirically determined so that the gradient looks
 // like what the heuristic does when there are just a few tabs.
 const CGFloat kWindowGradientHeight = 24.0;
@@ -43,21 +40,8 @@ const CGFloat kWindowGradientHeight = 24.0;
 - (void)adjustZoomButton:(NSNotification*)notification;
 - (void)adjustButton:(NSButton*)button
               ofKind:(NSWindowButton)kind;
-- (NSView*)frameView;
 
 @end
-
-// Undocumented APIs. They are really on NSGrayFrame rather than NSView. Take
-// care to only call them on the NSView passed into
-// -[NSWindow drawCustomRect:forView:].
-@interface NSView (UndocumentedAPI)
-
-- (float)roundedCornerRadius;
-- (CGRect)_titlebarTitleRect;
-- (void)_drawTitleStringIn:(struct CGRect)arg1 withColor:(id)color;
-
-@end
-
 
 @implementation FramedBrowserWindow
 
@@ -71,7 +55,8 @@ const CGFloat kWindowGradientHeight = 24.0;
   if ((self = [super initWithContentRect:contentRect
                                styleMask:styleMask
                                  backing:NSBackingStoreBuffered
-                                   defer:YES])) {
+                                   defer:YES
+                  wantsViewsOverTitlebar:hasTabStrip])) {
     // The 10.6 fullscreen code copies the title to a different window, which
     // will assert if it's nil.
     [self setTitle:@""];
@@ -112,10 +97,6 @@ const CGFloat kWindowGradientHeight = 24.0;
                selector:@selector(adjustZoomButton:)
                    name:NSViewFrameDidChangeNotification
                  object:zoomButton_];
-    [center addObserver:self
-               selector:@selector(themeDidChangeNotification:)
-                   name:kBrowserThemeDidChangeNotification
-                 object:nil];
   }
 
   return self;
@@ -144,7 +125,6 @@ const CGFloat kWindowGradientHeight = 24.0;
 - (void)adjustButton:(NSButton*)button
               ofKind:(NSWindowButton)kind {
   NSRect buttonFrame = [button frame];
-  NSRect frameViewBounds = [[self frameView] bounds];
 
   CGFloat xOffset = hasTabStrip_
       ? kFramedWindowButtonsWithTabStripOffsetFromLeft
@@ -153,7 +133,7 @@ const CGFloat kWindowGradientHeight = 24.0;
       ? kFramedWindowButtonsWithTabStripOffsetFromTop
       : kFramedWindowButtonsWithoutTabStripOffsetFromTop;
   buttonFrame.origin =
-      NSMakePoint(xOffset, (NSHeight(frameViewBounds) -
+      NSMakePoint(xOffset, (NSHeight([self frame]) -
                             NSHeight(buttonFrame) - yOffset));
 
   switch (kind) {
@@ -175,10 +155,6 @@ const CGFloat kWindowGradientHeight = 24.0;
   [button setPostsFrameChangedNotifications:didPost];
 }
 
-- (NSView*)frameView {
-  return [[self contentView] superview];
-}
-
 // The tab strip view covers our window buttons. So we add hit testing here
 // to find them properly and return them to the accessibility system.
 - (id)accessibilityHitTest:(NSPoint)point {
@@ -195,60 +171,6 @@ const CGFloat kWindowGradientHeight = 24.0;
     value = [super accessibilityHitTest:point];
   }
   return value;
-}
-
-- (void)windowMainStatusChanged {
-  NSView* frameView = [self frameView];
-  NSView* contentView = [self contentView];
-  NSRect updateRect = [frameView frame];
-  NSRect contentRect = [contentView frame];
-  CGFloat tabStripHeight = [TabStripController defaultTabHeight];
-  updateRect.size.height -= NSHeight(contentRect) - tabStripHeight;
-  updateRect.origin.y = NSMaxY(contentRect) - tabStripHeight;
-  [[self frameView] setNeedsDisplayInRect:updateRect];
-}
-
-- (void)becomeMainWindow {
-  [self windowMainStatusChanged];
-  [super becomeMainWindow];
-}
-
-- (void)resignMainWindow {
-  [self windowMainStatusChanged];
-  [super resignMainWindow];
-}
-
-// Called after the current theme has changed.
-- (void)themeDidChangeNotification:(NSNotification*)aNotification {
-  [[self frameView] setNeedsDisplay:YES];
-}
-
-- (void)sendEvent:(NSEvent*)event {
-  // For Cocoa windows, clicking on the close and the miniaturize buttons (but
-  // not the zoom button) while a window is in the background does NOT bring
-  // that window to the front. We don't get that behavior for free (probably
-  // because the tab strip view covers those buttons), so we handle it here.
-  // Zoom buttons do bring the window to the front. Note that Finder windows (in
-  // Leopard) behave differently in this regard in that zoom buttons don't bring
-  // the window to the foreground.
-  BOOL eventHandled = NO;
-  if (![self isMainWindow]) {
-    if ([event type] == NSLeftMouseDown) {
-      NSView* frameView = [self frameView];
-      NSPoint mouse = [frameView convertPoint:[event locationInWindow]
-                                     fromView:nil];
-      if (NSPointInRect(mouse, [closeButton_ frame])) {
-        [closeButton_ mouseDown:event];
-        eventHandled = YES;
-      } else if (NSPointInRect(mouse, [miniaturizeButton_ frame])) {
-        [miniaturizeButton_ mouseDown:event];
-        eventHandled = YES;
-      }
-    }
-  }
-  if (!eventHandled) {
-    [super sendEvent:event];
-  }
 }
 
 - (void)setShouldHideTitle:(BOOL)flag {
@@ -314,68 +236,6 @@ const CGFloat kWindowGradientHeight = 24.0;
   return origin;
 }
 
-- (void)drawCustomFrameRect:(NSRect)rect forView:(NSView*)view {
-  // WARNING: There is an obvious optimization opportunity here that you DO NOT
-  // want to take. To save painting cycles, you might think it would be a good
-  // idea to call out to the default implementation only if no theme were
-  // drawn. In reality, however, if you fail to call the default
-  // implementation, or if you call it after a clipping path is set, the
-  // rounded corners at the top of the window will not draw properly. Do not
-  // try to be smart here.
-
-  // Only paint the top of the window.
-  NSRect windowRect = [view convertRect:[self frame] fromView:nil];
-  windowRect.origin = NSZeroPoint;
-
-  NSRect paintRect = windowRect;
-  paintRect.origin.y = NSMaxY(paintRect) - kBrowserFrameViewPaintHeight;
-  paintRect.size.height = kBrowserFrameViewPaintHeight;
-  rect = NSIntersectionRect(paintRect, rect);
-  [super drawCustomFrameRect:rect forView:view];
-
-  // Set up our clip.
-  float cornerRadius = 4.0;
-  if ([view respondsToSelector:@selector(roundedCornerRadius)])
-    cornerRadius = [view roundedCornerRadius];
-  [[NSBezierPath bezierPathWithRoundedRect:windowRect
-                                   xRadius:cornerRadius
-                                   yRadius:cornerRadius] addClip];
-  [[NSBezierPath bezierPathWithRect:rect] addClip];
-
-  // Do the theming.
-  BOOL themed = [FramedBrowserWindow
-      drawWindowThemeInDirtyRect:rect
-                         forView:view
-                          bounds:windowRect
-            forceBlackBackground:NO];
-
-  // If the window needs a title and we painted over the title as drawn by the
-  // default window paint, paint it ourselves.
-  if (themed && [view respondsToSelector:@selector(_titlebarTitleRect)] &&
-      [view respondsToSelector:@selector(_drawTitleStringIn:withColor:)] &&
-      ![self _isTitleHidden]) {
-    [view _drawTitleStringIn:[view _titlebarTitleRect]
-                   withColor:[self titleColor]];
-  }
-
-  // Pinstripe the top.
-  if (themed) {
-    CGFloat lineWidth = [view cr_lineWidth];
-
-    windowRect = [view convertRect:[self frame] fromView:nil];
-    windowRect.origin = NSZeroPoint;
-    windowRect.origin.y -= 0.5 * lineWidth;
-    windowRect.origin.x -= 0.5 * lineWidth;
-    windowRect.size.width += lineWidth;
-    [[NSColor colorWithCalibratedWhite:1.0 alpha:0.5] set];
-    NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect:windowRect
-                                                         xRadius:cornerRadius
-                                                         yRadius:cornerRadius];
-    [path setLineWidth:lineWidth];
-    [path stroke];
-  }
-}
-
 + (BOOL)drawWindowThemeInDirtyRect:(NSRect)dirtyRect
                            forView:(NSView*)view
                             bounds:(NSRect)bounds
@@ -430,14 +290,6 @@ const CGFloat kWindowGradientHeight = 24.0;
 
     NSPoint position = [[view window] themeImagePositionForAlignment:
         THEME_IMAGE_ALIGN_WITH_FRAME];
-
-    // Align the phase to physical pixels so resizing the window under HiDPI
-    // doesn't cause wiggling of the theme.
-    NSView* frameView = [[[view window] contentView] superview];
-    position = [frameView convertPointToBase:position];
-    position.x = floor(position.x);
-    position.y = floor(position.y);
-    position = [frameView convertPointFromBase:position];
     [[NSGraphicsContext currentContext] cr_setPatternPhase:position
                                                    forView:view];
 
@@ -463,10 +315,9 @@ const CGFloat kWindowGradientHeight = 24.0;
 
   if (overlayImage) {
     // Anchor to top-left and don't scale.
-    NSView* frameView = [[[view window] contentView] superview];
     NSPoint position = [[view window] themeImagePositionForAlignment:
         THEME_IMAGE_ALIGN_WITH_FRAME];
-    position = [view convertPoint:position fromView:frameView];
+    position = [view convertPoint:position fromView:nil];
     NSSize overlaySize = [overlayImage size];
     NSRect imageFrame = NSMakeRect(0, 0, overlaySize.width, overlaySize.height);
     [overlayImage drawAtPoint:NSMakePoint(position.x,

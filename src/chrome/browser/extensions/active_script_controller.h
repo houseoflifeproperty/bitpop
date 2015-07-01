@@ -19,6 +19,7 @@
 #include "extensions/common/user_script.h"
 
 namespace content {
+class BrowserContext;
 class WebContents;
 }
 
@@ -40,7 +41,7 @@ class ActiveScriptController : public content::WebContentsObserver,
                                public ExtensionRegistryObserver {
  public:
   explicit ActiveScriptController(content::WebContents* web_contents);
-  virtual ~ActiveScriptController();
+  ~ActiveScriptController() override;
 
   // Returns the ActiveScriptController for the given |web_contents|, or NULL
   // if one does not exist.
@@ -66,6 +67,8 @@ class ActiveScriptController : public content::WebContentsObserver,
   // Returns true if the given |extension| has a pending script that wants to
   // run.
   bool WantsToRun(const Extension* extension);
+
+  int num_page_requests() const { return num_page_requests_; }
 
 #if defined(UNIT_TEST)
   // Only used in tests.
@@ -108,25 +111,35 @@ class ActiveScriptController : public content::WebContentsObserver,
   // Grants permission for the given request to run.
   void PermitScriptInjection(int64 request_id);
 
+  // Notifies the ExtensionActionAPI of a change (either that an extension now
+  // wants permission to run, or that it has been run).
+  void NotifyChange(const Extension* extension);
+
   // Log metrics.
   void LogUMA() const;
 
   // content::WebContentsObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void DidNavigateMainFrame(
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
-      const content::FrameNavigateParams& params) OVERRIDE;
+      const content::FrameNavigateParams& params) override;
 
   // ExtensionRegistryObserver:
-  virtual void OnExtensionUnloaded(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+  void OnExtensionUnloaded(content::BrowserContext* browser_context,
+                           const Extension* extension,
+                           UnloadedExtensionInfo::Reason reason) override;
 
-  // Whether or not the ActiveScriptController is enabled (corresponding to the
-  // kActiveScriptEnforcement switch). If it is not, it acts as an empty shell,
-  // always allowing scripts to run and never displaying actions.
-  bool enabled_;
+  // The total number of requests from the renderer on the current page,
+  // including any that are pending or were immediately granted.
+  // Right now, used only in tests.
+  int num_page_requests_;
+
+  // The associated browser context.
+  content::BrowserContext* browser_context_;
+
+  // Whether or not the feature was used for any extensions. This may not be the
+  // case if the user never enabled the scripts-require-action flag.
+  bool was_used_on_page_;
 
   // The map of extension_id:pending_request of all pending requests.
   PendingRequestMap pending_requests_;

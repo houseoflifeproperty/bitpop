@@ -22,6 +22,7 @@ namespace net {
 class FtpTransactionFactory;
 class HttpTransactionFactory;
 class SdchManager;
+class SdchOwner;
 class URLRequestContext;
 }  // namespace net
 
@@ -107,41 +108,41 @@ class OffTheRecordProfileIOData : public ProfileIOData {
   friend class base::RefCountedThreadSafe<OffTheRecordProfileIOData>;
 
   explicit OffTheRecordProfileIOData(Profile::ProfileType profile_type);
-  virtual ~OffTheRecordProfileIOData();
+  ~OffTheRecordProfileIOData() override;
 
-  virtual void InitializeInternal(
+  void InitializeInternal(
+      scoped_ptr<ChromeNetworkDelegate> chrome_network_delegate,
       ProfileParams* profile_params,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::URLRequestInterceptorScopedVector request_interceptors)
-          const OVERRIDE;
-  virtual void InitializeExtensionsRequestContext(
-      ProfileParams* profile_params) const OVERRIDE;
-  virtual net::URLRequestContext* InitializeAppRequestContext(
+      content::URLRequestInterceptorScopedVector
+          request_interceptors) const override;
+  void InitializeExtensionsRequestContext(
+      ProfileParams* profile_params) const override;
+  net::URLRequestContext* InitializeAppRequestContext(
       net::URLRequestContext* main_context,
       const StoragePartitionDescriptor& partition_descriptor,
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
       content::ProtocolHandlerMap* protocol_handlers,
       content::URLRequestInterceptorScopedVector request_interceptors)
-          const OVERRIDE;
-  virtual net::URLRequestContext* InitializeMediaRequestContext(
+      const override;
+  net::URLRequestContext* InitializeMediaRequestContext(
       net::URLRequestContext* original_context,
-      const StoragePartitionDescriptor& partition_descriptor) const OVERRIDE;
-  virtual net::URLRequestContext*
-      AcquireMediaRequestContext() const OVERRIDE;
-  virtual net::URLRequestContext* AcquireIsolatedAppRequestContext(
+      const StoragePartitionDescriptor& partition_descriptor) const override;
+  net::URLRequestContext* AcquireMediaRequestContext() const override;
+  net::URLRequestContext* AcquireIsolatedAppRequestContext(
       net::URLRequestContext* main_context,
       const StoragePartitionDescriptor& partition_descriptor,
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
       content::ProtocolHandlerMap* protocol_handlers,
       content::URLRequestInterceptorScopedVector request_interceptors)
-          const OVERRIDE;
-  virtual net::URLRequestContext*
-      AcquireIsolatedMediaRequestContext(
-          net::URLRequestContext* app_context,
-          const StoragePartitionDescriptor& partition_descriptor)
-              const OVERRIDE;
+      const override;
+  net::URLRequestContext* AcquireIsolatedMediaRequestContext(
+      net::URLRequestContext* app_context,
+      const StoragePartitionDescriptor& partition_descriptor) const override;
+
+  mutable scoped_ptr<ChromeNetworkDelegate> network_delegate_;
 
   mutable scoped_ptr<net::HttpTransactionFactory> main_http_factory_;
   mutable scoped_ptr<net::FtpTransactionFactory> ftp_factory_;
@@ -150,6 +151,7 @@ class OffTheRecordProfileIOData : public ProfileIOData {
   mutable scoped_ptr<net::URLRequestJobFactory> extensions_job_factory_;
 
   mutable scoped_ptr<net::SdchManager> sdch_manager_;
+  mutable scoped_ptr<net::SdchOwner> sdch_policy_;
 
   DISALLOW_COPY_AND_ASSIGN(OffTheRecordProfileIOData);
 };

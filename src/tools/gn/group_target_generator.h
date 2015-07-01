@@ -5,24 +5,23 @@
 #ifndef TOOLS_GN_GROUP_TARGET_GENERATOR_H_
 #define TOOLS_GN_GROUP_TARGET_GENERATOR_H_
 
-#include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "tools/gn/target_generator.h"
 
 // Populates a Target with the values for a group rule.
 class GroupTargetGenerator : public TargetGenerator {
  public:
   GroupTargetGenerator(Target* target,
-                        Scope* scope,
-                        const FunctionCallNode* function_call,
-                        Err* err);
-  virtual ~GroupTargetGenerator();
+                       Scope* scope,
+                       const FunctionCallNode* function_call,
+                       Err* err);
+  ~GroupTargetGenerator() override;
 
  protected:
-  virtual void DoRun() OVERRIDE;
+  void DoRun() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GroupTargetGenerator);
 };
 
 #endif  // TOOLS_GN_GROUP_TARGET_GENERATOR_H_
-

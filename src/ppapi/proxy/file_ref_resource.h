@@ -31,34 +31,33 @@ class PPAPI_PROXY_EXPORT FileRefResource
                                    PP_Instance instance,
                                    const FileRefCreateInfo& info);
 
-  virtual ~FileRefResource();
+  ~FileRefResource() override;
 
   // Resource implementation.
-  virtual thunk::PPB_FileRef_API* AsPPB_FileRef_API() OVERRIDE;
+  thunk::PPB_FileRef_API* AsPPB_FileRef_API() override;
 
   // PPB_FileRef_API implementation.
-  virtual PP_FileSystemType GetFileSystemType() const OVERRIDE;
-  virtual PP_Var GetName() const OVERRIDE;
-  virtual PP_Var GetPath() const OVERRIDE;
-  virtual PP_Resource GetParent() OVERRIDE;
-  virtual int32_t MakeDirectory(
-      int32_t make_directory_flags,
-      scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual int32_t Touch(PP_Time last_access_time,
-                        PP_Time last_modified_time,
-                        scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual int32_t Delete(scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual int32_t Rename(PP_Resource new_file_ref,
-                         scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual int32_t Query(PP_FileInfo* info,
-                        scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual int32_t ReadDirectoryEntries(
+  PP_FileSystemType GetFileSystemType() const override;
+  PP_Var GetName() const override;
+  PP_Var GetPath() const override;
+  PP_Resource GetParent() override;
+  int32_t MakeDirectory(int32_t make_directory_flags,
+                        scoped_refptr<TrackedCallback> callback) override;
+  int32_t Touch(PP_Time last_access_time,
+                PP_Time last_modified_time,
+                scoped_refptr<TrackedCallback> callback) override;
+  int32_t Delete(scoped_refptr<TrackedCallback> callback) override;
+  int32_t Rename(PP_Resource new_file_ref,
+                 scoped_refptr<TrackedCallback> callback) override;
+  int32_t Query(PP_FileInfo* info,
+                scoped_refptr<TrackedCallback> callback) override;
+  int32_t ReadDirectoryEntries(
       const PP_ArrayOutput& output,
-      scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual const FileRefCreateInfo& GetCreateInfo() const OVERRIDE;
+      scoped_refptr<TrackedCallback> callback) override;
+  const FileRefCreateInfo& GetCreateInfo() const override;
 
   // Private API
-  virtual PP_Var GetAbsolutePath() OVERRIDE;
+  PP_Var GetAbsolutePath() override;
 
  private:
   FileRefResource(Connection connection,

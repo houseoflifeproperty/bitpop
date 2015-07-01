@@ -22,6 +22,8 @@ namespace {
 
 const int kSdpBytesBufferSize = 1024;
 
+const char kApiUnavailable[] = "This API is not implemented on this platform.";
+
 }  // namespace
 
 namespace device {
@@ -87,8 +89,8 @@ bool BluetoothDeviceWin::IsEqual(
 
   // Checks service collection
   typedef std::set<BluetoothUUID> UUIDSet;
-  typedef base::ScopedPtrHashMap<std::string, BluetoothServiceRecordWin>
-      ServiceRecordMap;
+  typedef base::ScopedPtrHashMap<
+      std::string, scoped_ptr<BluetoothServiceRecordWin>> ServiceRecordMap;
 
   UUIDSet known_services;
   for (UUIDList::const_iterator iter = uuids_.begin(); iter != uuids_.end();
@@ -166,21 +168,6 @@ uint16 BluetoothDeviceWin::GetDeviceID() const {
   return 0;
 }
 
-int BluetoothDeviceWin::GetRSSI() const {
-  NOTIMPLEMENTED();
-  return kUnknownPower;
-}
-
-int BluetoothDeviceWin::GetCurrentHostTransmitPower() const {
-  NOTIMPLEMENTED();
-  return kUnknownPower;
-}
-
-int BluetoothDeviceWin::GetMaximumHostTransmitPower() const {
-  NOTIMPLEMENTED();
-  return kUnknownPower;
-}
-
 bool BluetoothDeviceWin::IsPaired() const {
   return paired_;
 }
@@ -201,6 +188,15 @@ BluetoothDevice::UUIDList BluetoothDeviceWin::GetUUIDs() const {
   return uuids_;
 }
 
+int16 BluetoothDeviceWin::GetInquiryRSSI() const {
+  return kUnknownPower;
+}
+
+int16 BluetoothDeviceWin::GetInquiryTxPower() const {
+  NOTIMPLEMENTED();
+  return kUnknownPower;
+}
+
 bool BluetoothDeviceWin::ExpectingPinCode() const {
   NOTIMPLEMENTED();
   return false;
@@ -214,6 +210,12 @@ bool BluetoothDeviceWin::ExpectingPasskey() const {
 bool BluetoothDeviceWin::ExpectingConfirmation() const {
   NOTIMPLEMENTED();
   return false;
+}
+
+void BluetoothDeviceWin::GetConnectionInfo(
+    const ConnectionInfoCallback& callback) {
+  NOTIMPLEMENTED();
+  callback.Run(ConnectionInfo());
 }
 
 void BluetoothDeviceWin::Connect(
@@ -263,17 +265,18 @@ void BluetoothDeviceWin::ConnectToService(
   socket->Connect(this, uuid, base::Bind(callback, socket), error_callback);
 }
 
+void BluetoothDeviceWin::ConnectToServiceInsecurely(
+    const BluetoothUUID& uuid,
+    const ConnectToServiceCallback& callback,
+    const ConnectToServiceErrorCallback& error_callback) {
+  error_callback.Run(kApiUnavailable);
+}
+
 void BluetoothDeviceWin::CreateGattConnection(
       const GattConnectionCallback& callback,
       const ConnectErrorCallback& error_callback) {
   // TODO(armansito): Implement.
   error_callback.Run(ERROR_UNSUPPORTED_DEVICE);
-}
-
-void BluetoothDeviceWin::StartConnectionMonitor(
-    const base::Closure& callback,
-    const ErrorCallback& error_callback) {
-  NOTIMPLEMENTED();
 }
 
 const BluetoothServiceRecordWin* BluetoothDeviceWin::GetServiceRecord(

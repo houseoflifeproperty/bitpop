@@ -5,91 +5,71 @@
 #ifndef CONTENT_BROWSER_COMPOSITOR_BROWSER_COMPOSITOR_VIEW_MAC_H_
 #define CONTENT_BROWSER_COMPOSITOR_BROWSER_COMPOSITOR_VIEW_MAC_H_
 
-#include <vector>
-
-#include "cc/output/software_frame_data.h"
-#include "skia/ext/platform_canvas.h"
+#include "ui/accelerated_widget_mac/accelerated_widget_mac.h"
 #include "ui/compositor/compositor.h"
-#include "ui/events/latency_info.h"
-#include "ui/gfx/geometry/size.h"
+#include "ui/compositor/compositor_observer.h"
 
 namespace content {
 
-class BrowserCompositorViewMacInternal;
-
-// The interface through which BrowserCompositorViewMac calls back into
-// RenderWidgetHostViewMac (or any other structure that wishes to draw a
-// NSView backed by a ui::Compositor).
-class BrowserCompositorViewMacClient {
+// A ui::Compositor and a gfx::AcceleratedWidget (and helper) that it draws
+// into. This structure is used to efficiently recycle these structures across
+// tabs (because creating a new ui::Compositor for each tab would be expensive
+// in terms of time and resources).
+class BrowserCompositorMac : public ui::CompositorObserver {
  public:
-  // Drawing is usually throttled by the rate at which CoreAnimation draws
-  // frames to the screen. This can be used to disable throttling.
-  virtual bool BrowserCompositorViewShouldAckImmediately() const = 0;
+  virtual ~BrowserCompositorMac();
 
-  // Called when a frame is drawn, and used to pass latency info back to the
-  // renderer (if any).
-  virtual void BrowserCompositorViewFrameSwapped(
-      const std::vector<ui::LatencyInfo>& latency_info) = 0;
+  // Create a compositor, or recycle a preexisting one.
+  static scoped_ptr<BrowserCompositorMac> Create();
 
-  // Used to install the ui::Compositor-backed NSView as a child of its parent
-  // view.
-  virtual NSView* BrowserCompositorSuperview() = 0;
+  // Delete a compositor, or allow it to be recycled.
+  static void Recycle(scoped_ptr<BrowserCompositorMac> compositor);
 
-  // Used to install the root ui::Layer into the ui::Compositor.
-  virtual ui::Layer* BrowserCompositorRootLayer() = 0;
-};
+  // Indicate that the recyclable compositor should be destroyed, and no future
+  // compositors should be recycled.
+  static void DisableRecyclingForShutdown();
 
-// The class to hold a ui::Compositor-backed NSView. Because a ui::Compositor
-// is expensive in terms of resources and re-allocating a ui::Compositor is
-// expensive in terms of work, this class is largely used to manage recycled
-// instances of BrowserCompositorViewCocoa, which actually is a NSView and
-// has a ui::Compositor instance.
-class BrowserCompositorViewMac {
- public:
-  // This will install the NSView which is drawn by the ui::Compositor into
-  // the NSView provided by the client.
-  explicit BrowserCompositorViewMac(BrowserCompositorViewMacClient* client);
-  ~BrowserCompositorViewMac();
+  ui::Compositor* compositor() { return &compositor_; }
+  ui::AcceleratedWidgetMac* accelerated_widget_mac() {
+    return accelerated_widget_mac_.get();
+  }
 
-  // The ui::Compositor being used to render the NSView.
-  ui::Compositor* GetCompositor() const;
-
-  // The client (used by the BrowserCompositorViewCocoa to access the client).
-  BrowserCompositorViewMacClient* GetClient() const { return client_; }
-
-  // Return true if the last frame swapped has a size in DIP of |dip_size|.
-  bool HasFrameOfSize(const gfx::Size& dip_size) const;
-
-  // Mark a bracket in which new frames are pumped in a restricted nested run
-  // loop because the the target window is resizing or because the view is being
-  // shown after previously being hidden.
-  void BeginPumpingFrames();
-  void EndPumpingFrames();
-
-  static void GotAcceleratedFrame(
-      gfx::AcceleratedWidget widget,
-      uint64 surface_handle, int surface_id,
-      const std::vector<ui::LatencyInfo>& latency_info,
-      gfx::Size pixel_size, float scale_factor,
-      int gpu_host_id, int gpu_route_id);
-
-  static void GotSoftwareFrame(
-      gfx::AcceleratedWidget widget,
-      cc::SoftwareFrameData* frame_data, float scale_factor, SkCanvas* canvas);
+  // Suspend will prevent the compositor from producing new frames. This should
+  // be called to avoid creating spurious frames while changing state.
+  // Compositors are created as suspended.
+  void Suspend();
+  void Unsuspend();
 
  private:
-  BrowserCompositorViewMacClient* client_;
-  scoped_ptr<BrowserCompositorViewMacInternal> internal_view_;
+  BrowserCompositorMac();
+
+  // ui::CompositorObserver implementation:
+  void OnCompositingDidCommit(ui::Compositor* compositor) override;
+  void OnCompositingStarted(ui::Compositor* compositor,
+                            base::TimeTicks start_time) override {}
+  void OnCompositingEnded(ui::Compositor* compositor) override {}
+  void OnCompositingAborted(ui::Compositor* compositor) override {}
+  void OnCompositingLockStateChanged(ui::Compositor* compositor) override {}
+  void OnCompositingShuttingDown(ui::Compositor* compositor) override {}
+
+  scoped_ptr<ui::AcceleratedWidgetMac> accelerated_widget_mac_;
+  ui::Compositor compositor_;
+  scoped_refptr<ui::CompositorLock> compositor_suspended_lock_;
+
+  DISALLOW_COPY_AND_ASSIGN(BrowserCompositorMac);
 };
 
-// A class to keep around whenever a BrowserCompositorViewMac may be created.
+// A class to keep around whenever a BrowserCompositorMac may be created.
 // While at least one instance of this class exists, a spare
 // BrowserCompositorViewCocoa will be kept around to be recycled so that the
-// next BrowserCompositorViewMac to be created will be be created quickly.
-class BrowserCompositorViewPlaceholderMac {
+// next BrowserCompositorMac to be created will be be created quickly.
+class BrowserCompositorMacPlaceholder {
  public:
-  BrowserCompositorViewPlaceholderMac();
-  ~BrowserCompositorViewPlaceholderMac();
+  BrowserCompositorMacPlaceholder();
+  ~BrowserCompositorMacPlaceholder();
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(BrowserCompositorMacPlaceholder);
 };
 
 }  // namespace content

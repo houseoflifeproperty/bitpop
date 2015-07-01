@@ -23,11 +23,22 @@ namespace {
 class DialogExample : public DialogDelegateView {
  public:
   DialogExample();
-  virtual ~DialogExample();
-  virtual base::string16 GetWindowTitle() const OVERRIDE;
-  virtual View* CreateExtraView() OVERRIDE;
-  virtual View* CreateTitlebarExtraView() OVERRIDE;
-  virtual View* CreateFootnoteView() OVERRIDE;
+  ~DialogExample() override;
+  base::string16 GetWindowTitle() const override;
+  View* CreateExtraView() override;
+  View* CreateTitlebarExtraView() override;
+  View* CreateFootnoteView() override;
+};
+
+class ModalDialogExample : public DialogExample {
+ public:
+  ModalDialogExample() {}
+
+  // WidgetDelegate:
+  ui::ModalType GetModalType() const override { return ui::MODAL_TYPE_WINDOW; }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ModalDialogExample);
 };
 
 DialogExample::DialogExample() {
@@ -70,6 +81,7 @@ void WidgetExample::CreateExampleView(View* container) {
   container->SetLayoutManager(new BoxLayout(BoxLayout::kHorizontal, 0, 0, 10));
   BuildButton(container, "Popup widget", POPUP);
   BuildButton(container, "Dialog widget", DIALOG);
+  BuildButton(container, "Modal Dialog", MODAL_DIALOG);
 #if defined(OS_LINUX)
   // Windows does not support TYPE_CONTROL top-level widgets.
   BuildButton(container, "Child widget", CHILD);
@@ -113,6 +125,11 @@ void WidgetExample::ButtonPressed(Button* sender, const ui::Event& event) {
       break;
     case DIALOG: {
       DialogDelegate::CreateDialogWidget(new DialogExample(), NULL,
+          sender->GetWidget()->GetNativeView())->Show();
+      break;
+    }
+    case MODAL_DIALOG: {
+      DialogDelegate::CreateDialogWidget(new ModalDialogExample(), NULL,
           sender->GetWidget()->GetNativeView())->Show();
       break;
     }

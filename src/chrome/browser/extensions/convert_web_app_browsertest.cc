@@ -41,9 +41,9 @@ class ExtensionFromWebAppTest
 
  private:
   // content::NotificationObserver
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     if (type ==
         extensions::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED) {
       const Extension* extension =
@@ -60,7 +60,8 @@ class ExtensionFromWebAppTest
 IN_PROC_BROWSER_TEST_F(ExtensionFromWebAppTest, DISABLED_Basic) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
 

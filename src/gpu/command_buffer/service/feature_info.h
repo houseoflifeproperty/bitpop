@@ -14,6 +14,7 @@
 #include "gpu/command_buffer/service/gles2_cmd_validation.h"
 #include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "gpu/gpu_export.h"
+#include "ui/gl/gl_version_info.h"
 
 namespace base {
 class CommandLine;
@@ -55,21 +56,29 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool use_arb_occlusion_query2_for_occlusion_query_boolean;
     bool use_arb_occlusion_query_for_occlusion_query_boolean;
     bool native_vertex_array_object;
+    bool ext_texture_format_atc;
     bool ext_texture_format_bgra8888;
+    bool ext_texture_format_dxt1;
+    bool ext_texture_format_dxt5;
     bool enable_shader_name_hashing;
     bool enable_samplers;
     bool ext_draw_buffers;
+    bool nv_draw_buffers;
     bool ext_frag_depth;
     bool ext_shader_texture_lod;
     bool use_async_readpixels;
     bool map_buffer_range;
     bool ext_discard_framebuffer;
     bool angle_depth_texture;
-    bool is_angle;
     bool is_swiftshader;
     bool angle_texture_usage;
     bool ext_texture_storage;
     bool chromium_path_rendering;
+    bool blend_equation_advanced;
+    bool blend_equation_advanced_coherent;
+    bool ext_texture_rg;
+    bool enable_subscribe_uniform;
+    bool emulate_primitive_restart_fixed_index;
   };
 
   struct Workarounds {
@@ -117,6 +126,14 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     return workarounds_;
   }
 
+  const gfx::GLVersionInfo& gl_version_info() const {
+    DCHECK(gl_version_info_.get());
+    return *(gl_version_info_.get());
+  }
+
+  bool IsES3Capable() const;
+  void EnableES3Validators();
+
  private:
   friend class base::RefCounted<FeatureInfo>;
   friend class BufferManagerClientSideArraysTest;
@@ -142,6 +159,11 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
 
   // Flags for Workarounds.
   Workarounds workarounds_;
+
+  // Whether the command line switch kEnableUnsafeES3APIs is passed in.
+  bool unsafe_es3_apis_enabled_;
+
+  scoped_ptr<gfx::GLVersionInfo> gl_version_info_;
 
   DISALLOW_COPY_AND_ASSIGN(FeatureInfo);
 };

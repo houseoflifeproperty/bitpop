@@ -4,18 +4,26 @@
 
 #include "content/public/renderer/content_renderer_client.h"
 
+#include "media/base/renderer_factory.h"
+#include "third_party/WebKit/public/platform/modules/app_banner/WebAppBannerClient.h"
+#include "third_party/WebKit/public/web/WebPluginPlaceholder.h"
+
 namespace content {
 
 SkBitmap* ContentRendererClient::GetSadPluginBitmap() {
-  return NULL;
+  return nullptr;
 }
 
 SkBitmap* ContentRendererClient::GetSadWebViewBitmap() {
-  return NULL;
+  return nullptr;
 }
 
-std::string ContentRendererClient::GetDefaultEncoding() {
-  return std::string();
+scoped_ptr<blink::WebPluginPlaceholder>
+ContentRendererClient::CreatePluginPlaceholder(
+    RenderFrame* render_frame,
+    blink::WebLocalFrame* frame,
+    const blink::WebPluginParams& params) {
+  return nullptr;
 }
 
 bool ContentRendererClient::OverrideCreatePlugin(
@@ -29,7 +37,7 @@ bool ContentRendererClient::OverrideCreatePlugin(
 blink::WebPlugin* ContentRendererClient::CreatePluginReplacement(
     RenderFrame* render_frame,
     const base::FilePath& plugin_path) {
-  return NULL;
+  return nullptr;
 }
 
 bool ContentRendererClient::HasErrorPage(int http_status_code,
@@ -50,38 +58,38 @@ void ContentRendererClient::DeferMediaLoad(RenderFrame* render_frame,
 blink::WebMediaStreamCenter*
 ContentRendererClient::OverrideCreateWebMediaStreamCenter(
     blink::WebMediaStreamCenterClient* client) {
-  return NULL;
+  return nullptr;
 }
 
 blink::WebRTCPeerConnectionHandler*
 ContentRendererClient::OverrideCreateWebRTCPeerConnectionHandler(
     blink::WebRTCPeerConnectionHandlerClient* client) {
-  return NULL;
+  return nullptr;
 }
 
 blink::WebMIDIAccessor*
 ContentRendererClient::OverrideCreateMIDIAccessor(
     blink::WebMIDIAccessorClient* client) {
-  return NULL;
+  return nullptr;
 }
 
 blink::WebAudioDevice*
 ContentRendererClient::OverrideCreateAudioDevice(
     double sample_rate) {
-  return NULL;
+  return nullptr;
 }
 
 blink::WebClipboard* ContentRendererClient::OverrideWebClipboard() {
-  return NULL;
+  return nullptr;
 }
 
 blink::WebThemeEngine* ContentRendererClient::OverrideThemeEngine() {
-  return NULL;
+  return nullptr;
 }
 
 blink::WebSpeechSynthesizer* ContentRendererClient::OverrideSpeechSynthesizer(
     blink::WebSpeechSynthesizerClient* client) {
-  return NULL;
+  return nullptr;
 }
 
 bool ContentRendererClient::RunIdleHandlerWhenWidgetsHidden() {
@@ -115,6 +123,11 @@ bool ContentRendererClient::ShouldFork(blink::WebFrame* frame,
   return false;
 }
 
+bool ContentRendererClient::ShouldForwardToGuestContainer(
+    const IPC::Message& msg) {
+  return false;
+}
+
 bool ContentRendererClient::WillSendRequest(
     blink::WebFrame* frame,
     ui::PageTransition transition_type,
@@ -135,7 +148,7 @@ bool ContentRendererClient::IsLinkVisited(unsigned long long link_hash) {
 
 blink::WebPrescientNetworking*
 ContentRendererClient::GetPrescientNetworking() {
-  return NULL;
+  return nullptr;
 }
 
 bool ContentRendererClient::ShouldOverridePageVisibilityState(
@@ -146,7 +159,7 @@ bool ContentRendererClient::ShouldOverridePageVisibilityState(
 
 const void* ContentRendererClient::CreatePPAPIInterface(
     const std::string& interface_name) {
-  return NULL;
+  return nullptr;
 }
 
 bool ContentRendererClient::IsExternalPepperPlugin(
@@ -159,7 +172,14 @@ bool ContentRendererClient::AllowPepperMediaStreamAPI(const GURL& url) {
 }
 
 void ContentRendererClient::AddKeySystems(
-    std::vector<KeySystemInfo>* key_systems) {
+    std::vector<media::KeySystemInfo>* key_systems) {
+}
+
+scoped_ptr<media::RendererFactory>
+ContentRendererClient::CreateMediaRendererFactory(
+    RenderFrame* render_frame,
+    const scoped_refptr<media::MediaLog>& media_log) {
+  return nullptr;
 }
 
 bool ContentRendererClient::ShouldReportDetailedMessageForSource(
@@ -171,18 +191,18 @@ bool ContentRendererClient::ShouldEnableSiteIsolationPolicy() const {
   return true;
 }
 
-blink::WebWorkerPermissionClientProxy*
-ContentRendererClient::CreateWorkerPermissionClientProxy(
+blink::WebWorkerContentSettingsClientProxy*
+ContentRendererClient::CreateWorkerContentSettingsClientProxy(
     RenderFrame* render_frame, blink::WebFrame* frame) {
-  return NULL;
+  return nullptr;
 }
 
-bool ContentRendererClient::IsPluginAllowedToUseCompositorAPI(const GURL& url) {
+bool ContentRendererClient::IsPluginAllowedToUseCameraDeviceAPI(
+    const GURL& url) {
   return false;
 }
 
-bool ContentRendererClient::IsPluginAllowedToUseVideoDecodeAPI(
-    const GURL& url) {
+bool ContentRendererClient::IsPluginAllowedToUseCompositorAPI(const GURL& url) {
   return false;
 }
 
@@ -192,8 +212,18 @@ bool ContentRendererClient::IsPluginAllowedToUseDevChannelAPIs() {
 
 BrowserPluginDelegate* ContentRendererClient::CreateBrowserPluginDelegate(
     RenderFrame* render_frame,
-    const std::string& mime_type) {
-  return NULL;
+    const std::string& mime_type,
+    const GURL& original_url) {
+  return nullptr;
+}
+
+std::string ContentRendererClient::GetUserAgentOverrideForURL(const GURL& url) {
+  return std::string();
+}
+
+scoped_ptr<blink::WebAppBannerClient>
+ContentRendererClient::CreateAppBannerClient(RenderFrame* render_frame) {
+  return nullptr;
 }
 
 }  // namespace content

@@ -7,6 +7,7 @@
 
 #include <map>
 #include <set>
+#include <string>
 #include <vector>
 
 #include "base/files/file_path.h"
@@ -48,6 +49,7 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
     STATUS_ERROR_FAILED,
     STATUS_ERROR_MAX,
   };
+  static const char* StatusToString(Status status);
 
   struct CONTENT_EXPORT RegistrationData {
     // These values are immutable for the life of a registration.
@@ -63,6 +65,9 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
     bool has_fetch_handler;
     base::Time last_update_check;
 
+    // Not populated until ServiceWorkerStorage::StoreRegistration is called.
+    int64_t resources_total_size_bytes;
+
     RegistrationData();
     ~RegistrationData();
   };
@@ -70,9 +75,13 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   struct ResourceRecord {
     int64 resource_id;
     GURL url;
+    // Signed so we can store -1 to specify an unknown or error state.  When
+    // stored to the database, this value should always be >= 0.
+    int64 size_bytes;
 
-    ResourceRecord() {}
-    ResourceRecord(int64 id, GURL url) : resource_id(id), url(url) {}
+    ResourceRecord() : resource_id(-1), size_bytes(0) {}
+    ResourceRecord(int64 id, GURL url, int64 size_bytes)
+        : resource_id(id), url(url), size_bytes(size_bytes) {}
   };
 
   // Reads next available ids from the database. Returns OK if they are
@@ -112,18 +121,23 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
       RegistrationData* registration,
       std::vector<ResourceRecord>* resources);
 
+  // Looks up the origin for the registration with |registration_id|. Returns OK
+  // if a registration was found and read successfully. Otherwise, returns an
+  // error.
+  Status ReadRegistrationOrigin(int64 registration_id, GURL* origin);
+
   // Writes |registration| and |resources| into the database and does following
   // things:
   //   - If an old version of the registration exists, deletes it and sets
-  //   |deleted_version_id| to the old version id and
+  //   |deleted_version| to the old version registration data object
   //   |newly_purgeable_resources| to its resources. Otherwise, sets
-  //   |deleted_version_id| to -1.
+  //   |deleted_version->version_id| to -1.
   //   - Bumps the next registration id and the next version id if needed.
   //   - Removes |resources| from the uncommitted list if exist.
   // Returns OK they are successfully written. Otherwise, returns an error.
   Status WriteRegistration(const RegistrationData& registration,
                            const std::vector<ResourceRecord>& resources,
-                           int64* deleted_version_id,
+                           RegistrationData* deleted_version,
                            std::vector<int64>* newly_purgeable_resources);
 
   // Updates a registration for |registration_id| to an active state. Returns OK
@@ -147,8 +161,33 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   // database. Otherwise, returns an error.
   Status DeleteRegistration(int64 registration_id,
                             const GURL& origin,
-                            int64* version_id,
+                            RegistrationData* deleted_version,
                             std::vector<int64>* newly_purgeable_resources);
+
+  // Reads user data for |registration_id| and |user_data_name| from the
+  // database.
+  Status ReadUserData(int64 registration_id,
+                      const std::string& user_data_name,
+                      std::string* user_data);
+
+  // Writes |user_data| into the database. Returns NOT_FOUND if the registration
+  // specified by |registration_id| does not exist in the database.
+  Status WriteUserData(int64 registration_id,
+                       const GURL& origin,
+                       const std::string& user_data_name,
+                       const std::string& user_data);
+
+  // Deletes user data for |registration_id| and |user_data_name| from the
+  // database. Returns OK if it's successfully deleted or not found in the
+  // database.
+  Status DeleteUserData(int64 registration_id,
+                        const std::string& user_data_name);
+
+  // Reads user data for all registrations that have data with |user_data_name|
+  // from the database. Returns OK if they are successfully read or not found.
+  Status ReadUserDataForAllRegistrations(
+      const std::string& user_data_name,
+      std::vector<std::pair<int64, std::string>>* user_data);
 
   // As new resources are put into the diskcache, they go into an uncommitted
   // list. When a registration is saved that refers to those ids, they're
@@ -185,13 +224,12 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   // Returns OK on success. Otherwise deletes nothing and returns an error.
   Status PurgeUncommittedResourceIds(const std::set<int64>& ids);
 
-  // Deletes all data for |origin|, namely, unique origin, registrations and
+  // Deletes all data for |origins|, namely, unique origin, registrations and
   // resource records. Resources are moved to the purgeable list. Returns OK if
   // they are successfully deleted or not found in the database. Otherwise,
   // returns an error.
-  Status DeleteAllDataForOrigin(
-      const GURL& origin,
-      std::vector<int64>* newly_purgeable_resources);
+  Status DeleteAllDataForOrigins(const std::set<GURL>& origins,
+                                 std::vector<int64>* newly_purgeable_resources);
 
   // Completely deletes the contents of the database.
   // Be careful using this function.
@@ -208,6 +246,10 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   // and this must be called just after LazyOpen() is called. Returns true if
   // the database is new or nonexistent, that is, it has never been used.
   bool IsNewOrNonexistentDatabase(Status status);
+
+  // Upgrades the database schema from version 1 to version 2. Called by
+  // LazyOpen() when the stored schema is older than version 2.
+  Status UpgradeDatabaseSchemaFromV1ToV2();
 
   // Reads the next available id for |id_key|. Returns OK if it's successfully
   // read. Fills |next_avail_id| with an initial value and returns OK if it's
@@ -264,6 +306,12 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   Status DeleteResourceIdsInBatch(
       const char* id_key_prefix,
       const std::set<int64>& ids,
+      leveldb::WriteBatch* batch);
+
+  // Deletes all user data for |registration_id| from the database. Returns OK
+  // if they are successfully deleted or not found in the database.
+  Status DeleteUserDataForRegistration(
+      int64 registration_id,
       leveldb::WriteBatch* batch);
 
   // Reads the current schema version from the database. If the database hasn't
@@ -323,7 +371,12 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, OpenDatabase_InMemory);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, DatabaseVersion);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, GetNextAvailableIds);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest,
+                           Registration_UninitializedDatabase);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest,
+                           UserData_UninitializedDatabase);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, DestroyDatabase);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, UpgradeSchemaToVersion2);
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerDatabase);
 };

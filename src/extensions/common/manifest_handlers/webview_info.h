@@ -21,17 +21,19 @@ class PartitionItem;
 class WebviewInfo : public Extension::ManifestData {
  public:
   // Define out of line constructor/destructor to please Clang.
-  WebviewInfo();
-  virtual ~WebviewInfo();
+  WebviewInfo(const std::string& extension_id);
+  ~WebviewInfo() override;
 
-  // Returns true if the specified resource is web accessible.
-  static bool IsResourceWebviewAccessible(const Extension* extension,
-                                          const std::string& partition_id,
-                                          const std::string& relative_path);
+  // Returns true if the specified resource is web accessible and the extension
+  // matches the manifest's extension.
+  bool IsResourceWebviewAccessible(const Extension* extension,
+                                   const std::string& partition_id,
+                                   const std::string& relative_path) const;
 
   void AddPartitionItem(scoped_ptr<PartitionItem> item);
 
  private:
+  std::string extension_id_;
   ScopedVector<PartitionItem> partition_items_;
 };
 
@@ -39,12 +41,12 @@ class WebviewInfo : public Extension::ManifestData {
 class WebviewHandler : public ManifestHandler {
  public:
   WebviewHandler();
-  virtual ~WebviewHandler();
+  ~WebviewHandler() override;
 
-  virtual bool Parse(Extension* extension, base::string16* error) OVERRIDE;
+  bool Parse(Extension* extension, base::string16* error) override;
 
  private:
-  virtual const std::vector<std::string> Keys() const OVERRIDE;
+  const std::vector<std::string> Keys() const override;
 
   DISALLOW_COPY_AND_ASSIGN(WebviewHandler);
 };

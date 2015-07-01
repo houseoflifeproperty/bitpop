@@ -6,11 +6,11 @@
 #define UI_GL_GL_IMAGE_H_
 
 #include "base/memory/ref_counted.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_f.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/overlay_transform.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/rect_f.h"
-#include "ui/gfx/size.h"
 #include "ui/gl/gl_export.h"
 
 namespace gfx {
@@ -19,7 +19,7 @@ namespace gfx {
 // specific management.
 class GL_EXPORT GLImage : public base::RefCounted<GLImage> {
  public:
-  GLImage();
+  GLImage() {}
 
   // Destroys the image.
   virtual void Destroy(bool have_context) = 0;
@@ -55,12 +55,8 @@ class GL_EXPORT GLImage : public base::RefCounted<GLImage> {
                                     const Rect& bounds_rect,
                                     const RectF& crop_rect) = 0;
 
-  // Indicate that image should be released after use.
-  // (For an Android work-around only).
-  virtual void SetReleaseAfterUse();
-
  protected:
-  virtual ~GLImage();
+  virtual ~GLImage() {}
 
  private:
   friend class base::RefCounted<GLImage>;

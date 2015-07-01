@@ -166,7 +166,7 @@ cr.define('print_preview', function() {
     onButtonClicked_: function(delta) {
       // Assumes text field has a valid number.
       var newValue =
-          parseInt(this.getChildElement('input.copies').value) + delta;
+          parseInt(this.getChildElement('input.copies').value, 10) + delta;
       this.copiesTicketItem_.updateValue(newValue + '');
     },
 
@@ -216,7 +216,11 @@ cr.define('print_preview', function() {
      */
     onTextfieldBlur_: function() {
       if (this.getChildElement('input.copies').value == '') {
-        this.copiesTicketItem_.updateValue('1');
+        // Do it asynchronously to avoid moving focus to Print button in
+        // PrintHeader.onTicketChange_.
+        setTimeout((function() {
+          this.copiesTicketItem_.updateValue('1');
+        }).bind(this), 0);
       }
     },
 

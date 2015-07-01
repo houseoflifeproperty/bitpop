@@ -9,7 +9,6 @@
 #include "net/quic/quic_data_writer.h"
 
 using base::StringPiece;
-using std::make_pair;
 using std::pair;
 using std::vector;
 
@@ -26,10 +25,9 @@ class OneShotVisitor : public CryptoFramerVisitorInterface {
  public:
   OneShotVisitor() : error_(false) {}
 
-  virtual void OnError(CryptoFramer* framer) OVERRIDE { error_ = true; }
+  void OnError(CryptoFramer* framer) override { error_ = true; }
 
-  virtual void OnHandshakeMessage(
-      const CryptoHandshakeMessage& message) OVERRIDE {
+  void OnHandshakeMessage(const CryptoHandshakeMessage& message) override {
     out_.reset(new CryptoHandshakeMessage(message));
   }
 
@@ -45,7 +43,7 @@ class OneShotVisitor : public CryptoFramerVisitorInterface {
 }  // namespace
 
 CryptoFramer::CryptoFramer()
-    : visitor_(NULL),
+    : visitor_(nullptr),
       num_entries_(0),
       values_len_(0) {
   Clear();
@@ -61,7 +59,7 @@ CryptoHandshakeMessage* CryptoFramer::ParseMessage(StringPiece in) {
   framer.set_visitor(&visitor);
   if (!framer.ProcessInput(in) || visitor.error() ||
       framer.InputBytesRemaining()) {
-    return NULL;
+    return nullptr;
   }
 
   return visitor.release();
@@ -104,22 +102,22 @@ QuicData* CryptoFramer::ConstructHandshakeMessage(
   }
 
   if (num_entries > kMaxEntries) {
-    return NULL;
+    return nullptr;
   }
 
-
-  QuicDataWriter writer(len);
+  scoped_ptr<char[]> buffer(new char[len]);
+  QuicDataWriter writer(len, buffer.get());
   if (!writer.WriteUInt32(message.tag())) {
     DCHECK(false) << "Failed to write message tag.";
-    return NULL;
+    return nullptr;
   }
-  if (!writer.WriteUInt16(num_entries)) {
+  if (!writer.WriteUInt16(static_cast<uint16>(num_entries))) {
     DCHECK(false) << "Failed to write size.";
-    return NULL;
+    return nullptr;
   }
   if (!writer.WriteUInt16(0)) {
     DCHECK(false) << "Failed to write padding.";
-    return NULL;
+    return nullptr;
   }
 
   uint32 end_offset = 0;
@@ -131,30 +129,30 @@ QuicData* CryptoFramer::ConstructHandshakeMessage(
       // because parts of the code may need to reserialize received messages
       // and those messages may, legitimately include padding.
       DCHECK(false) << "Message needed padding but already contained a PAD tag";
-      return NULL;
+      return nullptr;
     }
 
     if (it->first > kPAD && need_pad_tag) {
       need_pad_tag = false;
       if (!WritePadTag(&writer, pad_length, &end_offset)) {
-        return NULL;
+        return nullptr;
       }
     }
 
     if (!writer.WriteUInt32(it->first)) {
       DCHECK(false) << "Failed to write tag.";
-      return NULL;
+      return nullptr;
     }
     end_offset += it->second.length();
     if (!writer.WriteUInt32(end_offset)) {
       DCHECK(false) << "Failed to write end offset.";
-      return NULL;
+      return nullptr;
     }
   }
 
   if (need_pad_tag) {
     if (!WritePadTag(&writer, pad_length, &end_offset)) {
-      return NULL;
+      return nullptr;
     }
   }
 
@@ -165,24 +163,24 @@ QuicData* CryptoFramer::ConstructHandshakeMessage(
       need_pad_value = false;
       if (!writer.WriteRepeatedByte('-', pad_length)) {
         DCHECK(false) << "Failed to write padding.";
-        return NULL;
+        return nullptr;
       }
     }
 
     if (!writer.WriteBytes(it->second.data(), it->second.length())) {
       DCHECK(false) << "Failed to write value.";
-      return NULL;
+      return nullptr;
     }
   }
 
   if (need_pad_value) {
     if (!writer.WriteRepeatedByte('-', pad_length)) {
       DCHECK(false) << "Failed to write padding.";
-      return NULL;
+      return nullptr;
     }
   }
 
-  return new QuicData(writer.take(), len, true);
+  return new QuicData(buffer.release(), len, true);
 }
 
 void CryptoFramer::Clear() {
@@ -243,8 +241,8 @@ QuicErrorCode CryptoFramer::Process(StringPiece input) {
         if (end_offset < last_end_offset) {
           return QUIC_CRYPTO_TAGS_OUT_OF_ORDER;
         }
-        tags_and_lengths_.push_back(
-            make_pair(tag, static_cast<size_t>(end_offset - last_end_offset)));
+        tags_and_lengths_.push_back(std::make_pair(
+            tag, static_cast<size_t>(end_offset - last_end_offset)));
         last_end_offset = end_offset;
       }
       values_len_ = last_end_offset;

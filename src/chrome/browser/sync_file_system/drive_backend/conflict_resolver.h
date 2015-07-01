@@ -13,7 +13,7 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_task.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
-#include "google_apis/drive/gdata_errorcode.h"
+#include "google_apis/drive/drive_api_error_codes.h"
 
 namespace drive {
 class DriveServiceInterface;
@@ -41,8 +41,8 @@ class ConflictResolver : public SyncTask {
   typedef std::vector<std::string> FileIDList;
 
   explicit ConflictResolver(SyncEngineContext* sync_context);
-  virtual ~ConflictResolver();
-  virtual void RunPreflight(scoped_ptr<SyncTaskToken> token) OVERRIDE;
+  ~ConflictResolver() override;
+  void RunPreflight(scoped_ptr<SyncTaskToken> token) override;
   void RunExclusive(scoped_ptr<SyncTaskToken> token);
 
  private:
@@ -50,19 +50,19 @@ class ConflictResolver : public SyncTask {
 
   void DetachFromNonPrimaryParents(scoped_ptr<SyncTaskToken> token);
   void DidDetachFromParent(scoped_ptr<SyncTaskToken> token,
-                           google_apis::GDataErrorCode error);
+                           google_apis::DriveApiErrorCode error);
 
   std::string PickPrimaryFile(const TrackerIDSet& trackers);
   void RemoveNonPrimaryFiles(scoped_ptr<SyncTaskToken> token);
   void DidRemoveFile(scoped_ptr<SyncTaskToken> token,
                      const std::string& file_id,
-                     google_apis::GDataErrorCode error);
+                     google_apis::DriveApiErrorCode error);
 
   void UpdateFileMetadata(const std::string& file_id,
                           scoped_ptr<SyncTaskToken> token);
   void DidGetRemoteMetadata(const std::string& file_id,
                             scoped_ptr<SyncTaskToken> token,
-                            google_apis::GDataErrorCode error,
+                            google_apis::DriveApiErrorCode error,
                             scoped_ptr<google_apis::FileResource> entry);
 
   std::string target_file_id_;

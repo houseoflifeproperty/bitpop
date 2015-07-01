@@ -21,16 +21,13 @@
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "content/public/app/android_library_loader_hooks.h"
-#include "content/public/app/content_main.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/test/nested_message_pump_android.h"
 #include "content/public/test/test_launcher.h"
 #include "content/shell/android/shell_jni_registrar.h"
 #include "content/shell/app/shell_main_delegate.h"
 #include "jni/ContentBrowserTestsActivity_jni.h"
 #include "media/base/media_switches.h"
-#include "testing/android/native_test_util.h"
+#include "testing/android/native_test/native_test_util.h"
 
 using testing::native_test_util::ArgsToArgv;
 using testing::native_test_util::ParseArgsFromCommandLineFile;
@@ -58,7 +55,7 @@ static void RunTests(JNIEnv* env,
                      jobject app_context) {
   // Command line basic initialization, will be fully initialized later.
   static const char* const kInitialArgv[] = { "ContentBrowserTestsActivity" };
-  CommandLine::Init(arraysize(kInitialArgv), kInitialArgv);
+  base::CommandLine::Init(arraysize(kInitialArgv), kInitialArgv);
 
   // Set the application context in base.
   base::android::ScopedJavaLocalRef<jobject> scoped_context(
@@ -73,8 +70,8 @@ static void RunTests(JNIEnv* env,
   int argc = ArgsToArgv(args, &argv);
 
   // Fully initialize command line with arguments.
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  command_line->AppendArguments(CommandLine(argc, &argv[0]), false);
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  command_line->AppendArguments(base::CommandLine(argc, &argv[0]), false);
 
   // Append required switches.
   command_line->AppendSwitch(content::kSingleProcessTestsFlag);
@@ -90,34 +87,15 @@ static void RunTests(JNIEnv* env,
       base::android::ConvertJavaStringToUTF8(env, jfiles_dir));
   base::FilePath fifo_path(files_dir.Append(base::FilePath("test.fifo")));
   base::android::CreateFIFO(fifo_path, 0666);
-  base::android::RedirectStream(stdout, fifo_path, "w");
+  base::android::RedirectStream(stdout, fifo_path, "w+");
   dup2(STDOUT_FILENO, STDERR_FILENO);
 
   ScopedMainEntryLogger scoped_main_entry_logger;
   main(argc, &argv[0]);
 }
-}  // namespace content
 
-// This is called by the VM when the shared library is first loaded.
-JNI_EXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
-
-  base::android::SetLibraryLoadedHook(&content::LibraryLoaded);
-
-  base::android::InitVM(vm);
-  JNIEnv* env = base::android::AttachCurrentThread();
-
-  if (!base::android::RegisterLibraryLoaderEntryHook(env))
-    return -1;
-
-  if (!content::android::RegisterShellJni(env))
-    return -1;
-
-  if (!content::NestedMessagePumpAndroid::RegisterJni(env))
-    return -1;
-
-  if (!content::RegisterNativesImpl(env))
-    return -1;
-
-  content::SetContentMainDelegate(new content::ShellMainDelegate());
-  return JNI_VERSION_1_4;
+bool RegisterContentBrowserTestsAndroid(JNIEnv* env) {
+  return RegisterNativesImpl(env);
 }
+
+}  // namespace content

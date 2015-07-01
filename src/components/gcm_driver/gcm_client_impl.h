@@ -24,7 +24,7 @@
 #include "google_apis/gcm/engine/unregistration_request.h"
 #include "google_apis/gcm/protocol/android_checkin.pb.h"
 #include "google_apis/gcm/protocol/checkin.pb.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
 #include "net/url_request/url_request_context_getter.h"
 
 class GURL;
@@ -79,45 +79,6 @@ class GCMClientImpl
     : public GCMClient, public GCMStatsRecorder::Delegate,
       public ConnectionFactory::ConnectionListener {
  public:
-  explicit GCMClientImpl(scoped_ptr<GCMInternalsBuilder> internals_builder);
-  virtual ~GCMClientImpl();
-
-  // GCMClient implementation.
-  virtual void Initialize(
-      const ChromeBuildInfo& chrome_build_info,
-      const base::FilePath& store_path,
-      const scoped_refptr<base::SequencedTaskRunner>& blocking_task_runner,
-      const scoped_refptr<net::URLRequestContextGetter>&
-          url_request_context_getter,
-      scoped_ptr<Encryptor> encryptor,
-      GCMClient::Delegate* delegate) OVERRIDE;
-  virtual void Start() OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void CheckOut() OVERRIDE;
-  virtual void Register(const std::string& app_id,
-                        const std::vector<std::string>& sender_ids) OVERRIDE;
-  virtual void Unregister(const std::string& app_id) OVERRIDE;
-  virtual void Send(const std::string& app_id,
-                    const std::string& receiver_id,
-                    const OutgoingMessage& message) OVERRIDE;
-  virtual void SetRecording(bool recording) OVERRIDE;
-  virtual void ClearActivityLogs() OVERRIDE;
-  virtual GCMStatistics GetStatistics() const OVERRIDE;
-  virtual void SetAccountsForCheckin(
-      const std::map<std::string, std::string>& account_tokens) OVERRIDE;
-  virtual void UpdateAccountMapping(
-      const AccountMapping& account_mapping) OVERRIDE;
-  virtual void RemoveAccountMapping(const std::string& account_id) OVERRIDE;
-
-  // GCMStatsRecorder::Delegate implemenation.
-  virtual void OnActivityRecorded() OVERRIDE;
-
-  // ConnectionFactory::ConnectionListener implementation.
-  virtual void OnConnected(const GURL& current_server,
-                           const net::IPEndPoint& ip_endpoint) OVERRIDE;
-  virtual void OnDisconnected() OVERRIDE;
-
- private:
   // State representation of the GCMClient.
   // Any change made to this enum should have corresponding change in the
   // GetStateString(...) function.
@@ -128,12 +89,59 @@ class GCMClientImpl
     INITIALIZED,
     // GCM store loading is in progress.
     LOADING,
+    // GCM store is loaded.
+    LOADED,
     // Initial device checkin is in progress.
     INITIAL_DEVICE_CHECKIN,
     // Ready to accept requests.
     READY,
   };
 
+  explicit GCMClientImpl(scoped_ptr<GCMInternalsBuilder> internals_builder);
+  ~GCMClientImpl() override;
+
+  // GCMClient implementation.
+  void Initialize(
+      const ChromeBuildInfo& chrome_build_info,
+      const base::FilePath& store_path,
+      const scoped_refptr<base::SequencedTaskRunner>& blocking_task_runner,
+      const scoped_refptr<net::URLRequestContextGetter>&
+          url_request_context_getter,
+      scoped_ptr<Encryptor> encryptor,
+      GCMClient::Delegate* delegate) override;
+  void Start(StartMode start_mode) override;
+  void Stop() override;
+  void Register(const std::string& app_id,
+                const std::vector<std::string>& sender_ids) override;
+  void Unregister(const std::string& app_id) override;
+  void Send(const std::string& app_id,
+            const std::string& receiver_id,
+            const OutgoingMessage& message) override;
+  void SetRecording(bool recording) override;
+  void ClearActivityLogs() override;
+  GCMStatistics GetStatistics() const override;
+  void SetAccountTokens(
+      const std::vector<AccountTokenInfo>& account_tokens) override;
+  void UpdateAccountMapping(const AccountMapping& account_mapping) override;
+  void RemoveAccountMapping(const std::string& account_id) override;
+  void SetLastTokenFetchTime(const base::Time& time) override;
+  void UpdateHeartbeatTimer(scoped_ptr<base::Timer> timer) override;
+  void AddInstanceIDData(const std::string& app_id,
+                         const std::string& instance_id_data) override;
+  void RemoveInstanceIDData(const std::string& app_id) override;
+  std::string GetInstanceIDData(const std::string& app_id) override;
+  void AddHeartbeatInterval(const std::string& scope, int interval_ms) override;
+  void RemoveHeartbeatInterval(const std::string& scope) override;
+
+  // GCMStatsRecorder::Delegate implemenation.
+  void OnActivityRecorded() override;
+
+  // ConnectionFactory::ConnectionListener implementation.
+  void OnConnected(const GURL& current_server,
+                   const net::IPEndPoint& ip_endpoint) override;
+  void OnDisconnected() override;
+
+ private:
   // The check-in info for the device.
   // TODO(fgorski): Convert to a class with explicit getters/setters.
   struct CheckinInfo {
@@ -188,17 +196,20 @@ class GCMClientImpl
   // Runs after GCM Store load is done to trigger continuation of the
   // initialization.
   void OnLoadCompleted(scoped_ptr<GCMStore::LoadResult> result);
+  // Starts the GCM.
+  void StartGCM();
   // Initializes mcs_client_, which handles the connection to MCS.
-  void InitializeMCSClient(scoped_ptr<GCMStore::LoadResult> result);
+  void InitializeMCSClient();
   // Complets the first time device checkin.
   void OnFirstTimeDeviceCheckinCompleted(const CheckinInfo& checkin_info);
   // Starts a login on mcs_client_.
   void StartMCSLogin();
-  // Resets state to before initialization.
-  void ResetState();
+  // Resets the GCM store when it is corrupted.
+  void ResetStore();
   // Sets state to ready. This will initiate the MCS login and notify the
   // delegates.
-  void OnReady(const std::vector<AccountMapping>& account_mappings);
+  void OnReady(const std::vector<AccountMapping>& account_mappings,
+               const base::Time& last_token_fetch_time);
 
   // Starts a first time device checkin.
   void StartCheckin();
@@ -229,6 +240,12 @@ class GCMClientImpl
   // |gcm_store_| fails.
   void DefaultStoreCallback(bool success);
 
+  // Callback for store operation where result does not matter.
+  void IgnoreWriteResultCallback(bool success);
+
+  // Callback for resetting the GCM store.
+  void ResetStoreCallback(bool success);
+
   // Completes the registration request.
   void OnRegisterCompleted(const std::string& app_id,
                            const std::vector<std::string>& sender_ids,
@@ -257,6 +274,9 @@ class GCMClientImpl
       const mcs_proto::DataMessageStanza& data_message_stanza,
       MessageData& message_data);
 
+  // Is there any standalone app being registered for GCM?
+  bool HasStandaloneRegisteredApp() const;
+
   // Builder for the GCM internals (mcs client, etc.).
   scoped_ptr<GCMInternalsBuilder> internals_builder_;
 
@@ -267,6 +287,12 @@ class GCMClientImpl
   State state_;
 
   GCMClient::Delegate* delegate_;
+
+  // Flag to indicate if the GCM should be delay started until it is actually
+  // used in either of the following cases:
+  // 1) The GCM store contains the registration records.
+  // 2) GCM functionailities are explicitly called.
+  StartMode start_mode_;
 
   // Device checkin info (android ID and security token used by device).
   CheckinInfo device_checkin_info_;
@@ -282,6 +308,13 @@ class GCMClientImpl
   // Persistent data store for keeping device credentials, messages and user to
   // serial number mappings.
   scoped_ptr<GCMStore> gcm_store_;
+
+  // Data loaded from the GCM store.
+  scoped_ptr<GCMStore::LoadResult> load_result_;
+
+  // Tracks if the GCM store has been reset. This is used to prevent from
+  // resetting and loading from the store again and again.
+  bool gcm_store_reset_;
 
   scoped_refptr<net::HttpNetworkSession> network_session_;
   net::BoundNetLog net_log_;
@@ -313,6 +346,9 @@ class GCMClientImpl
 
   // Time of the last successful checkin.
   base::Time last_checkin_time_;
+
+  // Cached instance ID data, key is app id.
+  std::map<std::string, std::string> instance_id_data_;
 
   // Factory for creating references when scheduling periodic checkin.
   base::WeakPtrFactory<GCMClientImpl> periodic_checkin_ptr_factory_;

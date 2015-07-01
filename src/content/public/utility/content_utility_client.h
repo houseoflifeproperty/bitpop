@@ -9,14 +9,21 @@
 
 namespace content {
 
+class ServiceRegistry;
+
 // Embedder API for participating in renderer logic.
 class CONTENT_EXPORT ContentUtilityClient {
  public:
+  virtual ~ContentUtilityClient() {}
+
   // Notifies us that the UtilityThread has been created.
   virtual void UtilityThreadStarted() {}
 
   // Allows the embedder to filter messages.
   virtual bool OnMessageReceived(const IPC::Message& message);
+
+  // Registers Mojo services.
+  virtual void RegisterMojoServices(ServiceRegistry* registry) {}
 };
 
 }  // namespace content

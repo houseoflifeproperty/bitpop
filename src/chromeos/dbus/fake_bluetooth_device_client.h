@@ -28,55 +28,49 @@ class CHROMEOS_EXPORT FakeBluetoothDeviceClient
  public:
   struct Properties : public BluetoothDeviceClient::Properties {
     explicit Properties(const PropertyChangedCallback & callback);
-    virtual ~Properties();
+    ~Properties() override;
 
     // dbus::PropertySet override
-    virtual void Get(dbus::PropertyBase* property,
-                     dbus::PropertySet::GetCallback callback) OVERRIDE;
-    virtual void GetAll() OVERRIDE;
-    virtual void Set(dbus::PropertyBase* property,
-                     dbus::PropertySet::SetCallback callback) OVERRIDE;
+    void Get(dbus::PropertyBase* property,
+             dbus::PropertySet::GetCallback callback) override;
+    void GetAll() override;
+    void Set(dbus::PropertyBase* property,
+             dbus::PropertySet::SetCallback callback) override;
   };
 
   FakeBluetoothDeviceClient();
-  virtual ~FakeBluetoothDeviceClient();
+  ~FakeBluetoothDeviceClient() override;
 
   // BluetoothDeviceClient overrides
-  virtual void Init(dbus::Bus* bus) OVERRIDE;
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual std::vector<dbus::ObjectPath> GetDevicesForAdapter(
-      const dbus::ObjectPath& adapter_path) OVERRIDE;
-  virtual Properties* GetProperties(const dbus::ObjectPath& object_path)
-      OVERRIDE;
-  virtual void Connect(const dbus::ObjectPath& object_path,
-                       const base::Closure& callback,
-                       const ErrorCallback& error_callback) OVERRIDE;
-  virtual void Disconnect(const dbus::ObjectPath& object_path,
-                          const base::Closure& callback,
-                          const ErrorCallback& error_callback) OVERRIDE;
-  virtual void ConnectProfile(const dbus::ObjectPath& object_path,
-                              const std::string& uuid,
-                              const base::Closure& callback,
-                              const ErrorCallback& error_callback) OVERRIDE;
-  virtual void DisconnectProfile(const dbus::ObjectPath& object_path,
-                                 const std::string& uuid,
-                                 const base::Closure& callback,
-                                 const ErrorCallback& error_callback) OVERRIDE;
-  virtual void Pair(const dbus::ObjectPath& object_path,
-                    const base::Closure& callback,
-                    const ErrorCallback& error_callback) OVERRIDE;
-  virtual void CancelPairing(const dbus::ObjectPath& object_path,
-                             const base::Closure& callback,
-                             const ErrorCallback& error_callback) OVERRIDE;
-  virtual void StartConnectionMonitor(
-      const dbus::ObjectPath& object_path,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void StopConnectionMonitor(
-      const dbus::ObjectPath& object_path,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
+  void Init(dbus::Bus* bus) override;
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
+  std::vector<dbus::ObjectPath> GetDevicesForAdapter(
+      const dbus::ObjectPath& adapter_path) override;
+  Properties* GetProperties(const dbus::ObjectPath& object_path) override;
+  void Connect(const dbus::ObjectPath& object_path,
+               const base::Closure& callback,
+               const ErrorCallback& error_callback) override;
+  void Disconnect(const dbus::ObjectPath& object_path,
+                  const base::Closure& callback,
+                  const ErrorCallback& error_callback) override;
+  void ConnectProfile(const dbus::ObjectPath& object_path,
+                      const std::string& uuid,
+                      const base::Closure& callback,
+                      const ErrorCallback& error_callback) override;
+  void DisconnectProfile(const dbus::ObjectPath& object_path,
+                         const std::string& uuid,
+                         const base::Closure& callback,
+                         const ErrorCallback& error_callback) override;
+  void Pair(const dbus::ObjectPath& object_path,
+            const base::Closure& callback,
+            const ErrorCallback& error_callback) override;
+  void CancelPairing(const dbus::ObjectPath& object_path,
+                     const base::Closure& callback,
+                     const ErrorCallback& error_callback) override;
+  void GetConnInfo(const dbus::ObjectPath& object_path,
+                   const ConnInfoCallback& callback,
+                   const ErrorCallback& error_callback) override;
 
   void SetSimulationIntervalMs(int interval_ms);
 
@@ -104,6 +98,12 @@ class CHROMEOS_EXPORT FakeBluetoothDeviceClient
                        bool incoming_request,
                        const base::Closure& callback,
                        const ErrorCallback& error_callback);
+
+  // Updates the connection properties of the fake device that will be returned
+  // by GetConnInfo.
+  void UpdateConnectionInfo(uint16 connection_rssi,
+                            uint16 transmit_power,
+                            uint16 max_transmit_power);
 
   // Object paths, names, addresses and bluetooth classes of the devices
   // we can emulate.
@@ -171,6 +171,11 @@ class CHROMEOS_EXPORT FakeBluetoothDeviceClient
   static const char kLowEnergyName[];
   static const char kLowEnergyAddress[];
   static const uint32 kLowEnergyClass;
+
+  static const char kPairedUnconnectableDevicePath[];
+  static const char kPairedUnconnectableDeviceName[];
+  static const char kPairedUnconnectableDeviceAddress[];
+  static const uint32 kPairedUnconnectableDeviceClass;
 
  private:
   // Property callback passed when we create Properties* structures.
@@ -250,7 +255,10 @@ class CHROMEOS_EXPORT FakeBluetoothDeviceClient
   uint32_t discovery_simulation_step_;
   uint32_t incoming_pairing_simulation_step_;
   bool pairing_cancelled_;
-  bool connection_monitor_started_;
+
+  int16 connection_rssi_;
+  int16 transmit_power_;
+  int16 max_transmit_power_;
 };
 
 }  // namespace chromeos

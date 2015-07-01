@@ -7,6 +7,7 @@
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
+#include "base/test/gtest_util.h"
 #include "base/test/launcher/test_launcher.h"
 #include "third_party/libxml/chromium/libxml_utils.h"
 
@@ -146,8 +147,7 @@ bool ProcessGTestOutput(const base::FilePath& output_file,
           std::string test_name;
           if (!xml_reader.NodeAttribute("name", &test_name))
             return false;
-          result.full_name = TestLauncher::FormatFullTestName(test_case_name,
-                                                              test_name);
+          result.full_name = FormatFullTestName(test_case_name, test_name);
 
           result.elapsed_time = TimeDelta();
 
@@ -178,9 +178,9 @@ bool ProcessGTestOutput(const base::FilePath& output_file,
           std::string test_time_str;
           if (!xml_reader.NodeAttribute("time", &test_time_str))
             return false;
-          result.elapsed_time =
-              TimeDelta::FromMicroseconds(strtod(test_time_str.c_str(), NULL) *
-                                          Time::kMicrosecondsPerSecond);
+          result.elapsed_time = TimeDelta::FromMicroseconds(
+              static_cast<int64>(strtod(test_time_str.c_str(), NULL) *
+                  Time::kMicrosecondsPerSecond));
 
           result.status = TestResult::TEST_SUCCESS;
 

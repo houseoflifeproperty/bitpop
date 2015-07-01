@@ -45,8 +45,8 @@ namespace extensions {
 class MockTtsPlatformImpl : public TtsPlatformImpl {
  public:
   MockTtsPlatformImpl()
-      : ptr_factory_(this),
-        should_fake_get_voices_(false) {}
+      : should_fake_get_voices_(false),
+        ptr_factory_(this) {}
 
   virtual bool PlatformImplAvailable() {
     return true;
@@ -162,16 +162,16 @@ class MockTtsPlatformImpl : public TtsPlatformImpl {
   }
 
  private:
-  base::WeakPtrFactory<MockTtsPlatformImpl> ptr_factory_;
   bool should_fake_get_voices_;
+  base::WeakPtrFactory<MockTtsPlatformImpl> ptr_factory_;
 };
 
 class FakeNetworkOnlineStateForTest : public net::NetworkChangeNotifier {
  public:
   explicit FakeNetworkOnlineStateForTest(bool online) : online_(online) {}
-  virtual ~FakeNetworkOnlineStateForTest() {}
+  ~FakeNetworkOnlineStateForTest() override {}
 
-  virtual ConnectionType GetCurrentConnectionType() const OVERRIDE {
+  ConnectionType GetCurrentConnectionType() const override {
     return online_ ?
         net::NetworkChangeNotifier::CONNECTION_ETHERNET :
         net::NetworkChangeNotifier::CONNECTION_NONE;

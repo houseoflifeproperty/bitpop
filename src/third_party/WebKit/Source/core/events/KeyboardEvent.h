@@ -24,28 +24,17 @@
 #ifndef KeyboardEvent_h
 #define KeyboardEvent_h
 
+#include "core/CoreExport.h"
 #include "core/events/EventDispatchMediator.h"
+#include "core/events/KeyboardEventInit.h"
 #include "core/events/UIEventWithKeyState.h"
 
 namespace blink {
 
 class EventDispatcher;
-class Node;
 class PlatformKeyboardEvent;
 
-struct KeyboardEventInit : public UIEventInit {
-    KeyboardEventInit();
-
-    String keyIdentifier;
-    unsigned location;
-    bool ctrlKey;
-    bool altKey;
-    bool shiftKey;
-    bool metaKey;
-    bool repeat;
-};
-
-class KeyboardEvent FINAL : public UIEventWithKeyState {
+class CORE_EXPORT KeyboardEvent final : public UIEventWithKeyState {
     DEFINE_WRAPPERTYPEINFO();
 public:
     enum KeyLocationCode {
@@ -65,52 +54,54 @@ public:
         return adoptRefWillBeNoop(new KeyboardEvent(platformEvent, view));
     }
 
-    static PassRefPtrWillBeRawPtr<KeyboardEvent> create(const AtomicString& type, const KeyboardEventInit& initializer)
-    {
-        return adoptRefWillBeNoop(new KeyboardEvent(type, initializer));
-    }
+    static PassRefPtrWillBeRawPtr<KeyboardEvent> create(ScriptState*, const AtomicString& type, const KeyboardEventInit&);
 
     static PassRefPtrWillBeRawPtr<KeyboardEvent> create(const AtomicString& type, bool canBubble, bool cancelable, AbstractView* view,
-        const String& keyIdentifier, unsigned location,
+        const String& keyIdentifier, const String& code, const String& key, unsigned location,
         bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
     {
-        return adoptRefWillBeNoop(new KeyboardEvent(type, canBubble, cancelable, view, keyIdentifier, location,
+        return adoptRefWillBeNoop(new KeyboardEvent(type, canBubble, cancelable, view, keyIdentifier, code, key, location,
         ctrlKey, altKey, shiftKey, metaKey));
     }
 
     virtual ~KeyboardEvent();
 
-    void initKeyboardEvent(const AtomicString& type, bool canBubble, bool cancelable, AbstractView*,
+    void initKeyboardEvent(ScriptState*, const AtomicString& type, bool canBubble, bool cancelable, AbstractView*,
         const String& keyIdentifier, unsigned location,
         bool ctrlKey, bool altKey, bool shiftKey, bool metaKey);
 
     const String& keyIdentifier() const { return m_keyIdentifier; }
+    const String& code() const { return m_code; }
+    const String& key() const { return m_key; }
+
     unsigned location() const { return m_location; }
 
     bool getModifierState(const String& keyIdentifier) const;
 
     const PlatformKeyboardEvent* keyEvent() const { return m_keyEvent.get(); }
 
-    virtual int keyCode() const OVERRIDE; // key code for keydown and keyup, character for keypress
-    virtual int charCode() const OVERRIDE; // character code for keypress, 0 for keydown and keyup
+    virtual int keyCode() const override; // key code for keydown and keyup, character for keypress
+    virtual int charCode() const override; // character code for keypress, 0 for keydown and keyup
     bool repeat() const { return m_isAutoRepeat; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual bool isKeyboardEvent() const OVERRIDE;
-    virtual int which() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
+    virtual bool isKeyboardEvent() const override;
+    virtual int which() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     KeyboardEvent();
     KeyboardEvent(const PlatformKeyboardEvent&, AbstractView*);
     KeyboardEvent(const AtomicString&, const KeyboardEventInit&);
     KeyboardEvent(const AtomicString& type, bool canBubble, bool cancelable, AbstractView*,
-        const String& keyIdentifier, unsigned location,
+        const String& keyIdentifier, const String& code, const String& key, unsigned location,
         bool ctrlKey, bool altKey, bool shiftKey, bool metaKey);
 
     OwnPtr<PlatformKeyboardEvent> m_keyEvent;
     String m_keyIdentifier;
+    String m_code;
+    String m_key;
     unsigned m_location;
     bool m_isAutoRepeat : 1;
 };
@@ -120,7 +111,7 @@ public:
     static PassRefPtrWillBeRawPtr<KeyboardEventDispatchMediator> create(PassRefPtrWillBeRawPtr<KeyboardEvent>);
 private:
     explicit KeyboardEventDispatchMediator(PassRefPtrWillBeRawPtr<KeyboardEvent>);
-    virtual bool dispatchEvent(EventDispatcher*) const OVERRIDE;
+    virtual bool dispatchEvent(EventDispatcher&) const override;
 };
 
 DEFINE_EVENT_TYPE_CASTS(KeyboardEvent);

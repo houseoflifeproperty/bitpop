@@ -5,13 +5,14 @@
 #include "cc/test/test_context_support.h"
 
 #include "base/bind.h"
-#include "base/message_loop/message_loop.h"
+#include "base/location.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 
 namespace cc {
 
 TestContextSupport::TestContextSupport()
-    : last_swap_type_(NO_SWAP),
-      weak_ptr_factory_(this) {
+    : weak_ptr_factory_(this) {
 }
 
 TestContextSupport::~TestContextSupport() {}
@@ -19,19 +20,17 @@ TestContextSupport::~TestContextSupport() {}
 void TestContextSupport::SignalSyncPoint(uint32 sync_point,
                                          const base::Closure& callback) {
   sync_point_callbacks_.push_back(callback);
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&TestContextSupport::CallAllSyncPointCallbacks,
-                 weak_ptr_factory_.GetWeakPtr()));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::Bind(&TestContextSupport::CallAllSyncPointCallbacks,
+                            weak_ptr_factory_.GetWeakPtr()));
 }
 
 void TestContextSupport::SignalQuery(uint32 query,
                                      const base::Closure& callback) {
   sync_point_callbacks_.push_back(callback);
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&TestContextSupport::CallAllSyncPointCallbacks,
-                 weak_ptr_factory_.GetWeakPtr()));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::Bind(&TestContextSupport::CallAllSyncPointCallbacks,
+                            weak_ptr_factory_.GetWeakPtr()));
 }
 
 void TestContextSupport::SetSurfaceVisible(bool visible) {
@@ -42,8 +41,8 @@ void TestContextSupport::SetSurfaceVisible(bool visible) {
 
 void TestContextSupport::CallAllSyncPointCallbacks() {
   for (size_t i = 0; i < sync_point_callbacks_.size(); ++i) {
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE, sync_point_callbacks_[i]);
+    base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
+                                                  sync_point_callbacks_[i]);
   }
   sync_point_callbacks_.clear();
 }
@@ -59,10 +58,6 @@ void TestContextSupport::SetScheduleOverlayPlaneCallback(
 }
 
 void TestContextSupport::Swap() {
-  last_swap_type_ = SWAP;
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE, base::Bind(&TestContextSupport::OnSwapBuffersComplete,
-                            weak_ptr_factory_.GetWeakPtr()));
 }
 
 uint32 TestContextSupport::InsertFutureSyncPointCHROMIUM() {
@@ -75,11 +70,6 @@ void TestContextSupport::RetireSyncPointCHROMIUM(uint32 sync_point) {
 }
 
 void TestContextSupport::PartialSwapBuffers(const gfx::Rect& sub_buffer) {
-  last_swap_type_ = PARTIAL_SWAP;
-  last_partial_swap_rect_ = sub_buffer;
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE, base::Bind(&TestContextSupport::OnSwapBuffersComplete,
-                            weak_ptr_factory_.GetWeakPtr()));
 }
 
 void TestContextSupport::ScheduleOverlayPlane(
@@ -95,16 +85,6 @@ void TestContextSupport::ScheduleOverlayPlane(
                                          display_bounds,
                                          uv_rect);
   }
-}
-
-void TestContextSupport::SetSwapBuffersCompleteCallback(
-    const base::Closure& callback) {
-  swap_buffers_complete_callback_ = callback;
-}
-
-void TestContextSupport::OnSwapBuffersComplete() {
-  if (!swap_buffers_complete_callback_.is_null())
-    swap_buffers_complete_callback_.Run();
 }
 
 }  // namespace cc

@@ -25,25 +25,50 @@ class TestNavigationObserver::TestWebContentsObserver
 
  private:
   // WebContentsObserver:
-  virtual void NavigationEntryCommitted(
-      const LoadCommittedDetails& load_details) OVERRIDE {
+  void NavigationEntryCommitted(
+      const LoadCommittedDetails& load_details) override {
     parent_->OnNavigationEntryCommitted(this, web_contents(), load_details);
   }
 
-  virtual void DidAttachInterstitialPage() OVERRIDE {
+  void DidAttachInterstitialPage() override {
     parent_->OnDidAttachInterstitialPage(web_contents());
   }
 
-  virtual void WebContentsDestroyed() OVERRIDE {
+  void WebContentsDestroyed() override {
     parent_->OnWebContentsDestroyed(this, web_contents());
   }
 
-  virtual void DidStartLoading(RenderViewHost* render_view_host) OVERRIDE {
+  void DidStartLoading() override {
     parent_->OnDidStartLoading(web_contents());
   }
 
-  virtual void DidStopLoading(RenderViewHost* render_view_host) OVERRIDE {
+  void DidStopLoading() override {
     parent_->OnDidStopLoading(web_contents());
+  }
+
+  void DidStartProvisionalLoadForFrame(RenderFrameHost* render_frame_host,
+                                       const GURL& validated_url,
+                                       bool is_error_page,
+                                       bool is_iframe_srcdoc) override {
+    parent_->OnDidStartProvisionalLoadForFrame(
+        render_frame_host, validated_url, is_error_page, is_iframe_srcdoc);
+  }
+
+  void DidFailProvisionalLoad(
+      RenderFrameHost* render_frame_host,
+      const GURL& validated_url,
+      int error_code,
+      const base::string16& error_description) override {
+    parent_->OnDidFailProvisionalLoad(render_frame_host, validated_url,
+                                      error_code, error_description);
+  }
+
+  void DidCommitProvisionalLoadForFrame(
+      RenderFrameHost* render_frame_host,
+      const GURL& url,
+      ui::PageTransition transition_type) override {
+    parent_->OnDidCommitProvisionalLoadForFrame(
+        render_frame_host, url, transition_type);
   }
 
   TestNavigationObserver* parent_;
@@ -92,11 +117,13 @@ void TestNavigationObserver::Wait() {
 }
 
 void TestNavigationObserver::StartWatchingNewWebContents() {
-  WebContentsImpl::AddCreatedCallback(web_contents_created_callback_);
+  WebContentsImpl::FriendZone::AddCreatedCallbackForTesting(
+      web_contents_created_callback_);
 }
 
 void TestNavigationObserver::StopWatchingNewWebContents() {
-  WebContentsImpl::RemoveCreatedCallback(web_contents_created_callback_);
+  WebContentsImpl::FriendZone::RemoveCreatedCallbackForTesting(
+      web_contents_created_callback_);
 }
 
 void TestNavigationObserver::RegisterAsObserver(WebContents* web_contents) {
@@ -142,6 +169,31 @@ void TestNavigationObserver::OnDidStopLoading(WebContents* web_contents) {
     navigation_started_ = false;
     message_loop_runner_->Quit();
   }
+}
+
+void TestNavigationObserver::OnDidStartProvisionalLoadForFrame(
+    RenderFrameHost* render_frame_host,
+    const GURL& validated_url,
+    bool is_error_page,
+    bool is_iframe_srcdoc) {
+  last_navigation_succeeded_ = false;
+}
+
+void TestNavigationObserver::OnDidFailProvisionalLoad(
+    RenderFrameHost* render_frame_host,
+    const GURL& validated_url,
+    int error_code,
+    const base::string16& error_description) {
+  last_navigation_url_ = validated_url;
+  last_navigation_succeeded_ = false;
+}
+
+void TestNavigationObserver::OnDidCommitProvisionalLoadForFrame(
+    RenderFrameHost* render_frame_host,
+    const GURL& url,
+    ui::PageTransition transition_type) {
+  last_navigation_url_ = url;
+  last_navigation_succeeded_ = true;
 }
 
 }  // namespace content

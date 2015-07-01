@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_TEST_PLUGIN_PLUGIN_EXECUTE_SCRIPT_DELETE_TEST_H_
-#define CONTENT_TEST_PLUGIN_PLUGIN_EXECUTE_SCRIPT_DELETE_TEST_H_
+#ifndef CONTENT_TEST_PLUGIN_PLUGIN_WINDOWLESS_TEST_H_
+#define CONTENT_TEST_PLUGIN_PLUGIN_WINDOWLESS_TEST_H_
 
 #include "base/compiler_specific.h"
 #include "content/test/plugin/plugin_test.h"
@@ -18,12 +18,15 @@ class WindowlessPluginTest : public PluginTest {
   WindowlessPluginTest(NPP id, NPNetscapeFuncs *host_functions);
 
   // These tests run in windowless plugin mode.
-  virtual bool IsWindowless() const OVERRIDE;
+  bool IsWindowless() const override;
 
   // NPAPI HandleEvent handler
-  virtual NPError New(uint16 mode, int16 argc, const char* argn[],
-                      const char* argv[], NPSavedData* saved) OVERRIDE;
-  virtual int16 HandleEvent(void* event) OVERRIDE;
+  NPError New(uint16 mode,
+              int16 argc,
+              const char* argn[],
+              const char* argv[],
+              NPSavedData* saved) override;
+  int16 HandleEvent(void* event) override;
 
  protected:
   NPError ExecuteScript(NPNetscapeFuncs* browser, NPP id,
@@ -38,4 +41,4 @@ class WindowlessPluginTest : public PluginTest {
 
 }  // namespace NPAPIClient
 
-#endif  // CONTENT_TEST_PLUGIN_PLUGIN_EXECUTE_SCRIPT_DELETE_TEST_H_
+#endif  // CONTENT_TEST_PLUGIN_PLUGIN_WINDOWLESS_TEST_H_

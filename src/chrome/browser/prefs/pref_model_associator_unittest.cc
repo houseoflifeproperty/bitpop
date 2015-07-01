@@ -8,13 +8,12 @@
 #include "chrome/browser/prefs/pref_model_associator.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 class AbstractPreferenceMergeTest : public testing::Test {
  protected:
-  virtual void SetUp() {
-    pref_service_ = profile_.GetPrefs();
-  }
+  void SetUp() override { pref_service_ = profile_.GetPrefs(); }
 
   void SetContentPattern(base::DictionaryValue* patterns_dict,
                          const std::string& expression,
@@ -47,6 +46,7 @@ class AbstractPreferenceMergeTest : public testing::Test {
     pref_service_->Set(pref_name.c_str(), *empty_value);
   }
 
+  content::TestBrowserThreadBundle thread_bundle_;
   TestingProfile profile_;
   PrefService* pref_service_;
 };
@@ -59,7 +59,7 @@ class ListPreferenceMergeTest : public AbstractPreferenceMergeTest {
       local_url0_("http://example.com/local0"),
       local_url1_("http://example.com/local1") {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     AbstractPreferenceMergeTest::SetUp();
     server_url_list_.Append(new base::StringValue(server_url0_));
     server_url_list_.Append(new base::StringValue(server_url1_));
@@ -96,7 +96,7 @@ TEST_F(ListPreferenceMergeTest, LocalEmpty) {
 }
 
 TEST_F(ListPreferenceMergeTest, ServerNull) {
-  scoped_ptr<base::Value> null_value(base::Value::CreateNullValue());
+  scoped_ptr<base::Value> null_value = base::Value::CreateNullValue();
   {
     ListPrefUpdate update(pref_service_, prefs::kURLsToRestoreOnStartup);
     base::ListValue* local_list_value = update.Get();
@@ -206,7 +206,7 @@ class DictionaryPreferenceMergeTest : public AbstractPreferenceMergeTest {
       content_type0_("content_type0"),
       content_type1_("content_type1") {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     AbstractPreferenceMergeTest::SetUp();
     SetContentPattern(&server_patterns_, expression0_, content_type0_, 1);
     SetContentPattern(&server_patterns_, expression0_, content_type1_, 2);
@@ -233,7 +233,7 @@ TEST_F(DictionaryPreferenceMergeTest, LocalEmpty) {
 }
 
 TEST_F(DictionaryPreferenceMergeTest, ServerNull) {
-  scoped_ptr<base::Value> null_value(base::Value::CreateNullValue());
+  scoped_ptr<base::Value> null_value = base::Value::CreateNullValue();
   {
     DictionaryPrefUpdate update(pref_service_,
                                 prefs::kContentSettingsPatternPairs);
@@ -365,7 +365,7 @@ class IndividualPreferenceMergeTest : public AbstractPreferenceMergeTest {
       expression1_("expression1"),
       content_type0_("content_type0") {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     AbstractPreferenceMergeTest::SetUp();
     server_url_list_.Append(new base::StringValue(url0_));
     SetContentPattern(&server_patterns_, expression0_, content_type0_, 1);

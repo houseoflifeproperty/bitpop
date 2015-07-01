@@ -27,6 +27,28 @@ namespace extensions {
 
 using content::BrowserThread;
 
+namespace {
+
+scoped_ptr<base::DictionaryValue> MakeExtensionManifest(
+    const base::Value& manifest_extra) {
+  scoped_ptr<base::DictionaryValue> manifest = DictionaryBuilder()
+                                                   .Set("name", "Extension")
+                                                   .Set("version", "1.0")
+                                                   .Set("manifest_version", 2)
+                                                   .Build();
+  const base::DictionaryValue* manifest_extra_dict;
+  if (manifest_extra.GetAsDictionary(&manifest_extra_dict)) {
+    manifest->MergeDictionary(manifest_extra_dict);
+  } else {
+    std::string manifest_json;
+    base::JSONWriter::Write(&manifest_extra, &manifest_json);
+    ADD_FAILURE() << "Expected dictionary; got \"" << manifest_json << "\"";
+  }
+  return manifest;
+}
+
+}  // namespace
+
 TestExtensionEnvironment::TestExtensionEnvironment()
     : profile_(new TestingProfile),
       extension_service_(NULL),
@@ -53,7 +75,7 @@ TestExtensionSystem* TestExtensionEnvironment::GetExtensionSystem() {
 ExtensionService* TestExtensionEnvironment::GetExtensionService() {
   if (extension_service_ == NULL) {
     extension_service_ = GetExtensionSystem()->CreateExtensionService(
-        CommandLine::ForCurrentProcess(), base::FilePath(), false);
+        base::CommandLine::ForCurrentProcess(), base::FilePath(), false);
   }
   return extension_service_;
 }
@@ -61,29 +83,28 @@ ExtensionService* TestExtensionEnvironment::GetExtensionService() {
 ExtensionPrefs* TestExtensionEnvironment::GetExtensionPrefs() {
   if (extension_prefs_ == NULL) {
     extension_prefs_ = GetExtensionSystem()->CreateExtensionPrefs(
-        CommandLine::ForCurrentProcess(), base::FilePath());
+        base::CommandLine::ForCurrentProcess(), base::FilePath());
   }
   return extension_prefs_;
 }
 
 const Extension* TestExtensionEnvironment::MakeExtension(
     const base::Value& manifest_extra) {
-  scoped_ptr<base::DictionaryValue> manifest = DictionaryBuilder()
-      .Set("name", "Extension")
-      .Set("version", "1.0")
-      .Set("manifest_version", 2)
-      .Build();
-  const base::DictionaryValue* manifest_extra_dict;
-  if (manifest_extra.GetAsDictionary(&manifest_extra_dict)) {
-    manifest->MergeDictionary(manifest_extra_dict);
-  } else {
-    std::string manifest_json;
-    base::JSONWriter::Write(&manifest_extra, &manifest_json);
-    ADD_FAILURE() << "Expected dictionary; got \"" << manifest_json << "\"";
-  }
-
+  scoped_ptr<base::DictionaryValue> manifest =
+      MakeExtensionManifest(manifest_extra);
   scoped_refptr<Extension> result =
       ExtensionBuilder().SetManifest(manifest.Pass()).Build();
+  GetExtensionService()->AddExtension(result.get());
+  return result.get();
+}
+
+const Extension* TestExtensionEnvironment::MakeExtension(
+    const base::Value& manifest_extra,
+    const std::string& id) {
+  scoped_ptr<base::DictionaryValue> manifest =
+      MakeExtensionManifest(manifest_extra);
+  scoped_refptr<Extension> result =
+      ExtensionBuilder().SetManifest(manifest.Pass()).SetID(id).Build();
   GetExtensionService()->AddExtension(result.get());
   return result.get();
 }

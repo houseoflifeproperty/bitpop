@@ -31,8 +31,8 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/http/http_response_headers.h"
+#include "net/log/net_log.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request_context.h"
@@ -72,21 +72,22 @@ class QuitDelegate : public net::URLFetcherDelegate {
  public:
   QuitDelegate() {}
 
-  virtual ~QuitDelegate() {}
+  ~QuitDelegate() override {}
 
   // net::URLFetcherDelegate implementation.
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE {
+  void OnURLFetchComplete(const net::URLFetcher* source) override {
     base::MessageLoop::current()->Quit();
   }
 
-  virtual void OnURLFetchDownloadProgress(
-      const net::URLFetcher* source,
-      int64 current, int64 total) OVERRIDE {
+  void OnURLFetchDownloadProgress(const net::URLFetcher* source,
+                                  int64 current,
+                                  int64 total) override {
     NOTREACHED();
   }
 
-  virtual void OnURLFetchUploadProgress(const net::URLFetcher* source,
-                                        int64 current, int64 total) OVERRIDE {
+  void OnURLFetchUploadProgress(const net::URLFetcher* source,
+                                int64 current,
+                                int64 total) override {
     NOTREACHED();
   }
 
@@ -100,13 +101,13 @@ class PrintingLogObserver : public net::NetLog::ThreadSafeObserver {
  public:
   PrintingLogObserver() {}
 
-  virtual ~PrintingLogObserver() {
+  ~PrintingLogObserver() override {
     // This is guaranteed to be safe as this program is single threaded.
-    net_log()->RemoveThreadSafeObserver(this);
+    net_log()->DeprecatedRemoveObserver(this);
   }
 
   // NetLog::ThreadSafeObserver implementation:
-  virtual void OnAddEntry(const net::NetLog::Entry& entry) OVERRIDE {
+  void OnAddEntry(const net::NetLog::Entry& entry) override {
     // The log level of the entry is unknown, so just assume it maps
     // to VLOG(1).
     if (!VLOG_IS_ON(1))
@@ -225,11 +226,12 @@ int main(int argc, char* argv[]) {
   // printing_log_observer.
   net::NetLog net_log;
   PrintingLogObserver printing_log_observer;
-  net_log.AddThreadSafeObserver(&printing_log_observer, net::NetLog::LOG_ALL);
+  net_log.DeprecatedAddObserver(&printing_log_observer,
+                                net::NetLogCaptureMode::IncludeSocketBytes());
 
   QuitDelegate delegate;
-  scoped_ptr<net::URLFetcher> fetcher(
-      net::URLFetcher::Create(url, net::URLFetcher::HEAD, &delegate));
+  scoped_ptr<net::URLFetcher> fetcher =
+      net::URLFetcher::Create(url, net::URLFetcher::HEAD, &delegate);
   scoped_ptr<net::URLRequestContext> url_request_context(
       BuildURLRequestContext(&net_log));
   fetcher->SetRequestContext(

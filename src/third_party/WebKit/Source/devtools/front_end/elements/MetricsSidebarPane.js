@@ -28,31 +28,26 @@
 
 /**
  * @constructor
- * @extends {WebInspector.SidebarPane}
+ * @extends {WebInspector.ElementsSidebarPane}
  */
 WebInspector.MetricsSidebarPane = function()
 {
-    WebInspector.SidebarPane.call(this, WebInspector.UIString("Metrics"));
+    WebInspector.ElementsSidebarPane.call(this, WebInspector.UIString("Metrics"));
 }
 
 WebInspector.MetricsSidebarPane.prototype = {
     /**
-     * @param {?WebInspector.DOMNode=} node
+     * @override
+     * @param {?WebInspector.DOMNode} node
      */
-    update: function(node)
+    setNode: function(node)
     {
-        if (!node || this._node === node) {
-            this._innerUpdate();
-            return;
-        }
-
-        this._node = node;
-        this._updateTarget(node.target());
-        this._innerUpdate();
+        WebInspector.ElementsSidebarPane.prototype.setNode.call(this, node);
+        this._updateTarget(node ? node.target() : null);
     },
 
     /**
-     * @param {!WebInspector.Target} target
+     * @param {?WebInspector.Target} target
      */
     _updateTarget: function(target)
     {
@@ -60,32 +55,50 @@ WebInspector.MetricsSidebarPane.prototype = {
             return;
 
         if (this._target) {
-            this._target.cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.StyleSheetChanged, this._styleSheetOrMediaQueryResultChanged, this);
-            this._target.cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.MediaQueryResultChanged, this._styleSheetOrMediaQueryResultChanged, this);
-            this._target.domModel.removeEventListener(WebInspector.DOMModel.Events.AttrModified, this._attributesUpdated, this);
-            this._target.domModel.removeEventListener(WebInspector.DOMModel.Events.AttrRemoved, this._attributesUpdated, this);
-            this._target.resourceTreeModel.removeEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameResized, this._frameResized, this);
+            this._cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.StyleSheetAdded, this.update, this);
+            this._cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.StyleSheetRemoved, this.update, this);
+            this._cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.StyleSheetChanged, this.update, this);
+            this._cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.MediaQueryResultChanged, this.update, this);
+            this._cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.PseudoStateForced, this.update, this);
+            this._domModel.removeEventListener(WebInspector.DOMModel.Events.AttrModified, this._attributesUpdated, this);
+            this._domModel.removeEventListener(WebInspector.DOMModel.Events.AttrRemoved, this._attributesUpdated, this);
+            this._target.resourceTreeModel.removeEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameResized, this.update, this);
         }
         this._target = target;
-        this._target.cssModel.addEventListener(WebInspector.CSSStyleModel.Events.StyleSheetChanged, this._styleSheetOrMediaQueryResultChanged, this);
-        this._target.cssModel.addEventListener(WebInspector.CSSStyleModel.Events.MediaQueryResultChanged, this._styleSheetOrMediaQueryResultChanged, this);
-        this._target.domModel.addEventListener(WebInspector.DOMModel.Events.AttrModified, this._attributesUpdated, this);
-        this._target.domModel.addEventListener(WebInspector.DOMModel.Events.AttrRemoved, this._attributesUpdated, this);
-        this._target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameResized, this._frameResized, this);
+        if (target) {
+            this._domModel = WebInspector.DOMModel.fromTarget(target);
+            this._cssModel = WebInspector.CSSStyleModel.fromTarget(target);
+            this._cssModel.addEventListener(WebInspector.CSSStyleModel.Events.StyleSheetAdded, this.update, this);
+            this._cssModel.addEventListener(WebInspector.CSSStyleModel.Events.StyleSheetRemoved, this.update, this);
+            this._cssModel.addEventListener(WebInspector.CSSStyleModel.Events.StyleSheetChanged, this.update, this);
+            this._cssModel.addEventListener(WebInspector.CSSStyleModel.Events.MediaQueryResultChanged, this.update, this);
+            this._cssModel.addEventListener(WebInspector.CSSStyleModel.Events.PseudoStateForced, this.update, this);
+            this._domModel.addEventListener(WebInspector.DOMModel.Events.AttrModified, this._attributesUpdated, this);
+            this._domModel.addEventListener(WebInspector.DOMModel.Events.AttrRemoved, this._attributesUpdated, this);
+            this._target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameResized, this.update, this);
+        }
     },
 
-    _innerUpdate: function()
+    /**
+     * @override
+     * @param {!WebInspector.Throttler.FinishCallback} finishedCallback
+     * @protected
+     */
+    doUpdate: function(finishedCallback)
     {
         // "style" attribute might have changed. Update metrics unless they are being edited
         // (if a CSS property is added, a StyleSheetChanged event is dispatched).
-        if (this._isEditingMetrics)
+        if (this._isEditingMetrics) {
+            finishedCallback();
             return;
+        }
 
         // FIXME: avoid updates of a collapsed pane.
-        var node = this._node;
+        var node = this.node();
 
         if (!node || node.nodeType() !== Node.ELEMENT_NODE) {
             this.bodyElement.removeChildren();
+            finishedCallback();
             return;
         }
 
@@ -95,11 +108,11 @@ WebInspector.MetricsSidebarPane.prototype = {
          */
         function callback(style)
         {
-            if (!style || this._node !== node)
+            if (!style || this.node() !== node)
                 return;
             this._updateMetrics(style);
         }
-        this._target.cssModel.getComputedStyleAsync(node.id, callback.bind(this));
+        this._cssModel.getComputedStyleAsync(node.id, callback.bind(this));
 
         /**
          * @param {?WebInspector.CSSStyleDeclaration} style
@@ -107,41 +120,19 @@ WebInspector.MetricsSidebarPane.prototype = {
          */
         function inlineStyleCallback(style)
         {
-            if (!style || this._node !== node)
-                return;
-            this.inlineStyle = style;
+            if (style && this.node() === node)
+                this.inlineStyle = style;
+            finishedCallback();
         }
-        this._target.cssModel.getInlineStylesAsync(node.id, inlineStyleCallback.bind(this));
-    },
-
-    _styleSheetOrMediaQueryResultChanged: function()
-    {
-        this._innerUpdate();
-    },
-
-    _frameResized: function()
-    {
-        /**
-         * @this {WebInspector.MetricsSidebarPane}
-         */
-        function refreshContents()
-        {
-            this._innerUpdate();
-            delete this._activeTimer;
-        }
-
-        if (this._activeTimer)
-            clearTimeout(this._activeTimer);
-
-        this._activeTimer = setTimeout(refreshContents.bind(this), 100);
+        this._cssModel.getInlineStylesAsync(node.id, inlineStyleCallback.bind(this));
     },
 
     _attributesUpdated: function(event)
     {
-        if (this._node !== event.data.node)
+        if (this.node() !== event.data.node)
             return;
 
-        this._innerUpdate();
+        this.update();
     },
 
     _getPropertyValueAsPx: function(style, propertyName)
@@ -167,19 +158,19 @@ WebInspector.MetricsSidebarPane.prototype = {
     _highlightDOMNode: function(showHighlight, mode, event)
     {
         event.consume();
-        if (showHighlight && this._node) {
+        if (showHighlight && this.node()) {
             if (this._highlightMode === mode)
                 return;
             this._highlightMode = mode;
-            this._node.highlight(mode);
+            this.node().highlight(mode);
         } else {
             delete this._highlightMode;
-            this._target.domModel.hideDOMNodeHighlight();
+            WebInspector.DOMModel.hideDOMNodeHighlight();
         }
 
         for (var i = 0; this._boxElements && i < this._boxElements.length; ++i) {
             var element = this._boxElements[i];
-            if (!this._node || mode === "all" || element._name === mode)
+            if (!this.node() || mode === "all" || element._name === mode)
                 element.style.backgroundColor = element._backgroundColor;
             else
                 element.style.backgroundColor = "";
@@ -192,7 +183,7 @@ WebInspector.MetricsSidebarPane.prototype = {
     _updateMetrics: function(style)
     {
         // Updating with computed style.
-        var metricsElement = document.createElement("div");
+        var metricsElement = createElement("div");
         metricsElement.className = "metrics";
         var self = this;
 
@@ -214,7 +205,7 @@ WebInspector.MetricsSidebarPane.prototype = {
             value = value.replace(/px$/, "");
             value = Number.toFixedIfFloating(value);
 
-            var element = document.createElement("div");
+            var element = createElement("div");
             element.className = side;
             element.textContent = value;
             element.addEventListener("dblclick", this.startEditing.bind(this, element, name, propertyName, style), false);
@@ -294,20 +285,20 @@ WebInspector.MetricsSidebarPane.prototype = {
             if (name === "position" && noPositionType[style.getPropertyValue("position")])
                 continue;
 
-            var boxElement = document.createElement("div");
+            var boxElement = createElement("div");
             boxElement.className = name;
-            boxElement._backgroundColor = boxColors[i].toString(WebInspector.Color.Format.RGBA);
+            boxElement._backgroundColor = boxColors[i].asString(WebInspector.Color.Format.RGBA);
             boxElement._name = name;
             boxElement.style.backgroundColor = boxElement._backgroundColor;
             boxElement.addEventListener("mouseover", this._highlightDOMNode.bind(this, true, name === "position" ? "all" : name), false);
             this._boxElements.push(boxElement);
 
             if (name === "content") {
-                var widthElement = document.createElement("span");
+                var widthElement = createElement("span");
                 widthElement.textContent = getContentAreaWidthPx(style);
                 widthElement.addEventListener("dblclick", this.startEditing.bind(this, widthElement, "width", "width", style), false);
 
-                var heightElement = document.createElement("span");
+                var heightElement = createElement("span");
                 heightElement.textContent = getContentAreaHeightPx(style);
                 heightElement.addEventListener("dblclick", this.startEditing.bind(this, heightElement, "height", "height", style), false);
 
@@ -317,20 +308,20 @@ WebInspector.MetricsSidebarPane.prototype = {
             } else {
                 var suffix = (name === "border" ? "-width" : "");
 
-                var labelElement = document.createElement("div");
+                var labelElement = createElement("div");
                 labelElement.className = "label";
                 labelElement.textContent = boxLabels[i];
                 boxElement.appendChild(labelElement);
 
                 boxElement.appendChild(createBoxPartElement.call(this, style, name, "top", suffix));
-                boxElement.appendChild(document.createElement("br"));
+                boxElement.appendChild(createElement("br"));
                 boxElement.appendChild(createBoxPartElement.call(this, style, name, "left", suffix));
 
                 if (previousBox)
                     boxElement.appendChild(previousBox);
 
                 boxElement.appendChild(createBoxPartElement.call(this, style, name, "right", suffix));
-                boxElement.appendChild(document.createElement("br"));
+                boxElement.appendChild(createElement("br"));
                 boxElement.appendChild(createBoxPartElement.call(this, style, name, "bottom", suffix));
             }
 
@@ -358,7 +349,7 @@ WebInspector.MetricsSidebarPane.prototype = {
         var config = new WebInspector.InplaceEditor.Config(this.editingCommitted.bind(this), this.editingCancelled.bind(this), context);
         WebInspector.InplaceEditor.startEditing(targetElement, config);
 
-        window.getSelection().setBaseAndExtent(targetElement, 0, targetElement, 1);
+        targetElement.getComponentSelection().setBaseAndExtent(targetElement, 0, targetElement, 1);
     },
 
     _handleKeyDown: function(context, styleProperty, event)
@@ -457,22 +448,6 @@ WebInspector.MetricsSidebarPane.prototype = {
         }
 
         this.previousPropertyDataCandidate = null;
-        var self = this;
-        var callback = function(style) {
-            if (!style)
-                return;
-            self.inlineStyle = style;
-            if (!("originalPropertyData" in self))
-                self.originalPropertyData = self.previousPropertyDataCandidate;
-
-            if (typeof self._highlightMode !== "undefined")
-                self._node.highlight(self._highlightMode);
-
-            if (commitEditor) {
-                self.dispatchEventToListeners("metrics edited");
-                self.update();
-            }
-        };
 
         var allProperties = this.inlineStyle.allProperties;
         for (var i = 0; i < allProperties.length; ++i) {
@@ -481,11 +456,30 @@ WebInspector.MetricsSidebarPane.prototype = {
                 continue;
 
             this.previousPropertyDataCandidate = property;
-            property.setValue(userInput, commitEditor, true, callback);
+            property.setValue(userInput, commitEditor, true, callback.bind(this));
             return;
         }
 
-        this.inlineStyle.appendProperty(context.styleProperty, userInput, callback);
+        this.inlineStyle.appendProperty(context.styleProperty, userInput, callback.bind(this));
+
+        /**
+         * @param {?WebInspector.CSSStyleDeclaration} style
+         * @this {WebInspector.MetricsSidebarPane}
+         */
+        function callback(style)
+        {
+            if (!style)
+                return;
+            this.inlineStyle = style;
+            if (!("originalPropertyData" in this))
+                this.originalPropertyData = this.previousPropertyDataCandidate;
+
+            if (typeof this._highlightMode !== "undefined")
+                this._node.highlight(this._highlightMode);
+
+            if (commitEditor)
+                this.update();
+        }
     },
 
     editingCommitted: function(element, userInput, previousContent, context)
@@ -494,5 +488,5 @@ WebInspector.MetricsSidebarPane.prototype = {
         this._applyUserInput(element, userInput, previousContent, context, true);
     },
 
-    __proto__: WebInspector.SidebarPane.prototype
+    __proto__: WebInspector.ElementsSidebarPane.prototype
 }

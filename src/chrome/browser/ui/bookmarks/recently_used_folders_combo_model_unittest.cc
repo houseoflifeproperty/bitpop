@@ -15,6 +15,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/models/combobox_model_observer.h"
 
+using bookmarks::BookmarkModel;
+using bookmarks::BookmarkNode;
 using content::BrowserThread;
 
 // Implementation of ComboboxModelObserver that records when
@@ -22,7 +24,7 @@ using content::BrowserThread;
 class TestComboboxModelObserver : public ui::ComboboxModelObserver {
  public:
   TestComboboxModelObserver() : changed_(false) {}
-  virtual ~TestComboboxModelObserver() {}
+  ~TestComboboxModelObserver() override {}
 
   // Returns whether the model changed and clears changed state.
   bool GetAndClearChanged() {
@@ -31,8 +33,8 @@ class TestComboboxModelObserver : public ui::ComboboxModelObserver {
     return changed;
   }
 
-  // ComboboxModelObserver:
-  virtual void OnComboboxModelChanged(ui::ComboboxModel* model) OVERRIDE {
+  // ui::ComboboxModelObserver:
+  void OnComboboxModelChanged(ui::ComboboxModel* model) override {
     changed_ = true;
   }
 
@@ -46,8 +48,8 @@ class RecentlyUsedFoldersComboModelTest : public testing::Test {
  public:
   RecentlyUsedFoldersComboModelTest();
 
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
  protected:
   BookmarkModel* GetModel();
@@ -69,7 +71,7 @@ RecentlyUsedFoldersComboModelTest::RecentlyUsedFoldersComboModelTest()
 void RecentlyUsedFoldersComboModelTest::SetUp() {
   profile_.reset(new TestingProfile());
   profile_->CreateBookmarkModel(true);
-  test::WaitForBookmarkModelToLoad(GetModel());
+  bookmarks::test::WaitForBookmarkModelToLoad(GetModel());
 }
 
 void RecentlyUsedFoldersComboModelTest::TearDown() {
@@ -108,7 +110,7 @@ TEST_F(RecentlyUsedFoldersComboModelTest, NotifyObserver) {
 
   const int initial_count = model.GetItemCount();
   // Remove a folder, it should remove an item from the model too.
-  GetModel()->Remove(folder, folder->GetIndexOf(sub_folder));
+  GetModel()->Remove(sub_folder);
   EXPECT_TRUE(observer.GetAndClearChanged());
   const int updated_count = model.GetItemCount();
   EXPECT_LT(updated_count, initial_count);

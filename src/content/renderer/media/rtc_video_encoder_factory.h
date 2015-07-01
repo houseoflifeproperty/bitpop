@@ -13,9 +13,7 @@
 #include "third_party/libjingle/source/talk/media/webrtc/webrtcvideoencoderfactory.h"
 
 namespace media {
-
 class GpuVideoAcceleratorFactories;
-
 }  // namespace media
 
 namespace content {
@@ -27,21 +25,18 @@ class CONTENT_EXPORT RTCVideoEncoderFactory
  public:
   explicit RTCVideoEncoderFactory(
       const scoped_refptr<media::GpuVideoAcceleratorFactories>& gpu_factories);
-  virtual ~RTCVideoEncoderFactory();
+  ~RTCVideoEncoderFactory() override;
 
   // cricket::WebRtcVideoEncoderFactory implementation.
-  virtual webrtc::VideoEncoder* CreateVideoEncoder(
-      webrtc::VideoCodecType type) OVERRIDE;
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual const std::vector<VideoCodec>& codecs() const OVERRIDE;
-  virtual void DestroyVideoEncoder(webrtc::VideoEncoder* encoder) OVERRIDE;
+  webrtc::VideoEncoder* CreateVideoEncoder(
+      webrtc::VideoCodecType type) override;
+  const std::vector<VideoCodec>& codecs() const override;
+  void DestroyVideoEncoder(webrtc::VideoEncoder* encoder) override;
 
  private:
   const scoped_refptr<media::GpuVideoAcceleratorFactories> gpu_factories_;
 
-  // Codec support list of cricket::WebRtcVideoEncoderFactory::VideoCodec
-  // instances.
+  // List of supported cricket::WebRtcVideoEncoderFactory::VideoCodec.
   std::vector<VideoCodec> codecs_;
 
   DISALLOW_COPY_AND_ASSIGN(RTCVideoEncoderFactory);
@@ -49,4 +44,4 @@ class CONTENT_EXPORT RTCVideoEncoderFactory
 
 }  // namespace content
 
-#endif  //  CONTENT_RENDERER_MEDIA_RTC_VIDEO_ENCODER_FACTORY_H_
+#endif  // CONTENT_RENDERER_MEDIA_RTC_VIDEO_ENCODER_FACTORY_H_

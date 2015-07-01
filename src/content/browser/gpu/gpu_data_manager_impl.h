@@ -58,33 +58,38 @@ class CONTENT_EXPORT GpuDataManagerImpl
   static GpuDataManagerImpl* GetInstance();
 
   // GpuDataManager implementation.
-  virtual void InitializeForTesting(
-      const std::string& gpu_blacklist_json,
-      const gpu::GPUInfo& gpu_info) OVERRIDE;
-  virtual bool IsFeatureBlacklisted(int feature) const OVERRIDE;
-  virtual gpu::GPUInfo GetGPUInfo() const OVERRIDE;
-  virtual void GetGpuProcessHandles(
-      const GetGpuProcessHandlesCallback& callback) const OVERRIDE;
-  virtual bool GpuAccessAllowed(std::string* reason) const OVERRIDE;
-  virtual void RequestCompleteGpuInfoIfNeeded() OVERRIDE;
-  virtual bool IsEssentialGpuInfoAvailable() const OVERRIDE;
-  virtual bool IsCompleteGpuInfoAvailable() const OVERRIDE;
-  virtual void RequestVideoMemoryUsageStatsUpdate() const OVERRIDE;
-  virtual bool ShouldUseSwiftShader() const OVERRIDE;
-  virtual void RegisterSwiftShaderPath(const base::FilePath& path) OVERRIDE;
-  virtual bool ShouldUseWarp() const OVERRIDE;
-  virtual void AddObserver(GpuDataManagerObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(GpuDataManagerObserver* observer) OVERRIDE;
-  virtual void UnblockDomainFrom3DAPIs(const GURL& url) OVERRIDE;
-  virtual void DisableGpuWatchdog() OVERRIDE;
-  virtual void SetGLStrings(const std::string& gl_vendor,
-                            const std::string& gl_renderer,
-                            const std::string& gl_version) OVERRIDE;
-  virtual void GetGLStrings(std::string* gl_vendor,
-                            std::string* gl_renderer,
-                            std::string* gl_version) OVERRIDE;
-  virtual void DisableHardwareAcceleration() OVERRIDE;
-  virtual bool CanUseGpuBrowserCompositor() const OVERRIDE;
+  void InitializeForTesting(const std::string& gpu_blacklist_json,
+                            const gpu::GPUInfo& gpu_info) override;
+  bool IsFeatureBlacklisted(int feature) const override;
+  gpu::GPUInfo GetGPUInfo() const override;
+  void GetGpuProcessHandles(
+      const GetGpuProcessHandlesCallback& callback) const override;
+  bool GpuAccessAllowed(std::string* reason) const override;
+  void RequestCompleteGpuInfoIfNeeded() override;
+  bool IsEssentialGpuInfoAvailable() const override;
+  bool IsCompleteGpuInfoAvailable() const override;
+  void RequestVideoMemoryUsageStatsUpdate() const override;
+  bool ShouldUseSwiftShader() const override;
+  void RegisterSwiftShaderPath(const base::FilePath& path) override;
+  bool ShouldUseWarp() const override;
+  // TODO(kbr): the threading model for the GpuDataManagerObservers is
+  // not well defined, and it's impossible for callers to correctly
+  // delete observers from anywhere except in one of the observer's
+  // notification methods. Observer addition and removal, and their
+  // callbacks, should probably be required to occur on the UI thread.
+  void AddObserver(GpuDataManagerObserver* observer) override;
+  void RemoveObserver(GpuDataManagerObserver* observer) override;
+  void UnblockDomainFrom3DAPIs(const GURL& url) override;
+  void DisableGpuWatchdog() override;
+  void SetGLStrings(const std::string& gl_vendor,
+                    const std::string& gl_renderer,
+                    const std::string& gl_version) override;
+  void GetGLStrings(std::string* gl_vendor,
+                    std::string* gl_renderer,
+                    std::string* gl_version) override;
+  void DisableHardwareAcceleration() override;
+  bool CanUseGpuBrowserCompositor() const override;
+  void GetDisabledExtensions(std::string* disabled_extensions) const override;
 
   // This collects preliminary GPU info, load GpuBlacklist, and compute the
   // preliminary blacklisted features; it should only be called at browser
@@ -121,8 +126,8 @@ class CONTENT_EXPORT GpuDataManagerImpl
   void GetBlacklistReasons(base::ListValue* reasons) const;
 
   // Returns the workarounds that are applied to the current system as
-  // a list of strings.
-  void GetDriverBugWorkarounds(base::ListValue* workarounds) const;
+  // a vector of strings.
+  std::vector<std::string> GetDriverBugWorkarounds() const;
 
   void AddLogMessage(int level,
                      const std::string& header,
@@ -207,7 +212,7 @@ class CONTENT_EXPORT GpuDataManagerImpl
   };
 
   GpuDataManagerImpl();
-  virtual ~GpuDataManagerImpl();
+  ~GpuDataManagerImpl() override;
 
   mutable base::Lock lock_;
   scoped_ptr<GpuDataManagerImplPrivate> private_;

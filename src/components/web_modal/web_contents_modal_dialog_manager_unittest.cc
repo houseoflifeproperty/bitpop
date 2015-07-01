@@ -43,7 +43,7 @@ class TestNativeWebContentsModalDialogManager
     : public SingleWebContentsDialogManager {
  public:
   TestNativeWebContentsModalDialogManager(
-      NativeWebContentsModalDialog dialog,
+      gfx::NativeWindow dialog,
       SingleWebContentsDialogManagerDelegate* delegate,
       NativeManagerTracker* tracker)
       : delegate_(delegate),
@@ -53,28 +53,23 @@ class TestNativeWebContentsModalDialogManager
       tracker_->SetState(NativeManagerTracker::NOT_SHOWN);
   }
 
-  virtual void Show() OVERRIDE {
+  void Show() override {
     if (tracker_)
       tracker_->SetState(NativeManagerTracker::SHOWN);
   }
-  virtual void Hide() OVERRIDE {
+  void Hide() override {
     if (tracker_)
       tracker_->SetState(NativeManagerTracker::HIDDEN);
   }
-  virtual void Close() OVERRIDE {
+  void Close() override {
     if (tracker_)
       tracker_->SetState(NativeManagerTracker::CLOSED);
     delegate_->WillClose(dialog_);
   }
-  virtual void Focus() OVERRIDE {
-  }
-  virtual void Pulse() OVERRIDE {
-  }
-  virtual void HostChanged(WebContentsModalDialogHost* new_host) OVERRIDE {
-  }
-  virtual NativeWebContentsModalDialog dialog() OVERRIDE {
-      return dialog_;
-  }
+  void Focus() override {}
+  void Pulse() override {}
+  void HostChanged(WebContentsModalDialogHost* new_host) override {}
+  gfx::NativeWindow dialog() override { return dialog_; }
 
   void StopTracking() {
     tracker_ = NULL;
@@ -82,7 +77,7 @@ class TestNativeWebContentsModalDialogManager
 
  private:
   SingleWebContentsDialogManagerDelegate* delegate_;
-  NativeWebContentsModalDialog dialog_;
+  gfx::NativeWindow dialog_;
   NativeManagerTracker* tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(TestNativeWebContentsModalDialogManager);
@@ -96,7 +91,7 @@ class WebContentsModalDialogManagerTest
         manager(NULL) {
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     content::RenderViewHostTestHarness::SetUp();
 
     delegate.reset(new TestWebContentsModalDialogManagerDelegate);
@@ -106,17 +101,16 @@ class WebContentsModalDialogManagerTest
     test_api.reset(new WebContentsModalDialogManager::TestApi(manager));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     test_api.reset();
     content::RenderViewHostTestHarness::TearDown();
   }
 
  protected:
-  NativeWebContentsModalDialog MakeFakeDialog() {
-    // WebContentsModalDialogManager treats the NativeWebContentsModalDialog as
-    // an opaque type, so creating fake NativeWebContentsModalDialogs using
-    // reinterpret_cast is valid.
-    return reinterpret_cast<NativeWebContentsModalDialog>(next_dialog_id++);
+  gfx::NativeWindow MakeFakeDialog() {
+    // WebContentsModalDialogManager treats the dialog window as an opaque
+    // type, so creating fake dialog windows using reinterpret_cast is valid.
+    return reinterpret_cast<gfx::NativeWindow>(next_dialog_id++);
   }
 
   int next_dialog_id;
@@ -129,7 +123,7 @@ class WebContentsModalDialogManagerTest
 
 SingleWebContentsDialogManager*
 WebContentsModalDialogManager::CreateNativeWebModalManager(
-    NativeWebContentsModalDialog dialog,
+    gfx::NativeWindow dialog,
     SingleWebContentsDialogManagerDelegate* native_delegate) {
   NOTREACHED();
   return new TestNativeWebContentsModalDialogManager(
@@ -142,7 +136,7 @@ WebContentsModalDialogManager::CreateNativeWebModalManager(
 // contents is visible.
 TEST_F(WebContentsModalDialogManagerTest, WebContentsVisible) {
   // Dialog should be shown while WebContents is visible.
-  const NativeWebContentsModalDialog dialog = MakeFakeDialog();
+  const gfx::NativeWindow dialog = MakeFakeDialog();
 
   NativeManagerTracker tracker;
   TestNativeWebContentsModalDialogManager* native_manager =
@@ -164,7 +158,7 @@ TEST_F(WebContentsModalDialogManagerTest, WebContentsNotVisible) {
   // Dialog should not be shown while WebContents is not visible.
   delegate->set_web_contents_visible(false);
 
-  const NativeWebContentsModalDialog dialog = MakeFakeDialog();
+  const gfx::NativeWindow dialog = MakeFakeDialog();
 
   NativeManagerTracker tracker;
   TestNativeWebContentsModalDialogManager* native_manager =
@@ -182,9 +176,9 @@ TEST_F(WebContentsModalDialogManagerTest, WebContentsNotVisible) {
 
 // Test that only the first of multiple dialogs is shown.
 TEST_F(WebContentsModalDialogManagerTest, ShowDialogs) {
-  const NativeWebContentsModalDialog dialog1 = MakeFakeDialog();
-  const NativeWebContentsModalDialog dialog2 = MakeFakeDialog();
-  const NativeWebContentsModalDialog dialog3 = MakeFakeDialog();
+  const gfx::NativeWindow dialog1 = MakeFakeDialog();
+  const gfx::NativeWindow dialog2 = MakeFakeDialog();
+  const gfx::NativeWindow dialog3 = MakeFakeDialog();
 
   NativeManagerTracker tracker1;
   NativeManagerTracker tracker2;
@@ -214,7 +208,7 @@ TEST_F(WebContentsModalDialogManagerTest, ShowDialogs) {
 
 // Test that the dialog is shown/hidden when the WebContents is shown/hidden.
 TEST_F(WebContentsModalDialogManagerTest, VisibilityObservation) {
-  const NativeWebContentsModalDialog dialog = MakeFakeDialog();
+  const gfx::NativeWindow dialog = MakeFakeDialog();
 
   NativeManagerTracker tracker;
   TestNativeWebContentsModalDialogManager* native_manager =
@@ -243,8 +237,8 @@ TEST_F(WebContentsModalDialogManagerTest, VisibilityObservation) {
 
 // Test that attaching an interstitial page closes all dialogs.
 TEST_F(WebContentsModalDialogManagerTest, InterstitialPage) {
-  const NativeWebContentsModalDialog dialog1 = MakeFakeDialog();
-  const NativeWebContentsModalDialog dialog2 = MakeFakeDialog();
+  const gfx::NativeWindow dialog1 = MakeFakeDialog();
+  const gfx::NativeWindow dialog2 = MakeFakeDialog();
 
   NativeManagerTracker tracker1;
   NativeManagerTracker tracker2;
@@ -281,10 +275,10 @@ TEST_F(WebContentsModalDialogManagerTest, InterstitialPage) {
 // dialogs are closed.
 TEST_F(WebContentsModalDialogManagerTest, CloseDialogs) {
   // The front dialog is always shown regardless of dialog close order.
-  const NativeWebContentsModalDialog dialog1 = MakeFakeDialog();
-  const NativeWebContentsModalDialog dialog2 = MakeFakeDialog();
-  const NativeWebContentsModalDialog dialog3 = MakeFakeDialog();
-  const NativeWebContentsModalDialog dialog4 = MakeFakeDialog();
+  const gfx::NativeWindow dialog1 = MakeFakeDialog();
+  const gfx::NativeWindow dialog2 = MakeFakeDialog();
+  const gfx::NativeWindow dialog3 = MakeFakeDialog();
+  const gfx::NativeWindow dialog4 = MakeFakeDialog();
 
   NativeManagerTracker tracker1;
   NativeManagerTracker tracker2;
@@ -356,7 +350,7 @@ TEST_F(WebContentsModalDialogManagerTest, CloseAllDialogs) {
   NativeManagerTracker trackers[kWindowCount];
   TestNativeWebContentsModalDialogManager* native_managers[kWindowCount];
   for (int i = 0; i < kWindowCount; i++) {
-    const NativeWebContentsModalDialog dialog = MakeFakeDialog();
+    const gfx::NativeWindow dialog = MakeFakeDialog();
     native_managers[i] =
         new TestNativeWebContentsModalDialogManager(
             dialog, manager, &(trackers[i]));

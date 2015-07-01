@@ -50,7 +50,10 @@ bool SettingShouldApplyToPrefs(const std::string& name) {
 }  // namespace
 
 SupervisedUserSettingsService::SupervisedUserSettingsService()
-    : active_(false), local_settings_(new base::DictionaryValue) {}
+    : active_(false),
+      initialization_failed_(false),
+      local_settings_(new base::DictionaryValue) {
+}
 
 SupervisedUserSettingsService::~SupervisedUserSettingsService() {}
 
@@ -63,10 +66,15 @@ void SupervisedUserSettingsService::Init(
   PersistentPrefStore* store = new JsonPrefStore(
       path, sequenced_task_runner, scoped_ptr<PrefFilter>());
   Init(store);
-  if (load_synchronously)
+  if (load_synchronously) {
     store_->ReadPrefs();
-  else
+    // TODO(bauerb): Temporary CHECK while investigating
+    // https://crbug.com/425785. Remove (or change to DCHECK) once the bug
+    // is fixed.
+    CHECK(store_->IsInitializationComplete());
+  } else {
     store_->ReadPrefsAsync(NULL);
+  }
 }
 
 void SupervisedUserSettingsService::Init(
@@ -92,12 +100,16 @@ void SupervisedUserSettingsService::SetActive(bool active) {
 }
 
 bool SupervisedUserSettingsService::IsReady() {
-  return store_->IsInitializationComplete();
+  // Initialization cannot be complete but have failed at the same time.
+  DCHECK(!(store_->IsInitializationComplete() && initialization_failed_));
+  return initialization_failed_ || store_->IsInitializationComplete();
 }
 
 void SupervisedUserSettingsService::Clear() {
-  store_->RemoveValue(kAtomicSettings);
-  store_->RemoveValue(kSplitSettings);
+  store_->RemoveValue(kAtomicSettings,
+                      WriteablePrefStore::DEFAULT_PREF_WRITE_FLAGS);
+  store_->RemoveValue(kSplitSettings,
+                      WriteablePrefStore::DEFAULT_PREF_WRITE_FLAGS);
 }
 
 // static
@@ -135,7 +147,7 @@ void SupervisedUserSettingsService::UploadItem(const std::string& key,
   dict->SetWithoutPathExpansion(key_suffix, value.release());
 }
 
-void SupervisedUserSettingsService::SetLocalSettingForTesting(
+void SupervisedUserSettingsService::SetLocalSetting(
     const std::string& key,
     scoped_ptr<base::Value> value) {
   if (value)
@@ -173,19 +185,20 @@ SyncMergeResult SupervisedUserSettingsService::MergeDataAndStartSyncing(
 
   // Clear all atomic and split settings, then recreate them from Sync data.
   Clear();
-  for (SyncDataList::const_iterator it = initial_sync_data.begin();
-       it != initial_sync_data.end(); ++it) {
-    DCHECK_EQ(SUPERVISED_USER_SETTINGS, it->GetDataType());
+  for (const SyncData& sync_data : initial_sync_data) {
+    DCHECK_EQ(SUPERVISED_USER_SETTINGS, sync_data.GetDataType());
     const ::sync_pb::ManagedUserSettingSpecifics& supervised_user_setting =
-        it->GetSpecifics().managed_user_setting();
+        sync_data.GetSpecifics().managed_user_setting();
     scoped_ptr<base::Value> value(
         JSONReader::Read(supervised_user_setting.value()));
     std::string name_suffix = supervised_user_setting.name();
     base::DictionaryValue* dict = GetDictionaryAndSplitKey(&name_suffix);
     dict->SetWithoutPathExpansion(name_suffix, value.release());
   }
-  store_->ReportValueChanged(kAtomicSettings);
-  store_->ReportValueChanged(kSplitSettings);
+  store_->ReportValueChanged(kAtomicSettings,
+                             WriteablePrefStore::DEFAULT_PREF_WRITE_FLAGS);
+  store_->ReportValueChanged(kSplitSettings,
+                             WriteablePrefStore::DEFAULT_PREF_WRITE_FLAGS);
   InformSubscribers();
 
   // Upload all the queued up items (either with an ADD or an UPDATE action,
@@ -208,7 +221,8 @@ SyncMergeResult SupervisedUserSettingsService::MergeDataAndStartSyncing(
   SyncMergeResult result(SUPERVISED_USER_SETTINGS);
   // Process all the accumulated changes from the queued items.
   if (change_list.size() > 0) {
-    store_->ReportValueChanged(kQueuedItems);
+    store_->ReportValueChanged(kQueuedItems,
+                               WriteablePrefStore::DEFAULT_PREF_WRITE_FLAGS);
     result.set_error(
         sync_processor_->ProcessSyncChanges(FROM_HERE, change_list));
   }
@@ -248,24 +262,24 @@ SyncDataList SupervisedUserSettingsService::GetAllSyncData(
 SyncError SupervisedUserSettingsService::ProcessSyncChanges(
     const tracked_objects::Location& from_here,
     const SyncChangeList& change_list) {
-  for (SyncChangeList::const_iterator it = change_list.begin();
-       it != change_list.end(); ++it) {
-    SyncData data = it->sync_data();
+  for (const SyncChange& sync_change : change_list) {
+    SyncData data = sync_change.sync_data();
     DCHECK_EQ(SUPERVISED_USER_SETTINGS, data.GetDataType());
     const ::sync_pb::ManagedUserSettingSpecifics& supervised_user_setting =
         data.GetSpecifics().managed_user_setting();
     std::string key = supervised_user_setting.name();
     base::DictionaryValue* dict = GetDictionaryAndSplitKey(&key);
-    switch (it->change_type()) {
+    SyncChange::SyncChangeType change_type = sync_change.change_type();
+    switch (change_type) {
       case SyncChange::ACTION_ADD:
       case SyncChange::ACTION_UPDATE: {
         scoped_ptr<base::Value> value(
             JSONReader::Read(supervised_user_setting.value()));
         if (dict->HasKey(key)) {
-          DLOG_IF(WARNING, it->change_type() == SyncChange::ACTION_ADD)
+          DLOG_IF(WARNING, change_type == SyncChange::ACTION_ADD)
               << "Value for key " << key << " already exists";
         } else {
-          DLOG_IF(WARNING, it->change_type() == SyncChange::ACTION_UPDATE)
+          DLOG_IF(WARNING, change_type == SyncChange::ACTION_UPDATE)
               << "Value for key " << key << " doesn't exist yet";
         }
         dict->SetWithoutPathExpansion(key, value.release());
@@ -283,8 +297,10 @@ SyncError SupervisedUserSettingsService::ProcessSyncChanges(
       }
     }
   }
-  store_->ReportValueChanged(kAtomicSettings);
-  store_->ReportValueChanged(kSplitSettings);
+  store_->ReportValueChanged(kAtomicSettings,
+                             WriteablePrefStore::DEFAULT_PREF_WRITE_FLAGS);
+  store_->ReportValueChanged(kSplitSettings,
+                             WriteablePrefStore::DEFAULT_PREF_WRITE_FLAGS);
   InformSubscribers();
 
   SyncError error;
@@ -295,8 +311,17 @@ void SupervisedUserSettingsService::OnPrefValueChanged(const std::string& key) {
 }
 
 void SupervisedUserSettingsService::OnInitializationCompleted(bool success) {
-  DCHECK(success);
-  DCHECK(IsReady());
+  if (!success) {
+    // If this happens, it means the profile directory was not found. There is
+    // not much we can do, but the whole profile will probably be useless
+    // anyway. Just mark initialization as failed and continue otherwise,
+    // because subscribers might still expect to be called back.
+    initialization_failed_ = true;
+  }
+
+  // TODO(bauerb): Temporary CHECK while investigating https://crbug.com/425785.
+  // Remove (or change back to DCHECK) once the bug is fixed.
+  CHECK(IsReady());
   InformSubscribers();
 }
 
@@ -309,7 +334,7 @@ base::DictionaryValue* SupervisedUserSettingsService::GetOrCreateDictionary(
     DCHECK(success);
   } else {
     dict = new base::DictionaryValue;
-    store_->SetValue(key, dict);
+    store_->SetValue(key, dict, WriteablePrefStore::DEFAULT_PREF_WRITE_FLAGS);
   }
 
   return dict;
@@ -348,7 +373,7 @@ base::DictionaryValue* SupervisedUserSettingsService::GetDictionaryAndSplitKey(
 
 scoped_ptr<base::DictionaryValue> SupervisedUserSettingsService::GetSettings() {
   DCHECK(IsReady());
-  if (!active_)
+  if (!active_ || initialization_failed_)
     return scoped_ptr<base::DictionaryValue>();
 
   scoped_ptr<base::DictionaryValue> settings(local_settings_->DeepCopy());
@@ -379,8 +404,6 @@ void SupervisedUserSettingsService::InformSubscribers() {
     return;
 
   scoped_ptr<base::DictionaryValue> settings = GetSettings();
-  for (std::vector<SettingsCallback>::iterator it = subscribers_.begin();
-       it != subscribers_.end(); ++it) {
-    it->Run(settings.get());
-  }
+  for (const auto& callback : subscribers_)
+    callback.Run(settings.get());
 }

@@ -23,7 +23,7 @@ extern const char kTestJid[];
 class FakeSession : public Session {
  public:
   FakeSession();
-  virtual ~FakeSession();
+  ~FakeSession() override;
 
   EventHandler* event_handler() { return event_handler_; }
 
@@ -34,20 +34,20 @@ class FakeSession : public Session {
   FakeStreamChannelFactory& fake_channel_factory() { return channel_factory_; }
 
   // Session interface.
-  virtual void SetEventHandler(EventHandler* event_handler) OVERRIDE;
-  virtual ErrorCode error() OVERRIDE;
-  virtual const std::string& jid() OVERRIDE;
-  virtual const CandidateSessionConfig* candidate_config() OVERRIDE;
-  virtual const SessionConfig& config() OVERRIDE;
-  virtual void set_config(const SessionConfig& config) OVERRIDE;
-  virtual StreamChannelFactory* GetTransportChannelFactory() OVERRIDE;
-  virtual StreamChannelFactory* GetMultiplexedChannelFactory() OVERRIDE;
-  virtual void Close() OVERRIDE;
+  void SetEventHandler(EventHandler* event_handler) override;
+  ErrorCode error() override;
+  const std::string& jid() override;
+  const CandidateSessionConfig* candidate_config() override;
+  const SessionConfig& config() override;
+  void set_config(scoped_ptr<SessionConfig> config) override;
+  StreamChannelFactory* GetTransportChannelFactory() override;
+  StreamChannelFactory* GetMultiplexedChannelFactory() override;
+  void Close() override;
 
  public:
   EventHandler* event_handler_;
   scoped_ptr<const CandidateSessionConfig> candidate_config_;
-  SessionConfig config_;
+  scoped_ptr<SessionConfig> config_;
 
   FakeStreamChannelFactory channel_factory_;
 

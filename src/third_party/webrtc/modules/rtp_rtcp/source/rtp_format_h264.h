@@ -12,6 +12,7 @@
 #define WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_FORMAT_H264_H_
 
 #include <queue>
+#include <string>
 
 #include "webrtc/modules/rtp_rtcp/source/rtp_format.h"
 
@@ -25,10 +26,9 @@ class RtpPacketizerH264 : public RtpPacketizer {
 
   virtual ~RtpPacketizerH264();
 
-  virtual void SetPayloadData(
-      const uint8_t* payload_data,
-      size_t payload_size,
-      const RTPFragmentationHeader* fragmentation) OVERRIDE;
+  void SetPayloadData(const uint8_t* payload_data,
+                      size_t payload_size,
+                      const RTPFragmentationHeader* fragmentation) override;
 
   // Get the next payload with H264 payload header.
   // buffer is a pointer to where the output will be written.
@@ -37,15 +37,15 @@ class RtpPacketizerH264 : public RtpPacketizer {
   // the frame, false otherwise (i.e., call the function again to get the
   // next packet).
   // Returns true on success or false if there was no payload to packetize.
-  virtual bool NextPacket(uint8_t* buffer,
-                          size_t* bytes_to_send,
-                          bool* last_packet) OVERRIDE;
+  bool NextPacket(uint8_t* buffer,
+                  size_t* bytes_to_send,
+                  bool* last_packet) override;
 
-  virtual ProtectionType GetProtectionType() OVERRIDE;
+  ProtectionType GetProtectionType() override;
 
-  virtual StorageType GetStorageType(uint32_t retransmission_settings) OVERRIDE;
+  StorageType GetStorageType(uint32_t retransmission_settings) override;
 
-  virtual std::string ToString() OVERRIDE;
+  std::string ToString() override;
 
  private:
   struct Packet {
@@ -92,18 +92,11 @@ class RtpPacketizerH264 : public RtpPacketizer {
 // Depacketizer for H264.
 class RtpDepacketizerH264 : public RtpDepacketizer {
  public:
-  explicit RtpDepacketizerH264(RtpData* const callback);
-
   virtual ~RtpDepacketizerH264() {}
 
-  virtual bool Parse(WebRtcRTPHeader* rtp_header,
-                     const uint8_t* payload_data,
-                     size_t payload_data_length) OVERRIDE;
-
- private:
-  RtpData* const callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(RtpDepacketizerH264);
+  bool Parse(ParsedPayload* parsed_payload,
+             const uint8_t* payload_data,
+             size_t payload_data_length) override;
 };
 }  // namespace webrtc
 #endif  // WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_FORMAT_H264_H_

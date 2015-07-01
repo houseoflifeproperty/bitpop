@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_RENDERER_PEPPER_PEPPER_COMPOSITOR_H_
-#define CONTENT_RENDERER_PEPPER_PEPPER_COMPOSITOR_H_
+#ifndef CONTENT_RENDERER_PEPPER_PEPPER_COMPOSITOR_HOST_H_
+#define CONTENT_RENDERER_PEPPER_PEPPER_COMPOSITOR_HOST_H_
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
@@ -18,6 +18,7 @@ class SharedMemory;
 
 namespace cc {
 class Layer;
+class SharedBitmap;
 }  // namespace cc
 
 namespace content {
@@ -39,13 +40,13 @@ class PepperCompositorHost : public ppapi::host::ResourceHost {
   const scoped_refptr<cc::Layer> layer() { return layer_; };
 
   void ViewInitiatedPaint();
-  void ViewFlushedPaint();
 
  private:
-  virtual ~PepperCompositorHost();
+  ~PepperCompositorHost() override;
 
   void ImageReleased(int32_t id,
-                     const scoped_ptr<base::SharedMemory>& shared_memory,
+                     scoped_ptr<base::SharedMemory> shared_memory,
+                     scoped_ptr<cc::SharedBitmap> bitmap,
                      uint32_t sync_point,
                      bool is_lost);
   void ResourceReleased(int32_t id,
@@ -58,12 +59,12 @@ class PepperCompositorHost : public ppapi::host::ResourceHost {
                    scoped_ptr<base::SharedMemory> image_shm);
 
   // ResourceMessageHandler overrides:
-  virtual int32_t OnResourceMessageReceived(
+  int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
-      ppapi::host::HostMessageContext* context) OVERRIDE;
+      ppapi::host::HostMessageContext* context) override;
 
   // ppapi::host::ResourceHost overrides:
-  virtual bool IsCompositorHost() OVERRIDE;
+  bool IsCompositorHost() override;
 
   // Message handlers:
   int32_t OnHostMsgCommitLayers(
@@ -99,4 +100,4 @@ class PepperCompositorHost : public ppapi::host::ResourceHost {
 
 }  // namespace content
 
-#endif  // CONTENT_RENDERER_PEPPER_PEPPER_COMPOSITOR_H_
+#endif  // CONTENT_RENDERER_PEPPER_PEPPER_COMPOSITOR_HOST_H_

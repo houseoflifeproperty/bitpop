@@ -9,12 +9,13 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "base/threading/thread_checker.h"
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "google_apis/drive/auth_service_interface.h"
 #include "google_apis/drive/auth_service_observer.h"
 #include "google_apis/drive/drive_api_url_generator.h"
-#include "google_apis/drive/gdata_wapi_url_generator.h"
 
 class GURL;
 class OAuth2TokenService;
@@ -26,13 +27,54 @@ class SequencedTaskRunner;
 
 namespace google_apis {
 class RequestSender;
-}
+namespace drive {
+class BatchUploadRequest;
+}  // namespace drive
+}  // namespace google_apis
 
 namespace net {
 class URLRequestContextGetter;
 }  // namespace net
 
 namespace drive {
+
+// Builder for batch request returned by |DriveAPIService|.
+class BatchRequestConfigurator : public BatchRequestConfiguratorInterface,
+                                 public base::NonThreadSafe {
+ public:
+  BatchRequestConfigurator(
+      const base::WeakPtr<google_apis::drive::BatchUploadRequest>&
+          batch_request,
+      const google_apis::CancelCallback& cancel_callback);
+  ~BatchRequestConfigurator() override;
+
+  // BatchRequestConfiguratorInterface overrides.
+  google_apis::CancelCallback MultipartUploadNewFile(
+      const std::string& content_type,
+      int64 content_length,
+      const std::string& parent_resource_id,
+      const std::string& title,
+      const base::FilePath& local_file_path,
+      const UploadNewFileOptions& options,
+      const google_apis::FileResourceCallback& callback,
+      const google_apis::ProgressCallback& progress_callback) override;
+  google_apis::CancelCallback MultipartUploadExistingFile(
+      const std::string& content_type,
+      int64 content_length,
+      const std::string& resource_id,
+      const base::FilePath& local_file_path,
+      const UploadExistingFileOptions& options,
+      const google_apis::FileResourceCallback& callback,
+      const google_apis::ProgressCallback& progress_callback) override;
+  void Commit() override;
+
+ private:
+  // Reference to batch request. It turns to null after committing.
+  base::WeakPtr<google_apis::drive::BatchUploadRequest> batch_request_;
+  google_apis::CancelCallback cancel_callback_;
+
+  DISALLOW_COPY_AND_ASSIGN(BatchRequestConfigurator);
+};
 
 // This class provides Drive request calls using Drive V2 API.
 // Details of API call are abstracted in each request class and this class
@@ -46,9 +88,6 @@ class DriveAPIService : public DriveServiceInterface,
   // |base_url| is used to generate URLs for communication with the drive API.
   // |base_download_url| is used to generate URLs for downloading file from the
   // drive API.
-  // |wapi_base_url| is used to generate URLs for shared_url. Unfortunately,
-  // the share_url is not yet supported on Drive API v2, so as a fallback,
-  // we use GData WAPI.
   // |custom_user_agent| will be used for the User-Agent header in HTTP
   // requests issues through the service if the value is not empty.
   DriveAPIService(
@@ -57,107 +96,107 @@ class DriveAPIService : public DriveServiceInterface,
       base::SequencedTaskRunner* blocking_task_runner,
       const GURL& base_url,
       const GURL& base_download_url,
-      const GURL& wapi_base_url,
       const std::string& custom_user_agent);
-  virtual ~DriveAPIService();
+  ~DriveAPIService() override;
 
   // DriveServiceInterface Overrides
-  virtual void Initialize(const std::string& account_id) OVERRIDE;
-  virtual void AddObserver(DriveServiceObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(DriveServiceObserver* observer) OVERRIDE;
-  virtual bool CanSendRequest() const OVERRIDE;
-  virtual bool HasAccessToken() const OVERRIDE;
-  virtual void RequestAccessToken(
-      const google_apis::AuthStatusCallback& callback) OVERRIDE;
-  virtual bool HasRefreshToken() const OVERRIDE;
-  virtual void ClearAccessToken() OVERRIDE;
-  virtual void ClearRefreshToken() OVERRIDE;
-  virtual std::string GetRootResourceId() const OVERRIDE;
-  virtual google_apis::CancelCallback GetAllFileList(
-      const google_apis::FileListCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback GetFileListInDirectory(
+  void Initialize(const std::string& account_id) override;
+  void AddObserver(DriveServiceObserver* observer) override;
+  void RemoveObserver(DriveServiceObserver* observer) override;
+  bool CanSendRequest() const override;
+  bool HasAccessToken() const override;
+  void RequestAccessToken(
+      const google_apis::AuthStatusCallback& callback) override;
+  bool HasRefreshToken() const override;
+  void ClearAccessToken() override;
+  void ClearRefreshToken() override;
+  std::string GetRootResourceId() const override;
+  google_apis::CancelCallback GetAllFileList(
+      const google_apis::FileListCallback& callback) override;
+  google_apis::CancelCallback GetFileListInDirectory(
       const std::string& directory_resource_id,
-      const google_apis::FileListCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback Search(
+      const google_apis::FileListCallback& callback) override;
+  google_apis::CancelCallback Search(
       const std::string& search_query,
-      const google_apis::FileListCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback SearchByTitle(
+      const google_apis::FileListCallback& callback) override;
+  google_apis::CancelCallback SearchByTitle(
       const std::string& title,
       const std::string& directory_resource_id,
-      const google_apis::FileListCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback GetChangeList(
+      const google_apis::FileListCallback& callback) override;
+  google_apis::CancelCallback GetChangeList(
       int64 start_changestamp,
-      const google_apis::ChangeListCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback GetRemainingChangeList(
+      const google_apis::ChangeListCallback& callback) override;
+  google_apis::CancelCallback GetRemainingChangeList(
       const GURL& next_link,
-      const google_apis::ChangeListCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback GetRemainingFileList(
+      const google_apis::ChangeListCallback& callback) override;
+  google_apis::CancelCallback GetRemainingFileList(
       const GURL& next_link,
-      const google_apis::FileListCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback GetFileResource(
+      const google_apis::FileListCallback& callback) override;
+  google_apis::CancelCallback GetFileResource(
       const std::string& resource_id,
-      const google_apis::FileResourceCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback GetShareUrl(
+      const google_apis::FileResourceCallback& callback) override;
+  google_apis::CancelCallback GetShareUrl(
       const std::string& resource_id,
       const GURL& embed_origin,
-      const google_apis::GetShareUrlCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback GetAboutResource(
-      const google_apis::AboutResourceCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback GetAppList(
-      const google_apis::AppListCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback DeleteResource(
+      const google_apis::GetShareUrlCallback& callback) override;
+  google_apis::CancelCallback GetAboutResource(
+      const google_apis::AboutResourceCallback& callback) override;
+  google_apis::CancelCallback GetAppList(
+      const google_apis::AppListCallback& callback) override;
+  google_apis::CancelCallback DeleteResource(
       const std::string& resource_id,
       const std::string& etag,
-      const google_apis::EntryActionCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback TrashResource(
+      const google_apis::EntryActionCallback& callback) override;
+  google_apis::CancelCallback TrashResource(
       const std::string& resource_id,
-      const google_apis::EntryActionCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback DownloadFile(
+      const google_apis::EntryActionCallback& callback) override;
+  google_apis::CancelCallback DownloadFile(
       const base::FilePath& local_cache_path,
       const std::string& resource_id,
       const google_apis::DownloadActionCallback& download_action_callback,
       const google_apis::GetContentCallback& get_content_callback,
-      const google_apis::ProgressCallback& progress_callback) OVERRIDE;
-  virtual google_apis::CancelCallback CopyResource(
+      const google_apis::ProgressCallback& progress_callback) override;
+  google_apis::CancelCallback CopyResource(
       const std::string& resource_id,
       const std::string& parent_resource_id,
       const std::string& new_title,
       const base::Time& last_modified,
-      const google_apis::FileResourceCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback UpdateResource(
+      const google_apis::FileResourceCallback& callback) override;
+  google_apis::CancelCallback UpdateResource(
       const std::string& resource_id,
       const std::string& parent_resource_id,
       const std::string& new_title,
       const base::Time& last_modified,
       const base::Time& last_viewed_by_me,
-      const google_apis::FileResourceCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback AddResourceToDirectory(
+      const google_apis::drive::Properties& properties,
+      const google_apis::FileResourceCallback& callback) override;
+  google_apis::CancelCallback AddResourceToDirectory(
       const std::string& parent_resource_id,
       const std::string& resource_id,
-      const google_apis::EntryActionCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback RemoveResourceFromDirectory(
+      const google_apis::EntryActionCallback& callback) override;
+  google_apis::CancelCallback RemoveResourceFromDirectory(
       const std::string& parent_resource_id,
       const std::string& resource_id,
-      const google_apis::EntryActionCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback AddNewDirectory(
+      const google_apis::EntryActionCallback& callback) override;
+  google_apis::CancelCallback AddNewDirectory(
       const std::string& parent_resource_id,
       const std::string& directory_title,
       const AddNewDirectoryOptions& options,
-      const google_apis::FileResourceCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback InitiateUploadNewFile(
+      const google_apis::FileResourceCallback& callback) override;
+  google_apis::CancelCallback InitiateUploadNewFile(
       const std::string& content_type,
       int64 content_length,
       const std::string& parent_resource_id,
       const std::string& title,
-      const InitiateUploadNewFileOptions& options,
-      const google_apis::InitiateUploadCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback InitiateUploadExistingFile(
+      const UploadNewFileOptions& options,
+      const google_apis::InitiateUploadCallback& callback) override;
+  google_apis::CancelCallback InitiateUploadExistingFile(
       const std::string& content_type,
       int64 content_length,
       const std::string& resource_id,
-      const InitiateUploadExistingFileOptions& options,
-      const google_apis::InitiateUploadCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback ResumeUpload(
+      const UploadExistingFileOptions& options,
+      const google_apis::InitiateUploadCallback& callback) override;
+  google_apis::CancelCallback ResumeUpload(
       const GURL& upload_url,
       int64 start_position,
       int64 end_position,
@@ -165,27 +204,48 @@ class DriveAPIService : public DriveServiceInterface,
       const std::string& content_type,
       const base::FilePath& local_file_path,
       const google_apis::drive::UploadRangeCallback& callback,
-      const google_apis::ProgressCallback& progress_callback) OVERRIDE;
-  virtual google_apis::CancelCallback GetUploadStatus(
+      const google_apis::ProgressCallback& progress_callback) override;
+  google_apis::CancelCallback GetUploadStatus(
       const GURL& upload_url,
       int64 content_length,
-      const google_apis::drive::UploadRangeCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback AuthorizeApp(
+      const google_apis::drive::UploadRangeCallback& callback) override;
+  google_apis::CancelCallback MultipartUploadNewFile(
+      const std::string& content_type,
+      int64 content_length,
+      const std::string& parent_resource_id,
+      const std::string& title,
+      const base::FilePath& local_file_path,
+      const drive::UploadNewFileOptions& options,
+      const google_apis::FileResourceCallback& callback,
+      const google_apis::ProgressCallback& progress_callback) override;
+  google_apis::CancelCallback MultipartUploadExistingFile(
+      const std::string& content_type,
+      int64 content_length,
+      const std::string& resource_id,
+      const base::FilePath& local_file_path,
+      const drive::UploadExistingFileOptions& options,
+      const google_apis::FileResourceCallback& callback,
+      const google_apis::ProgressCallback& progress_callback) override;
+  google_apis::CancelCallback AuthorizeApp(
       const std::string& resource_id,
       const std::string& app_id,
-      const google_apis::AuthorizeAppCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback UninstallApp(
+      const google_apis::AuthorizeAppCallback& callback) override;
+  google_apis::CancelCallback UninstallApp(
       const std::string& app_id,
-      const google_apis::EntryActionCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback AddPermission(
+      const google_apis::EntryActionCallback& callback) override;
+  google_apis::CancelCallback AddPermission(
       const std::string& resource_id,
       const std::string& email,
       google_apis::drive::PermissionRole role,
-      const google_apis::EntryActionCallback& callback) OVERRIDE;
+      const google_apis::EntryActionCallback& callback) override;
+  scoped_ptr<BatchRequestConfiguratorInterface> StartBatchRequest() override;
 
  private:
   // AuthServiceObserver override.
-  virtual void OnOAuth2RefreshTokenChanged() OVERRIDE;
+  void OnOAuth2RefreshTokenChanged() override;
+
+  // The class is expected to run on UI thread.
+  base::ThreadChecker thread_checker_;
 
   OAuth2TokenService* oauth2_token_service_;
   scoped_refptr<net::URLRequestContextGetter> url_request_context_getter_;
@@ -193,7 +253,6 @@ class DriveAPIService : public DriveServiceInterface,
   scoped_ptr<google_apis::RequestSender> sender_;
   ObserverList<DriveServiceObserver> observers_;
   google_apis::DriveApiUrlGenerator url_generator_;
-  google_apis::GDataWapiUrlGenerator wapi_url_generator_;
   const std::string custom_user_agent_;
 
   DISALLOW_COPY_AND_ASSIGN(DriveAPIService);

@@ -16,10 +16,10 @@
 #include "content/public/browser/browser_thread.h"
 #include "net/base/io_buffer.h"
 #include "net/base/mime_sniffer.h"
+#include "storage/browser/blob/shareable_file_reference.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/fileapi/file_system_operation_context.h"
 #include "storage/browser/fileapi/native_file_util.h"
-#include "storage/common/blob/shareable_file_reference.h"
 #include "url/gurl.h"
 
 namespace {
@@ -54,7 +54,7 @@ void DidOpenSnapshot(
     const storage::AsyncFileUtil::CreateOrOpenCallback& callback,
     const scoped_refptr<storage::ShareableFileReference>& file_ref,
     base::File file) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
   if (!file.IsValid()) {
     callback.Run(file.Pass(), base::Closure());
     return;
@@ -104,7 +104,7 @@ void NativeMediaFileUtil::CreatedSnapshotFileForCreateOrOpen(
     const base::File::Info& file_info,
     const base::FilePath& platform_path,
     const scoped_refptr<storage::ShareableFileReference>& file_ref) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
   if (result != base::File::FILE_OK) {
     callback.Run(base::File(), base::Closure());
     return;

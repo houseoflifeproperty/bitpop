@@ -13,6 +13,8 @@
 #include "ui/base/models/tree_node_iterator.h"
 
 using namespace image::collections;
+using bookmarks::BookmarkModel;
+using bookmarks::BookmarkNode;
 
 namespace {
 
@@ -82,10 +84,9 @@ std::string RemoteIdFromBookmark(BookmarkModel* bookmark_model,
     return SetRemoteIdOnBookmark(bookmark_model, node);
 
   BookmarkNode::MetaInfoMap::const_iterator it = map->find(kIdDataKey);
-  if (it == map->end())
+  if (it == map->end() || it->second.empty())
     return SetRemoteIdOnBookmark(bookmark_model, node);
 
-  DCHECK(it->second.length());
   return it->second;
 }
 
@@ -102,7 +103,7 @@ std::string DescriptionFromBookmark(const BookmarkNode* node) {
 
   // First, look for a custom note set by the user.
   BookmarkNode::MetaInfoMap::const_iterator it = map->find(kNoteKey);
-  if (it != map->end() && it->second != "")
+  if (it != map->end() && !it->second.empty())
     return it->second;
 
   // If none are present, return the snippet.
@@ -120,7 +121,7 @@ bool SetOriginalImageForBookmark(BookmarkModel* bookmark_model,
   ImageData data;
 
   // Try to populate the imageData with the existing data.
-  if (decoded != "") {
+  if (!decoded.empty()) {
     // If the parsing fails, something is wrong. Immediately fail.
     bool result = data.ParseFromString(decoded);
     if (!result)
@@ -151,7 +152,7 @@ bool OriginalImageFromBookmark(const BookmarkNode* node,
                                int* width,
                                int* height) {
   std::string decoded(DataForMetaInfoField(node, kImageDataKey));
-  if (decoded == "")
+  if (decoded.empty())
     return false;
 
   ImageData data;
@@ -170,7 +171,7 @@ bool ThumbnailImageFromBookmark(const BookmarkNode* node,
                                 int* width,
                                 int* height) {
   std::string decoded(DataForMetaInfoField(node, kImageDataKey));
-  if (decoded == "")
+  if (decoded.empty())
     return false;
 
   ImageData data;
@@ -186,7 +187,7 @@ bool ThumbnailImageFromBookmark(const BookmarkNode* node,
 
 std::string SnippetFromBookmark(const BookmarkNode* node) {
   std::string decoded(DataForMetaInfoField(node, kPageDataKey));
-  if (decoded == "")
+  if (decoded.empty())
     return decoded;
 
   PageData data;
@@ -211,7 +212,7 @@ bool SetAllImagesForBookmark(BookmarkModel* bookmark_model,
   ImageData data;
 
   // Try to populate the imageData with the existing data.
-  if (decoded != "") {
+  if (!decoded.empty()) {
     // If the parsing fails, something is wrong. Immediately fail.
     bool result = data.ParseFromString(decoded);
     if (!result)

@@ -24,7 +24,8 @@ struct DOMAIN_RELIABILITY_EXPORT DomainReliabilityBeacon {
 
   // Converts the Beacon to JSON format for uploading. Calculates the age
   // relative to an upload time of |upload_time|.
-  base::Value* ToValue(base::TimeTicks upload_time) const;
+  base::Value* ToValue(base::TimeTicks upload_time,
+                       base::TimeTicks last_network_change_time) const;
 
   // The URL that the beacon is reporting on, if included.
   std::string url;
@@ -38,6 +39,9 @@ struct DOMAIN_RELIABILITY_EXPORT DomainReliabilityBeacon {
   int chrome_error;
   // IP address of the server the request went to.
   std::string server_ip;
+  // Whether the request went through a proxy. If true, |server_ip| will be
+  // empty.
+  bool was_proxied;
   // Protocol used to make the request.
   std::string protocol;
   // HTTP response code returned by the server, or -1 if none was received.

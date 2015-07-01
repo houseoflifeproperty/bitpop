@@ -34,11 +34,11 @@ class TooltipBubble : public InfoBubble {
  public:
   TooltipBubble(views::View* anchor, const base::string16& message)
       : InfoBubble(anchor, message) {}
-  virtual ~TooltipBubble() {}
+  ~TooltipBubble() override {}
 
  protected:
   // InfoBubble:
-  virtual gfx::Rect GetAnchorRect() const OVERRIDE {
+  gfx::Rect GetAnchorRect() const override {
     gfx::Rect bounds = views::BubbleDelegateView::GetAnchorRect();
     bounds.Inset(GetPreferredInsets(anchor()));
     return bounds;
@@ -54,6 +54,7 @@ TooltipIcon::TooltipIcon(const base::string16& tooltip)
     : tooltip_(tooltip),
       mouse_inside_(false),
       bubble_(NULL),
+      bubble_arrow_(views::BubbleBorder::TOP_RIGHT),
       observer_(this) {
   ChangeImageTo(IDR_AUTOFILL_TOOLTIP_ICON);
 }
@@ -112,6 +113,7 @@ void TooltipIcon::ShowBubble() {
   ChangeImageTo(IDR_AUTOFILL_TOOLTIP_ICON_H);
 
   bubble_ = new TooltipBubble(this, tooltip_);
+  bubble_->set_arrow(bubble_arrow_);
   // When shown due to a gesture event, close on deactivate (i.e. don't use
   // "focusless").
   bubble_->set_can_activate(!mouse_inside_);

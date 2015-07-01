@@ -33,7 +33,7 @@ class DistillerURLFetcherFactory {
 class DistillerURLFetcher : public net::URLFetcherDelegate {
  public:
   explicit DistillerURLFetcher(net::URLRequestContextGetter* context_getter);
-  virtual ~DistillerURLFetcher();
+  ~DistillerURLFetcher() override;
 
   // Indicates when a fetch is done.
   typedef base::Callback<void(const std::string& data)> URLFetcherCallback;
@@ -43,13 +43,13 @@ class DistillerURLFetcher : public net::URLFetcherDelegate {
                         const URLFetcherCallback& callback);
 
  protected:
-  virtual net::URLFetcher* CreateURLFetcher(
+  virtual scoped_ptr<net::URLFetcher> CreateURLFetcher(
       net::URLRequestContextGetter* context_getter,
       const std::string& url);
 
  private:
   // net::URLFetcherDelegate:
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
 
   scoped_ptr<net::URLFetcher> url_fetcher_;
   URLFetcherCallback callback_;

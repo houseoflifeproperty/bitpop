@@ -12,13 +12,16 @@
 #include "base/memory/weak_ptr.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
+#include "net/cert/cert_verifier.h"
 #include "net/cert/cert_verify_result.h"
 #include "net/cert/ct_verify_result.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/ssl/channel_id_service.h"
+#include "net/ssl/openssl_ssl_util.h"
 #include "net/ssl/ssl_client_cert_type.h"
 #include "net/ssl/ssl_config_service.h"
+#include "net/ssl/ssl_failure_state.h"
 
 // Avoid including misc OpenSSL headers, i.e.:
 // <openssl/bio.h>
@@ -36,7 +39,6 @@ namespace net {
 
 class CertVerifier;
 class CTVerifier;
-class SingleRequestCertVerifier;
 class SSLCertRequestInfo;
 class SSLInfo;
 
@@ -51,7 +53,7 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
                          const HostPortPair& host_and_port,
                          const SSLConfig& ssl_config,
                          const SSLClientSocketContext& context);
-  virtual ~SSLClientSocketOpenSSL();
+  ~SSLClientSocketOpenSSL() override;
 
   const HostPortPair& host_and_port() const { return host_and_port_; }
   const std::string& ssl_session_cache_shard() const {
@@ -59,49 +61,50 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   }
 
   // SSLClientSocket implementation.
-  virtual std::string GetSessionCacheKey() const OVERRIDE;
-  virtual bool InSessionCache() const OVERRIDE;
-  virtual void SetHandshakeCompletionCallback(
-      const base::Closure& callback) OVERRIDE;
-  virtual void GetSSLCertRequestInfo(
-      SSLCertRequestInfo* cert_request_info) OVERRIDE;
-  virtual NextProtoStatus GetNextProto(std::string* proto) OVERRIDE;
-  virtual ChannelIDService* GetChannelIDService() const OVERRIDE;
+  void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info) override;
+  NextProtoStatus GetNextProto(std::string* proto) const override;
+  ChannelIDService* GetChannelIDService() const override;
+  SSLFailureState GetSSLFailureState() const override;
 
   // SSLSocket implementation.
-  virtual int ExportKeyingMaterial(const base::StringPiece& label,
-                                   bool has_context,
-                                   const base::StringPiece& context,
-                                   unsigned char* out,
-                                   unsigned int outlen) OVERRIDE;
-  virtual int GetTLSUniqueChannelBinding(std::string* out) OVERRIDE;
+  int ExportKeyingMaterial(const base::StringPiece& label,
+                           bool has_context,
+                           const base::StringPiece& context,
+                           unsigned char* out,
+                           unsigned int outlen) override;
+  int GetTLSUniqueChannelBinding(std::string* out) override;
 
   // StreamSocket implementation.
-  virtual int Connect(const CompletionCallback& callback) OVERRIDE;
-  virtual void Disconnect() OVERRIDE;
-  virtual bool IsConnected() const OVERRIDE;
-  virtual bool IsConnectedAndIdle() const OVERRIDE;
-  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
-  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
-  virtual const BoundNetLog& NetLog() const OVERRIDE;
-  virtual void SetSubresourceSpeculation() OVERRIDE;
-  virtual void SetOmniboxSpeculation() OVERRIDE;
-  virtual bool WasEverUsed() const OVERRIDE;
-  virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
+  int Connect(const CompletionCallback& callback) override;
+  void Disconnect() override;
+  bool IsConnected() const override;
+  bool IsConnectedAndIdle() const override;
+  int GetPeerAddress(IPEndPoint* address) const override;
+  int GetLocalAddress(IPEndPoint* address) const override;
+  const BoundNetLog& NetLog() const override;
+  void SetSubresourceSpeculation() override;
+  void SetOmniboxSpeculation() override;
+  bool WasEverUsed() const override;
+  bool UsingTCPFastOpen() const override;
+  bool GetSSLInfo(SSLInfo* ssl_info) override;
+  void GetConnectionAttempts(ConnectionAttempts* out) const override;
+  void ClearConnectionAttempts() override {}
+  void AddConnectionAttempts(const ConnectionAttempts& attempts) override {}
 
   // Socket implementation.
-  virtual int Read(IOBuffer* buf, int buf_len,
-                   const CompletionCallback& callback) OVERRIDE;
-  virtual int Write(IOBuffer* buf, int buf_len,
-                    const CompletionCallback& callback) OVERRIDE;
-  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual int SetSendBufferSize(int32 size) OVERRIDE;
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override;
+  int Write(IOBuffer* buf,
+            int buf_len,
+            const CompletionCallback& callback) override;
+  int SetReceiveBufferSize(int32 size) override;
+  int SetSendBufferSize(int32 size) override;
 
  protected:
   // SSLClientSocket implementation.
-  virtual scoped_refptr<X509Certificate> GetUnverifiedServerCertificateChain()
-      const OVERRIDE;
+  scoped_refptr<X509Certificate> GetUnverifiedServerCertificateChain()
+      const override;
 
  private:
   class PeerCertificateChain;
@@ -113,10 +116,9 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   void DoReadCallback(int result);
   void DoWriteCallback(int result);
 
-  void OnHandshakeCompletion();
-
   bool DoTransportIO();
   int DoHandshake();
+  int DoHandshakeComplete(int result);
   int DoChannelIDLookup();
   int DoChannelIDLookupComplete(int result);
   int DoVerifyCert(int result);
@@ -170,11 +172,17 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
                           const char *argp, int argi, long argl,
                           long retvalue);
 
-  // Callback that is used to obtain information about the state of the SSL
-  // handshake.
-  static void InfoCallback(const SSL* ssl, int type, int val);
+  // Called after the initial handshake completes and after the server
+  // certificate has been verified. The order of handshake completion and
+  // certificate verification depends on whether the connection was false
+  // started. After both have happened (thus calling this twice), the session is
+  // safe to cache and will be cached.
+  void MaybeCacheSession();
 
-  void CheckIfHandshakeFinished();
+  // Callback from the SSL layer when the internal state machine progresses. It
+  // is used to listen for when the handshake completes entirely; |Connect| may
+  // return early if false starting.
+  void InfoCallback(int type, int val);
 
   // Adds the SignedCertificateTimestamps from ct_verify_result_ to |ssl_info|.
   // SCTs are held in three separate vectors in ct_verify_result, each
@@ -183,11 +191,20 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // the |ssl_info|.signed_certificate_timestamps list.
   void AddSCTInfoToSSLInfo(SSLInfo* ssl_info) const;
 
+  // Returns a unique key string for the SSL session cache for
+  // this socket.
+  std::string GetSessionCacheKey() const;
+
+  // Returns true if renegotiations are allowed.
+  bool IsRenegotiationAllowed() const;
+
   bool transport_send_busy_;
   bool transport_recv_busy_;
 
-  scoped_refptr<DrainableIOBuffer> send_buffer_;
-  scoped_refptr<IOBuffer> recv_buffer_;
+  // Buffers which are shared by BoringSSL and SSLClientSocketOpenSSL.
+  // GrowableIOBuffer is used to keep ownership and setting offset.
+  scoped_refptr<GrowableIOBuffer> send_buffer_;
+  scoped_refptr<GrowableIOBuffer> recv_buffer_;
 
   CompletionCallback user_connect_callback_;
   CompletionCallback user_read_callback_;
@@ -209,6 +226,13 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // indicates an error.
   int pending_read_error_;
 
+  // If there is a pending read result, the OpenSSL result code (output of
+  // SSL_get_error) associated with it.
+  int pending_read_ssl_error_;
+
+  // If there is a pending read result, the OpenSSLErrorInfo associated with it.
+  OpenSSLErrorInfo pending_read_error_info_;
+
   // Used by TransportReadComplete() to signify an error reading from the
   // transport socket. A value of OK indicates the socket is still
   // readable. EOFs are mapped to ERR_CONNECTION_CLOSED.
@@ -228,9 +252,6 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // network.
   bool was_ever_used_;
 
-  // Stores client authentication information between ClientAuthHandler and
-  // GetSSLCertRequestInfo calls.
-  bool client_auth_cert_needed_;
   // List of DER-encoded X.509 DistinguishedName of certificate authorities
   // allowed by the server.
   std::vector<std::string> cert_authorities_;
@@ -239,7 +260,7 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   std::vector<SSLClientCertType> cert_key_types_;
 
   CertVerifier* const cert_verifier_;
-  scoped_ptr<SingleRequestCertVerifier> verifier_;
+  scoped_ptr<CertVerifier::Request> cert_verifier_request_;
   base::TimeTicks start_cert_verification_time_;
 
   // Certificate Transparency: Verifier and result holder.
@@ -248,12 +269,6 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
 
   // The service for retrieving Channel ID keys.  May be NULL.
   ChannelIDService* channel_id_service_;
-
-  // Callback that is invoked when the connection finishes.
-  //
-  // Note: this callback will be run in Disconnect(). It will not alter
-  // any member variables of the SSLClientSocketOpenSSL.
-  base::Closure handshake_completion_callback_;
 
   // OpenSSL stuff
   SSL* ssl_;
@@ -267,12 +282,10 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // resume on the socket with a different value.
   const std::string ssl_session_cache_shard_;
 
-  // Used for session cache diagnostics.
-  bool trying_cached_session_;
-
   enum State {
     STATE_NONE,
     STATE_HANDSHAKE,
+    STATE_HANDSHAKE_COMPLETE,
     STATE_CHANNEL_ID_LOOKUP,
     STATE_CHANNEL_ID_LOOKUP_COMPLETE,
     STATE_VERIFY_CERT,
@@ -284,17 +297,19 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // Written by the |channel_id_service_|.
   std::string channel_id_private_key_;
   std::string channel_id_cert_;
-  // True if channel ID extension was negotiated.
-  bool channel_id_xtn_negotiated_;
-  // True if InfoCallback has been run with result = SSL_CB_HANDSHAKE_DONE.
-  bool handshake_succeeded_;
-  // True if MarkSSLSessionAsGood has been called for this socket's
-  // SSL session.
-  bool marked_session_as_good_;
+  // True if a channel ID was sent.
+  bool channel_id_sent_;
+  // True if the initial handshake has completed.
+  bool handshake_completed_;
+  // True if the initial handshake's certificate has been verified.
+  bool certificate_verified_;
   // The request handle for |channel_id_service_|.
   ChannelIDService::RequestHandle channel_id_request_handle_;
+  SSLFailureState ssl_failure_state_;
 
   TransportSecurityState* transport_security_state_;
+
+  CertPolicyEnforcer* const policy_enforcer_;
 
   // pinning_failure_log contains a message produced by
   // TransportSecurityState::CheckPublicKeyPins in the event of a

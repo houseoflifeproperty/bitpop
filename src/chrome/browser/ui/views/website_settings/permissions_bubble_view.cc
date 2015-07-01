@@ -4,10 +4,19 @@
 
 #include "chrome/browser/ui/views/website_settings/permissions_bubble_view.h"
 
+#include "base/prefs/pref_service.h"
 #include "base/strings/string16.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/views/exclusive_access_bubble_views.h"
+#include "chrome/browser/ui/views/frame/browser_view.h"
+#include "chrome/browser/ui/views/frame/top_container_view.h"
+#include "chrome/browser/ui/views/location_bar/location_bar_view.h"
+#include "chrome/browser/ui/views/location_bar/location_icon_view.h"
 #include "chrome/browser/ui/views/website_settings/permission_selector_view.h"
 #include "chrome/browser/ui/views/website_settings/permission_selector_view_observer.h"
 #include "chrome/browser/ui/website_settings/permission_bubble_request.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
 #include "net/base/net_util.h"
 #include "ui/accessibility/ax_view_state.h"
@@ -16,6 +25,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/text_constants.h"
 #include "ui/views/bubble/bubble_delegate.h"
+#include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/label_button_border.h"
@@ -65,15 +75,14 @@ class PermissionCombobox : public views::MenuButton,
                      int index,
                      const GURL& url,
                      ContentSetting setting);
-  virtual ~PermissionCombobox();
+  ~PermissionCombobox() override;
 
   int index() const { return index_; }
 
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  void GetAccessibleState(ui::AXViewState* state) override;
 
   // MenuButtonListener:
-  virtual void OnMenuButtonClicked(View* source,
-                                   const gfx::Point& point) OVERRIDE;
+  void OnMenuButtonClicked(View* source, const gfx::Point& point) override;
 
   // Callback when a permission's setting is changed.
   void PermissionChanged(const WebsiteSettingsUI::PermissionInfo& permission);
@@ -89,7 +98,7 @@ PermissionCombobox::PermissionCombobox(Listener* listener,
                                        int index,
                                        const GURL& url,
                                        ContentSetting setting)
-    : MenuButton(NULL, base::string16(), this, true),
+    : MenuButton(nullptr, base::string16(), this, true),
       index_(index),
       listener_(listener),
       model_(new PermissionMenuModel(
@@ -134,78 +143,47 @@ void PermissionCombobox::PermissionChanged(
       index_, permission.setting == CONTENT_SETTING_ALLOW);
 }
 
-// A combobox originating on the Allow button allowing for customization
-// of permissions.
-class CustomizeAllowComboboxModel : public ui::ComboboxModel {
- public:
-  enum Item {
-    INDEX_ALLOW = 0,
-    INDEX_CUSTOMIZE = 1
-  };
-
-  CustomizeAllowComboboxModel() {}
-  virtual ~CustomizeAllowComboboxModel() {}
-
-  virtual int GetItemCount() const OVERRIDE;
-  virtual base::string16 GetItemAt(int index) OVERRIDE;
-  virtual int GetDefaultIndex() const OVERRIDE;
-};
-
-int CustomizeAllowComboboxModel::GetItemCount() const {
-  return 2;
-}
-
-base::string16 CustomizeAllowComboboxModel::GetItemAt(int index) {
-  if (index == INDEX_ALLOW)
-    return l10n_util::GetStringUTF16(IDS_PERMISSION_ALLOW);
-  else
-    return l10n_util::GetStringUTF16(IDS_PERMISSION_CUSTOMIZE);
-}
-
-int CustomizeAllowComboboxModel::GetDefaultIndex() const {
-  return INDEX_ALLOW;
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // View implementation for the permissions bubble.
 class PermissionsBubbleDelegateView : public views::BubbleDelegateView,
                                       public views::ButtonListener,
-                                      public views::ComboboxListener,
                                       public PermissionCombobox::Listener {
  public:
   PermissionsBubbleDelegateView(
-      views::View* anchor,
+      views::View* anchor_view,
+      views::BubbleBorder::Arrow anchor_arrow,
       PermissionBubbleViewViews* owner,
+      const std::string& languages,
       const std::vector<PermissionBubbleRequest*>& requests,
-      const std::vector<bool>& accept_state,
-      bool customization_mode);
-  virtual ~PermissionsBubbleDelegateView();
+      const std::vector<bool>& accept_state);
+  ~PermissionsBubbleDelegateView() override;
 
   void Close();
   void SizeToContents();
 
   // BubbleDelegateView:
-  virtual bool ShouldShowCloseButton() const OVERRIDE;
-  virtual bool ShouldShowWindowTitle() const OVERRIDE;
-  virtual const gfx::FontList& GetTitleFontList() const OVERRIDE;
-  virtual base::string16 GetWindowTitle() const OVERRIDE;
-  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
+  bool ShouldShowCloseButton() const override;
+  bool ShouldShowWindowTitle() const override;
+  const gfx::FontList& GetTitleFontList() const override;
+  base::string16 GetWindowTitle() const override;
+  void OnWidgetDestroying(views::Widget* widget) override;
+  void GetAccessibleState(ui::AXViewState* state) override;
 
   // ButtonListener:
-  virtual void ButtonPressed(views::Button* button,
-                             const ui::Event& event) OVERRIDE;
-
-  // ComboboxListener:
-  virtual void OnPerformAction(views::Combobox* combobox) OVERRIDE;
+  void ButtonPressed(views::Button* button, const ui::Event& event) override;
 
   // PermissionCombobox::Listener:
-  virtual void PermissionSelectionChanged(int index, bool allowed) OVERRIDE;
+  void PermissionSelectionChanged(int index, bool allowed) override;
+
+  // Updates the anchor's arrow and view. Also repositions the bubble so it's
+  // displayed in the correct location.
+  void UpdateAnchor(views::View* anchor_view,
+                    views::BubbleBorder::Arrow anchor_arrow);
 
  private:
   PermissionBubbleViewViews* owner_;
   views::Button* allow_;
   views::Button* deny_;
-  views::Combobox* allow_combobox_;
   base::string16 hostname_;
   scoped_ptr<PermissionMenuModel> menu_button_model_;
   std::vector<PermissionCombobox*> customize_comboboxes_;
@@ -214,39 +192,39 @@ class PermissionsBubbleDelegateView : public views::BubbleDelegateView,
 };
 
 PermissionsBubbleDelegateView::PermissionsBubbleDelegateView(
-    views::View* anchor,
+    views::View* anchor_view,
+    views::BubbleBorder::Arrow anchor_arrow,
     PermissionBubbleViewViews* owner,
+    const std::string& languages,
     const std::vector<PermissionBubbleRequest*>& requests,
-    const std::vector<bool>& accept_state,
-    bool customization_mode)
-    : views::BubbleDelegateView(anchor, views::BubbleBorder::TOP_LEFT),
+    const std::vector<bool>& accept_state)
+    : views::BubbleDelegateView(anchor_view, anchor_arrow),
       owner_(owner),
-      allow_(NULL),
-      deny_(NULL),
-      allow_combobox_(NULL) {
+      allow_(nullptr),
+      deny_(nullptr) {
   DCHECK(!requests.empty());
 
   RemoveAllChildViews(true);
   customize_comboboxes_.clear();
-  set_close_on_esc(false);
+  set_close_on_esc(true);
   set_close_on_deactivate(false);
 
   SetLayoutManager(new views::BoxLayout(
       views::BoxLayout::kVertical, kBubbleOuterMargin, 0, kItemMajorSpacing));
 
-  // TODO(gbillock): support other languages than English.
   hostname_ = net::FormatUrl(requests[0]->GetRequestingHostname(),
-                             "en",
+                             languages,
                              net::kFormatUrlOmitUsernamePassword |
                              net::kFormatUrlOmitTrailingSlashOnBareHostname,
-                             net::UnescapeRule::SPACES, NULL, NULL, NULL);
+                             net::UnescapeRule::SPACES,
+                             nullptr, nullptr, nullptr);
 
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
   for (size_t index = 0; index < requests.size(); index++) {
     DCHECK(index < accept_state.size());
     // The row is laid out containing a leading-aligned label area and a
-    // trailing column which will be filled during customization with a
-    // combobox.
+    // trailing column which will be filled if there are multiple permission
+    // requests.
     views::View* row = new views::View();
     views::GridLayout* row_layout = new views::GridLayout(row);
     row->SetLayoutManager(row_layout);
@@ -265,6 +243,7 @@ PermissionsBubbleDelegateView::PermissionsBubbleDelegateView(
     views::ImageView* icon = new views::ImageView();
     icon->SetImage(bundle.GetImageSkiaNamed(requests.at(index)->GetIconID()));
     icon->SetImageSize(gfx::Size(kIconSize, kIconSize));
+    icon->SetTooltipText(base::string16());  // Redundant with the text fragment
     label_container->AddChildView(icon);
     views::Label* label =
         new views::Label(requests.at(index)->GetMessageTextFragment());
@@ -272,7 +251,7 @@ PermissionsBubbleDelegateView::PermissionsBubbleDelegateView(
     label_container->AddChildView(label);
     row_layout->AddView(label_container);
 
-    if (customization_mode) {
+    if (requests.size() > 1) {
       PermissionCombobox* combobox = new PermissionCombobox(
           this,
           index,
@@ -293,11 +272,11 @@ PermissionsBubbleDelegateView::PermissionsBubbleDelegateView(
   button_row->SetLayoutManager(button_layout);
   AddChildView(button_row);
 
-  // Customization case: just an "OK" button
-  if (customization_mode) {
+  // For multiple permissions: just an "OK" button.
+  if (requests.size() > 1) {
     columns->AddColumn(views::GridLayout::TRAILING, views::GridLayout::FILL,
                        100, views::GridLayout::USE_PREF, 0, 0);
-    button_layout->StartRow(0, 0);
+    button_layout->StartRowWithPadding(0, 0, 0, 4);
     views::LabelButton* ok_button =
         new views::LabelButton(this, l10n_util::GetStringUTF16(IDS_OK));
     ok_button->SetStyle(views::Button::STYLE_BUTTON);
@@ -308,8 +287,7 @@ PermissionsBubbleDelegateView::PermissionsBubbleDelegateView(
     return;
   }
 
-  // No customization: lay out the Deny/Allow buttons.
-
+  // For a single permission: lay out the Deny/Allow buttons.
   columns->AddColumn(views::GridLayout::TRAILING, views::GridLayout::FILL,
                      100, views::GridLayout::USE_PREF, 0, 0);
   columns->AddPaddingColumn(0, kItemMajorSpacing - (2*kButtonBorderSize));
@@ -317,24 +295,11 @@ PermissionsBubbleDelegateView::PermissionsBubbleDelegateView(
                      0, views::GridLayout::USE_PREF, 0, 0);
   button_layout->StartRow(0, 0);
 
-  // Allow button is a regular button when there's only one option, and a
-  // STYLE_ACTION Combobox when there are more than one option and
-  // customization is an option.
-
   base::string16 allow_text = l10n_util::GetStringUTF16(IDS_PERMISSION_ALLOW);
-  if (requests.size() == 1) {
-    views::LabelButton* allow_button = new views::LabelButton(this, allow_text);
-    allow_button->SetStyle(views::Button::STYLE_BUTTON);
-    button_layout->AddView(allow_button);
-    allow_ = allow_button;
-  } else {
-    views::Combobox* allow_combobox = new views::Combobox(
-        new CustomizeAllowComboboxModel());
-    allow_combobox->set_listener(this);
-    allow_combobox->SetStyle(views::Combobox::STYLE_ACTION);
-    button_layout->AddView(allow_combobox);
-    allow_combobox_ = allow_combobox;
-  }
+  views::LabelButton* allow_button = new views::LabelButton(this, allow_text);
+  allow_button->SetStyle(views::Button::STYLE_BUTTON);
+  button_layout->AddView(allow_button);
+  allow_ = allow_button;
 
   base::string16 deny_text = l10n_util::GetStringUTF16(IDS_PERMISSION_DENY);
   views::LabelButton* deny_button = new views::LabelButton(this, deny_text);
@@ -351,7 +316,7 @@ PermissionsBubbleDelegateView::~PermissionsBubbleDelegateView() {
 }
 
 void PermissionsBubbleDelegateView::Close() {
-  owner_ = NULL;
+  owner_ = nullptr;
   GetWidget()->Close();
 }
 
@@ -381,8 +346,13 @@ void PermissionsBubbleDelegateView::OnWidgetDestroying(views::Widget* widget) {
   views::BubbleDelegateView::OnWidgetDestroying(widget);
   if (owner_) {
     owner_->Closing();
-    owner_ = NULL;
+    owner_ = nullptr;
   }
+}
+
+void PermissionsBubbleDelegateView::GetAccessibleState(ui::AXViewState* state) {
+  views::BubbleDelegateView::GetAccessibleState(state);
+  state->role = ui::AX_ROLE_ALERT_DIALOG;
 }
 
 void PermissionsBubbleDelegateView::ButtonPressed(views::Button* button,
@@ -401,29 +371,61 @@ void PermissionsBubbleDelegateView::PermissionSelectionChanged(
   owner_->Toggle(index, allowed);
 }
 
-void PermissionsBubbleDelegateView::OnPerformAction(
-    views::Combobox* combobox) {
-  if (combobox == allow_combobox_) {
-    if (combobox->selected_index() ==
-        CustomizeAllowComboboxModel::INDEX_CUSTOMIZE)
-      owner_->SetCustomizationMode();
-    else if (combobox->selected_index() ==
-             CustomizeAllowComboboxModel::INDEX_ALLOW)
-      owner_->Accept();
-  }
+void PermissionsBubbleDelegateView::UpdateAnchor(
+    views::View* anchor_view,
+    views::BubbleBorder::Arrow anchor_arrow) {
+  if (GetAnchorView() == anchor_view && arrow() == anchor_arrow)
+    return;
+
+  set_arrow(anchor_arrow);
+
+  // Update the border in the bubble: will either add or remove the arrow.
+  views::BubbleFrameView* frame =
+      views::BubbleDelegateView::GetBubbleFrameView();
+  views::BubbleBorder::Arrow adjusted_arrow = anchor_arrow;
+  if (base::i18n::IsRTL())
+    adjusted_arrow = views::BubbleBorder::horizontal_mirror(adjusted_arrow);
+  frame->SetBubbleBorder(scoped_ptr<views::BubbleBorder>(
+      new views::BubbleBorder(adjusted_arrow, shadow(), color())));
+
+  // Reposition the bubble based on the updated arrow and view.
+  SetAnchorView(anchor_view);
 }
 
 //////////////////////////////////////////////////////////////////////////////
 // PermissionBubbleViewViews
 
-PermissionBubbleViewViews::PermissionBubbleViewViews(views::View* anchor_view)
-    : anchor_view_(anchor_view),
-      delegate_(NULL),
-      bubble_delegate_(NULL) {}
+PermissionBubbleViewViews::PermissionBubbleViewViews(Browser* browser)
+    : browser_(browser),
+      delegate_(nullptr),
+      bubble_delegate_(nullptr) {}
 
 PermissionBubbleViewViews::~PermissionBubbleViewViews() {
   if (delegate_)
-    delegate_->SetView(NULL);
+    delegate_->SetView(nullptr);
+}
+
+views::View* PermissionBubbleViewViews::GetAnchorView() {
+  BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser_);
+
+  if (browser_->SupportsWindowFeature(Browser::FEATURE_LOCATIONBAR))
+    return browser_view->GetLocationBarView()->location_icon_view();
+
+  if (browser_view->IsFullscreenBubbleVisible())
+    return browser_view->exclusive_access_bubble()->GetView();
+
+  return browser_view->top_container();
+}
+
+views::BubbleBorder::Arrow PermissionBubbleViewViews::GetAnchorArrow() {
+  if (browser_->SupportsWindowFeature(Browser::FEATURE_LOCATIONBAR))
+    return views::BubbleBorder::TOP_LEFT;
+  return views::BubbleBorder::NONE;
+}
+
+void PermissionBubbleViewViews::UpdateAnchorPosition() {
+  if (IsVisible())
+    bubble_delegate_->UpdateAnchor(GetAnchorView(), GetAnchorArrow());
 }
 
 void PermissionBubbleViewViews::SetDelegate(Delegate* delegate) {
@@ -432,14 +434,21 @@ void PermissionBubbleViewViews::SetDelegate(Delegate* delegate) {
 
 void PermissionBubbleViewViews::Show(
     const std::vector<PermissionBubbleRequest*>& requests,
-    const std::vector<bool>& values,
-    bool customization_mode) {
-  if (bubble_delegate_ != NULL)
+    const std::vector<bool>& values) {
+  if (bubble_delegate_)
     bubble_delegate_->Close();
 
   bubble_delegate_ =
-      new PermissionsBubbleDelegateView(anchor_view_, this,
-                                        requests, values, customization_mode);
+      new PermissionsBubbleDelegateView(
+          GetAnchorView(), GetAnchorArrow(), this,
+          browser_->profile()->GetPrefs()->GetString(prefs::kAcceptLanguages),
+          requests, values);
+
+  // Set |parent_window| because some valid anchors can become hidden.
+  views::Widget* widget = views::Widget::GetWidgetForNativeWindow(
+      browser_->window()->GetNativeWindow());
+  bubble_delegate_->set_parent_window(widget->GetNativeView());
+
   views::BubbleDelegateView::CreateBubble(bubble_delegate_)->Show();
   bubble_delegate_->SizeToContents();
 }
@@ -451,17 +460,17 @@ bool PermissionBubbleViewViews::CanAcceptRequestUpdate() {
 void PermissionBubbleViewViews::Hide() {
   if (bubble_delegate_) {
     bubble_delegate_->Close();
-    bubble_delegate_ = NULL;
+    bubble_delegate_ = nullptr;
   }
 }
 
 bool PermissionBubbleViewViews::IsVisible() {
-  return bubble_delegate_ != NULL;
+  return bubble_delegate_ != nullptr;
 }
 
 void PermissionBubbleViewViews::Closing() {
   if (bubble_delegate_)
-    bubble_delegate_ = NULL;
+    bubble_delegate_ = nullptr;
   if (delegate_)
     delegate_->Closing();
 }
@@ -479,9 +488,4 @@ void PermissionBubbleViewViews::Accept() {
 void PermissionBubbleViewViews::Deny() {
   if (delegate_)
     delegate_->Deny();
-}
-
-void PermissionBubbleViewViews::SetCustomizationMode() {
-  if (delegate_)
-    delegate_->SetCustomizationMode();
 }

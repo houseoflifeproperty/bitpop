@@ -36,12 +36,13 @@ class OcclusionTrackerPerfTest : public testing::Test {
   void CreateHost() {
     LayerTreeSettings settings;
     shared_bitmap_manager_.reset(new TestSharedBitmapManager());
-    host_impl_ = LayerTreeHostImpl::Create(
-        settings, &client_, &proxy_, &stats_, shared_bitmap_manager_.get(), 1);
-    host_impl_->InitializeRenderer(
-        FakeOutputSurface::Create3d().PassAs<OutputSurface>());
+    host_impl_ =
+        LayerTreeHostImpl::Create(settings, &client_, &proxy_, &stats_,
+                                  shared_bitmap_manager_.get(), NULL, NULL, 1);
+    host_impl_->InitializeRenderer(FakeOutputSurface::Create3d());
 
     scoped_ptr<LayerImpl> root_layer = LayerImpl::Create(active_tree(), 1);
+    root_layer->SetHasRenderSurface(true);
     active_tree()->SetRootLayer(root_layer.Pass());
   }
 
@@ -86,9 +87,10 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_FullyOccluded) {
   opaque_layer->SetDrawsContent(true);
   opaque_layer->SetBounds(viewport_rect.size());
   opaque_layer->SetContentBounds(viewport_rect.size());
-  active_tree()->root_layer()->AddChild(opaque_layer.PassAs<LayerImpl>());
+  active_tree()->root_layer()->AddChild(opaque_layer.Pass());
 
-  active_tree()->UpdateDrawProperties();
+  bool update_lcd_text = false;
+  active_tree()->UpdateDrawProperties(update_lcd_text);
   const LayerImplList& rsll = active_tree()->RenderSurfaceLayerList();
   ASSERT_EQ(1u, rsll.size());
   EXPECT_EQ(1u, rsll[0]->render_surface()->layer_list().size());
@@ -156,10 +158,11 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_10OpaqueLayers) {
     opaque_layer->SetContentBounds(
         gfx::Size(viewport_rect.width() / 2, viewport_rect.height() / 2));
     opaque_layer->SetPosition(gfx::Point(i, i));
-    active_tree()->root_layer()->AddChild(opaque_layer.PassAs<LayerImpl>());
+    active_tree()->root_layer()->AddChild(opaque_layer.Pass());
   }
 
-  active_tree()->UpdateDrawProperties();
+  bool update_lcd_text = false;
+  active_tree()->UpdateDrawProperties(update_lcd_text);
   const LayerImplList& rsll = active_tree()->RenderSurfaceLayerList();
   ASSERT_EQ(1u, rsll.size());
   EXPECT_EQ(static_cast<size_t>(kNumOpaqueLayers),

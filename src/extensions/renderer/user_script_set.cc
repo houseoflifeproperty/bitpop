@@ -4,15 +4,20 @@
 
 #include "extensions/renderer/user_script_set.h"
 
+#include "base/memory/ref_counted.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/render_thread.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
+#include "extensions/common/extensions_client.h"
 #include "extensions/common/permissions/permissions_data.h"
+#include "extensions/renderer/extension_injection_host.h"
 #include "extensions/renderer/extensions_renderer_client.h"
+#include "extensions/renderer/injection_host.h"
 #include "extensions/renderer/script_context.h"
 #include "extensions/renderer/script_injection.h"
 #include "extensions/renderer/user_script_injector.h"
+#include "extensions/renderer/web_ui_injection_host.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "url/gurl.h"
@@ -53,6 +58,8 @@ void UserScriptSet::GetActiveExtensionIds(
   for (ScopedVector<UserScript>::const_iterator iter = scripts_.begin();
        iter != scripts_.end();
        ++iter) {
+    if ((*iter)->host_id().type() != HostID::EXTENSIONS)
+      continue;
     DCHECK(!(*iter)->extension_id().empty());
     ids->insert((*iter)->extension_id());
   }
@@ -67,25 +74,21 @@ void UserScriptSet::GetInjections(
   for (ScopedVector<UserScript>::const_iterator iter = scripts_.begin();
        iter != scripts_.end();
        ++iter) {
-    const Extension* extension = extensions_->GetByID((*iter)->extension_id());
-    if (!extension)
-      continue;
     scoped_ptr<ScriptInjection> injection = GetInjectionForScript(
         *iter,
         web_frame,
         tab_id,
         run_location,
         document_url,
-        extension,
         false /* is_declarative */);
     if (injection.get())
       injections->push_back(injection.release());
   }
 }
 
-bool UserScriptSet::UpdateUserScripts(
-    base::SharedMemoryHandle shared_memory,
-    const std::set<std::string>& changed_extensions) {
+bool UserScriptSet::UpdateUserScripts(base::SharedMemoryHandle shared_memory,
+                                      const std::set<HostID>& changed_hosts,
+                                      bool whitelisted_only) {
   bool only_inject_incognito =
       ExtensionsRendererClient::Get()->IsIncognitoProcess();
 
@@ -107,14 +110,14 @@ bool UserScriptSet::UpdateUserScripts(
     return false;
 
   // Unpickle scripts.
-  uint64 num_scripts = 0;
+  size_t num_scripts = 0;
   Pickle pickle(reinterpret_cast<char*>(shared_memory_->memory()), pickle_size);
   PickleIterator iter(pickle);
-  CHECK(pickle.ReadUInt64(&iter, &num_scripts));
+  CHECK(iter.ReadSizeT(&num_scripts));
 
   scripts_.clear();
   scripts_.reserve(num_scripts);
-  for (uint64 i = 0; i < num_scripts; ++i) {
+  for (size_t i = 0; i < num_scripts; ++i) {
     scoped_ptr<UserScript> script(new UserScript());
     script->Unpickle(pickle, &iter);
 
@@ -124,14 +127,14 @@ bool UserScriptSet::UpdateUserScripts(
     for (size_t j = 0; j < script->js_scripts().size(); ++j) {
       const char* body = NULL;
       int body_length = 0;
-      CHECK(pickle.ReadData(&iter, &body, &body_length));
+      CHECK(iter.ReadData(&body, &body_length));
       script->js_scripts()[j].set_external_content(
           base::StringPiece(body, body_length));
     }
     for (size_t j = 0; j < script->css_scripts().size(); ++j) {
       const char* body = NULL;
       int body_length = 0;
-      CHECK(pickle.ReadData(&iter, &body, &body_length));
+      CHECK(iter.ReadData(&body, &body_length));
       script->css_scripts()[j].set_external_content(
           base::StringPiece(body, body_length));
     }
@@ -139,12 +142,19 @@ bool UserScriptSet::UpdateUserScripts(
     if (only_inject_incognito && !script->is_incognito_enabled())
       continue;  // This script shouldn't run in an incognito tab.
 
+    const Extension* extension = extensions_->GetByID(script->extension_id());
+    if (whitelisted_only &&
+        (!extension ||
+         !PermissionsData::CanExecuteScriptEverywhere(extension))) {
+      continue;
+    }
+
     scripts_.push_back(script.release());
   }
 
   FOR_EACH_OBSERVER(Observer,
                     observers_,
-                    OnUserScriptsUpdated(changed_extensions, scripts_.get()));
+                    OnUserScriptsUpdated(changed_hosts, scripts_.get()));
   return true;
 }
 
@@ -153,8 +163,7 @@ scoped_ptr<ScriptInjection> UserScriptSet::GetDeclarativeScriptInjection(
     blink::WebFrame* web_frame,
     int tab_id,
     UserScript::RunLocation run_location,
-    const GURL& document_url,
-    const Extension* extension) {
+    const GURL& document_url) {
   for (ScopedVector<UserScript>::const_iterator it = scripts_.begin();
        it != scripts_.end();
        ++it) {
@@ -164,7 +173,6 @@ scoped_ptr<ScriptInjection> UserScriptSet::GetDeclarativeScriptInjection(
                                    tab_id,
                                    run_location,
                                    document_url,
-                                   extension,
                                    true /* is_declarative */);
     }
   }
@@ -179,9 +187,20 @@ scoped_ptr<ScriptInjection> UserScriptSet::GetInjectionForScript(
     int tab_id,
     UserScript::RunLocation run_location,
     const GURL& document_url,
-    const Extension* extension,
     bool is_declarative) {
   scoped_ptr<ScriptInjection> injection;
+  scoped_ptr<const InjectionHost> injection_host;
+
+  const HostID& host_id = script->host_id();
+  if (host_id.type() == HostID::EXTENSIONS) {
+    injection_host = ExtensionInjectionHost::Create(host_id.id(), extensions_);
+    if (!injection_host)
+      return injection.Pass();
+  } else {
+    DCHECK_EQ(host_id.type(), HostID::WEBUI);
+    injection_host.reset(new WebUIInjectionHost(host_id));
+  }
+
   if (web_frame->parent() && !script->match_all_frames())
     return injection.Pass();  // Only match subframes if the script declared it.
 
@@ -194,11 +213,18 @@ scoped_ptr<ScriptInjection> UserScriptSet::GetInjectionForScript(
   scoped_ptr<ScriptInjector> injector(new UserScriptInjector(script,
                                                              this,
                                                              is_declarative));
-  if (injector->CanExecuteOnFrame(
-          extension,
-          web_frame,
-          -1,  // Content scripts are not tab-specific.
-          web_frame->top()->document().url()) ==
+
+  blink::WebFrame* top_frame = web_frame->top();
+  // It doesn't make sense to do script injection for remote frames, since they
+  // cannot host any documents or content.
+  // TODO(kalman): Fix this properly by moving all security checks into the
+  // browser. See http://crbug.com/466373 for ongoing work here.
+  if (top_frame->isWebRemoteFrame())
+    return injection.Pass();
+
+  if (injector->CanExecuteOnFrame(injection_host.get(), web_frame,
+                                  -1,  // Content scripts are not tab-specific.
+                                  top_frame->document().url()) ==
       PermissionsData::ACCESS_DENIED) {
     return injection.Pass();
   }
@@ -211,7 +237,7 @@ scoped_ptr<ScriptInjection> UserScriptSet::GetInjectionForScript(
     injection.reset(new ScriptInjection(
         injector.Pass(),
         web_frame->toWebLocalFrame(),
-        extension->id(),
+        injection_host.Pass(),
         run_location,
         tab_id));
   }

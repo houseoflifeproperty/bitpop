@@ -18,17 +18,16 @@
 #include "chrome/browser/sessions/session_restore.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_list_observer.h"
-#include "chrome/browser/ui/startup/session_crashed_bubble.h"
 #include "chrome/browser/ui/startup/startup_browser_creator_impl.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+#include "chrome/browser/ui/views/toolbar/wrench_toolbar_button.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
-#include "chrome/grit/google_chrome_strings.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -55,14 +54,16 @@ const int kWidthOfDescriptionText = 320;
 // Distance between checkbox and the text to the right of it.
 const int kCheckboxTextDistance = 4;
 
-// The color of the text and background of the sub panel to offer UMA optin.
+// The color of the text and background of the sub panel to offer UMA opt-in.
 // These values match the BookmarkSyncPromoView colors.
 const SkColor kBackgroundColor = SkColorSetRGB(245, 245, 245);
 const SkColor kTextColor = SkColorSetRGB(102, 102, 102);
 
+#if !defined(OS_CHROMEOS)
 // The Finch study name and group name that enables session crashed bubble UI.
 const char kEnableBubbleUIFinchName[] = "EnableSessionCrashedBubbleUI";
-const char kEnableBubbleUIGroupEnabled[] = "Enabled";
+const char kEnableBubbleUIGroupDisabled[] = "Disabled";
+#endif
 
 enum SessionCrashedBubbleHistogramValue {
   SESSION_CRASHED_BUBBLE_SHOWN,
@@ -83,14 +84,22 @@ void RecordBubbleHistogramValue(SessionCrashedBubbleHistogramValue value) {
 
 // Whether or not the bubble UI should be used.
 bool IsBubbleUIEnabled() {
-  const base::CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  // Function InitiateMetricsReportingChange (called when the user chooses to
+  // opt-in to UMA) does not support Chrome OS yet, so don't show the bubble on
+  // Chrome OS.
+#if defined(OS_CHROMEOS)
+  return false;
+#else
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kDisableSessionCrashedBubble))
     return false;
   if (command_line.HasSwitch(switches::kEnableSessionCrashedBubble))
     return true;
   const std::string group_name = base::FieldTrialList::FindFullName(
       kEnableBubbleUIFinchName);
-  return group_name == kEnableBubbleUIGroupEnabled;
+  return group_name != kEnableBubbleUIGroupDisabled;
+#endif
 }
 
 }  // namespace
@@ -104,12 +113,10 @@ class SessionCrashedBubbleView::BrowserRemovalObserver
     BrowserList::AddObserver(this);
   }
 
-  virtual ~BrowserRemovalObserver() {
-    BrowserList::RemoveObserver(this);
-  }
+  ~BrowserRemovalObserver() override { BrowserList::RemoveObserver(this); }
 
   // Overridden from chrome::BrowserListObserver.
-  virtual void OnBrowserRemoved(Browser* browser) OVERRIDE {
+  void OnBrowserRemoved(Browser* browser) override {
     if (browser == browser_)
       browser_ = NULL;
   }
@@ -123,10 +130,13 @@ class SessionCrashedBubbleView::BrowserRemovalObserver
 };
 
 // static
-void SessionCrashedBubbleView::Show(Browser* browser) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+bool SessionCrashedBubbleView::Show(Browser* browser) {
+  if (!IsBubbleUIEnabled())
+    return false;
+
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (browser->profile()->IsOffTheRecord())
-    return;
+    return true;
 
   // Observes browser removal event and will be deallocated in ShowForReal.
   scoped_ptr<BrowserRemovalObserver> browser_observer(
@@ -146,6 +156,8 @@ void SessionCrashedBubbleView::Show(Browser* browser) {
 #else
   SessionCrashedBubbleView::ShowForReal(browser_observer.Pass(), false);
 #endif  // defined(GOOGLE_CHROME_BUILD)
+
+  return true;
 }
 
 // static
@@ -294,7 +306,7 @@ void SessionCrashedBubbleView::Init() {
     layout->StartRow(1, kUMAOptionColumnSetId);
     layout->AddView(CreateUMAOptinView());
 
-    // Since the UMA optin row has a different background than the default
+    // Since the UMA opt-in row has a different background than the default
     // background color of bubbles, the bottom margin has to be 0 to make sure
     // the background extends to the bottom edge of the bubble.
     bottom_margin = 0;
@@ -336,6 +348,8 @@ views::View* SessionCrashedBubbleView::CreateUMAOptinView() {
   gfx::Range after_link_range(offset + link_text.length(), uma_text.length());
   if (!after_link_range.is_empty())
     uma_label->AddStyleRange(after_link_range, uma_style);
+  // Shift the text down by 1px to align with the checkbox.
+  uma_label->SetBorder(views::Border::CreateEmptyBorder(1, 0, 0, 0));
 
   // Create a view to hold the checkbox and the text.
   views::View* uma_view = new views::View();
@@ -345,8 +359,11 @@ views::View* SessionCrashedBubbleView::CreateUMAOptinView() {
   uma_view->set_background(
       views::Background::CreateSolidBackground(kBackgroundColor));
   int inset_left = GetBubbleFrameView()->GetTitleInsets().left();
+
+  // Bottom inset for UMA opt-in view in pixels.
+  const int kUMAOptinViewBottomInset = 10;
   uma_layout->SetInsets(views::kRelatedControlVerticalSpacing, inset_left,
-                        views::kRelatedControlVerticalSpacing, inset_left);
+                        kUMAOptinViewBottomInset, inset_left);
 
   const int kReportColumnSetId = 0;
   views::ColumnSet* cs = uma_layout->AddColumnSet(kReportColumnSetId);
@@ -420,8 +437,8 @@ void SessionCrashedBubbleView::RestorePreviousSession(views::Button* sender) {
   RecordBubbleHistogramValue(SESSION_CRASHED_BUBBLE_RESTORED);
   restored_ = true;
 
-  // Record user's choice for opting in to UMA.
-  // There's no opting-out choice in the crash restore bubble.
+  // Record user's choice for opt-in in to UMA.
+  // There's no opt-out choice in the crash restore bubble.
   if (uma_option_ && uma_option_->checked()) {
     InitiateMetricsReportingChange(true, OnMetricsReportingCallbackType());
     RecordBubbleHistogramValue(SESSION_CRASHED_BUBBLE_UMA_OPTIN);
@@ -431,12 +448,4 @@ void SessionCrashedBubbleView::RestorePreviousSession(views::Button* sender) {
 
 void SessionCrashedBubbleView::CloseBubble() {
   GetWidget()->Close();
-}
-
-bool ShowSessionCrashedBubble(Browser* browser) {
-  if (IsBubbleUIEnabled()) {
-    SessionCrashedBubbleView::Show(browser);
-    return true;
-  }
-  return false;
 }

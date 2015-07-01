@@ -53,6 +53,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
@@ -219,7 +220,7 @@ class ThreadWatcher {
   const std::string thread_name_;
 
   // Used to post messages to watched thread.
-  scoped_refptr<base::MessageLoopProxy> watched_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> watched_runner_;
 
   // It is the sleep time between the receipt of a pong message back, and the
   // sending of another ping message.
@@ -520,16 +521,16 @@ class ThreadWatcherObserver : public content::NotificationObserver {
   explicit ThreadWatcherObserver(const base::TimeDelta& wakeup_interval);
 
   // Destructor of |g_thread_watcher_observer_| singleton.
-  virtual ~ThreadWatcherObserver();
+  ~ThreadWatcherObserver() override;
 
   // This ensures all thread watchers are active because there is some user
   // activity. It will wake up all thread watchers every |wakeup_interval_|
   // seconds. This is the implementation of content::NotificationObserver. When
   // a matching notification is posted to the notification service, this method
   // is called.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // The singleton of this class.
   static ThreadWatcherObserver* g_thread_watcher_observer_;
@@ -554,7 +555,7 @@ class WatchDogThread : public base::Thread {
   WatchDogThread();
 
   // Destroys the thread and stops the thread.
-  virtual ~WatchDogThread();
+  ~WatchDogThread() override;
 
   // Callable on any thread.  Returns whether you're currently on a
   // WatchDogThread.
@@ -572,8 +573,8 @@ class WatchDogThread : public base::Thread {
                               base::TimeDelta delay);
 
  protected:
-  virtual void Init() OVERRIDE;
-  virtual void CleanUp() OVERRIDE;
+  void Init() override;
+  void CleanUp() override;
 
  private:
   static bool PostTaskHelper(

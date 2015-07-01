@@ -17,6 +17,9 @@ class WebContents;
 
 // This NSWindowController subclass manages the InfoBubbleWindow and view that
 // are displayed when the user clicks the favicon or security lock icon.
+//
+// TODO(palmer, sashab): Normalize all WebsiteSettings*, SiteSettings*,
+// PageInfo*, et c. to OriginInfo*.
 @interface WebsiteSettingsBubbleController : BaseBubbleController {
  @private
   content::WebContents* webContents_;
@@ -43,14 +46,17 @@ class WebContents;
   // The link button for showing cookies and site data info.
   NSButton* cookiesButton_;
 
+  // The link button for showing site settings.
+  NSButton* siteSettingsButton_;
+
   // The link button for showing certificate information.
   NSButton* certificateInfoButton_;
 
   // The link button for revoking certificate decisions.
   NSButton* resetDecisionsButton_;
 
-  // The ID of the server certificate from the identity info.
-  // This should always be non-zero on a secure connection, and 0 otherwise.
+  // The ID of the server certificate from the identity info. This should
+  // always be non-zero on a secure connection, and 0 otherwise.
   int certificateId_;
 
   // Container for permission info on the Permissions tab.
@@ -69,7 +75,7 @@ class WebContents;
   NSTextField* firstVisitDescriptionField_;
   NSView* separatorAfterFirstVisit_;
 
-  // The link button for launch the help center article explaining the
+  // The link button to launch the Help Center article explaining the
   // connection info.
   NSButton* helpButton_;
 
@@ -101,13 +107,13 @@ class WebContents;
 class WebsiteSettingsUIBridge : public WebsiteSettingsUI {
  public:
   WebsiteSettingsUIBridge();
-  virtual ~WebsiteSettingsUIBridge();
+  ~WebsiteSettingsUIBridge() override;
 
   // Creates a |WebsiteSettingsBubbleController| and displays the UI. |parent|
-  // contains the currently active window, |profile| contains the currently
-  // active profile and |ssl| contains the |SSLStatus| of the connection to the
-  // website in the currently active tab that is wrapped by the
-  // |web_contents|.
+  // is the currently active window. |profile| points to the currently active
+  // profile. |web_contents| points to the WebContents that wraps the currently
+  // active tab. |url| is the GURL of the currently active tab. |ssl| is the
+  // |SSLStatus| of the connection to the website in the currently active tab.
   static void Show(gfx::NativeWindow parent,
                    Profile* profile,
                    content::WebContents* web_contents,
@@ -118,12 +124,12 @@ class WebsiteSettingsUIBridge : public WebsiteSettingsUI {
       WebsiteSettingsBubbleController* bubble_controller);
 
   // WebsiteSettingsUI implementations.
-  virtual void SetCookieInfo(const CookieInfoList& cookie_info_list) OVERRIDE;
-  virtual void SetPermissionInfo(
-      const PermissionInfoList& permission_info_list) OVERRIDE;
-  virtual void SetIdentityInfo(const IdentityInfo& identity_info) OVERRIDE;
-  virtual void SetFirstVisit(const base::string16& first_visit) OVERRIDE;
-  virtual void SetSelectedTab(TabId tab_id) OVERRIDE;
+  void SetCookieInfo(const CookieInfoList& cookie_info_list) override;
+  void SetPermissionInfo(
+      const PermissionInfoList& permission_info_list) override;
+  void SetIdentityInfo(const IdentityInfo& identity_info) override;
+  void SetFirstVisit(const base::string16& first_visit) override;
+  void SetSelectedTab(TabId tab_id) override;
 
  private:
   // The Cocoa controller for the bubble UI.

@@ -11,7 +11,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/sequenced_task_runner_helpers.h"
-#include "base/supports_user_data.h"
 #include "base/synchronization/lock.h"
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/notification_observer.h"
@@ -24,44 +23,46 @@ class WebContentsImpl;
 // HostZoomMap needs to be deleted on the UI thread because it listens
 // to notifications on there (and holds a NotificationRegistrar).
 class CONTENT_EXPORT HostZoomMapImpl : public NON_EXPORTED_BASE(HostZoomMap),
-                                       public NotificationObserver,
-                                       public base::SupportsUserData::Data {
+                                       public NotificationObserver {
  public:
   HostZoomMapImpl();
-  virtual ~HostZoomMapImpl();
+  ~HostZoomMapImpl() override;
 
   // HostZoomMap implementation:
-  virtual void CopyFrom(HostZoomMap* copy) OVERRIDE;
-  virtual double GetZoomLevelForHostAndScheme(
-      const std::string& scheme,
-      const std::string& host) const OVERRIDE;
+  void SetPageScaleFactorIsOneForView(
+      int render_process_id, int render_view_id, bool is_one) override;
+  void ClearPageScaleFactorIsOneForView(
+      int render_process_id, int render_view_id) override;
+  void CopyFrom(HostZoomMap* copy) override;
+  double GetZoomLevelForHostAndScheme(const std::string& scheme,
+                                      const std::string& host) const override;
   // TODO(wjmaclean) Should we use a GURL here? crbug.com/384486
-  virtual bool HasZoomLevel(const std::string& scheme,
-                            const std::string& host) const OVERRIDE;
-  virtual ZoomLevelVector GetAllZoomLevels() const OVERRIDE;
-  virtual void SetZoomLevelForHost(
-      const std::string& host,
-      double level) OVERRIDE;
-  virtual void SetZoomLevelForHostAndScheme(
-      const std::string& scheme,
-      const std::string& host,
-      double level) OVERRIDE;
-  virtual bool UsesTemporaryZoomLevel(int render_process_id,
-                                      int render_view_id) const OVERRIDE;
-  virtual void SetTemporaryZoomLevel(int render_process_id,
-                                     int render_view_id,
-                                     double level) OVERRIDE;
+  bool HasZoomLevel(const std::string& scheme,
+                    const std::string& host) const override;
+  ZoomLevelVector GetAllZoomLevels() const override;
+  void SetZoomLevelForHost(const std::string& host, double level) override;
+  void SetZoomLevelForHostAndScheme(const std::string& scheme,
+                                    const std::string& host,
+                                    double level) override;
+  bool UsesTemporaryZoomLevel(int render_process_id,
+                              int render_view_id) const override;
+  void SetTemporaryZoomLevel(int render_process_id,
+                             int render_view_id,
+                             double level) override;
 
-  virtual void ClearTemporaryZoomLevel(int render_process_id,
-                                       int render_view_id) OVERRIDE;
-  virtual double GetDefaultZoomLevel() const OVERRIDE;
-  virtual void SetDefaultZoomLevel(double level) OVERRIDE;
-  virtual scoped_ptr<Subscription> AddZoomLevelChangedCallback(
-      const ZoomLevelChangedCallback& callback) OVERRIDE;
+  void ClearTemporaryZoomLevel(int render_process_id,
+                               int render_view_id) override;
+  double GetDefaultZoomLevel() const override;
+  void SetDefaultZoomLevel(double level) override;
+  scoped_ptr<Subscription> AddZoomLevelChangedCallback(
+      const ZoomLevelChangedCallback& callback) override;
 
   // Returns the current zoom level for the specified WebContents. This may
   // be a temporary zoom level, depending on UsesTemporaryZoomLevel().
   double GetZoomLevelForWebContents(
+      const WebContentsImpl& web_contents_impl) const;
+
+  bool PageScaleFactorIsOneForWebContents(
       const WebContentsImpl& web_contents_impl) const;
 
   // Sets the zoom level for this WebContents. If this WebContents is using
@@ -85,10 +86,20 @@ class CONTENT_EXPORT HostZoomMapImpl : public NON_EXPORTED_BASE(HostZoomMap),
   double GetTemporaryZoomLevel(int render_process_id,
                                int render_view_id) const;
 
+  // Returns the zoom level regardless of whether it's temporary, host-keyed or
+  // scheme+host-keyed.
+  //
+  // This may be called on any thread.
+  double GetZoomLevelForView(const GURL& url,
+                             int render_process_id,
+                             int render_view_id) const;
+
   // NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const NotificationSource& source,
+               const NotificationDetails& details) override;
+
+  void SendErrorPageZoomLevelRefresh();
 
  private:
   typedef std::map<std::string, double> HostZoomLevels;
@@ -108,8 +119,15 @@ class CONTENT_EXPORT HostZoomMapImpl : public NON_EXPORTED_BASE(HostZoomMap),
   };
 
   typedef std::map<RenderViewKey, double> TemporaryZoomLevels;
+  typedef std::map<RenderViewKey, bool> ViewPageScaleFactorsAreOne;
 
   double GetZoomLevelForHost(const std::string& host) const;
+
+  // Non-locked versions for internal use. These should only be called within
+  // a scope where a lock has been acquired.
+  double GetZoomLevelForHostInternal(const std::string& host) const;
+  double GetZoomLevelForHostAndSchemeInternal(const std::string& scheme,
+                                              const std::string& host) const;
 
   // Notifies the renderers from this browser context to change the zoom level
   // for the specified host and scheme.
@@ -127,12 +145,16 @@ class CONTENT_EXPORT HostZoomMapImpl : public NON_EXPORTED_BASE(HostZoomMap),
   SchemeHostZoomLevels scheme_host_zoom_levels_;
   double default_zoom_level_;
 
+  // Page scale factor data for each renderer.
+  ViewPageScaleFactorsAreOne view_page_scale_factors_are_one_;
+
   // Don't expect more than a couple of tabs that are using a temporary zoom
   // level, so vector is fine for now.
   TemporaryZoomLevels temporary_zoom_levels_;
 
-  // Used around accesses to |host_zoom_levels_|, |default_zoom_level_| and
-  // |temporary_zoom_levels_| to guarantee thread safety.
+  // Used around accesses to |host_zoom_levels_|, |default_zoom_level_|,
+  // |temporary_zoom_levels_|, and |view_page_scale_factors_are_one_| to
+  // guarantee thread safety.
   mutable base::Lock lock_;
 
   NotificationRegistrar registrar_;

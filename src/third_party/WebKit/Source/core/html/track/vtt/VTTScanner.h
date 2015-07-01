@@ -30,6 +30,7 @@
 #ifndef VTTScanner_h
 #define VTTScanner_h
 
+#include "core/CoreExport.h"
 #include "platform/ParsingUtilities.h"
 #include "wtf/text/WTFString.h"
 
@@ -46,7 +47,7 @@ namespace blink {
 //
 // The 'scan' operation performs a 'match', and if the match is successful it
 // advance the input pointer past the matched sequence.
-class VTTScanner {
+class CORE_EXPORT VTTScanner {
     WTF_MAKE_NONCOPYABLE(VTTScanner);
 public:
     explicit VTTScanner(const String& line);
@@ -129,6 +130,9 @@ public:
     // Scan a floating point value on one of the forms: \d+\.? \d+\.\d+ \.\d+
     bool scanFloat(float& number);
 
+    // Scan a floating point value (per scanFloat) followed by a '%'.
+    bool scanPercentage(float& percentage);
+
 protected:
     Position position() const { return m_data.characters8; }
     Position end() const { return m_end.characters8; }
@@ -167,7 +171,7 @@ template<bool characterPredicate(UChar)>
 inline void VTTScanner::skipWhile()
 {
     if (m_is8Bit)
-        ::skipWhile<LChar, LCharPredicateAdapter<characterPredicate> >(m_data.characters8, m_end.characters8);
+        ::skipWhile<LChar, LCharPredicateAdapter<characterPredicate>>(m_data.characters8, m_end.characters8);
     else
         ::skipWhile<UChar, characterPredicate>(m_data.characters16, m_end.characters16);
 }
@@ -176,7 +180,7 @@ template<bool characterPredicate(UChar)>
 inline void VTTScanner::skipUntil()
 {
     if (m_is8Bit)
-        ::skipUntil<LChar, LCharPredicateAdapter<characterPredicate> >(m_data.characters8, m_end.characters8);
+        ::skipUntil<LChar, LCharPredicateAdapter<characterPredicate>>(m_data.characters8, m_end.characters8);
     else
         ::skipUntil<UChar, characterPredicate>(m_data.characters16, m_end.characters16);
 }
@@ -186,7 +190,7 @@ inline VTTScanner::Run VTTScanner::collectWhile()
 {
     if (m_is8Bit) {
         const LChar* current = m_data.characters8;
-        ::skipWhile<LChar, LCharPredicateAdapter<characterPredicate> >(current, m_end.characters8);
+        ::skipWhile<LChar, LCharPredicateAdapter<characterPredicate>>(current, m_end.characters8);
         return Run(position(), current, m_is8Bit);
     }
     const UChar* current = m_data.characters16;
@@ -199,7 +203,7 @@ inline VTTScanner::Run VTTScanner::collectUntil()
 {
     if (m_is8Bit) {
         const LChar* current = m_data.characters8;
-        ::skipUntil<LChar, LCharPredicateAdapter<characterPredicate> >(current, m_end.characters8);
+        ::skipUntil<LChar, LCharPredicateAdapter<characterPredicate>>(current, m_end.characters8);
         return Run(position(), current, m_is8Bit);
     }
     const UChar* current = m_data.characters16;

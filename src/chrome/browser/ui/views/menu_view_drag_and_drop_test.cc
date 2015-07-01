@@ -15,15 +15,6 @@
 
 namespace {
 
-// Borrowed from chrome/browser/ui/views/bookmarks/bookmark_bar_view_test.cc,
-// since these are also disabled on Linux for drag and drop.
-// TODO(erg): Fix DND tests on linux_aura. crbug.com/163931
-#if defined(OS_LINUX) && defined(USE_AURA)
-#define MAYBE(x) DISABLED_##x
-#else
-#define MAYBE(x) x
-#endif
-
 const char kTestNestedDragData[] = "test_nested_drag_data";
 const char kTestTopLevelDragData[] = "test_top_level_drag_data";
 
@@ -31,13 +22,13 @@ const char kTestTopLevelDragData[] = "test_top_level_drag_data";
 class TestDragView : public views::View {
  public:
   TestDragView();
-  virtual ~TestDragView();
+  ~TestDragView() override;
 
  private:
   // views::View:
-  virtual int GetDragOperations(const gfx::Point& point) OVERRIDE;
-  virtual void WriteDragData(const gfx::Point& point,
-                             ui::OSExchangeData* data) OVERRIDE;
+  int GetDragOperations(const gfx::Point& point) override;
+  void WriteDragData(const gfx::Point& point,
+                     ui::OSExchangeData* data) override;
 
   DISALLOW_COPY_AND_ASSIGN(TestDragView);
 };
@@ -61,7 +52,7 @@ void TestDragView::WriteDragData(const gfx::Point& point,
 class TestTargetView : public views::View {
  public:
   TestTargetView();
-  virtual ~TestTargetView();
+  ~TestTargetView() override;
 
   // Initializes this view to have the same bounds as |parent| and two draggable
   // child views.
@@ -71,15 +62,15 @@ class TestTargetView : public views::View {
 
  private:
   // views::View:
-  virtual bool GetDropFormats(
+  bool GetDropFormats(
       int* formats,
-      std::set<OSExchangeData::CustomFormat>* custom_formats) OVERRIDE;
-  virtual bool AreDropTypesRequired() OVERRIDE;
-  virtual bool CanDrop(const OSExchangeData& data) OVERRIDE;
-  virtual void OnDragEntered(const ui::DropTargetEvent& event) OVERRIDE;
-  virtual int OnDragUpdated(const ui::DropTargetEvent& event) OVERRIDE;
-  virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE;
-  virtual void OnDragExited() OVERRIDE;
+      std::set<OSExchangeData::CustomFormat>* custom_formats) override;
+  bool AreDropTypesRequired() override;
+  bool CanDrop(const OSExchangeData& data) override;
+  void OnDragEntered(const ui::DropTargetEvent& event) override;
+  int OnDragUpdated(const ui::DropTargetEvent& event) override;
+  int OnPerformDrop(const ui::DropTargetEvent& event) override;
+  void OnDragExited() override;
 
   // Whether or not we are currently dragging.
   bool dragging_;
@@ -149,7 +140,7 @@ void TestTargetView::OnDragExited() {
 class MenuViewDragAndDropTest : public MenuTestBase {
  public:
   MenuViewDragAndDropTest();
-  virtual ~MenuViewDragAndDropTest();
+  ~MenuViewDragAndDropTest() override;
 
  protected:
   TestTargetView* target_view() { return target_view_; }
@@ -158,27 +149,27 @@ class MenuViewDragAndDropTest : public MenuTestBase {
 
  private:
   // MenuTestBase:
-  virtual void BuildMenu(views::MenuItemView* menu) OVERRIDE;
+  void BuildMenu(views::MenuItemView* menu) override;
 
   // views::MenuDelegate:
-  virtual bool GetDropFormats(
+  bool GetDropFormats(
       views::MenuItemView* menu,
       int* formats,
-      std::set<ui::OSExchangeData::CustomFormat>* custom_formats) OVERRIDE;
-  virtual bool AreDropTypesRequired(views::MenuItemView* menu) OVERRIDE;
-  virtual bool CanDrop(views::MenuItemView* menu,
-                       const ui::OSExchangeData& data) OVERRIDE;
-  virtual int GetDropOperation(views::MenuItemView* item,
-                               const ui::DropTargetEvent& event,
-                               DropPosition* position) OVERRIDE;
-  virtual int OnPerformDrop(views::MenuItemView* menu,
-                            DropPosition position,
-                            const ui::DropTargetEvent& event) OVERRIDE;
-  virtual bool CanDrag(views::MenuItemView* menu) OVERRIDE;
-  virtual void WriteDragData(views::MenuItemView* sender,
-                             ui::OSExchangeData* data) OVERRIDE;
-  virtual int GetDragOperations(views::MenuItemView* sender) OVERRIDE;
-  virtual bool ShouldCloseOnDragComplete() OVERRIDE;
+      std::set<ui::OSExchangeData::CustomFormat>* custom_formats) override;
+  bool AreDropTypesRequired(views::MenuItemView* menu) override;
+  bool CanDrop(views::MenuItemView* menu,
+               const ui::OSExchangeData& data) override;
+  int GetDropOperation(views::MenuItemView* item,
+                       const ui::DropTargetEvent& event,
+                       DropPosition* position) override;
+  int OnPerformDrop(views::MenuItemView* menu,
+                    DropPosition position,
+                    const ui::DropTargetEvent& event) override;
+  bool CanDrag(views::MenuItemView* menu) override;
+  void WriteDragData(views::MenuItemView* sender,
+                     ui::OSExchangeData* data) override;
+  int GetDragOperations(views::MenuItemView* sender) override;
+  bool ShouldCloseOnDragComplete() override;
 
   // The special view in the menu, which supports its own drag and drop.
   TestTargetView* target_view_;
@@ -270,11 +261,11 @@ bool MenuViewDragAndDropTest::ShouldCloseOnDragComplete() {
 class MenuViewDragAndDropTestTestInMenuDrag : public MenuViewDragAndDropTest {
  public:
   MenuViewDragAndDropTestTestInMenuDrag() {}
-  virtual ~MenuViewDragAndDropTestTestInMenuDrag() {}
+  ~MenuViewDragAndDropTestTestInMenuDrag() override {}
 
  private:
   // MenuViewDragAndDropTest:
-  virtual void DoTestWithMenuOpen() OVERRIDE;
+  void DoTestWithMenuOpen() override;
 
   void Step2();
   void Step3();
@@ -348,18 +339,20 @@ void MenuViewDragAndDropTestTestInMenuDrag::Step4() {
 // Test that an in-menu (i.e., entirely implemented in the menu code) closes the
 // menu automatically once the drag is complete, and does not ask the delegate
 // to stay open.
-#if !defined(OS_WIN)  // flaky http://crbug.com/401226
-VIEW_TEST(MenuViewDragAndDropTestTestInMenuDrag, MAYBE(TestInMenuDrag))
-#endif
+// Disabled on all platforms for being flaky. Tracked in:
+// TODO(erg): Fix DND tests on linux_aura. http://crbug.com/163931.
+// Windows: http://crbug.com/401226.
+// TODO(tapted): De-flake and run on Mac. http://crbug.com/449058.
+VIEW_TEST(MenuViewDragAndDropTestTestInMenuDrag, DISABLED_TestInMenuDrag)
 
 class MenuViewDragAndDropTestNestedDrag : public MenuViewDragAndDropTest {
  public:
   MenuViewDragAndDropTestNestedDrag() {}
-  virtual ~MenuViewDragAndDropTestNestedDrag() {}
+  ~MenuViewDragAndDropTestNestedDrag() override {}
 
  private:
   // MenuViewDragAndDropTest:
-  virtual void DoTestWithMenuOpen() OVERRIDE;
+  void DoTestWithMenuOpen() override;
 
   void Step2();
   void Step3();
@@ -448,20 +441,22 @@ void MenuViewDragAndDropTestNestedDrag::Step4() {
 // Test that a nested drag (i.e. one via a child view, and not entirely
 // implemented in menu code) will consult the delegate before closing the view
 // after the drag.
-#if !defined(OS_WIN)  // http://crbug.com/401226
+// Disabled on all platforms for being flaky. Tracked in:
+// TODO(erg): Fix DND tests on linux_aura. http://crbug.com/163931.
+// Windows: http://crbug.com/401226.
+// TODO(tapted): De-flake and run on Mac. http://crbug.com/449058.
 VIEW_TEST(MenuViewDragAndDropTestNestedDrag,
-          MAYBE(MenuViewDragAndDropNestedDrag))
-#endif
+          DISABLED_MenuViewDragAndDropNestedDrag)
 
 class MenuViewDragAndDropForDropStayOpen : public MenuViewDragAndDropTest {
  public:
   MenuViewDragAndDropForDropStayOpen() {}
-  virtual ~MenuViewDragAndDropForDropStayOpen() {}
+  ~MenuViewDragAndDropForDropStayOpen() override {}
 
  private:
   // MenuViewDragAndDropTest:
-  virtual int GetMenuRunnerFlags() OVERRIDE;
-  virtual void DoTestWithMenuOpen() OVERRIDE;
+  int GetMenuRunnerFlags() override;
+  void DoTestWithMenuOpen() override;
 };
 
 int MenuViewDragAndDropForDropStayOpen::GetMenuRunnerFlags() {
@@ -489,12 +484,12 @@ VIEW_TEST(MenuViewDragAndDropForDropStayOpen, MenuViewStaysOpenForNestedDrag)
 class MenuViewDragAndDropForDropCancel : public MenuViewDragAndDropTest {
  public:
   MenuViewDragAndDropForDropCancel() {}
-  virtual ~MenuViewDragAndDropForDropCancel() {}
+  ~MenuViewDragAndDropForDropCancel() override {}
 
  private:
   // MenuViewDragAndDropTest:
-  virtual int GetMenuRunnerFlags() OVERRIDE;
-  virtual void DoTestWithMenuOpen() OVERRIDE;
+  int GetMenuRunnerFlags() override;
+  void DoTestWithMenuOpen() override;
 };
 
 int MenuViewDragAndDropForDropCancel::GetMenuRunnerFlags() {

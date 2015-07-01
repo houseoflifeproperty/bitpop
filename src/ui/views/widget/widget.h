@@ -13,11 +13,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/scoped_observer.h"
-#include "ui/aura/window_layer_type.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/events/event_source.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/rect.h"
 #include "ui/native_theme/native_theme_observer.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/widget/native_widget_delegate.h"
@@ -36,6 +35,10 @@
 #undef CreateWindow
 #endif
 #endif
+
+namespace base {
+class TimeDelta;
+}
 
 namespace gfx {
 class Canvas;
@@ -133,6 +136,14 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     MOVE_LOOP_ESCAPE_BEHAVIOR_DONT_HIDE,
   };
 
+  // Type of visibility change transition that should animate.
+  enum VisibilityTransition {
+    ANIMATE_SHOW = 0x1,
+    ANIMATE_HIDE = 0x2,
+    ANIMATE_BOTH = ANIMATE_SHOW | ANIMATE_HIDE,
+    ANIMATE_NONE = 0x4,
+  };
+
   struct VIEWS_EXPORT InitParams {
     enum Type {
       TYPE_WINDOW,      // A decorated Window, like a frame window.
@@ -222,8 +233,6 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     bool use_system_default_icon;
     // Whether the widget should be maximized or minimized.
     ui::WindowShowState show_state;
-    // Should the widget be double buffered? Default is false.
-    bool double_buffer;
     gfx::NativeView parent;
     // Specifies the initial bounds of the Widget. Default is empty, which means
     // the NativeWidget may specify a default size. If the parent is specified,
@@ -239,8 +248,8 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     // rid of NW subclasses and do this all via message handling.
     DesktopWindowTreeHost* desktop_window_tree_host;
     // Only used by NativeWidgetAura. Specifies the type of layer for the
-    // aura::Window. Default is WINDOW_LAYER_TEXTURED.
-    aura::WindowLayerType layer_type;
+    // aura::Window. Default is ui::LAYER_TEXTURED.
+    ui::LayerType layer_type;
     // Only used by Aura. Provides a context window whose RootWindow is
     // consulted during widget creation to determine where in the Window
     // hierarchy this widget should be placed. (This is separate from |parent|;
@@ -261,7 +270,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   };
 
   Widget();
-  virtual ~Widget();
+  ~Widget() override;
 
   // Creates a toplevel window with no context. These methods should only be
   // used in cases where there is no contextual information because we're
@@ -318,7 +327,8 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   static void GetAllChildWidgets(gfx::NativeView native_view,
                                  Widgets* children);
 
-  // Returns all non-child Widgets owned by |native_view|.
+  // Returns all Widgets owned by |native_view| (including child widgets, but
+  // not including itself).
   static void GetAllOwnedWidgets(gfx::NativeView native_view,
                                  Widgets* owned);
 
@@ -353,12 +363,12 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Add/remove observer.
   void AddObserver(WidgetObserver* observer);
   void RemoveObserver(WidgetObserver* observer);
-  bool HasObserver(WidgetObserver* observer);
+  bool HasObserver(const WidgetObserver* observer) const;
 
   // Add/remove removals observer.
   void AddRemovalsObserver(WidgetRemovalsObserver* observer);
   void RemoveRemovalsObserver(WidgetRemovalsObserver* observer);
-  bool HasRemovalsObserver(WidgetRemovalsObserver* observer);
+  bool HasRemovalsObserver(const WidgetRemovalsObserver* observer) const;
 
   // Returns the accelerator given a command id. Returns false if there is
   // no accelerator associated with a given id, which is a common condition.
@@ -418,6 +428,13 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Sets whether animations that occur when visibility is changed are enabled.
   // Default is true.
   void SetVisibilityChangedAnimationsEnabled(bool value);
+
+  // Sets the duration of visibility change animations.
+  void SetVisibilityAnimationDuration(const base::TimeDelta& duration);
+
+  // Sets the visibility transitions that should animate.
+  // Default behavior is to animate both show and hide.
+  void SetVisibilityAnimationTransition(VisibilityTransition transition);
 
   // Starts a nested message loop that moves the window. This can be used to
   // start a window move operation from a mouse or touch event. This returns
@@ -549,6 +566,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   FocusManager* GetFocusManager();
   const FocusManager* GetFocusManager() const;
 
+  // Returns the focused text input client within this widget.
+  ui::TextInputClient* GetFocusedTextInputClient();
+
   // Returns the InputMethod for this widget.
   // Note that all widgets in a widget hierarchy share the same input method.
   InputMethod* GetInputMethod();
@@ -609,6 +629,10 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // changed.
   void LocaleChanged();
 
+  // Notifies the view hierarchy contained in this widget that the device scale
+  // factor changed.
+  void DeviceScaleFactorChanged(float device_scale_factor);
+
   void SetFocusTraversableParent(FocusTraversable* parent);
   void SetFocusTraversableParentView(View* parent_view);
 
@@ -655,11 +679,18 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     return non_client_view_ ? non_client_view_->client_view() : NULL;
   }
 
+  ui::Compositor* GetCompositor() {
+    return const_cast<ui::Compositor*>(
+        const_cast<const Widget*>(this)->GetCompositor());
+  }
   const ui::Compositor* GetCompositor() const;
-  ui::Compositor* GetCompositor();
 
   // Returns the widget's layer, if any.
-  ui::Layer* GetLayer();
+  ui::Layer* GetLayer() {
+    return const_cast<ui::Layer*>(
+        const_cast<const Widget*>(this)->GetLayer());
+  }
+  const ui::Layer* GetLayer() const;
 
   // Reorders the widget's child NativeViews which are associated to the view
   // tree (eg via a NativeViewHost) to match the z-order of the views in the
@@ -742,55 +773,53 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   virtual void OnOwnerClosing();
 
   // Overridden from NativeWidgetDelegate:
-  virtual bool IsModal() const OVERRIDE;
-  virtual bool IsDialogBox() const OVERRIDE;
-  virtual bool CanActivate() const OVERRIDE;
-  virtual bool IsInactiveRenderingDisabled() const OVERRIDE;
-  virtual void EnableInactiveRendering() OVERRIDE;
-  virtual void OnNativeWidgetActivationChanged(bool active) OVERRIDE;
-  virtual void OnNativeFocus(gfx::NativeView old_focused_view) OVERRIDE;
-  virtual void OnNativeBlur(gfx::NativeView new_focused_view) OVERRIDE;
-  virtual void OnNativeWidgetVisibilityChanging(bool visible) OVERRIDE;
-  virtual void OnNativeWidgetVisibilityChanged(bool visible) OVERRIDE;
-  virtual void OnNativeWidgetCreated(bool desktop_widget) OVERRIDE;
-  virtual void OnNativeWidgetDestroying() OVERRIDE;
-  virtual void OnNativeWidgetDestroyed() OVERRIDE;
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
-  virtual gfx::Size GetMaximumSize() const OVERRIDE;
-  virtual void OnNativeWidgetMove() OVERRIDE;
-  virtual void OnNativeWidgetSizeChanged(const gfx::Size& new_size) OVERRIDE;
-  virtual void OnNativeWidgetWindowShowStateChanged() OVERRIDE;
-  virtual void OnNativeWidgetBeginUserBoundsChange() OVERRIDE;
-  virtual void OnNativeWidgetEndUserBoundsChange() OVERRIDE;
-  virtual bool HasFocusManager() const OVERRIDE;
-  virtual bool OnNativeWidgetPaintAccelerated(
-      const gfx::Rect& dirty_region) OVERRIDE;
-  virtual void OnNativeWidgetPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual int GetNonClientComponent(const gfx::Point& point) OVERRIDE;
-  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
-  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
-  virtual void OnMouseCaptureLost() OVERRIDE;
-  virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
-  virtual bool ExecuteCommand(int command_id) OVERRIDE;
-  virtual InputMethod* GetInputMethodDirect() OVERRIDE;
-  virtual const std::vector<ui::Layer*>& GetRootLayers() OVERRIDE;
-  virtual bool HasHitTestMask() const OVERRIDE;
-  virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
-  virtual Widget* AsWidget() OVERRIDE;
-  virtual const Widget* AsWidget() const OVERRIDE;
-  virtual bool SetInitialFocus(ui::WindowShowState show_state) OVERRIDE;
+  bool IsModal() const override;
+  bool IsDialogBox() const override;
+  bool CanActivate() const override;
+  bool IsInactiveRenderingDisabled() const override;
+  void EnableInactiveRendering() override;
+  void OnNativeWidgetActivationChanged(bool active) override;
+  void OnNativeFocus() override;
+  void OnNativeBlur() override;
+  void OnNativeWidgetVisibilityChanging(bool visible) override;
+  void OnNativeWidgetVisibilityChanged(bool visible) override;
+  void OnNativeWidgetCreated(bool desktop_widget) override;
+  void OnNativeWidgetDestroying() override;
+  void OnNativeWidgetDestroyed() override;
+  gfx::Size GetMinimumSize() const override;
+  gfx::Size GetMaximumSize() const override;
+  void OnNativeWidgetMove() override;
+  void OnNativeWidgetSizeChanged(const gfx::Size& new_size) override;
+  void OnNativeWidgetWindowShowStateChanged() override;
+  void OnNativeWidgetBeginUserBoundsChange() override;
+  void OnNativeWidgetEndUserBoundsChange() override;
+  bool HasFocusManager() const override;
+  void OnNativeWidgetPaint(const ui::PaintContext& context) override;
+  int GetNonClientComponent(const gfx::Point& point) override;
+  void OnKeyEvent(ui::KeyEvent* event) override;
+  void OnMouseEvent(ui::MouseEvent* event) override;
+  void OnMouseCaptureLost() override;
+  void OnScrollEvent(ui::ScrollEvent* event) override;
+  void OnGestureEvent(ui::GestureEvent* event) override;
+  bool ExecuteCommand(int command_id) override;
+  InputMethod* GetInputMethodDirect() override;
+  const std::vector<ui::Layer*>& GetRootLayers() override;
+  bool HasHitTestMask() const override;
+  void GetHitTestMask(gfx::Path* mask) const override;
+  Widget* AsWidget() override;
+  const Widget* AsWidget() const override;
+  bool SetInitialFocus(ui::WindowShowState show_state) override;
 
   // Overridden from ui::EventSource:
-  virtual ui::EventProcessor* GetEventProcessor() OVERRIDE;
+  ui::EventProcessor* GetEventProcessor() override;
 
   // Overridden from FocusTraversable:
-  virtual FocusSearch* GetFocusSearch() OVERRIDE;
-  virtual FocusTraversable* GetFocusTraversableParent() OVERRIDE;
-  virtual View* GetFocusTraversableParentView() OVERRIDE;
+  FocusSearch* GetFocusSearch() override;
+  FocusTraversable* GetFocusTraversableParent() override;
+  View* GetFocusTraversableParentView() override;
 
   // Overridden from ui::NativeThemeObserver:
-  virtual void OnNativeThemeUpdated(ui::NativeTheme* observed_theme) OVERRIDE;
+  void OnNativeThemeUpdated(ui::NativeTheme* observed_theme) override;
 
  protected:
   // Creates the RootView to be used within this Widget. Subclasses may override

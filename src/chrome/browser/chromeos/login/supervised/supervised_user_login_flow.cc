@@ -5,12 +5,13 @@
 #include "chrome/browser/chromeos/login/supervised/supervised_user_login_flow.h"
 
 #include "base/base64.h"
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/login/login_utils.h"
+#include "chrome/browser/chromeos/login/session/user_session_manager.h"
 #include "chrome/browser/chromeos/login/supervised/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/supervised/supervised_user_constants.h"
 #include "chrome/browser/chromeos/login/supervised/supervised_user_creation_screen.h"
@@ -18,6 +19,7 @@
 #include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/common/chrome_switches.h"
 #include "chromeos/login/auth/key.h"
 #include "components/user_manager/user_manager.h"
 #include "content/public/browser/browser_thread.h"
@@ -34,6 +36,15 @@ SupervisedUserLoginFlow::SupervisedUserLoginFlow(
 }
 
 SupervisedUserLoginFlow::~SupervisedUserLoginFlow() {}
+
+void SupervisedUserLoginFlow::AppendAdditionalCommandLineSwitches() {
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
+  if (user_manager->IsCurrentUserNew()) {
+    // Supervised users should launch into empty desktop on first run.
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
+        ::switches::kSilentLaunch);
+  }
+}
 
 bool SupervisedUserLoginFlow::CanLockScreen() {
   return true;
@@ -59,13 +70,9 @@ bool SupervisedUserLoginFlow::HandlePasswordChangeDetected() {
   return false;
 }
 
-void SupervisedUserLoginFlow::HandleOAuthTokenStatusChange(
-    user_manager::User::OAuthTokenStatus status) {
-}
-
 void SupervisedUserLoginFlow::OnSyncSetupDataLoaded(
     const std::string& token) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   ConfigureSync(token);
 }
 
@@ -139,7 +146,7 @@ void SupervisedUserLoginFlow::OnPasswordChangeDataLoaded(
                                 kCryptohomeSupervisedUserKeyLabel,
                                 kCryptohomeSupervisedUserKeyPrivileges);
 
-  authenticator_ = new ExtendedAuthenticator(this);
+  authenticator_ = ExtendedAuthenticator::Create(this);
   SupervisedUserAuthentication::Schema current_schema =
       auth->GetPasswordSchema(user_id());
 
@@ -245,7 +252,7 @@ void SupervisedUserLoginFlow::OnPasswordUpdated(
 }
 
 void SupervisedUserLoginFlow::Finish() {
-  LoginUtils::Get()->DoBrowserLaunch(profile_, host());
+  UserSessionManager::GetInstance()->DoBrowserLaunch(profile_, host());
   profile_ = NULL;
   UnregisterFlowSoon();
 }

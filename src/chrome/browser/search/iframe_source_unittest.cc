@@ -38,27 +38,23 @@ class TestIframeSource : public IframeSource {
   using IframeSource::SendJSWithOrigin;
 
  protected:
-  virtual std::string GetSource() const OVERRIDE {
-    return "test";
-  }
+  std::string GetSource() const override { return "test"; }
 
-  virtual bool ServesPath(const std::string& path) const OVERRIDE {
+  bool ServesPath(const std::string& path) const override {
     return path == "/valid.html" || path == "/valid.js";
   }
 
-  virtual void StartDataRequest(
+  void StartDataRequest(
       const std::string& path,
       int render_process_id,
       int render_frame_id,
-      const content::URLDataSource::GotDataCallback& callback) OVERRIDE {
-  }
+      const content::URLDataSource::GotDataCallback& callback) override {}
 
   // RenderFrameHost is hard to mock in concert with everything else, so stub
   // this method out for testing.
-  virtual bool GetOrigin(
-      int process_id,
-      int render_frame_id,
-      std::string* origin) const OVERRIDE {
+  bool GetOrigin(int process_id,
+                 int render_frame_id,
+                 std::string* origin) const override {
     if (process_id == kInstantRendererPID) {
       *origin = kInstantOrigin;
       return true;
@@ -102,7 +98,6 @@ class IframeSourceTest : public testing::Test {
         resource_context_.GetRequestContext()->CreateRequest(
             GURL(url),
             net::DEFAULT_PRIORITY,
-            NULL,
             NULL));
     if (allocate_info) {
       content::ResourceRequestInfo::AllocateForTesting(
@@ -112,7 +107,10 @@ class IframeSourceTest : public testing::Test {
           render_process_id,
           render_frame_id,
           MSG_ROUTING_NONE,
-          false);
+          false,   // is_main_frame
+          false,   // parent_is_main_frame
+          true,    // allow_download
+          false);  // is_async
     }
     return request.Pass();
   }
@@ -130,7 +128,7 @@ class IframeSourceTest : public testing::Test {
   }
 
  private:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     source_.reset(new TestIframeSource());
     callback_ = base::Bind(&IframeSourceTest::SaveResponse,
                            base::Unretained(this));
@@ -141,9 +139,7 @@ class IframeSourceTest : public testing::Test {
     response_ = NULL;
   }
 
-  virtual void TearDown() {
-    source_.reset();
-  }
+  void TearDown() override { source_.reset(); }
 
   void SaveResponse(base::RefCountedMemory* data) {
     response_ = data;

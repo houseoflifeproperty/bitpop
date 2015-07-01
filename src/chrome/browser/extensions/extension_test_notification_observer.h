@@ -27,7 +27,7 @@ class ExtensionTestNotificationObserver
       public extensions::ExtensionActionAPI::Observer {
  public:
   explicit ExtensionTestNotificationObserver(Browser* browser);
-  virtual ~ExtensionTestNotificationObserver();
+  ~ExtensionTestNotificationObserver() override;
 
   // Wait for the number of visible page actions to change to |count|.
   bool WaitForPageActionVisibilityChangeTo(int count);
@@ -60,6 +60,12 @@ class ExtensionTestNotificationObserver
   // Wait for all extension views to load.
   bool WaitForExtensionViewsToLoad();
 
+  // Wait for extension to be idle.
+  bool WaitForExtensionIdle(const std::string& extension_id);
+
+  // Wait for extension to be not idle.
+  bool WaitForExtensionNotIdle(const std::string& extension_id);
+
   // Watch for the given event type from the given source.
   // After calling this method, call Wait() to ensure that RunMessageLoop() is
   // called appropriately and cleanup is performed.
@@ -78,9 +84,9 @@ class ExtensionTestNotificationObserver
   }
 
   // content::NotificationObserver
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
  private:
   class NotificationSet;
@@ -100,7 +106,7 @@ class ExtensionTestNotificationObserver
   void MaybeQuit();
 
   // extensions::ExtensionActionAPI::Observer:
-  virtual void OnPageActionsUpdated(content::WebContents* contents) OVERRIDE;
+  void OnPageActionsUpdated(content::WebContents* contents) override;
 
   Browser* browser_;
   Profile* profile_;

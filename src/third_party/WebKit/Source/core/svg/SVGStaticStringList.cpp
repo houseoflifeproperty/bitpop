@@ -31,10 +31,12 @@
 #include "config.h"
 #include "core/svg/SVGStaticStringList.h"
 
+#include "core/svg/SVGElement.h"
+
 namespace blink {
 
 SVGStaticStringList::SVGStaticStringList(SVGElement* contextElement, const QualifiedName& attributeName)
-    : SVGAnimatedPropertyBase(AnimatedStringList, contextElement, attributeName)
+    : SVGAnimatedPropertyBase(AnimatedUnknown, contextElement, attributeName)
     , m_value(SVGStringList::create())
 {
     ASSERT(contextElement);
@@ -42,6 +44,13 @@ SVGStaticStringList::SVGStaticStringList(SVGElement* contextElement, const Quali
 
 SVGStaticStringList::~SVGStaticStringList()
 {
+}
+
+DEFINE_TRACE(SVGStaticStringList)
+{
+    visitor->trace(m_value);
+    visitor->trace(m_tearOff);
+    SVGAnimatedPropertyBase::trace(visitor);
 }
 
 SVGPropertyBase* SVGStaticStringList::currentValueBase()
@@ -54,13 +63,13 @@ bool SVGStaticStringList::isAnimating() const
     return false;
 }
 
-PassRefPtr<SVGPropertyBase> SVGStaticStringList::createAnimatedValue()
+PassRefPtrWillBeRawPtr<SVGPropertyBase> SVGStaticStringList::createAnimatedValue()
 {
     ASSERT_NOT_REACHED();
     return nullptr;
 }
 
-void SVGStaticStringList::setAnimatedValue(PassRefPtr<SVGPropertyBase>)
+void SVGStaticStringList::setAnimatedValue(PassRefPtrWillBeRawPtr<SVGPropertyBase>)
 {
     ASSERT_NOT_REACHED();
 }

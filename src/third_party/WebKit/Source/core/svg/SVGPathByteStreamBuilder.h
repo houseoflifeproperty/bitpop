@@ -20,40 +20,23 @@
 #ifndef SVGPathByteStreamBuilder_h
 #define SVGPathByteStreamBuilder_h
 
-#include "core/svg/SVGPathByteStream.h"
 #include "core/svg/SVGPathConsumer.h"
-#include "platform/geometry/FloatPoint.h"
-#include "wtf/PassOwnPtr.h"
-#include "wtf/text/WTFString.h"
 
 namespace blink {
 
-class SVGPathByteStreamBuilder FINAL : public SVGPathConsumer {
-public:
-    SVGPathByteStreamBuilder();
+class SVGPathByteStream;
 
-    void setCurrentByteStream(SVGPathByteStream* byteStream) { m_byteStream = byteStream; }
+class SVGPathByteStreamBuilder final : public SVGPathConsumer {
+public:
+    SVGPathByteStreamBuilder(SVGPathByteStream&);
 
 private:
-    virtual void incrementPathSegmentCount() OVERRIDE { }
-    virtual bool continueConsuming() OVERRIDE { return true; }
-    virtual void cleanup() OVERRIDE { m_byteStream = 0; }
+    virtual void incrementPathSegmentCount() override { }
+    virtual bool continueConsuming() override { return true; }
 
-    // Used in UnalteredParsing/NormalizedParsing modes.
-    virtual void moveTo(const FloatPoint&, bool closed, PathCoordinateMode) OVERRIDE;
-    virtual void lineTo(const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void curveToCubic(const FloatPoint&, const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void closePath() OVERRIDE;
+    virtual void emitSegment(const PathSegmentData&) override;
 
-    // Only used in UnalteredParsing mode.
-    virtual void lineToHorizontal(float, PathCoordinateMode) OVERRIDE;
-    virtual void lineToVertical(float, PathCoordinateMode) OVERRIDE;
-    virtual void curveToCubicSmooth(const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void curveToQuadratic(const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void curveToQuadraticSmooth(const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void arcTo(float, float, float, bool largeArcFlag, bool sweepFlag, const FloatPoint&, PathCoordinateMode) OVERRIDE;
-
-    SVGPathByteStream* m_byteStream;
+    SVGPathByteStream& m_byteStream;
 };
 
 } // namespace blink

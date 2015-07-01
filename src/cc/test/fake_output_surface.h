@@ -20,22 +20,31 @@ namespace cc {
 
 class FakeOutputSurface : public OutputSurface {
  public:
-  virtual ~FakeOutputSurface();
+  ~FakeOutputSurface() override;
 
   static scoped_ptr<FakeOutputSurface> Create3d() {
     return make_scoped_ptr(new FakeOutputSurface(
-        TestContextProvider::Create(), false));
+        TestContextProvider::Create(), TestContextProvider::Create(), false));
   }
 
   static scoped_ptr<FakeOutputSurface> Create3d(
       scoped_refptr<ContextProvider> context_provider) {
-    return make_scoped_ptr(new FakeOutputSurface(context_provider, false));
+    return make_scoped_ptr(new FakeOutputSurface(
+        context_provider, TestContextProvider::Create(), false));
+  }
+
+  static scoped_ptr<FakeOutputSurface> Create3d(
+      scoped_refptr<ContextProvider> context_provider,
+      scoped_refptr<ContextProvider> worker_context_provider) {
+    return make_scoped_ptr(new FakeOutputSurface(
+        context_provider, worker_context_provider, false));
   }
 
   static scoped_ptr<FakeOutputSurface> Create3d(
       scoped_ptr<TestWebGraphicsContext3D> context) {
-    return make_scoped_ptr(new FakeOutputSurface(
-        TestContextProvider::Create(context.Pass()), false));
+    return make_scoped_ptr(
+        new FakeOutputSurface(TestContextProvider::Create(context.Pass()),
+                              TestContextProvider::Create(), false));
   }
 
   static scoped_ptr<FakeOutputSurface> CreateSoftware(
@@ -46,7 +55,7 @@ class FakeOutputSurface : public OutputSurface {
 
   static scoped_ptr<FakeOutputSurface> CreateDelegating3d() {
     return make_scoped_ptr(new FakeOutputSurface(
-        TestContextProvider::Create(), true));
+        TestContextProvider::Create(), TestContextProvider::Create(), true));
   }
 
   static scoped_ptr<FakeOutputSurface> CreateDelegating3d(
@@ -66,18 +75,16 @@ class FakeOutputSurface : public OutputSurface {
         new FakeOutputSurface(software_device.Pass(), true));
   }
 
-  static scoped_ptr<FakeOutputSurface> CreateDeferredGL(
-      scoped_ptr<SoftwareOutputDevice> software_device,
-      bool delegated_rendering) {
-    scoped_ptr<FakeOutputSurface> result(
-        new FakeOutputSurface(software_device.Pass(), delegated_rendering));
-    result->capabilities_.deferred_gl_initialization = true;
-    return result.Pass();
-  }
-
   static scoped_ptr<FakeOutputSurface> CreateAlwaysDrawAndSwap3d() {
     scoped_ptr<FakeOutputSurface> surface(Create3d());
     surface->capabilities_.draw_and_swap_full_viewport_every_frame = true;
+    return surface.Pass();
+  }
+
+  static scoped_ptr<FakeOutputSurface> CreateNoRequireSyncPoint(
+      scoped_ptr<TestWebGraphicsContext3D> context) {
+    scoped_ptr<FakeOutputSurface> surface(Create3d(context.Pass()));
+    surface->capabilities_.delegated_sync_points_required = false;
     return surface.Pass();
   }
 
@@ -92,15 +99,13 @@ class FakeOutputSurface : public OutputSurface {
   CompositorFrame& last_sent_frame() { return last_sent_frame_; }
   size_t num_sent_frames() { return num_sent_frames_; }
 
-  virtual void SwapBuffers(CompositorFrame* frame) OVERRIDE;
+  void SwapBuffers(CompositorFrame* frame) override;
 
-  virtual void SetNeedsBeginFrame(bool enable) OVERRIDE;
-  bool needs_begin_frame() const { return needs_begin_frame_; }
+  OutputSurfaceClient* client() { return client_; }
+  bool BindToClient(OutputSurfaceClient* client) override;
 
-  virtual bool BindToClient(OutputSurfaceClient* client) OVERRIDE;
-
-  using OutputSurface::ReleaseGL;
-  using OutputSurface::InitializeAndSetContext3d;
+  void set_framebuffer(unsigned framebuffer) { framebuffer_ = framebuffer; }
+  void BindFramebuffer() override;
 
   void SetTreeActivationCallback(const base::Closure& callback);
 
@@ -110,7 +115,7 @@ class FakeOutputSurface : public OutputSurface {
 
   void ReturnResource(unsigned id, CompositorFrameAck* ack);
 
-  virtual bool HasExternalStencilTest() const OVERRIDE;
+  bool HasExternalStencilTest() const override;
 
   void set_has_external_stencil_test(bool has_test) {
     has_external_stencil_test_ = has_test;
@@ -119,31 +124,35 @@ class FakeOutputSurface : public OutputSurface {
   void SetMemoryPolicyToSetAtBind(
       scoped_ptr<ManagedMemoryPolicy> memory_policy_to_set_at_bind);
 
+  gfx::Rect last_swap_rect() const {
+    return last_swap_rect_;
+  }
+
  protected:
   FakeOutputSurface(
       scoped_refptr<ContextProvider> context_provider,
       bool delegated_rendering);
 
-  FakeOutputSurface(
-      scoped_ptr<SoftwareOutputDevice> software_device,
-      bool delegated_rendering);
+  FakeOutputSurface(scoped_refptr<ContextProvider> context_provider,
+                    scoped_refptr<ContextProvider> worker_context_provider,
+                    bool delegated_rendering);
+
+  FakeOutputSurface(scoped_ptr<SoftwareOutputDevice> software_device,
+                    bool delegated_rendering);
 
   FakeOutputSurface(
       scoped_refptr<ContextProvider> context_provider,
       scoped_ptr<SoftwareOutputDevice> software_device,
       bool delegated_rendering);
 
-  void OnBeginFrame();
-
   OutputSurfaceClient* client_;
   CompositorFrame last_sent_frame_;
   size_t num_sent_frames_;
-  bool needs_begin_frame_;
   bool has_external_stencil_test_;
+  unsigned framebuffer_;
   TransferableResourceArray resources_held_by_parent_;
   scoped_ptr<ManagedMemoryPolicy> memory_policy_to_set_at_bind_;
-
-  base::WeakPtrFactory<FakeOutputSurface> fake_weak_ptr_factory_;
+  gfx::Rect last_swap_rect_;
 };
 
 }  // namespace cc

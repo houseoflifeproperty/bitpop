@@ -48,7 +48,7 @@ class ServerDelegate : public Daemon::ServerDelegate {
  public:
   ServerDelegate() : initialized_(false) {}
 
-  virtual ~ServerDelegate() {
+  ~ServerDelegate() override {
     if (!controller_thread_.get())
       return;
     // The DeviceController instance, if any, is constructed on the controller
@@ -68,7 +68,7 @@ class ServerDelegate : public Daemon::ServerDelegate {
   }
 
   // Daemon::ServerDelegate:
-  virtual void Init() OVERRIDE {
+  void Init() override {
     DCHECK(!g_notifier);
     g_notifier = new forwarder2::PipeNotifier();
     signal(SIGTERM, KillHandler);
@@ -77,7 +77,7 @@ class ServerDelegate : public Daemon::ServerDelegate {
     controller_thread_->Start();
   }
 
-  virtual void OnClientConnected(scoped_ptr<Socket> client_socket) OVERRIDE {
+  void OnClientConnected(scoped_ptr<Socket> client_socket) override {
     if (initialized_) {
       client_socket->WriteString("OK");
       return;
@@ -119,12 +119,12 @@ class ClientDelegate : public Daemon::ClientDelegate {
   bool has_failed() const { return has_failed_; }
 
   // Daemon::ClientDelegate:
-  virtual void OnDaemonReady(Socket* daemon_socket) OVERRIDE {
+  void OnDaemonReady(Socket* daemon_socket) override {
     char buf[kBufSize];
     const int bytes_read = daemon_socket->Read(
         buf, sizeof(buf) - 1 /* leave space for null terminator */);
     CHECK_GT(bytes_read, 0);
-    DCHECK(bytes_read < sizeof(buf));
+    DCHECK(static_cast<unsigned int>(bytes_read) < sizeof(buf));
     buf[bytes_read] = 0;
     base::StringPiece msg(buf, bytes_read);
     if (msg.starts_with("ERROR")) {
@@ -139,9 +139,9 @@ class ClientDelegate : public Daemon::ClientDelegate {
 };
 
 int RunDeviceForwarder(int argc, char** argv) {
-  CommandLine::Init(argc, argv);  // Needed by logging.
-  const bool kill_server = CommandLine::ForCurrentProcess()->HasSwitch(
-      "kill-server");
+  base::CommandLine::Init(argc, argv);  // Needed by logging.
+  const bool kill_server =
+      base::CommandLine::ForCurrentProcess()->HasSwitch("kill-server");
   if ((kill_server && argc != 2) || (!kill_server && argc != 1)) {
     std::cerr << "Usage: device_forwarder [--kill-server]" << std::endl;
     return 1;

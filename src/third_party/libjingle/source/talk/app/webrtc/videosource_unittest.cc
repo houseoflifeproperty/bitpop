@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -169,7 +169,7 @@ class VideoSourceTest : public testing::Test {
 // Test that a VideoSource transition to kLive state when the capture
 // device have started and kEnded if it is stopped.
 // It also test that an output can receive video frames.
-TEST_F(VideoSourceTest, StartStop) {
+TEST_F(VideoSourceTest, CapturerStartStop) {
   // Initialize without constraints.
   CreateVideoSource();
   EXPECT_EQ_WAIT(MediaSourceInterface::kLive, state_observer_->state(),
@@ -181,6 +181,30 @@ TEST_F(VideoSourceTest, StartStop) {
   capturer_->Stop();
   EXPECT_EQ_WAIT(MediaSourceInterface::kEnded, state_observer_->state(),
                  kMaxWaitMs);
+}
+
+// Test that a VideoSource can be stopped and restarted.
+TEST_F(VideoSourceTest, StopRestart) {
+  // Initialize without constraints.
+  CreateVideoSource();
+  EXPECT_EQ_WAIT(MediaSourceInterface::kLive, state_observer_->state(),
+                 kMaxWaitMs);
+
+  ASSERT_TRUE(capturer_->CaptureFrame());
+  EXPECT_EQ(1, renderer_.num_rendered_frames());
+
+  source_->Stop();
+  EXPECT_EQ_WAIT(MediaSourceInterface::kEnded, state_observer_->state(),
+                 kMaxWaitMs);
+
+  source_->Restart();
+  EXPECT_EQ_WAIT(MediaSourceInterface::kLive, state_observer_->state(),
+                 kMaxWaitMs);
+
+  ASSERT_TRUE(capturer_->CaptureFrame());
+  EXPECT_EQ(2, renderer_.num_rendered_frames());
+
+  source_->Stop();
 }
 
 // Test start stop with a remote VideoSource - the video source that has a
@@ -366,21 +390,12 @@ TEST_F(VideoSourceTest, InvalidOptionalConstraint) {
 TEST_F(VideoSourceTest, SetValidOptionValues) {
   FakeConstraints constraints;
   constraints.AddMandatory(MediaConstraintsInterface::kNoiseReduction, "false");
-  constraints.AddMandatory(
-      MediaConstraintsInterface::kTemporalLayeredScreencast, "false");
-  constraints.AddOptional(
-      MediaConstraintsInterface::kLeakyBucket, "true");
 
   CreateVideoSource(&constraints);
 
   bool value = true;
   EXPECT_TRUE(source_->options()->video_noise_reduction.Get(&value));
   EXPECT_FALSE(value);
-  EXPECT_TRUE(source_->options()->
-      video_temporal_layer_screencast.Get(&value));
-  EXPECT_FALSE(value);
-  EXPECT_TRUE(source_->options()->video_leaky_bucket.Get(&value));
-  EXPECT_TRUE(value);
 }
 
 TEST_F(VideoSourceTest, OptionNotSet) {
@@ -402,7 +417,6 @@ TEST_F(VideoSourceTest, MandatoryOptionOverridesOptional) {
   bool value = false;
   EXPECT_TRUE(source_->options()->video_noise_reduction.Get(&value));
   EXPECT_TRUE(value);
-  EXPECT_FALSE(source_->options()->video_leaky_bucket.Get(&value));
 }
 
 TEST_F(VideoSourceTest, InvalidOptionKeyOptional) {
@@ -437,18 +451,14 @@ TEST_F(VideoSourceTest, InvalidOptionKeyMandatory) {
 TEST_F(VideoSourceTest, InvalidOptionValueOptional) {
   FakeConstraints constraints;
   constraints.AddOptional(
-      MediaConstraintsInterface::kNoiseReduction, "true");
-  constraints.AddOptional(
-      MediaConstraintsInterface::kLeakyBucket, "not boolean");
+      MediaConstraintsInterface::kNoiseReduction, "not a boolean");
 
   CreateVideoSource(&constraints);
 
   EXPECT_EQ_WAIT(MediaSourceInterface::kLive, state_observer_->state(),
       kMaxWaitMs);
   bool value = false;
-  EXPECT_TRUE(source_->options()->video_noise_reduction.Get(&value));
-  EXPECT_TRUE(value);
-  EXPECT_FALSE(source_->options()->video_leaky_bucket.Get(&value));
+  EXPECT_FALSE(source_->options()->video_noise_reduction.Get(&value));
 }
 
 TEST_F(VideoSourceTest, InvalidOptionValueMandatory) {
@@ -458,7 +468,7 @@ TEST_F(VideoSourceTest, InvalidOptionValueMandatory) {
       MediaConstraintsInterface::kNoiseReduction, "false");
   // Values are case-sensitive and must be all lower-case.
   constraints.AddMandatory(
-      MediaConstraintsInterface::kLeakyBucket, "True");
+      MediaConstraintsInterface::kNoiseReduction, "True");
 
   CreateVideoSource(&constraints);
 
@@ -491,7 +501,6 @@ TEST_F(VideoSourceTest, MixedOptionsAndConstraints) {
   bool value = true;
   EXPECT_TRUE(source_->options()->video_noise_reduction.Get(&value));
   EXPECT_FALSE(value);
-  EXPECT_FALSE(source_->options()->video_leaky_bucket.Get(&value));
 }
 
 // Tests that the source starts video with the default resolution for

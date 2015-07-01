@@ -4,6 +4,56 @@
 
 import("//tools/grit/grit_rule.gni")
 
+if (is_android) {
+  import("//build/config/android/rules.gni")
+  android_generated_java_resources = [
+    "java/res/values-am/generated_resources.xml",
+    "java/res/values-ar/generated_resources.xml",
+    "java/res/values-bg/generated_resources.xml",
+    "java/res/values-ca/generated_resources.xml",
+    "java/res/values-cs/generated_resources.xml",
+    "java/res/values-da/generated_resources.xml",
+    "java/res/values-de/generated_resources.xml",
+    "java/res/values-el/generated_resources.xml",
+    "java/res/values-en-rGB/generated_resources.xml",
+    "java/res/values-es-rUS/generated_resources.xml",
+    "java/res/values-es/generated_resources.xml",
+    "java/res/values-fa/generated_resources.xml",
+    "java/res/values-fi/generated_resources.xml",
+    "java/res/values-fr/generated_resources.xml",
+    "java/res/values-hi/generated_resources.xml",
+    "java/res/values-hr/generated_resources.xml",
+    "java/res/values-hu/generated_resources.xml",
+    "java/res/values-in/generated_resources.xml",
+    "java/res/values-it/generated_resources.xml",
+    "java/res/values-iw/generated_resources.xml",
+    "java/res/values-ja/generated_resources.xml",
+    "java/res/values-ko/generated_resources.xml",
+    "java/res/values-lt/generated_resources.xml",
+    "java/res/values-lv/generated_resources.xml",
+    "java/res/values-nb/generated_resources.xml",
+    "java/res/values-nl/generated_resources.xml",
+    "java/res/values-pl/generated_resources.xml",
+    "java/res/values-pt-rBR/generated_resources.xml",
+    "java/res/values-pt-rPT/generated_resources.xml",
+    "java/res/values-ro/generated_resources.xml",
+    "java/res/values-ru/generated_resources.xml",
+    "java/res/values-sk/generated_resources.xml",
+    "java/res/values-sl/generated_resources.xml",
+    "java/res/values-sr/generated_resources.xml",
+    "java/res/values-sv/generated_resources.xml",
+    "java/res/values-sw/generated_resources.xml",
+    "java/res/values-th/generated_resources.xml",
+    "java/res/values-tl/generated_resources.xml",
+    "java/res/values-tr/generated_resources.xml",
+    "java/res/values-uk/generated_resources.xml",
+    "java/res/values-vi/generated_resources.xml",
+    "java/res/values-zh-rCN/generated_resources.xml",
+    "java/res/values-zh-rTW/generated_resources.xml",
+    "java/res/values/generated_resources.xml",
+  ]
+}
+
 # GYP version: chrome/chrome_resources.gyp:chrome_strings
 #              (generate_generated_resources action)
 grit("generated_resources") {
@@ -67,6 +117,18 @@ grit("generated_resources") {
     "generated_resources_zh-CN.pak",
     "generated_resources_zh-TW.pak",
   ]
+
+  if (is_android) {
+    outputs += android_generated_java_resources
+  }
+}
+
+if (is_android) {
+  java_strings_grd_prebuilt("java_strings_grd") {
+    grit_output_dir = "$root_gen_dir/chrome/java/res"
+    generated_files =
+        rebase_path(android_generated_java_resources, "java/res", ".")
+  }
 }
 
 # GYP version: chrome/chrome_resources.gyp:chrome_strings_map
@@ -76,13 +138,19 @@ action("make_generated_resources_map") {
 
   script = "//chrome/browser/metrics/variations/generate_resources_map.py"
 
-  inputs = [ "$root_gen_dir/chrome/grit/generated_resources.h" ]
-  outputs = [ "$root_gen_dir/chrome/generated_resources_map.cc" ]
+  inputs = [
+    "$root_gen_dir/chrome/grit/generated_resources.h",
+  ]
+  outputs = [
+    "$root_gen_dir/chrome/generated_resources_map.cc",
+  ]
 
-  args = rebase_path(inputs, root_build_dir) +
-      rebase_path(outputs, root_build_dir)
+  args =
+      rebase_path(inputs, root_build_dir) + rebase_path(outputs, root_build_dir)
 
-  deps = [ ":generated_resources" ]
+  deps = [
+    ":generated_resources",
+  ]
 }
 
 # Collect the generated .cc file from make_generated_resources_map and put it
@@ -236,6 +304,7 @@ source_set("test_support") {
   deps = [
     "//base",
     "//chrome/browser",
+    "//chrome/child",
     "//chrome/common",
     "//chrome/plugin",
     "//chrome/renderer",
@@ -246,10 +315,14 @@ source_set("test_support") {
   ]
 
   if (is_mac) {
-    sources += [
-      "chrome_breakpad_client.cc",
-      "chrome_breakpad_client_mac.mm",
-      "chrome_main_mac.mm",
-    ]
+    sources += [ "chrome_main_mac.mm" ]
+  }
+
+  if (enable_plugins && enable_nacl) {
+    deps += [ "//components/nacl/renderer/plugin:nacl_trusted_plugin" ]
+  }
+
+  if (enable_remoting) {
+    deps += [ "//remoting/client/plugin" ]
   }
 }

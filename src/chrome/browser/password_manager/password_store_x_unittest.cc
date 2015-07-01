@@ -13,10 +13,11 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "chrome/browser/password_manager/password_store_x.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "components/password_manager/core/browser/password_form_data.h"
+#include "components/password_manager/core/browser/password_manager_test_utils.h"
 #include "components/password_manager/core/browser/password_store_change.h"
 #include "components/password_manager/core/browser/password_store_consumer.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
@@ -26,26 +27,24 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 using autofill::PasswordForm;
-using content::BrowserThread;
-using password_manager::ContainsAllPasswordForms;
 using password_manager::PasswordStoreChange;
 using password_manager::PasswordStoreChangeList;
-using testing::_;
-using testing::DoAll;
+using password_manager::UnorderedPasswordFormElementsAre;
 using testing::ElementsAreArray;
-using testing::Pointee;
-using testing::Property;
-using testing::WithArg;
-
-typedef std::vector<PasswordForm*> VectorOfForms;
+using testing::IsEmpty;
 
 namespace {
 
 class MockPasswordStoreConsumer
     : public password_manager::PasswordStoreConsumer {
  public:
-  MOCK_METHOD1(OnGetPasswordStoreResults,
+  MOCK_METHOD1(OnGetPasswordStoreResultsConstRef,
                void(const std::vector<PasswordForm*>&));
+
+  // GMock cannot mock methods with move-only args.
+  void OnGetPasswordStoreResults(ScopedVector<PasswordForm> results) override {
+    OnGetPasswordStoreResultsConstRef(results.get());
+  }
 };
 
 class MockPasswordStoreObserver
@@ -57,56 +56,77 @@ class MockPasswordStoreObserver
 
 class FailingBackend : public PasswordStoreX::NativeBackend {
  public:
-  virtual bool Init() OVERRIDE { return true; }
+  bool Init() override { return true; }
 
-  virtual PasswordStoreChangeList AddLogin(const PasswordForm& form) OVERRIDE {
+  PasswordStoreChangeList AddLogin(const PasswordForm& form) override {
     return PasswordStoreChangeList();
   }
-  virtual bool UpdateLogin(const PasswordForm& form,
-                           PasswordStoreChangeList* changes) OVERRIDE {
+  bool UpdateLogin(const PasswordForm& form,
+                   PasswordStoreChangeList* changes) override {
     return false;
   }
-  virtual bool RemoveLogin(const PasswordForm& form) OVERRIDE { return false; }
+  bool RemoveLogin(const PasswordForm& form) override { return false; }
 
-  virtual bool RemoveLoginsCreatedBetween(
+  bool RemoveLoginsCreatedBetween(
       base::Time delete_begin,
       base::Time delete_end,
-      password_manager::PasswordStoreChangeList* changes) OVERRIDE {
+      password_manager::PasswordStoreChangeList* changes) override {
     return false;
   }
 
-  virtual bool RemoveLoginsSyncedBetween(
+  bool RemoveLoginsSyncedBetween(
       base::Time delete_begin,
       base::Time delete_end,
-      password_manager::PasswordStoreChangeList* changes) OVERRIDE {
+      password_manager::PasswordStoreChangeList* changes) override {
     return false;
   }
 
-  virtual bool GetLogins(const PasswordForm& form,
-                         PasswordFormList* forms) OVERRIDE {
+  // Use this as a landmine to check whether results of failed Get*Logins calls
+  // get ignored.
+  static ScopedVector<autofill::PasswordForm> CreateTrashForms() {
+    ScopedVector<autofill::PasswordForm> forms;
+    PasswordForm trash;
+    trash.username_element = base::ASCIIToUTF16("trash u. element");
+    trash.username_value = base::ASCIIToUTF16("trash u. value");
+    trash.password_element = base::ASCIIToUTF16("trash p. element");
+    trash.password_value = base::ASCIIToUTF16("trash p. value");
+    for (size_t i = 0; i < 3; ++i) {
+      trash.origin = GURL(base::StringPrintf("http://trash%zu.com", i));
+      forms.push_back(new PasswordForm(trash));
+    }
+    return forms.Pass();
+  }
+
+  bool GetLogins(const PasswordForm& form,
+                 ScopedVector<autofill::PasswordForm>* forms) override {
+    *forms = CreateTrashForms();
     return false;
   }
 
-  virtual bool GetAutofillableLogins(PasswordFormList* forms) OVERRIDE {
+  bool GetAutofillableLogins(
+      ScopedVector<autofill::PasswordForm>* forms) override {
+    *forms = CreateTrashForms();
     return false;
   }
-  virtual bool GetBlacklistLogins(PasswordFormList* forms) OVERRIDE {
+  bool GetBlacklistLogins(
+      ScopedVector<autofill::PasswordForm>* forms) override {
+    *forms = CreateTrashForms();
     return false;
   }
 };
 
 class MockBackend : public PasswordStoreX::NativeBackend {
  public:
-  virtual bool Init() OVERRIDE { return true; }
+  bool Init() override { return true; }
 
-  virtual PasswordStoreChangeList AddLogin(const PasswordForm& form) OVERRIDE {
+  PasswordStoreChangeList AddLogin(const PasswordForm& form) override {
     all_forms_.push_back(form);
     PasswordStoreChange change(PasswordStoreChange::ADD, form);
     return PasswordStoreChangeList(1, change);
   }
 
-  virtual bool UpdateLogin(const PasswordForm& form,
-                           PasswordStoreChangeList* changes) OVERRIDE {
+  bool UpdateLogin(const PasswordForm& form,
+                   PasswordStoreChangeList* changes) override {
     for (size_t i = 0; i < all_forms_.size(); ++i)
       if (CompareForms(all_forms_[i], form, true)) {
         all_forms_[i] = form;
@@ -116,17 +136,17 @@ class MockBackend : public PasswordStoreX::NativeBackend {
     return true;
   }
 
-  virtual bool RemoveLogin(const PasswordForm& form) OVERRIDE {
+  bool RemoveLogin(const PasswordForm& form) override {
     for (size_t i = 0; i < all_forms_.size(); ++i)
       if (CompareForms(all_forms_[i], form, false))
         erase(i--);
     return true;
   }
 
-  virtual bool RemoveLoginsCreatedBetween(
+  bool RemoveLoginsCreatedBetween(
       base::Time delete_begin,
       base::Time delete_end,
-      password_manager::PasswordStoreChangeList* changes) OVERRIDE {
+      password_manager::PasswordStoreChangeList* changes) override {
     for (size_t i = 0; i < all_forms_.size(); ++i) {
       if (delete_begin <= all_forms_[i].date_created &&
           (delete_end.is_null() || all_forms_[i].date_created < delete_end))
@@ -135,10 +155,10 @@ class MockBackend : public PasswordStoreX::NativeBackend {
     return true;
   }
 
-  virtual bool RemoveLoginsSyncedBetween(
+  bool RemoveLoginsSyncedBetween(
       base::Time delete_begin,
       base::Time delete_end,
-      password_manager::PasswordStoreChangeList* changes) OVERRIDE {
+      password_manager::PasswordStoreChangeList* changes) override {
     DCHECK(changes);
     for (size_t i = 0; i < all_forms_.size(); ++i) {
       if (delete_begin <= all_forms_[i].date_synced &&
@@ -151,22 +171,24 @@ class MockBackend : public PasswordStoreX::NativeBackend {
     return true;
   }
 
-  virtual bool GetLogins(const PasswordForm& form,
-                         PasswordFormList* forms) OVERRIDE {
+  bool GetLogins(const PasswordForm& form,
+                 ScopedVector<autofill::PasswordForm>* forms) override {
     for (size_t i = 0; i < all_forms_.size(); ++i)
       if (all_forms_[i].signon_realm == form.signon_realm)
         forms->push_back(new PasswordForm(all_forms_[i]));
     return true;
   }
 
-  virtual bool GetAutofillableLogins(PasswordFormList* forms) OVERRIDE {
+  bool GetAutofillableLogins(
+      ScopedVector<autofill::PasswordForm>* forms) override {
     for (size_t i = 0; i < all_forms_.size(); ++i)
       if (!all_forms_[i].blacklisted_by_user)
         forms->push_back(new PasswordForm(all_forms_[i]));
     return true;
   }
 
-  virtual bool GetBlacklistLogins(PasswordFormList* forms) OVERRIDE {
+  bool GetBlacklistLogins(
+      ScopedVector<autofill::PasswordForm>* forms) override {
     for (size_t i = 0; i < all_forms_.size(); ++i)
       if (all_forms_[i].blacklisted_by_user)
         forms->push_back(new PasswordForm(all_forms_[i]));
@@ -203,16 +225,18 @@ class MockLoginDatabaseReturn {
 void LoginDatabaseQueryCallback(password_manager::LoginDatabase* login_db,
                                 bool autofillable,
                                 MockLoginDatabaseReturn* mock_return) {
-  std::vector<PasswordForm*> forms;
+  ScopedVector<autofill::PasswordForm> forms;
   if (autofillable)
-    login_db->GetAutofillableLogins(&forms);
+    EXPECT_TRUE(login_db->GetAutofillableLogins(&forms));
   else
-    login_db->GetBlacklistLogins(&forms);
-  mock_return->OnLoginDatabaseQueryDone(forms);
+    EXPECT_TRUE(login_db->GetBlacklistLogins(&forms));
+  mock_return->OnLoginDatabaseQueryDone(forms.get());
 }
 
 // Generate |count| expected logins, either auto-fillable or blacklisted.
-void InitExpectedForms(bool autofillable, size_t count, VectorOfForms* forms) {
+void InitExpectedForms(bool autofillable,
+                       size_t count,
+                       ScopedVector<autofill::PasswordForm>* forms) {
   const char* domain = autofillable ? "example" : "blacklisted";
   for (size_t i = 0; i < count; ++i) {
     std::string realm = base::StringPrintf("http://%zu.%s.com", i, domain);
@@ -228,13 +252,18 @@ void InitExpectedForms(bool autofillable, size_t count, VectorOfForms* forms) {
         L"submit_element",
         L"username_element",
         L"password_element",
-        autofillable ? L"username_value" : NULL,
-        autofillable ? L"password_value" : NULL,
+        autofillable ? L"username_value" : nullptr,
+        autofillable ? L"password_value" : nullptr,
         autofillable,
         false,
         static_cast<double>(i + 1)};
-    forms->push_back(CreatePasswordFormFromData(data));
+    forms->push_back(CreatePasswordFormFromDataForTesting(data).Pass());
   }
+}
+
+PasswordStoreChangeList AddChangeForForm(const PasswordForm& form) {
+  return PasswordStoreChangeList(
+      1, PasswordStoreChange(PasswordStoreChange::ADD, form));
 }
 
 }  // anonymous namespace
@@ -247,15 +276,14 @@ enum BackendType {
 
 class PasswordStoreXTest : public testing::TestWithParam<BackendType> {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-
-    login_db_.reset(new password_manager::LoginDatabase());
-    ASSERT_TRUE(login_db_->Init(temp_dir_.path().Append("login_test")));
   }
 
-  virtual void TearDown() {
-    base::RunLoop().RunUntilIdle();
+  void TearDown() override { base::RunLoop().RunUntilIdle(); }
+
+  base::FilePath test_login_db_file_path() const {
+    return temp_dir_.path().Append(FILE_PATH_LITERAL("login_test"));
   }
 
   PasswordStoreX::NativeBackend* GetBackend() {
@@ -265,13 +293,12 @@ class PasswordStoreXTest : public testing::TestWithParam<BackendType> {
       case WORKING_BACKEND:
         return new MockBackend();
       default:
-        return NULL;
+        return nullptr;
     }
   }
 
   content::TestBrowserThreadBundle thread_bundle_;
 
-  scoped_ptr<password_manager::LoginDatabase> login_db_;
   base::ScopedTempDir temp_dir_;
 };
 
@@ -280,12 +307,12 @@ ACTION(STLDeleteElements0) {
 }
 
 TEST_P(PasswordStoreXTest, Notifications) {
-  scoped_refptr<PasswordStoreX> store(
-      new PasswordStoreX(base::MessageLoopProxy::current(),
-                         base::MessageLoopProxy::current(),
-                         login_db_.release(),
-                         GetBackend()));
-  store->Init(syncer::SyncableService::StartSyncFlare(), "");
+  scoped_ptr<password_manager::LoginDatabase> login_db(
+      new password_manager::LoginDatabase(test_login_db_file_path()));
+  scoped_refptr<PasswordStoreX> store(new PasswordStoreX(
+      base::ThreadTaskRunnerHandle::Get(), base::ThreadTaskRunnerHandle::Get(),
+      login_db.Pass(), GetBackend()));
+  store->Init(syncer::SyncableService::StartSyncFlare());
 
   password_manager::PasswordFormData form_data = {
       PasswordForm::SCHEME_HTML,       "http://bar.example.com",
@@ -294,7 +321,8 @@ TEST_P(PasswordStoreXTest, Notifications) {
       L"password_element",             L"username_value",
       L"password_value",               true,
       false,                           1};
-  scoped_ptr<PasswordForm> form(CreatePasswordFormFromData(form_data));
+  scoped_ptr<PasswordForm> form =
+      CreatePasswordFormFromDataForTesting(form_data);
 
   MockPasswordStoreObserver observer;
   store->AddObserver(&observer);
@@ -351,28 +379,28 @@ TEST_P(PasswordStoreXTest, Notifications) {
 }
 
 TEST_P(PasswordStoreXTest, NativeMigration) {
-  VectorOfForms expected_autofillable;
+  ScopedVector<autofill::PasswordForm> expected_autofillable;
   InitExpectedForms(true, 50, &expected_autofillable);
 
-  VectorOfForms expected_blacklisted;
+  ScopedVector<autofill::PasswordForm> expected_blacklisted;
   InitExpectedForms(false, 50, &expected_blacklisted);
+
+  const base::FilePath login_db_file = test_login_db_file_path();
+  scoped_ptr<password_manager::LoginDatabase> login_db(
+      new password_manager::LoginDatabase(login_db_file));
+  ASSERT_TRUE(login_db->Init());
 
   // Get the initial size of the login DB file, before we populate it.
   // This will be used later to make sure it gets back to this size.
-  const base::FilePath login_db_file = temp_dir_.path().Append("login_test");
   base::File::Info db_file_start_info;
   ASSERT_TRUE(base::GetFileInfo(login_db_file, &db_file_start_info));
 
-  password_manager::LoginDatabase* login_db = login_db_.get();
-
   // Populate the login DB with logins that should be migrated.
-  for (VectorOfForms::iterator it = expected_autofillable.begin();
-       it != expected_autofillable.end(); ++it) {
-    login_db->AddLogin(**it);
+  for (const autofill::PasswordForm* form : expected_autofillable) {
+    EXPECT_EQ(AddChangeForForm(*form), login_db->AddLogin(*form));
   }
-  for (VectorOfForms::iterator it = expected_blacklisted.begin();
-       it != expected_blacklisted.end(); ++it) {
-    login_db->AddLogin(**it);
+  for (const autofill::PasswordForm* form : expected_blacklisted) {
+    EXPECT_EQ(AddChangeForForm(*form), login_db->AddLogin(*form));
   }
 
   // Get the new size of the login DB file. We expect it to be larger.
@@ -381,65 +409,60 @@ TEST_P(PasswordStoreXTest, NativeMigration) {
   EXPECT_GT(db_file_full_info.size, db_file_start_info.size);
 
   // Initializing the PasswordStore shouldn't trigger a native migration (yet).
-  scoped_refptr<PasswordStoreX> store(
-      new PasswordStoreX(base::MessageLoopProxy::current(),
-                         base::MessageLoopProxy::current(),
-                         login_db_.release(),
-                         GetBackend()));
-  store->Init(syncer::SyncableService::StartSyncFlare(), "");
+  login_db.reset(new password_manager::LoginDatabase(login_db_file));
+  scoped_refptr<PasswordStoreX> store(new PasswordStoreX(
+      base::ThreadTaskRunnerHandle::Get(), base::ThreadTaskRunnerHandle::Get(),
+      login_db.Pass(), GetBackend()));
+  store->Init(syncer::SyncableService::StartSyncFlare());
 
   MockPasswordStoreConsumer consumer;
 
   // The autofillable forms should have been migrated to the native backend.
-  EXPECT_CALL(consumer,
-      OnGetPasswordStoreResults(
-          ContainsAllPasswordForms(expected_autofillable)))
-      .WillOnce(WithArg<0>(STLDeleteElements0()));
+  EXPECT_CALL(
+      consumer,
+      OnGetPasswordStoreResultsConstRef(
+          UnorderedPasswordFormElementsAre(expected_autofillable.get())));
 
   store->GetAutofillableLogins(&consumer);
   base::RunLoop().RunUntilIdle();
 
   // The blacklisted forms should have been migrated to the native backend.
-  EXPECT_CALL(consumer,
-      OnGetPasswordStoreResults(ContainsAllPasswordForms(expected_blacklisted)))
-      .WillOnce(WithArg<0>(STLDeleteElements0()));
+  EXPECT_CALL(
+      consumer,
+      OnGetPasswordStoreResultsConstRef(
+          UnorderedPasswordFormElementsAre(expected_blacklisted.get())));
 
   store->GetBlacklistLogins(&consumer);
   base::RunLoop().RunUntilIdle();
 
-  VectorOfForms empty;
   MockLoginDatabaseReturn ld_return;
 
   if (GetParam() == WORKING_BACKEND) {
     // No autofillable logins should be left in the login DB.
-    EXPECT_CALL(ld_return,
-                OnLoginDatabaseQueryDone(ContainsAllPasswordForms(empty)));
+    EXPECT_CALL(ld_return, OnLoginDatabaseQueryDone(IsEmpty()));
   } else {
     // The autofillable logins should still be in the login DB.
     EXPECT_CALL(ld_return,
-                OnLoginDatabaseQueryDone(
-                    ContainsAllPasswordForms(expected_autofillable)))
-        .WillOnce(WithArg<0>(STLDeleteElements0()));
+                OnLoginDatabaseQueryDone(UnorderedPasswordFormElementsAre(
+                    expected_autofillable.get())));
   }
 
-  LoginDatabaseQueryCallback(login_db, true, &ld_return);
+  LoginDatabaseQueryCallback(store->login_db(), true, &ld_return);
 
   // Wait for the login DB methods to execute.
   base::RunLoop().RunUntilIdle();
 
   if (GetParam() == WORKING_BACKEND) {
     // Likewise, no blacklisted logins should be left in the login DB.
-    EXPECT_CALL(ld_return,
-                OnLoginDatabaseQueryDone(ContainsAllPasswordForms(empty)));
+    EXPECT_CALL(ld_return, OnLoginDatabaseQueryDone(IsEmpty()));
   } else {
     // The blacklisted logins should still be in the login DB.
     EXPECT_CALL(ld_return,
-                OnLoginDatabaseQueryDone(
-                    ContainsAllPasswordForms(expected_blacklisted)))
-        .WillOnce(WithArg<0>(STLDeleteElements0()));
+                OnLoginDatabaseQueryDone(UnorderedPasswordFormElementsAre(
+                    expected_blacklisted.get())));
   }
 
-  LoginDatabaseQueryCallback(login_db, false, &ld_return);
+  LoginDatabaseQueryCallback(store->login_db(), false, &ld_return);
 
   // Wait for the login DB methods to execute.
   base::RunLoop().RunUntilIdle();
@@ -454,9 +477,6 @@ TEST_P(PasswordStoreXTest, NativeMigration) {
     ASSERT_TRUE(base::GetFileInfo(login_db_file, &db_file_end_info));
     EXPECT_EQ(db_file_start_info.size, db_file_end_info.size);
   }
-
-  STLDeleteElements(&expected_autofillable);
-  STLDeleteElements(&expected_blacklisted);
 
   store->Shutdown();
 }

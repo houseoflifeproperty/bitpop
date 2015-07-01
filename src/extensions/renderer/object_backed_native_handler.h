@@ -11,7 +11,6 @@
 #include "base/bind.h"
 #include "base/memory/linked_ptr.h"
 #include "extensions/renderer/native_handler.h"
-#include "extensions/renderer/scoped_persistent.h"
 #include "v8/include/v8-util.h"
 #include "v8/include/v8.h"
 
@@ -24,11 +23,11 @@ class ScriptContext;
 class ObjectBackedNativeHandler : public NativeHandler {
  public:
   explicit ObjectBackedNativeHandler(ScriptContext* context);
-  virtual ~ObjectBackedNativeHandler();
+  ~ObjectBackedNativeHandler() override;
 
   // Create an object with bindings to the native functions defined through
   // RouteFunction().
-  virtual v8::Handle<v8::Object> NewInstance() OVERRIDE;
+  v8::Local<v8::Object> NewInstance() override;
 
   v8::Isolate* GetIsolate() const;
 
@@ -39,12 +38,16 @@ class ObjectBackedNativeHandler : public NativeHandler {
   // Installs a new 'route' from |name| to |handler_function|. This means that
   // NewInstance()s of this ObjectBackedNativeHandler will have a property
   // |name| which will be handled by |handler_function|.
+  //
+  // Routed functions are destroyed along with the destruction of this class,
+  // and are never called back into, therefore it's safe for |handler_function|
+  // to bind to base::Unretained.
   void RouteFunction(const std::string& name,
                      const HandlerFunction& handler_function);
 
   ScriptContext* context() const { return context_; }
 
-  virtual void Invalidate() OVERRIDE;
+  void Invalidate() override;
 
  private:
   // Callback for RouteFunction which routes the V8 call to the correct
@@ -69,7 +72,7 @@ class ObjectBackedNativeHandler : public NativeHandler {
 
   ScriptContext* context_;
 
-  ScopedPersistent<v8::ObjectTemplate> object_template_;
+  v8::Global<v8::ObjectTemplate> object_template_;
 
   DISALLOW_COPY_AND_ASSIGN(ObjectBackedNativeHandler);
 };

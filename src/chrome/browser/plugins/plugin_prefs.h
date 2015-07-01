@@ -15,7 +15,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/synchronization/lock.h"
 #include "chrome/browser/plugins/plugin_finder.h"
-#include "components/keyed_service/content/refcounted_browser_context_keyed_service.h"
+#include "components/keyed_service/core/refcounted_keyed_service.h"
 
 class Profile;
 
@@ -27,10 +27,10 @@ namespace content {
 struct WebPluginInfo;
 }
 
-// This class stores information about whether a plug-in or a plug-in group is
+// This class stores information about whether a plugin or a plugin group is
 // enabled or disabled.
 // Except where otherwise noted, it can be used on every thread.
-class PluginPrefs : public RefcountedBrowserContextKeyedService {
+class PluginPrefs : public RefcountedKeyedService {
  public:
   enum PolicyStatus {
     NO_POLICY = 0,  // Neither enabled or disabled by policy.
@@ -57,15 +57,15 @@ class PluginPrefs : public RefcountedBrowserContextKeyedService {
   // Enable or disable a plugin group.
   void EnablePluginGroup(bool enable, const base::string16& group_name);
 
-  // Enables or disables a specific plug-in file, if possible.
-  // If the plug-in state can't be changed (because of a policy for example)
-  // then enabling/disabling the plug-in is ignored and |callback| is run
-  // with 'false' passed to it. Otherwise the plug-in state is changed
+  // Enables or disables a specific plugin file, if possible.
+  // If the plugin state can't be changed (because of a policy for example)
+  // then enabling/disabling the plugin is ignored and |callback| is run
+  // with 'false' passed to it. Otherwise the plugin state is changed
   // and |callback| is run with 'true' passed to it.
   void EnablePlugin(bool enable, const base::FilePath& file_path,
                     const base::Callback<void(bool)>& callback);
 
-  // Returns whether there is a policy enabling or disabling plug-ins of the
+  // Returns whether there is a policy enabling or disabling plugins of the
   // given name.
   PolicyStatus PolicyStatusForPlugin(const base::string16& name) const;
 
@@ -75,7 +75,7 @@ class PluginPrefs : public RefcountedBrowserContextKeyedService {
   void set_profile(Profile* profile) { profile_ = profile; }
 
   // RefCountedProfileKeyedBase method override.
-  virtual void ShutdownOnUIThread() OVERRIDE;
+  void ShutdownOnUIThread() override;
 
  private:
   friend class base::RefCountedThreadSafe<PluginPrefs>;
@@ -100,14 +100,17 @@ class PluginPrefs : public RefcountedBrowserContextKeyedService {
     std::map<base::FilePath, bool> state_;
   };
 
-  virtual ~PluginPrefs();
+  ~PluginPrefs() override;
 
   // Called to update one of the policy_xyz patterns below when a
   // preference changes.
   void UpdatePatternsAndNotify(std::set<base::string16>* patterns,
                                const std::string& pref_name);
 
-  // Allows unit tests to directly set enforced plug-in patterns.
+  // Called to enable NPAPI if kEnableNpapi gets set by policy.
+  void EnableNpapi();
+
+  // Allows unit tests to directly set enforced plugin patterns.
   void SetPolicyEnforcedPluginPatterns(
       const std::set<base::string16>& disabled_patterns,
       const std::set<base::string16>& disabled_exception_patterns,

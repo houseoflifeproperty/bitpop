@@ -21,38 +21,37 @@ namespace extensions {
 class MockExtensionSystem : public ExtensionSystem {
  public:
   explicit MockExtensionSystem(content::BrowserContext* context);
-  virtual ~MockExtensionSystem();
+  ~MockExtensionSystem() override;
 
   content::BrowserContext* browser_context() { return browser_context_; }
 
+  void set_event_router(EventRouter* router) { event_router_ = router; }
+
   // ExtensionSystem overrides:
-  virtual void InitForRegularProfile(bool extensions_enabled) OVERRIDE;
-  virtual ExtensionService* extension_service() OVERRIDE;
-  virtual RuntimeData* runtime_data() OVERRIDE;
-  virtual ManagementPolicy* management_policy() OVERRIDE;
-  virtual SharedUserScriptMaster* shared_user_script_master() OVERRIDE;
-  virtual ProcessManager* process_manager() OVERRIDE;
-  virtual StateStore* state_store() OVERRIDE;
-  virtual StateStore* rules_store() OVERRIDE;
-  virtual InfoMap* info_map() OVERRIDE;
-  virtual LazyBackgroundTaskQueue* lazy_background_task_queue() OVERRIDE;
-  virtual EventRouter* event_router() OVERRIDE;
-  virtual WarningService* warning_service() OVERRIDE;
-  virtual Blacklist* blacklist() OVERRIDE;
-  virtual ErrorConsole* error_console() OVERRIDE;
-  virtual InstallVerifier* install_verifier() OVERRIDE;
-  virtual QuotaService* quota_service() OVERRIDE;
-  virtual const OneShotEvent& ready() const OVERRIDE;
-  virtual ContentVerifier* content_verifier() OVERRIDE;
-  virtual scoped_ptr<ExtensionSet> GetDependentExtensions(
-      const Extension* extension) OVERRIDE;
-  virtual DeclarativeUserScriptMaster*
-      GetDeclarativeUserScriptMasterByExtension(
-          const ExtensionId& extension_id) OVERRIDE;
+  void InitForRegularProfile(bool extensions_enabled) override;
+  ExtensionService* extension_service() override;
+  RuntimeData* runtime_data() override;
+  ManagementPolicy* management_policy() override;
+  SharedUserScriptMaster* shared_user_script_master() override;
+  DeclarativeUserScriptManager* declarative_user_script_manager() override;
+  StateStore* state_store() override;
+  StateStore* rules_store() override;
+  InfoMap* info_map() override;
+  LazyBackgroundTaskQueue* lazy_background_task_queue() override;
+  EventRouter* event_router() override;
+  InstallVerifier* install_verifier() override;
+  QuotaService* quota_service() override;
+  const OneShotEvent& ready() const override;
+  ContentVerifier* content_verifier() override;
+  scoped_ptr<ExtensionSet> GetDependentExtensions(
+      const Extension* extension) override;
 
  private:
   content::BrowserContext* browser_context_;
   OneShotEvent ready_;
+
+  // Not owned, defaults to null.
+  EventRouter* event_router_;
 
   DISALLOW_COPY_AND_ASSIGN(MockExtensionSystem);
 };
@@ -71,17 +70,17 @@ class MockExtensionSystemFactory : public ExtensionSystemProvider {
     DependsOn(ExtensionRegistryFactory::GetInstance());
   }
 
-  virtual ~MockExtensionSystemFactory() {}
+  ~MockExtensionSystemFactory() override {}
 
   // BrowserContextKeyedServiceFactory overrides:
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* context) const OVERRIDE {
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* context) const override {
     return new T(context);
   }
 
   // ExtensionSystemProvider overrides:
-  virtual ExtensionSystem* GetForBrowserContext(
-      content::BrowserContext* context) OVERRIDE {
+  ExtensionSystem* GetForBrowserContext(
+      content::BrowserContext* context) override {
     return static_cast<ExtensionSystem*>(
         GetServiceForBrowserContext(context, true));
   }

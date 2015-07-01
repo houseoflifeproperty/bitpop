@@ -42,17 +42,13 @@
 namespace blink {
 
 class AtomicHTMLToken;
-class Document;
 class DocumentFragment;
 class Element;
-class LocalFrame;
-class HTMLToken;
 class HTMLDocument;
-class Node;
 class HTMLDocumentParser;
 
-class HTMLTreeBuilder FINAL : public NoBaseWillBeGarbageCollectedFinalized<HTMLTreeBuilder> {
-    WTF_MAKE_NONCOPYABLE(HTMLTreeBuilder); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+class HTMLTreeBuilder final : public NoBaseWillBeGarbageCollectedFinalized<HTMLTreeBuilder> {
+    WTF_MAKE_NONCOPYABLE(HTMLTreeBuilder); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(HTMLTreeBuilder);
 public:
     static PassOwnPtrWillBeRawPtr<HTMLTreeBuilder> create(HTMLDocumentParser* parser, HTMLDocument* document, ParserContentPolicy parserContentPolicy, bool reportErrors, const HTMLParserOptions& options)
     {
@@ -63,7 +59,7 @@ public:
         return adoptPtrWillBeNoop(new HTMLTreeBuilder(parser, fragment, contextElement, parserContentPolicy, options));
     }
     ~HTMLTreeBuilder();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     const HTMLElementStack* openElements() const { return m_tree.openElements(); }
 
@@ -207,7 +203,7 @@ private:
         Element* contextElement() const { ASSERT(m_fragment); return m_contextElementStackItem->element(); }
         HTMLStackItem* contextElementStackItem() const { ASSERT(m_fragment); return m_contextElementStackItem.get(); }
 
-        void trace(Visitor*);
+        DECLARE_TRACE();
 
     private:
         RawPtrWillBeMember<DocumentFragment> m_fragment;

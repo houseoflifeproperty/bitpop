@@ -48,9 +48,9 @@ class MockOAuthFetcher : public net::TestURLFetcher {
     SetResponseString(results);
   }
 
-  virtual ~MockOAuthFetcher() { }
+  ~MockOAuthFetcher() override {}
 
-  virtual void Start() OVERRIDE {
+  void Start() override {
     if ((GetResponseCode() != net::HTTP_OK) && (max_failure_count_ != -1) &&
         (current_failure_count_ == max_failure_count_)) {
       set_response_code(net::HTTP_OK);
@@ -87,12 +87,12 @@ class MockOAuthFetcherFactory : public net::URLFetcherFactory,
         response_code_(net::HTTP_OK),
         complete_immediately_(true) {
   }
-  virtual ~MockOAuthFetcherFactory() {}
-  virtual net::URLFetcher* CreateURLFetcher(
+  ~MockOAuthFetcherFactory() override {}
+  scoped_ptr<net::URLFetcher> CreateURLFetcher(
       int id,
       const GURL& url,
       net::URLFetcher::RequestType request_type,
-      net::URLFetcherDelegate* d) OVERRIDE {
+      net::URLFetcherDelegate* d) override {
     url_fetcher_ = new MockOAuthFetcher(
         response_code_,
         max_failure_count_,
@@ -101,7 +101,7 @@ class MockOAuthFetcherFactory : public net::URLFetcherFactory,
         results_,
         request_type,
         d);
-    return url_fetcher_;
+    return scoped_ptr<net::URLFetcher>(url_fetcher_);
   }
   void set_response_code(int response_code) {
     response_code_ = response_code;
@@ -128,6 +128,7 @@ class MockOAuthFetcherFactory : public net::URLFetcherFactory,
 };
 
 const std::string kTestAccessToken = "1/fFAGRNJru1FTz70BzhT3Zg";
+const std::string kTestAccessTokenHandle = "1/kjhH87dfgkj87Hhj5KJkjZ";
 const std::string kTestRefreshToken =
     "1/6BMfW9j53gdGImsixUH6kU5RsR4zwI9lUVX-tqf8JXQ";
 const std::string kTestUserEmail = "a_user@gmail.com";
@@ -166,13 +167,18 @@ const std::string kDummyTokenInfoResult =
   "\"audience\": \"1234567890.apps.googleusercontent.com\","
   "\"scope\": \"https://googleapis.com/oauth2/v2/tokeninfo\","
   "\"expires_in\":" + base::IntToString(kTestExpiresIn) + "}";
-}
+
+const std::string kDummyTokenHandleInfoResult =
+    "{\"audience\": \"1234567890.apps.googleusercontent.com\","
+    "\"expires_in\":" + base::IntToString(kTestExpiresIn) + "}";
+
+}  // namespace
 
 namespace gaia {
 
 class GaiaOAuthClientTest : public testing::Test {
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     client_info_.client_id = "test_client_id";
     client_info_.client_secret = "test_client_secret";
     client_info_.redirect_uri = "test_redirect_uri";
@@ -213,15 +219,15 @@ class MockGaiaOAuthClientDelegate : public gaia::GaiaOAuthClient::Delegate {
   // https://groups.google.com/a/chromium.org/d/msg/chromium-dev/01sDxsJ1OYw/I_S0xCBRF2oJ
   MOCK_METHOD1(OnGetUserInfoResponsePtr,
                void(const base::DictionaryValue* user_info));
-  virtual void OnGetUserInfoResponse(
-      scoped_ptr<base::DictionaryValue> user_info) OVERRIDE {
+  void OnGetUserInfoResponse(
+      scoped_ptr<base::DictionaryValue> user_info) override {
     user_info_.reset(user_info.release());
     OnGetUserInfoResponsePtr(user_info_.get());
   }
   MOCK_METHOD1(OnGetTokenInfoResponsePtr,
                void(const base::DictionaryValue* token_info));
-  virtual void OnGetTokenInfoResponse(
-      scoped_ptr<base::DictionaryValue> token_info) OVERRIDE {
+  void OnGetTokenInfoResponse(
+      scoped_ptr<base::DictionaryValue> token_info) override {
     token_info_.reset(token_info.release());
     OnGetTokenInfoResponsePtr(token_info_.get());
   }
@@ -382,11 +388,29 @@ TEST_F(GaiaOAuthClientTest, GetTokenInfo) {
   factory.set_results(kDummyTokenInfoResult);
 
   GaiaOAuthClient auth(GetRequestContext());
-  auth.GetTokenInfo("access_token", 1, &delegate);
+  auth.GetTokenInfo("some_token", 1, &delegate);
 
   std::string issued_to;
-  ASSERT_TRUE(captured_result->GetString("issued_to",  &issued_to));
+  ASSERT_TRUE(captured_result->GetString("issued_to", &issued_to));
   ASSERT_EQ("1234567890.apps.googleusercontent.com", issued_to);
+}
+
+TEST_F(GaiaOAuthClientTest, GetTokenHandleInfo) {
+  const base::DictionaryValue* captured_result;
+
+  MockGaiaOAuthClientDelegate delegate;
+  EXPECT_CALL(delegate, OnGetTokenInfoResponsePtr(_))
+      .WillOnce(SaveArg<0>(&captured_result));
+
+  MockOAuthFetcherFactory factory;
+  factory.set_results(kDummyTokenHandleInfoResult);
+
+  GaiaOAuthClient auth(GetRequestContext());
+  auth.GetTokenHandleInfo("some_handle", 1, &delegate);
+
+  std::string audience;
+  ASSERT_TRUE(captured_result->GetString("audience", &audience));
+  ASSERT_EQ("1234567890.apps.googleusercontent.com", audience);
 }
 
 }  // namespace gaia

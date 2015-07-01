@@ -43,7 +43,7 @@ class PacketBuffer {
   virtual void Flush();
 
   // Returns true for an empty buffer.
-  virtual bool Empty() const { return buffer_.empty(); }
+  virtual bool Empty() const;
 
   // Inserts |packet| into the buffer. The buffer will take over ownership of
   // the packet object.
@@ -95,15 +95,21 @@ class PacketBuffer {
   // PacketBuffer::kOK otherwise.
   virtual int DiscardNextPacket();
 
-  // Discards all packets that are (strictly) older than |timestamp_limit|.
+  // Discards all packets that are (strictly) older than timestamp_limit,
+  // but newer than timestamp_limit - horizon_samples. Setting horizon_samples
+  // to zero implies that the horizon is set to half the timestamp range. That
+  // is, if a packet is more than 2^31 timestamps into the future compared with
+  // timestamp_limit (including wrap-around), it is considered old.
   // Returns number of packets discarded.
-  virtual int DiscardOldPackets(uint32_t timestamp_limit);
+  virtual int DiscardOldPackets(uint32_t timestamp_limit,
+                                uint32_t horizon_samples);
+
+  // Discards all packets that are (strictly) older than timestamp_limit.
+  virtual int DiscardAllOldPackets(uint32_t timestamp_limit);
 
   // Returns the number of packets in the buffer, including duplicates and
   // redundant packets.
-  virtual int NumPacketsInBuffer() const {
-    return static_cast<int>(buffer_.size());
-  }
+  virtual int NumPacketsInBuffer() const;
 
   // Returns the number of samples in the buffer, including samples carried in
   // duplicate and redundant packets.
@@ -124,6 +130,20 @@ class PacketBuffer {
   // Static method that properly deletes all packets, and their payload arrays,
   // in |packet_list|.
   static void DeleteAllPackets(PacketList* packet_list);
+
+  // Static method returning true if |timestamp| is older than |timestamp_limit|
+  // but less than |horizon_samples| behind |timestamp_limit|. For instance,
+  // with timestamp_limit = 100 and horizon_samples = 10, a timestamp in the
+  // range (90, 100) is considered obsolete, and will yield true.
+  // Setting |horizon_samples| to 0 is the same as setting it to 2^31, i.e.,
+  // half the 32-bit timestamp range.
+  static bool IsObsoleteTimestamp(uint32_t timestamp,
+                                  uint32_t timestamp_limit,
+                                  uint32_t horizon_samples) {
+    return IsNewerTimestamp(timestamp_limit, timestamp) &&
+           (horizon_samples == 0 ||
+            IsNewerTimestamp(timestamp, timestamp_limit - horizon_samples));
+  }
 
  private:
   size_t max_number_of_packets_;

@@ -8,7 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/events/event_source.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/platform_window/platform_window_delegate.h"
 
 namespace ui {
@@ -22,44 +22,48 @@ class AURA_EXPORT WindowTreeHostOzone : public WindowTreeHost,
                                         public ui::PlatformWindowDelegate {
  public:
   explicit WindowTreeHostOzone(const gfx::Rect& bounds);
-  virtual ~WindowTreeHostOzone();
+  ~WindowTreeHostOzone() override;
+
+ protected:
+  // WindowTreeHost:
+  ui::EventSource* GetEventSource() override;
+  gfx::AcceleratedWidget GetAcceleratedWidget() override;
+  void Show() override;
+  void Hide() override;
+  gfx::Rect GetBounds() const override;
+  void SetBounds(const gfx::Rect& bounds) override;
+  gfx::Point GetLocationOnNativeScreen() const override;
+  void SetCapture() override;
+  void ReleaseCapture() override;
+  void SetCursorNative(gfx::NativeCursor cursor_type) override;
+  void MoveCursorToNative(const gfx::Point& location) override;
+  void OnCursorVisibilityChangedNative(bool show) override;
+
+  ui::PlatformWindow* platform_window() { return platform_window_.get(); }
 
  private:
   // ui::PlatformWindowDelegate:
-  virtual void OnBoundsChanged(const gfx::Rect&) OVERRIDE;
-  virtual void OnDamageRect(const gfx::Rect& damaged_region) OVERRIDE;
-  virtual void DispatchEvent(ui::Event* event) OVERRIDE;
-  virtual void OnCloseRequest() OVERRIDE;
-  virtual void OnClosed() OVERRIDE;
-  virtual void OnWindowStateChanged(ui::PlatformWindowState new_state) OVERRIDE;
-  virtual void OnLostCapture() OVERRIDE;
-  virtual void OnAcceleratedWidgetAvailable(
-      gfx::AcceleratedWidget widget) OVERRIDE;
-  virtual void OnActivationChanged(bool active) OVERRIDE;
-
-  // WindowTreeHost:
-  virtual ui::EventSource* GetEventSource() OVERRIDE;
-  virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
-  virtual void Show() OVERRIDE;
-  virtual void Hide() OVERRIDE;
-  virtual gfx::Rect GetBounds() const OVERRIDE;
-  virtual void SetBounds(const gfx::Rect& bounds) OVERRIDE;
-  virtual gfx::Point GetLocationOnNativeScreen() const OVERRIDE;
-  virtual void SetCapture() OVERRIDE;
-  virtual void ReleaseCapture() OVERRIDE;
-  virtual void PostNativeEvent(const base::NativeEvent& event) OVERRIDE;
-  virtual void SetCursorNative(gfx::NativeCursor cursor_type) OVERRIDE;
-  virtual void MoveCursorToNative(const gfx::Point& location) OVERRIDE;
-  virtual void OnCursorVisibilityChangedNative(bool show) OVERRIDE;
+  void OnBoundsChanged(const gfx::Rect&) override;
+  void OnDamageRect(const gfx::Rect& damaged_region) override;
+  void DispatchEvent(ui::Event* event) override;
+  void OnCloseRequest() override;
+  void OnClosed() override;
+  void OnWindowStateChanged(ui::PlatformWindowState new_state) override;
+  void OnLostCapture() override;
+  void OnAcceleratedWidgetAvailable(gfx::AcceleratedWidget widget) override;
+  void OnActivationChanged(bool active) override;
 
   // ui::EventSource overrides.
-  virtual ui::EventProcessor* GetEventProcessor() OVERRIDE;
+  ui::EventProcessor* GetEventProcessor() override;
 
   // Platform-specific part of this WindowTreeHost.
   scoped_ptr<ui::PlatformWindow> platform_window_;
 
   // The identifier used to create a compositing surface.
   gfx::AcceleratedWidget widget_;
+
+  // Current Aura cursor.
+  gfx::NativeCursor current_cursor_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowTreeHostOzone);
 };

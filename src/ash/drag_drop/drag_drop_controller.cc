@@ -9,6 +9,7 @@
 #include "ash/shell.h"
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/run_loop.h"
 #include "ui/aura/client/capture_client.h"
 #include "ui/aura/env.h"
@@ -21,10 +22,10 @@
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/animation/linear_animation.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/path.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/rect_conversions.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/native_widget_aura.h"
 #include "ui/wm/core/coordinate_conversion.h"
@@ -78,45 +79,39 @@ class DragDropTrackerDelegate : public aura::WindowDelegate {
  public:
   explicit DragDropTrackerDelegate(DragDropController* controller)
       : drag_drop_controller_(controller) {}
-  virtual ~DragDropTrackerDelegate() {}
+  ~DragDropTrackerDelegate() override {}
 
   // Overridden from WindowDelegate:
-  virtual gfx::Size GetMinimumSize() const OVERRIDE {
-    return gfx::Size();
-  }
+  gfx::Size GetMinimumSize() const override { return gfx::Size(); }
 
-  virtual gfx::Size GetMaximumSize() const OVERRIDE {
-    return gfx::Size();
-  }
+  gfx::Size GetMaximumSize() const override { return gfx::Size(); }
 
-  virtual void OnBoundsChanged(const gfx::Rect& old_bounds,
-                               const gfx::Rect& new_bounds) OVERRIDE {}
-  virtual gfx::NativeCursor GetCursor(const gfx::Point& point) OVERRIDE {
+  void OnBoundsChanged(const gfx::Rect& old_bounds,
+                       const gfx::Rect& new_bounds) override {}
+  ui::TextInputClient* GetFocusedTextInputClient() override { return nullptr; }
+  gfx::NativeCursor GetCursor(const gfx::Point& point) override {
     return gfx::kNullCursor;
   }
-  virtual int GetNonClientComponent(const gfx::Point& point) const OVERRIDE {
+  int GetNonClientComponent(const gfx::Point& point) const override {
     return HTCAPTION;
   }
-  virtual bool ShouldDescendIntoChildForEventHandling(
+  bool ShouldDescendIntoChildForEventHandling(
       aura::Window* child,
-      const gfx::Point& location) OVERRIDE {
+      const gfx::Point& location) override {
     return true;
   }
-  virtual bool CanFocus() OVERRIDE { return true; }
-  virtual void OnCaptureLost() OVERRIDE {
+  bool CanFocus() override { return true; }
+  void OnCaptureLost() override {
     if (drag_drop_controller_->IsDragDropInProgress())
       drag_drop_controller_->DragCancel();
   }
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
-  }
-  virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE {}
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {}
-  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE {}
-  virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE {}
-  virtual bool HasHitTestMask() const OVERRIDE {
-    return true;
-  }
-  virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE {
+  void OnPaint(const ui::PaintContext& context) override {}
+  void OnDeviceScaleFactorChanged(float device_scale_factor) override {}
+  void OnWindowDestroying(aura::Window* window) override {}
+  void OnWindowDestroyed(aura::Window* window) override {}
+  void OnWindowTargetVisibilityChanged(bool visible) override {}
+  bool HasHitTestMask() const override { return true; }
+  void GetHitTestMask(gfx::Path* mask) const override {
     DCHECK(mask->isEmpty());
   }
 
@@ -154,7 +149,7 @@ int DragDropController::StartDragAndDrop(
     const ui::OSExchangeData& data,
     aura::Window* root_window,
     aura::Window* source_window,
-    const gfx::Point& root_location,
+    const gfx::Point& screen_location,
     int operation,
     ui::DragDropTypes::DragEventSource source) {
   if (IsDragDropInProgress())
@@ -165,6 +160,9 @@ int DragDropController::StartDragAndDrop(
   if (source == ui::DragDropTypes::DRAG_EVENT_SOURCE_TOUCH &&
       provider->GetDragImage().size().IsEmpty())
     return 0;
+
+  UMA_HISTOGRAM_ENUMERATION("Event.DragDrop.Start", source,
+                            ui::DragDropTypes::DRAG_EVENT_SOURCE_COUNT);
 
   current_drag_event_source_ = source;
   DragDropTracker* tracker =
@@ -196,8 +194,7 @@ int DragDropController::StartDragAndDrop(
     drag_image_scale = kTouchDragImageScale;
     drag_image_vertical_offset = kTouchDragImageVerticalOffset;
   }
-  gfx::Point start_location = root_location;
-  ::wm::ConvertPointToScreen(root_window, &start_location);
+  gfx::Point start_location = screen_location;
   drag_image_final_bounds_for_cancel_animation_ = gfx::Rect(
       start_location - provider->GetDragImageOffset(),
       provider->GetDragImage().size());
@@ -227,6 +224,14 @@ int DragDropController::StartDragAndDrop(
     base::MessageLoopForUI* loop = base::MessageLoopForUI::current();
     base::MessageLoop::ScopedNestableTaskAllower allow_nested(loop);
     run_loop.Run();
+  }
+
+  if (drag_operation_ == 0) {
+    UMA_HISTOGRAM_ENUMERATION("Event.DragDrop.Cancel", source,
+                              ui::DragDropTypes::DRAG_EVENT_SOURCE_COUNT);
+  } else {
+    UMA_HISTOGRAM_ENUMERATION("Event.DragDrop.Drop", source,
+                              ui::DragDropTypes::DRAG_EVENT_SOURCE_COUNT);
   }
 
   if (!cancel_animation_.get() || !cancel_animation_->is_animating() ||
@@ -439,9 +444,9 @@ void DragDropController::OnGestureEvent(ui::GestureEvent* event) {
       DragUpdate(translated_target, *translated_event.get());
       break;
     case ui::ET_GESTURE_SCROLL_END:
+    case ui::ET_SCROLL_FLING_START:
       Drop(translated_target, *translated_event.get());
       break;
-    case ui::ET_SCROLL_FLING_START:
     case ui::ET_GESTURE_LONG_TAP:
       // Ideally we would want to just forward this long tap event to the
       // |drag_source_window_|. However, webkit does not accept events while a
@@ -489,9 +494,9 @@ void DragDropController::AnimationEnded(const gfx::Animation* animation) {
     drag_image_.reset();
   if (pending_long_tap_) {
     // If not in a nested message loop, we can forward the long tap right now.
-    if (!should_block_during_drag_drop_)
+    if (!should_block_during_drag_drop_) {
       ForwardPendingLongTap();
-    else {
+    } else {
       // See comment about this in OnGestureEvent().
       base::MessageLoopForUI::current()->PostTask(
           FROM_HERE,
@@ -557,9 +562,9 @@ void DragDropController::Cleanup() {
     drag_window_->RemoveObserver(this);
   drag_window_ = NULL;
   drag_data_ = NULL;
-  // Cleanup can be called again while deleting DragDropTracker, so use Pass
-  // instead of reset to avoid double free.
-  drag_drop_tracker_.Pass();
+  // Cleanup can be called again while deleting DragDropTracker, so delete
+  // the pointer with a local variable to avoid double free.
+  scoped_ptr<ash::DragDropTracker> holder = drag_drop_tracker_.Pass();
 }
 
 }  // namespace ash

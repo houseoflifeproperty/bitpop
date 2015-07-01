@@ -38,9 +38,7 @@
 
 namespace blink {
 
-class ExecutionContext;
-
-class StorageQuota FINAL : public GarbageCollected<StorageQuota>, public ScriptWrappable {
+class StorageQuota final : public GarbageCollected<StorageQuota>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static StorageQuota* create()
@@ -53,7 +51,7 @@ public:
     ScriptPromise queryInfo(ScriptState*, String type);
     ScriptPromise requestPersistentQuota(ScriptState*, unsigned long long newQuota);
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     StorageQuota();

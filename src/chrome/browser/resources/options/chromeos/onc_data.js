@@ -10,11 +10,6 @@
 
 cr.exportPath('cr.onc');
 
-/**
- * @typedef {(Object|Array|string|undefined)}
- */
-cr.onc.OncValue;
-
 cr.define('cr.onc', function() {
   'use strict';
 
@@ -26,12 +21,14 @@ cr.define('cr.onc', function() {
   }
 
   OncData.prototype = {
+    /** @return {string} The GUID of the network. */
+    guid: function() { return this.data_['GUID']; },
 
     /**
      * Returns either a managed property dictionary or an unmanaged value.
      * @param {string} key The property key.
-     * @return {cr.onc.OncValue} The property value or dictionary if it exists,
-     *     otherwise undefined.
+     * @return {?} The property value or dictionary if it exists, otherwise
+     *     undefined.
      */
     getManagedProperty: function(key) {
       var data = this.data_;
@@ -52,9 +49,9 @@ cr.define('cr.onc', function() {
      * Sets the value of a property. Currently only supports unmanaged
      * properties.
      * @param {string} key The property key.
-     * @param {Object} value The property value to set.
+     * @param {?} value The property value to set.
      */
-    setManagedProperty: function(key, value) {
+    setProperty: function(key, value) {
       var data = this.data_;
       while (true) {
         var index = key.indexOf('.');
@@ -84,7 +81,7 @@ cr.define('cr.onc', function() {
     /**
      * Gets the active value of a property.
      * @param {string} key The property key.
-     * @return {cr.onc.OncValue} The property value or undefined.
+     * @return {?} The property value or undefined.
      */
     getActiveValue: function(key) {
       var property = this.getManagedProperty(key);
@@ -106,8 +103,7 @@ cr.define('cr.onc', function() {
      * Gets the translated ONC value from the result of getActiveValue() using
      * loadTimeData. If no translation exists, returns the untranslated value.
      * @param {string} key The property key.
-     * @return {cr.onc.OncValue} The translation if available or the value if
-     *     not.
+     * @return {?} The translation if available or the value if not.
      */
     getTranslatedValue: function(key) {
       var value = this.getActiveValue(key);
@@ -131,7 +127,7 @@ cr.define('cr.onc', function() {
     /**
      * Gets the recommended value of a property.
      * @param {string} key The property key.
-     * @return {cr.onc.OncValue} The property value or undefined.
+     * @return {?} The property value or undefined.
      */
     getRecommendedValue: function(key) {
       var property = this.getManagedProperty(key);
@@ -154,6 +150,7 @@ cr.define('cr.onc', function() {
       var source = this.getActiveValue('Source');
       if (source == undefined)
         return 'None';
+      assert(typeof source == 'string');
       return source;
     },
 
@@ -165,13 +162,14 @@ cr.define('cr.onc', function() {
       var security = this.getActiveValue('WiFi.Security');
       if (security == undefined)
         return 'None';
+      assert(typeof security == 'string');
       return security;
     },
 
     /**
      * Get the effective value from a Managed property ONC dictionary.
      * @param {Object} property The managed property ONC dictionary.
-     * @return {cr.onc.OncValue} The effective value or undefined.
+     * @return {?} The effective value or undefined.
      * @private
      */
     getEffectiveValueFromProperty_: function(property) {
@@ -181,6 +179,13 @@ cr.define('cr.onc', function() {
           return property[effective];
       }
       return undefined;
+    },
+
+    /**
+     * Returns the complete ONC dictionary.
+     */
+    getData: function() {
+      return this.data_;
     }
   };
 

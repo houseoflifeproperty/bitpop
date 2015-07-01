@@ -7,53 +7,51 @@
 
 #include "base/compiler_specific.h"
 #include "chrome/browser/ui/views/frame/browser_non_client_frame_view.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/window/non_client_view.h"
 
 class BrowserView;
 
 class GlassBrowserFrameView : public BrowserNonClientFrameView,
-                              public views::ButtonListener,
-                              public content::NotificationObserver {
+                              public views::ButtonListener {
  public:
   // Constructs a non-client view for an BrowserFrame.
   GlassBrowserFrameView(BrowserFrame* frame, BrowserView* browser_view);
-  virtual ~GlassBrowserFrameView();
+  ~GlassBrowserFrameView() override;
 
   // BrowserNonClientFrameView:
-  virtual gfx::Rect GetBoundsForTabStrip(views::View* tabstrip) const OVERRIDE;
-  virtual int GetTopInset() const OVERRIDE;
-  virtual int GetThemeBackgroundXInset() const OVERRIDE;
-  virtual void UpdateThrobber(bool running) OVERRIDE;
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
+  gfx::Rect GetBoundsForTabStrip(views::View* tabstrip) const override;
+  int GetTopInset() const override;
+  int GetThemeBackgroundXInset() const override;
+  void UpdateThrobber(bool running) override;
+  gfx::Size GetMinimumSize() const override;
 
   // views::NonClientFrameView:
-  virtual gfx::Rect GetBoundsForClientView() const OVERRIDE;
-  virtual gfx::Rect GetWindowBoundsForClientBounds(
-      const gfx::Rect& client_bounds) const OVERRIDE;
-  virtual int NonClientHitTest(const gfx::Point& point) OVERRIDE;
-  virtual void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask)
-      OVERRIDE {}
-  virtual void ResetWindowControls() OVERRIDE {}
-  virtual void UpdateWindowIcon() OVERRIDE {}
-  virtual void UpdateWindowTitle() OVERRIDE {}
-  virtual void SizeConstraintsChanged() OVERRIDE {}
+  gfx::Rect GetBoundsForClientView() const override;
+  gfx::Rect GetWindowBoundsForClientBounds(
+      const gfx::Rect& client_bounds) const override;
+  int NonClientHitTest(const gfx::Point& point) override;
+  void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask) override {}
+  void ResetWindowControls() override {}
+  void UpdateWindowIcon() override {}
+  void UpdateWindowTitle() override {}
+  void SizeConstraintsChanged() override {}
 
  protected:
   // views::View:
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual void Layout() OVERRIDE;
+  void OnPaint(gfx::Canvas* canvas) override;
+  void Layout() override;
 
   // views::ButtonListener:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
+
+  // BrowserNonClientFrameView:
+  void UpdateNewAvatarButtonImpl() override;
 
  private:
   // views::NonClientFrameView:
-  virtual bool DoesIntersectRect(const views::View* target,
-                                 const gfx::Rect& rect) const OVERRIDE;
+  bool DoesIntersectRect(const views::View* target,
+                         const gfx::Rect& rect) const override;
 
   // Returns the thickness of the border that makes up the window frame edges.
   // This does not include any client edge.
@@ -89,11 +87,6 @@ class GlassBrowserFrameView : public BrowserNonClientFrameView,
   // Displays the next throbber frame.
   void DisplayNextThrobberFrame();
 
-  // content::NotificationObserver implementation:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
   // The layout rect of the avatar icon, if visible.
   gfx::Rect avatar_bounds_;
 
@@ -105,8 +98,6 @@ class GlassBrowserFrameView : public BrowserNonClientFrameView,
 
   // The index of the current frame of the throbber animation.
   int throbber_frame_;
-
-  content::NotificationRegistrar registrar_;
 
   static const int kThrobberIconCount = 24;
   static HICON throbber_icons_[kThrobberIconCount];

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
-#include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -13,7 +12,6 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_details.h"
@@ -52,9 +50,9 @@ class LoginPromptObserver : public content::NotificationObserver {
  public:
   LoginPromptObserver() : auth_handled_(false) {}
 
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     if (type == chrome::NOTIFICATION_AUTH_NEEDED) {
       LoginNotificationDetails* login_details =
           content::Details<LoginNotificationDetails>(details).ptr();
@@ -82,12 +80,12 @@ class ProxyBrowserTest : public InProcessBrowserTest {
                       base::FilePath()) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(proxy_server_.Start());
     InProcessBrowserTest::SetUp();
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitchASCII(switches::kProxyServer,
                                     proxy_server_.host_port_pair().ToString());
   }
@@ -107,7 +105,8 @@ class ProxyBrowserTest : public InProcessBrowserTest {
 #define MAYBE_BasicAuthWSConnect BasicAuthWSConnect
 #endif
 // Test that the browser can establish a WebSocket connection via a proxy
-// that requires basic authentication.
+// that requires basic authentication. This test also checks the headers
+// arrive at WebSocket server.
 IN_PROC_BROWSER_TEST_F(ProxyBrowserTest, MAYBE_BasicAuthWSConnect) {
   // Launch WebSocket server.
   net::SpawnedTestServer ws_server(net::SpawnedTestServer::TYPE_WS,
@@ -130,12 +129,11 @@ IN_PROC_BROWSER_TEST_F(ProxyBrowserTest, MAYBE_BasicAuthWSConnect) {
 
   // Visit a page that tries to establish WebSocket connection. The title
   // of the page will be 'PASS' on success.
-  std::string scheme("http");
   GURL::Replacements replacements;
-  replacements.SetSchemeStr(scheme);
-  ui_test_utils::NavigateToURL(
-      browser(),
-      ws_server.GetURL("connect_check.html").ReplaceComponents(replacements));
+  replacements.SetSchemeStr("http");
+  ui_test_utils::NavigateToURL(browser(),
+                               ws_server.GetURL("proxied_request_check.html")
+                                   .ReplaceComponents(replacements));
 
   const base::string16 result = watcher.WaitAndGetTitle();
   EXPECT_TRUE(EqualsASCII(result, "PASS"));
@@ -150,14 +148,14 @@ class HttpProxyScriptBrowserTest : public InProcessBrowserTest {
                      net::SpawnedTestServer::kLocalhost,
                      base::FilePath(FILE_PATH_LITERAL("chrome/test/data"))) {
   }
-  virtual ~HttpProxyScriptBrowserTest() {}
+  ~HttpProxyScriptBrowserTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(http_server_.Start());
     InProcessBrowserTest::SetUp();
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     base::FilePath pac_script_path(FILE_PATH_LITERAL("files"));
     command_line->AppendSwitchASCII(switches::kProxyPacUrl, http_server_.GetURL(
         pac_script_path.Append(kPACScript).MaybeAsASCII()).spec());
@@ -177,9 +175,9 @@ IN_PROC_BROWSER_TEST_F(HttpProxyScriptBrowserTest, Verify) {
 class FileProxyScriptBrowserTest : public InProcessBrowserTest {
  public:
   FileProxyScriptBrowserTest() {}
-  virtual ~FileProxyScriptBrowserTest() {}
+  ~FileProxyScriptBrowserTest() override {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitchASCII(switches::kProxyPacUrl,
         ui_test_utils::GetTestUrl(
             base::FilePath(base::FilePath::kCurrentDirectory),
@@ -202,14 +200,14 @@ class FtpProxyScriptBrowserTest : public InProcessBrowserTest {
                     net::SpawnedTestServer::kLocalhost,
                     base::FilePath(FILE_PATH_LITERAL("chrome/test/data"))) {
   }
-  virtual ~FtpProxyScriptBrowserTest() {}
+  ~FtpProxyScriptBrowserTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(ftp_server_.Start());
     InProcessBrowserTest::SetUp();
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     base::FilePath pac_script_path(kPACScript);
     command_line->AppendSwitchASCII(
         switches::kProxyPacUrl,
@@ -230,9 +228,9 @@ IN_PROC_BROWSER_TEST_F(FtpProxyScriptBrowserTest, Verify) {
 class DataProxyScriptBrowserTest : public InProcessBrowserTest {
  public:
   DataProxyScriptBrowserTest() {}
-  virtual ~DataProxyScriptBrowserTest() {}
+  ~DataProxyScriptBrowserTest() override {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     std::string contents;
     // Read in kPACScript contents.
     ASSERT_TRUE(base::ReadFileToString(ui_test_utils::GetTestFilePath(
@@ -248,6 +246,32 @@ class DataProxyScriptBrowserTest : public InProcessBrowserTest {
 };
 
 IN_PROC_BROWSER_TEST_F(DataProxyScriptBrowserTest, Verify) {
+  VerifyProxyScript(browser());
+}
+
+// Fetch PAC script via a data: URL and run out-of-process using Mojo.
+class OutOfProcessProxyResolverBrowserTest : public InProcessBrowserTest {
+ public:
+  OutOfProcessProxyResolverBrowserTest() {}
+  ~OutOfProcessProxyResolverBrowserTest() override {}
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    std::string contents;
+    // Read in kPACScript contents.
+    ASSERT_TRUE(base::ReadFileToString(ui_test_utils::GetTestFilePath(
+        base::FilePath(base::FilePath::kCurrentDirectory),
+        base::FilePath(kPACScript)),
+        &contents));
+    command_line->AppendSwitchASCII(
+        switches::kProxyPacUrl, "data:," + contents);
+    command_line->AppendSwitch(switches::kV8PacMojoOutOfProcess);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(OutOfProcessProxyResolverBrowserTest);
+};
+
+IN_PROC_BROWSER_TEST_F(OutOfProcessProxyResolverBrowserTest, Verify) {
   VerifyProxyScript(browser());
 }
 

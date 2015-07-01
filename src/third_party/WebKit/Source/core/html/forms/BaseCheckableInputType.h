@@ -39,20 +39,20 @@ namespace blink {
 class BaseCheckableInputType : public InputType {
 protected:
     BaseCheckableInputType(HTMLInputElement& element) : InputType(element) { }
-    virtual void handleKeydownEvent(KeyboardEvent*);
+    void handleKeydownEvent(KeyboardEvent*) override;
 
 private:
-    virtual FormControlState saveFormControlState() const OVERRIDE FINAL;
-    virtual void restoreFormControlState(const FormControlState&) OVERRIDE FINAL;
-    virtual bool appendFormData(FormDataList&, bool) const OVERRIDE FINAL;
-    virtual void handleKeypressEvent(KeyboardEvent*) OVERRIDE FINAL;
-    virtual bool canSetStringValue() const OVERRIDE FINAL;
-    virtual void accessKeyAction(bool sendMouseEvents) OVERRIDE FINAL;
-    virtual String fallbackValue() const OVERRIDE FINAL;
-    virtual bool storesValueSeparateFromAttribute() OVERRIDE FINAL;
-    virtual void setValue(const String&, bool, TextFieldEventBehavior) OVERRIDE FINAL;
-    virtual bool isCheckable() OVERRIDE FINAL;
-    virtual bool shouldDispatchFormControlChangeEvent(String&, String&) OVERRIDE;
+    FormControlState saveFormControlState() const final;
+    void restoreFormControlState(const FormControlState&) final;
+    bool appendFormData(FormDataList&, bool) const final;
+    void handleKeypressEvent(KeyboardEvent*) final;
+    bool canSetStringValue() const final;
+    void accessKeyAction(bool sendMouseEvents) final;
+    String fallbackValue() const final;
+    bool storesValueSeparateFromAttribute() final;
+    void setValue(const String&, bool, TextFieldEventBehavior) final;
+    bool isCheckable() final;
+    bool shouldDispatchFormControlChangeEvent(String&, String&) override;
 };
 
 } // namespace blink

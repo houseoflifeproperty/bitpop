@@ -65,7 +65,8 @@ TEST(FileManagerFileTasksTest,
                      "action-id"),
       "task title",
       GURL("http://example.com/icon.png"),
-      true /* is_default */);
+      true /* is_default */,
+      false /* is_generic_file_handler */);
 
   const std::string task_id =
       TaskDescriptorToId(full_descriptor.task_descriptor());
@@ -83,7 +84,8 @@ TEST(FileManagerFileTasksTest,
                      "action-id"),
       "task title",
       GURL(),  // No icon URL.
-      false /* is_default */);
+      false /* is_default */,
+      false /* is_generic_file_handler */);
 
   const std::string task_id =
       TaskDescriptorToId(full_descriptor.task_descriptor());
@@ -267,12 +269,14 @@ TEST(FileManagerFileTasksTest, ChooseAndSetDefaultTask_MultipleTasks) {
       text_app_task,
       "Text.app",
       GURL("http://example.com/text_app.png"),
-      false /* is_default */));
+      false /* is_default */,
+      false /* is_generic_file_handler */));
   tasks.push_back(FullTaskDescriptor(
       nice_app_task,
       "Nice.app",
       GURL("http://example.com/nice_app.png"),
-      false /* is_default */));
+      false /* is_default */,
+      false /* is_generic_file_handler */));
   PathAndMimeTypeSet path_mime_set;
   path_mime_set.insert(std::make_pair(
       base::FilePath::FromUTF8Unsafe("foo.txt"),
@@ -334,7 +338,8 @@ TEST(FileManagerFileTasksTest, ChooseAndSetDefaultTask_FallbackFileBrowser) {
       files_app_task,
       "View in browser",
       GURL("http://example.com/some_icon.png"),
-      false /* is_default */));
+      false /* is_default */,
+      false /* is_generic_file_handler */));
   PathAndMimeTypeSet path_mime_set;
   path_mime_set.insert(std::make_pair(
       base::FilePath::FromUTF8Unsafe("foo.txt"),
@@ -346,12 +351,92 @@ TEST(FileManagerFileTasksTest, ChooseAndSetDefaultTask_FallbackFileBrowser) {
   EXPECT_TRUE(tasks[0].is_default());
 }
 
+// Test IsGoodMatchFileHandler which returns whether a file handle info matches
+// with files as good match or not.
+TEST(FileManagerFileTasksTest, IsGoodMatchFileHandler) {
+  using FileHandlerInfo = extensions::FileHandlerInfo;
+  typedef std::pair<base::FilePath, std::string> PathMime;
+
+  PathAndMimeTypeSet path_and_mime_set_1;
+  path_and_mime_set_1.insert(
+      PathMime(base::FilePath(FILE_PATH_LITERAL("foo.jpg")), "image/jpeg"));
+  path_and_mime_set_1.insert(
+      PathMime(base::FilePath(FILE_PATH_LITERAL("bar.txt")), "text/plain"));
+
+  PathAndMimeTypeSet path_and_mime_set_2;
+  path_and_mime_set_2.insert(
+      PathMime(base::FilePath(FILE_PATH_LITERAL("foo.ics")), "text/calendar"));
+
+  // extensions: ["*"]
+  FileHandlerInfo file_handler_info_1;
+  file_handler_info_1.extensions.insert("*");
+  EXPECT_FALSE(
+      IsGoodMatchFileHandler(file_handler_info_1, path_and_mime_set_1));
+
+  // extensions: ["*", "jpg"]
+  FileHandlerInfo file_handler_info_2;
+  file_handler_info_2.extensions.insert("*");
+  file_handler_info_2.extensions.insert("jpg");
+  EXPECT_FALSE(
+      IsGoodMatchFileHandler(file_handler_info_2, path_and_mime_set_1));
+
+  // extensions: ["jpg"]
+  FileHandlerInfo file_handler_info_3;
+  file_handler_info_3.extensions.insert("jpg");
+  EXPECT_TRUE(IsGoodMatchFileHandler(file_handler_info_3, path_and_mime_set_1));
+
+  // types: ["*"]
+  FileHandlerInfo file_handler_info_4;
+  file_handler_info_4.types.insert("*");
+  EXPECT_FALSE(
+      IsGoodMatchFileHandler(file_handler_info_4, path_and_mime_set_1));
+
+  // types: ["*/*"]
+  FileHandlerInfo file_handler_info_5;
+  file_handler_info_5.types.insert("*/*");
+  EXPECT_FALSE(
+      IsGoodMatchFileHandler(file_handler_info_5, path_and_mime_set_1));
+
+  // types: ["image/*"]
+  FileHandlerInfo file_handler_info_6;
+  file_handler_info_6.types.insert("image/*");
+  // Partial wild card is not generic.
+  EXPECT_TRUE(IsGoodMatchFileHandler(file_handler_info_6, path_and_mime_set_1));
+
+  // types: ["*", "image/*"]
+  FileHandlerInfo file_handler_info_7;
+  file_handler_info_7.types.insert("*");
+  file_handler_info_7.types.insert("image/*");
+  EXPECT_FALSE(
+      IsGoodMatchFileHandler(file_handler_info_7, path_and_mime_set_1));
+
+  // extensions: ["*"], types: ["image/*"]
+  FileHandlerInfo file_handler_info_8;
+  file_handler_info_8.extensions.insert("*");
+  file_handler_info_8.types.insert("image/*");
+  EXPECT_FALSE(
+      IsGoodMatchFileHandler(file_handler_info_8, path_and_mime_set_1));
+
+  // types: ["text/*"] and target files contain unsupported text mime type, e.g.
+  // text/calendar.
+  FileHandlerInfo file_handler_info_9;
+  file_handler_info_9.types.insert("text/*");
+  EXPECT_FALSE(
+      IsGoodMatchFileHandler(file_handler_info_9, path_and_mime_set_2));
+
+  // types: ["text/*"] and target files don't contain unsupported text mime
+  // type.
+  FileHandlerInfo file_handler_info_10;
+  file_handler_info_10.types.insert("text/*");
+  EXPECT_TRUE(
+      IsGoodMatchFileHandler(file_handler_info_10, path_and_mime_set_1));
+}
+
 // Test using the test extension system, which needs lots of setup.
 class FileManagerFileTasksComplexTest : public testing::Test {
  protected:
   FileManagerFileTasksComplexTest()
-      : command_line_(CommandLine::NO_PROGRAM),
-        extension_service_(NULL) {
+      : command_line_(base::CommandLine::NO_PROGRAM), extension_service_(NULL) {
     extensions::TestExtensionSystem* test_extension_system =
         static_cast<extensions::TestExtensionSystem*>(
             extensions::ExtensionSystem::Get(&test_profile_));
@@ -366,7 +451,7 @@ class FileManagerFileTasksComplexTest : public testing::Test {
   chromeos::ScopedTestCrosSettings test_cros_settings_;
   chromeos::ScopedTestUserManager test_user_manager_;
   TestingProfile test_profile_;
-  CommandLine command_line_;
+  base::CommandLine command_line_;
   ExtensionService* extension_service_;  // Owned by test_profile_;
 };
 
@@ -518,36 +603,41 @@ TEST_F(FileManagerFileTasksComplexTest, FindFileBrowserHandlerTasks) {
   // Foo.app can handle ".txt" and ".html".
   // This one is an extension, and has "file_browser_handlers"
   extensions::ExtensionBuilder foo_app;
-  foo_app.SetManifest(extensions::DictionaryBuilder()
-                      .Set("name", "Foo")
-                      .Set("version", "1.0.0")
-                      .Set("manifest_version", 2)
-                      .Set("file_browser_handlers",
-                           extensions::ListBuilder()
-                           .Append(extensions::DictionaryBuilder()
-                                   .Set("id", "open")
-                                   .Set("default_title", "open")
-                                   .Set("file_filters",
-                                        extensions::ListBuilder()
-                                        .Append("filesystem:*.txt")
-                                        .Append("filesystem:*.html")))));
+  foo_app.SetManifest(
+      extensions::DictionaryBuilder()
+          .Set("name", "Foo")
+          .Set("version", "1.0.0")
+          .Set("manifest_version", 2)
+          .Set("permissions",
+               extensions::ListBuilder().Append("fileBrowserHandler"))
+          .Set(
+              "file_browser_handlers",
+              extensions::ListBuilder().Append(
+                  extensions::DictionaryBuilder()
+                      .Set("id", "open")
+                      .Set("default_title", "open")
+                      .Set("file_filters", extensions::ListBuilder()
+                                               .Append("filesystem:*.txt")
+                                               .Append("filesystem:*.html")))));
   foo_app.SetID(kFooId);
   extension_service_->AddExtension(foo_app.Build().get());
 
   // Bar.app can only handle ".txt".
   extensions::ExtensionBuilder bar_app;
-  bar_app.SetManifest(extensions::DictionaryBuilder()
-                      .Set("name", "Bar")
-                      .Set("version", "1.0.0")
-                      .Set("manifest_version", 2)
-                      .Set("file_browser_handlers",
-                           extensions::ListBuilder()
-                           .Append(extensions::DictionaryBuilder()
-                                   .Set("id", "open")
-                                   .Set("default_title", "open")
-                                   .Set("file_filters",
-                                        extensions::ListBuilder()
-                                        .Append("filesystem:*.txt")))));
+  bar_app.SetManifest(
+      extensions::DictionaryBuilder()
+          .Set("name", "Bar")
+          .Set("version", "1.0.0")
+          .Set("manifest_version", 2)
+          .Set("permissions",
+               extensions::ListBuilder().Append("fileBrowserHandler"))
+          .Set("file_browser_handlers",
+               extensions::ListBuilder().Append(
+                   extensions::DictionaryBuilder()
+                       .Set("id", "open")
+                       .Set("default_title", "open")
+                       .Set("file_filters", extensions::ListBuilder().Append(
+                                                "filesystem:*.txt")))));
   bar_app.SetID(kBarId);
   extension_service_->AddExtension(bar_app.Build().get());
 
@@ -560,14 +650,15 @@ TEST_F(FileManagerFileTasksComplexTest, FindFileBrowserHandlerTasks) {
           .Set("name", "Ephemeral")
           .Set("version", "1.0.0")
           .Set("manifest_version", 2)
+          .Set("permissions",
+               extensions::ListBuilder().Append("fileBrowserHandler"))
           .Set("file_browser_handlers",
                extensions::ListBuilder().Append(
                    extensions::DictionaryBuilder()
                        .Set("id", "open")
                        .Set("default_title", "open")
-                       .Set("file_filters",
-                            extensions::ListBuilder().Append(
-                                "filesystem:*.txt")))));
+                       .Set("file_filters", extensions::ListBuilder().Append(
+                                                "filesystem:*.txt")))));
   ephemeral_app.SetID(kEphemeralId);
   scoped_refptr<extensions::Extension> built_ephemeral_app(
       ephemeral_app.Build());
@@ -650,18 +741,20 @@ TEST_F(FileManagerFileTasksComplexTest, FindAllTypesOfTasks) {
   // Bar.app can only handle ".txt".
   // This is an extension (file browser handler).
   extensions::ExtensionBuilder bar_app;
-  bar_app.SetManifest(extensions::DictionaryBuilder()
-                      .Set("name", "Bar")
-                      .Set("version", "1.0.0")
-                      .Set("manifest_version", 2)
-                      .Set("file_browser_handlers",
-                           extensions::ListBuilder()
-                           .Append(extensions::DictionaryBuilder()
-                                   .Set("id", "open")
-                                   .Set("default_title", "open")
-                                   .Set("file_filters",
-                                        extensions::ListBuilder()
-                                        .Append("filesystem:*.txt")))));
+  bar_app.SetManifest(
+      extensions::DictionaryBuilder()
+          .Set("name", "Bar")
+          .Set("version", "1.0.0")
+          .Set("manifest_version", 2)
+          .Set("permissions",
+               extensions::ListBuilder().Append("fileBrowserHandler"))
+          .Set("file_browser_handlers",
+               extensions::ListBuilder().Append(
+                   extensions::DictionaryBuilder()
+                       .Set("id", "open")
+                       .Set("default_title", "open")
+                       .Set("file_filters", extensions::ListBuilder().Append(
+                                                "filesystem:*.txt")))));
   bar_app.SetID(kBarId);
   extension_service_->AddExtension(bar_app.Build().get());
 
@@ -739,18 +832,20 @@ TEST_F(FileManagerFileTasksComplexTest, FindAllTypesOfTasks_GoogleDocument) {
   // Bar.app can handle ".gdoc" files.
   // This is an extension (file browser handler).
   extensions::ExtensionBuilder bar_app;
-  bar_app.SetManifest(extensions::DictionaryBuilder()
-                      .Set("name", "Bar")
-                      .Set("version", "1.0.0")
-                      .Set("manifest_version", 2)
-                      .Set("file_browser_handlers",
-                           extensions::ListBuilder()
-                           .Append(extensions::DictionaryBuilder()
-                                   .Set("id", "open")
-                                   .Set("default_title", "open")
-                                   .Set("file_filters",
-                                        extensions::ListBuilder()
-                                        .Append("filesystem:*.gdoc")))));
+  bar_app.SetManifest(
+      extensions::DictionaryBuilder()
+          .Set("name", "Bar")
+          .Set("version", "1.0.0")
+          .Set("manifest_version", 2)
+          .Set("permissions",
+               extensions::ListBuilder().Append("fileBrowserHandler"))
+          .Set("file_browser_handlers",
+               extensions::ListBuilder().Append(
+                   extensions::DictionaryBuilder()
+                       .Set("id", "open")
+                       .Set("default_title", "open")
+                       .Set("file_filters", extensions::ListBuilder().Append(
+                                                "filesystem:*.gdoc")))));
   bar_app.SetID(kBarId);
   extension_service_->AddExtension(bar_app.Build().get());
 
@@ -758,18 +853,20 @@ TEST_F(FileManagerFileTasksComplexTest, FindAllTypesOfTasks_GoogleDocument) {
   // The ID "kFileManagerAppId" used here is precisely the one that identifies
   // the Chrome OS Files.app application.
   extensions::ExtensionBuilder files_app;
-  files_app.SetManifest(extensions::DictionaryBuilder()
-                       .Set("name", "Files")
-                       .Set("version", "1.0.0")
-                       .Set("manifest_version", 2)
-                       .Set("file_browser_handlers",
-                            extensions::ListBuilder()
-                            .Append(extensions::DictionaryBuilder()
-                                    .Set("id", "open")
-                                    .Set("default_title", "open")
-                                    .Set("file_filters",
-                                         extensions::ListBuilder()
-                                         .Append("filesystem:*.gdoc")))));
+  files_app.SetManifest(
+      extensions::DictionaryBuilder()
+          .Set("name", "Files")
+          .Set("version", "1.0.0")
+          .Set("manifest_version", 2)
+          .Set("permissions",
+               extensions::ListBuilder().Append("fileBrowserHandler"))
+          .Set("file_browser_handlers",
+               extensions::ListBuilder().Append(
+                   extensions::DictionaryBuilder()
+                       .Set("id", "open")
+                       .Set("default_title", "open")
+                       .Set("file_filters", extensions::ListBuilder().Append(
+                                                "filesystem:*.gdoc")))));
   files_app.SetID(kFileManagerAppId);
   extension_service_->AddExtension(files_app.Build().get());
 
@@ -792,6 +889,145 @@ TEST_F(FileManagerFileTasksComplexTest, FindAllTypesOfTasks_GoogleDocument) {
                       &tasks);
   ASSERT_EQ(1U, tasks.size());
   EXPECT_EQ(kFileManagerAppId, tasks[0].task_descriptor().app_id);
+}
+
+TEST_F(FileManagerFileTasksComplexTest, FindFileHandlerTask_Generic) {
+  // Since we want to keep the order of the result as foo,bar,baz,qux,
+  // keep the ids in alphabetical order.
+  const char kFooId[] = "hhgbjpmdppecanaaogonaigmmifgpaph";
+  const char kBarId[] = "odlhccgofgkadkkhcmhgnhgahonahoca";
+  const char kBazId[] = "plifkpkakemokpflgbnnigcoldgcbdmc";
+  const char kQuxId[] = "pmifkpkakgkadkkhcmhgnigmmifgpaph";
+
+  // Foo app provides file handler for text/plain and all file types.
+  extensions::ExtensionBuilder foo_app;
+  foo_app.SetManifest(extensions::DictionaryBuilder()
+                      .Set("name", "Foo")
+                      .Set("version", "1.0.0")
+                      .Set("manifest_version", 2)
+                      .Set("app", extensions::DictionaryBuilder()
+                           .Set("background", extensions::DictionaryBuilder()
+                                .Set("scripts", extensions::ListBuilder()
+                                    .Append("background.js"))))
+                      .Set("file_handlers",
+                           extensions::DictionaryBuilder()
+                           .Set("any",
+                                extensions::DictionaryBuilder()
+                                .Set("types", extensions::ListBuilder()
+                                     .Append("*/*")))
+                           .Set("text",
+                                extensions::DictionaryBuilder()
+                                .Set("types", extensions::ListBuilder()
+                                     .Append("text/plain")))));
+  foo_app.SetID(kFooId);
+  extension_service_->AddExtension(foo_app.Build().get());
+
+  // Bar app provides file handler for .txt and not provide generic file
+  // handler.
+  extensions::ExtensionBuilder bar_app;
+  bar_app.SetManifest(extensions::DictionaryBuilder()
+                      .Set("name", "Bar")
+                      .Set("version", "1.0.0")
+                      .Set("manifest_version", 2)
+                      .Set("app", extensions::DictionaryBuilder()
+                           .Set("background", extensions::DictionaryBuilder()
+                                .Set("scripts", extensions::ListBuilder()
+                                    .Append("background.js"))))
+                      .Set("file_handlers",
+                           extensions::DictionaryBuilder()
+                           .Set("text",
+                                extensions::DictionaryBuilder()
+                                .Set("extensions", extensions::ListBuilder()
+                                     .Append("txt")))));
+  bar_app.SetID(kBarId);
+  extension_service_->AddExtension(bar_app.Build().get());
+
+  // Baz app provides file handler for all extensions and images.
+  extensions::ExtensionBuilder baz_app;
+  baz_app.SetManifest(extensions::DictionaryBuilder()
+                      .Set("name", "Baz")
+                      .Set("version", "1.0.0")
+                      .Set("manifest_version", 2)
+                      .Set("app", extensions::DictionaryBuilder()
+                           .Set("background", extensions::DictionaryBuilder()
+                                .Set("scripts", extensions::ListBuilder()
+                                    .Append("background.js"))))
+                      .Set("file_handlers",
+                           extensions::DictionaryBuilder()
+                           .Set("any",
+                                extensions::DictionaryBuilder()
+                                .Set("extensions", extensions::ListBuilder()
+                                     .Append("*")
+                                     .Append("bar")))
+                           .Set("image",
+                                extensions::DictionaryBuilder()
+                                .Set("types", extensions::ListBuilder()
+                                     .Append("image/*")))));
+  baz_app.SetID(kBazId);
+  extension_service_->AddExtension(baz_app.Build().get());
+
+  // Qux app provides file handler for all types.
+  extensions::ExtensionBuilder qux_app;
+  qux_app.SetManifest(extensions::DictionaryBuilder()
+                      .Set("name", "Qux")
+                      .Set("version", "1.0.0")
+                      .Set("manifest_version", 2)
+                      .Set("app", extensions::DictionaryBuilder()
+                           .Set("background", extensions::DictionaryBuilder()
+                                .Set("scripts", extensions::ListBuilder()
+                                    .Append("background.js"))))
+                      .Set("file_handlers",
+                           extensions::DictionaryBuilder()
+                           .Set("any",
+                                extensions::DictionaryBuilder()
+                                .Set("types", extensions::ListBuilder()
+                                     .Append("*")))));
+  qux_app.SetID(kQuxId);
+  extension_service_->AddExtension(qux_app.Build().get());
+
+  // Test case with .txt file
+  PathAndMimeTypeSet txt_path_mime_set;
+  txt_path_mime_set.insert(
+      std::make_pair(
+          drive::util::GetDriveMountPointPath(&test_profile_).AppendASCII(
+              "foo.txt"),
+          "text/plain"));
+  std::vector<FullTaskDescriptor> txt_result;
+  FindFileHandlerTasks(&test_profile_, txt_path_mime_set, &txt_result);
+  EXPECT_EQ(4U, txt_result.size());
+  // Foo app provides a handler for text/plain.
+  EXPECT_EQ("Foo", txt_result[0].task_title());
+  EXPECT_FALSE(txt_result[0].is_generic_file_handler());
+  // Bar app provides a handler for .txt.
+  EXPECT_EQ("Bar", txt_result[1].task_title());
+  EXPECT_FALSE(txt_result[1].is_generic_file_handler());
+  // Baz app provides a handler for all extensions.
+  EXPECT_EQ("Baz", txt_result[2].task_title());
+  EXPECT_TRUE(txt_result[2].is_generic_file_handler());
+  // Qux app provides a handler for all types.
+  EXPECT_EQ("Qux", txt_result[3].task_title());
+  EXPECT_TRUE(txt_result[3].is_generic_file_handler());
+
+  // Test case with .jpg file
+  PathAndMimeTypeSet jpg_path_mime_set;
+  jpg_path_mime_set.insert(
+      std::make_pair(
+          drive::util::GetDriveMountPointPath(&test_profile_).AppendASCII(
+              "foo.jpg"),
+          "image/jpeg"));
+  std::vector<FullTaskDescriptor> jpg_result;
+  FindFileHandlerTasks(&test_profile_, jpg_path_mime_set, &jpg_result);
+  EXPECT_EQ(3U, jpg_result.size());
+  // Foo app provides a handler for all types.
+  EXPECT_EQ("Foo", jpg_result[0].task_title());
+  EXPECT_TRUE(jpg_result[0].is_generic_file_handler());
+  // Baz app provides a handler for image/*. A partial wildcarded handler is
+  // treated as non-generic handler.
+  EXPECT_EQ("Baz", jpg_result[1].task_title());
+  EXPECT_FALSE(jpg_result[1].is_generic_file_handler());
+  // Qux app provides a handler for all types.
+  EXPECT_EQ("Qux", jpg_result[2].task_title());
+  EXPECT_TRUE(jpg_result[2].is_generic_file_handler());
 }
 
 }  // namespace file_tasks

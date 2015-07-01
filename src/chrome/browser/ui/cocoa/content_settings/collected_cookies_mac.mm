@@ -12,11 +12,9 @@
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
-#include "chrome/browser/content_settings/local_shared_objects_container.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser_dialogs.h"
 #import "chrome/browser/ui/cocoa/constrained_window/constrained_window_custom_sheet.h"
 #import "chrome/browser/ui/cocoa/content_settings/cookie_details_view_controller.h"
 #import "chrome/browser/ui/cocoa/vertical_gradient_view.h"
@@ -50,16 +48,6 @@ enum TabViewItemIndices {
 };
 
 } // namespace
-
-namespace chrome {
-
-// Declared in browser_dialogs.h so others don't have to depend on our header.
-void ShowCollectedCookiesDialog(content::WebContents* web_contents) {
-  // Deletes itself on close.
-  new CollectedCookiesMac(web_contents);
-}
-
-}  // namespace chrome
 
 #pragma mark Constrained window delegate
 
@@ -205,7 +193,13 @@ void CollectedCookiesMac::OnConstrainedWindowClosed(
 }
 
 - (void)windowWillClose:(NSNotification*)notif {
-  if (contentSettingsChanged_) {
+  // If the user closes our parent tab while we're still open, this method will
+  // (eventually) be called in response to a WebContentsDestroyed() call from
+  // the WebContentsImpl to its observers.  But since the InfoBarService is also
+  // torn down in response to WebContentsDestroyed(), it may already be null.
+  // Since the tab is going away anyway, we can just omit showing an infobar,
+  // which prevents any attempt to access a null InfoBarService.
+  if (contentSettingsChanged_ && !webContents_->IsBeingDestroyed()) {
     CollectedCookiesInfoBarDelegate::Create(
         InfoBarService::FromWebContents(webContents_));
   }
@@ -358,13 +352,8 @@ void CollectedCookiesMac::OnConstrainedWindowClosed(
   TabSpecificContentSettings* content_settings =
       TabSpecificContentSettings::FromWebContents(webContents_);
 
-  const LocalSharedObjectsContainer& allowed_data =
-      content_settings->allowed_local_shared_objects();
-  allowedTreeModel_ = allowed_data.CreateCookiesTreeModel();
-
-  const LocalSharedObjectsContainer& blocked_data =
-      content_settings->blocked_local_shared_objects();
-  blockedTreeModel_ = blocked_data.CreateCookiesTreeModel();
+  allowedTreeModel_ = content_settings->CreateAllowedCookiesTreeModel();
+  blockedTreeModel_ = content_settings->CreateBlockedCookiesTreeModel();
 
   // Convert the model's icons from Skia to Cocoa.
   std::vector<gfx::ImageSkia> skiaIcons;

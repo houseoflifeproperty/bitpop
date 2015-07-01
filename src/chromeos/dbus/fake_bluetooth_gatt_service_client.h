@@ -26,28 +26,27 @@ class CHROMEOS_EXPORT FakeBluetoothGattServiceClient
  public:
   struct Properties : public BluetoothGattServiceClient::Properties {
     explicit Properties(const PropertyChangedCallback& callback);
-    virtual ~Properties();
+    ~Properties() override;
 
     // dbus::PropertySet override
-    virtual void Get(dbus::PropertyBase* property,
-                     dbus::PropertySet::GetCallback callback) OVERRIDE;
-    virtual void GetAll() OVERRIDE;
-    virtual void Set(dbus::PropertyBase* property,
-                     dbus::PropertySet::SetCallback callback) OVERRIDE;
+    void Get(dbus::PropertyBase* property,
+             dbus::PropertySet::GetCallback callback) override;
+    void GetAll() override;
+    void Set(dbus::PropertyBase* property,
+             dbus::PropertySet::SetCallback callback) override;
   };
 
   FakeBluetoothGattServiceClient();
-  virtual ~FakeBluetoothGattServiceClient();
+  ~FakeBluetoothGattServiceClient() override;
 
   // DBusClient override.
-  virtual void Init(dbus::Bus* bus) OVERRIDE;
+  void Init(dbus::Bus* bus) override;
 
   // BluetoothGattServiceClient overrides.
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual std::vector<dbus::ObjectPath> GetServices() OVERRIDE;
-  virtual Properties* GetProperties(const dbus::ObjectPath& object_path)
-      OVERRIDE;
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
+  std::vector<dbus::ObjectPath> GetServices() override;
+  Properties* GetProperties(const dbus::ObjectPath& object_path) override;
 
   // Makes a service visible for device with object path |device_path|. Note
   // that only one instance of a specific service is simulated at a time. Hence,

@@ -60,8 +60,8 @@ int UserScript::ValidUserScriptSchemes(bool canExecuteScriptEverywhere) {
   if (canExecuteScriptEverywhere)
     return URLPattern::SCHEME_ALL;
   int valid_schemes = kValidUserScriptSchemes;
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kExtensionsOnChromeURLs)) {
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kExtensionsOnChromeURLs)) {
     valid_schemes &= ~URLPattern::SCHEME_CHROMEUI;
   }
   return valid_schemes;
@@ -81,6 +81,7 @@ UserScript::File::~File() {}
 
 UserScript::UserScript()
     : run_location_(DOCUMENT_IDLE),
+      consumer_instance_type_(TAB),
       user_script_id_(-1),
       emulate_greasemonkey_(false),
       match_all_frames_(false),
@@ -131,20 +132,21 @@ void UserScript::File::Pickle(::Pickle* pickle) const {
 void UserScript::File::Unpickle(const ::Pickle& pickle, PickleIterator* iter) {
   // Read the url from the pickle.
   std::string url;
-  CHECK(pickle.ReadString(iter, &url));
+  CHECK(iter->ReadString(&url));
   set_url(GURL(url));
 }
 
 void UserScript::Pickle(::Pickle* pickle) const {
   // Write the simple types to the pickle.
   pickle->WriteInt(run_location());
-  pickle->WriteString(extension_id());
   pickle->WriteInt(user_script_id_);
   pickle->WriteBool(emulate_greasemonkey());
   pickle->WriteBool(match_all_frames());
   pickle->WriteBool(match_about_blank());
   pickle->WriteBool(is_incognito_enabled());
 
+  PickleHostID(pickle, host_id_);
+  pickle->WriteInt(consumer_instance_type());
   PickleGlobs(pickle, globs_);
   PickleGlobs(pickle, exclude_globs_);
   PickleURLPatternSet(pickle, url_set_);
@@ -155,16 +157,21 @@ void UserScript::Pickle(::Pickle* pickle) const {
 
 void UserScript::PickleGlobs(::Pickle* pickle,
                              const std::vector<std::string>& globs) const {
-  pickle->WriteUInt64(globs.size());
+  pickle->WriteSizeT(globs.size());
   for (std::vector<std::string>::const_iterator glob = globs.begin();
        glob != globs.end(); ++glob) {
     pickle->WriteString(*glob);
   }
 }
 
+void UserScript::PickleHostID(::Pickle* pickle, const HostID& host_id) const {
+  pickle->WriteInt(host_id.type());
+  pickle->WriteString(host_id.id());
+}
+
 void UserScript::PickleURLPatternSet(::Pickle* pickle,
                                      const URLPatternSet& pattern_list) const {
-  pickle->WriteUInt64(pattern_list.patterns().size());
+  pickle->WriteSizeT(pattern_list.patterns().size());
   for (URLPatternSet::const_iterator pattern = pattern_list.begin();
        pattern != pattern_list.end(); ++pattern) {
     pickle->WriteInt(pattern->valid_schemes());
@@ -174,7 +181,7 @@ void UserScript::PickleURLPatternSet(::Pickle* pickle,
 
 void UserScript::PickleScripts(::Pickle* pickle,
                                const FileList& scripts) const {
-  pickle->WriteUInt64(scripts.size());
+  pickle->WriteSizeT(scripts.size());
   for (FileList::const_iterator file = scripts.begin();
        file != scripts.end(); ++file) {
     file->Pickle(pickle);
@@ -184,16 +191,22 @@ void UserScript::PickleScripts(::Pickle* pickle,
 void UserScript::Unpickle(const ::Pickle& pickle, PickleIterator* iter) {
   // Read the run location.
   int run_location = 0;
-  CHECK(pickle.ReadInt(iter, &run_location));
+  CHECK(iter->ReadInt(&run_location));
   CHECK(run_location >= 0 && run_location < RUN_LOCATION_LAST);
   run_location_ = static_cast<RunLocation>(run_location);
 
-  CHECK(pickle.ReadString(iter, &extension_id_));
-  CHECK(pickle.ReadInt(iter, &user_script_id_));
-  CHECK(pickle.ReadBool(iter, &emulate_greasemonkey_));
-  CHECK(pickle.ReadBool(iter, &match_all_frames_));
-  CHECK(pickle.ReadBool(iter, &match_about_blank_));
-  CHECK(pickle.ReadBool(iter, &incognito_enabled_));
+  CHECK(iter->ReadInt(&user_script_id_));
+  CHECK(iter->ReadBool(&emulate_greasemonkey_));
+  CHECK(iter->ReadBool(&match_all_frames_));
+  CHECK(iter->ReadBool(&match_about_blank_));
+  CHECK(iter->ReadBool(&incognito_enabled_));
+
+  UnpickleHostID(pickle, iter, &host_id_);
+
+  int consumer_instance_type = 0;
+  CHECK(iter->ReadInt(&consumer_instance_type));
+  consumer_instance_type_ =
+      static_cast<ConsumerInstanceType>(consumer_instance_type);
 
   UnpickleGlobs(pickle, iter, &globs_);
   UnpickleGlobs(pickle, iter, &exclude_globs_);
@@ -205,29 +218,39 @@ void UserScript::Unpickle(const ::Pickle& pickle, PickleIterator* iter) {
 
 void UserScript::UnpickleGlobs(const ::Pickle& pickle, PickleIterator* iter,
                                std::vector<std::string>* globs) {
-  uint64 num_globs = 0;
-  CHECK(pickle.ReadUInt64(iter, &num_globs));
+  size_t num_globs = 0;
+  CHECK(iter->ReadSizeT(&num_globs));
   globs->clear();
-  for (uint64 i = 0; i < num_globs; ++i) {
+  for (size_t i = 0; i < num_globs; ++i) {
     std::string glob;
-    CHECK(pickle.ReadString(iter, &glob));
+    CHECK(iter->ReadString(&glob));
     globs->push_back(glob);
   }
+}
+
+void UserScript::UnpickleHostID(const ::Pickle& pickle,
+                                PickleIterator* iter,
+                                HostID* host_id) {
+  int type = 0;
+  std::string id;
+  CHECK(iter->ReadInt(&type));
+  CHECK(iter->ReadString(&id));
+  *host_id = HostID(static_cast<HostID::HostType>(type), id);
 }
 
 void UserScript::UnpickleURLPatternSet(const ::Pickle& pickle,
                                        PickleIterator* iter,
                                        URLPatternSet* pattern_list) {
-  uint64 num_patterns = 0;
-  CHECK(pickle.ReadUInt64(iter, &num_patterns));
+  size_t num_patterns = 0;
+  CHECK(iter->ReadSizeT(&num_patterns));
 
   pattern_list->ClearPatterns();
-  for (uint64 i = 0; i < num_patterns; ++i) {
+  for (size_t i = 0; i < num_patterns; ++i) {
     int valid_schemes;
-    CHECK(pickle.ReadInt(iter, &valid_schemes));
+    CHECK(iter->ReadInt(&valid_schemes));
 
     std::string pattern_str;
-    CHECK(pickle.ReadString(iter, &pattern_str));
+    CHECK(iter->ReadString(&pattern_str));
 
     URLPattern pattern(kValidUserScriptSchemes);
     URLPattern::ParseResult result = pattern.Parse(pattern_str);
@@ -241,10 +264,10 @@ void UserScript::UnpickleURLPatternSet(const ::Pickle& pickle,
 
 void UserScript::UnpickleScripts(const ::Pickle& pickle, PickleIterator* iter,
                                  FileList* scripts) {
-  uint64 num_files = 0;
-  CHECK(pickle.ReadUInt64(iter, &num_files));
+  size_t num_files = 0;
+  CHECK(iter->ReadSizeT(&num_files));
   scripts->clear();
-  for (uint64 i = 0; i < num_files; ++i) {
+  for (size_t i = 0; i < num_files; ++i) {
     File file;
     file.Unpickle(pickle, iter);
     scripts->push_back(file);

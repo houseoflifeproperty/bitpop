@@ -13,8 +13,8 @@
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/animation/animation.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image_skia_source.h"
-#include "ui/gfx/rect.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/controls/button/blue_button.h"
 #include "ui/views/controls/button/label_button.h"
@@ -44,10 +44,9 @@ class ButtonImageSkiaSource : public gfx::ImageSkiaSource {
         size_(size) {
   }
 
-  virtual ~ButtonImageSkiaSource() {
-  }
+  ~ButtonImageSkiaSource() override {}
 
-  virtual gfx::ImageSkiaRep GetImageForScale(float scale) OVERRIDE {
+  gfx::ImageSkiaRep GetImageForScale(float scale) override {
     int w = size_.width() * scale;
     int h = size_.height() * scale;
     return gfx::ImageSkiaRep(

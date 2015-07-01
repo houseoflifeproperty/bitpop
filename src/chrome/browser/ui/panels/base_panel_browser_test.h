@@ -13,7 +13,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 class NativePanelTesting;
 class StackedPanelCollection;
@@ -23,7 +23,7 @@ class BasePanelBrowserTest : public InProcessBrowserTest {
   class MockDisplaySettingsProvider : public DisplaySettingsProvider {
    public:
     MockDisplaySettingsProvider() { }
-    virtual ~MockDisplaySettingsProvider() { }
+    ~MockDisplaySettingsProvider() override {}
 
     virtual void SetPrimaryDisplay(
         const gfx::Rect& display_area, const gfx::Rect& work_area) = 0;
@@ -40,10 +40,10 @@ class BasePanelBrowserTest : public InProcessBrowserTest {
   };
 
   BasePanelBrowserTest();
-  virtual ~BasePanelBrowserTest();
+  ~BasePanelBrowserTest() override;
 
-  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
-  virtual void SetUpOnMainThread() OVERRIDE;
+  void SetUpCommandLine(base::CommandLine* command_line) override;
+  void SetUpOnMainThread() override;
 
  protected:
   enum ActiveState { SHOW_AS_ACTIVE, SHOW_AS_INACTIVE };

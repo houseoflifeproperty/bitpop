@@ -14,6 +14,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "chrome/browser/extensions/active_tab_permission_granter.h"
+#include "chrome/browser/extensions/extension_reenabler.h"
 #include "chrome/common/extensions/webstore_install_result.h"
 #include "chrome/common/web_application_info.h"
 #include "content/public/browser/notification_observer.h"
@@ -51,7 +52,7 @@ class TabHelper : public content::WebContentsObserver,
                   public content::NotificationObserver,
                   public content::WebContentsUserData<TabHelper> {
  public:
-  virtual ~TabHelper();
+  ~TabHelper() override;
 
   void CreateApplicationShortcuts();
   void CreateHostedAppFromWebContents();
@@ -141,23 +142,20 @@ class TabHelper : public content::WebContentsObserver,
                                const WebApplicationInfo& web_app_info);
 
   // content::WebContentsObserver overrides.
-  virtual void RenderViewCreated(
-      content::RenderViewHost* render_view_host) OVERRIDE;
-  virtual void DidNavigateMainFrame(
+  void RenderViewCreated(content::RenderViewHost* render_view_host) override;
+  void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
-      const content::FrameNavigateParams& params) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual bool OnMessageReceived(
-      const IPC::Message& message,
-      content::RenderFrameHost* render_frame_host) OVERRIDE;
-  virtual void DidCloneToNewWebContents(
+      const content::FrameNavigateParams& params) override;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  bool OnMessageReceived(const IPC::Message& message,
+                         content::RenderFrameHost* render_frame_host) override;
+  void DidCloneToNewWebContents(
       content::WebContents* old_web_contents,
-      content::WebContents* new_web_contents) OVERRIDE;
+      content::WebContents* new_web_contents) override;
 
   // extensions::ExtensionFunctionDispatcher::Delegate overrides.
-  virtual extensions::WindowController* GetExtensionWindowController()
-      const OVERRIDE;
-  virtual content::WebContents* GetAssociatedWebContents() const OVERRIDE;
+  extensions::WindowController* GetExtensionWindowController() const override;
+  content::WebContents* GetAssociatedWebContents() const override;
 
   // Message handlers.
   void OnDidGetWebApplicationInfo(const WebApplicationInfo& info);
@@ -190,16 +188,21 @@ class TabHelper : public content::WebContentsObserver,
   void OnImageLoaded(const gfx::Image& image);
 
   // WebstoreStandaloneInstaller::Callback.
-  virtual void OnInlineInstallComplete(int install_id,
-                                       int return_route_id,
-                                       bool success,
-                                       const std::string& error,
-                                       webstore_install::Result result);
+  void OnInlineInstallComplete(int install_id,
+                               int return_route_id,
+                               bool success,
+                               const std::string& error,
+                               webstore_install::Result result);
+
+  // ExtensionReenabler::Callback.
+  void OnReenableComplete(int install_id,
+                          int return_route_id,
+                          ExtensionReenabler::ReenableResult result);
 
   // content::NotificationObserver.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // Requests application info for the specified page. This is an asynchronous
   // request. The delegate is notified by way of OnDidGetApplicationInfo when
@@ -233,9 +236,9 @@ class TabHelper : public content::WebContentsObserver,
   // from a WebContents.
   WebAppAction pending_web_app_action_;
 
-  // Which page id was active when the GetApplicationInfo request was sent, for
-  // verification when the reply returns.
-  int32 last_committed_page_id_;
+  // Which navigation entry was active when the GetApplicationInfo request was
+  // sent, for verification when the reply returns.
+  int last_committed_nav_entry_unique_id_;
 
   // Whether to trigger an update when the page load completes.
   bool update_shortcut_on_load_complete_;
@@ -257,8 +260,14 @@ class TabHelper : public content::WebContentsObserver,
   // Creates WebstoreInlineInstaller instances for inline install triggers.
   scoped_ptr<WebstoreInlineInstallerFactory> webstore_inline_installer_factory_;
 
+  // The reenable prompt for disabled extensions, if any.
+  scoped_ptr<ExtensionReenabler> extension_reenabler_;
+
   // Vend weak pointers that can be invalidated to stop in-progress loads.
   base::WeakPtrFactory<TabHelper> image_loader_ptr_factory_;
+
+  // Generic weak ptr factory for posting callbacks.
+  base::WeakPtrFactory<TabHelper> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(TabHelper);
 };

@@ -6,9 +6,9 @@
 
 #include <assert.h>
 
+#include "mojo/application/public/cpp/application_connection.h"
+#include "mojo/application/public/cpp/application_runner.h"
 #include "mojo/public/c/system/main.h"
-#include "mojo/public/cpp/application/application_connection.h"
-#include "mojo/public/cpp/application/application_runner.h"
 #include "mojo/public/cpp/utility/run_loop.h"
 #include "mojo/services/test_service/test_service_impl.h"
 #include "mojo/services/test_service/test_time_service_impl.h"
@@ -16,10 +16,15 @@
 namespace mojo {
 namespace test {
 
-TestServiceApplication::TestServiceApplication() : ref_count_(0) {
+TestServiceApplication::TestServiceApplication()
+    : ref_count_(0), app_impl_(nullptr) {
 }
 
 TestServiceApplication::~TestServiceApplication() {
+}
+
+void TestServiceApplication::Initialize(ApplicationImpl* app) {
+  app_impl_ = app;
 }
 
 bool TestServiceApplication::ConfigureIncomingConnection(
@@ -31,12 +36,13 @@ bool TestServiceApplication::ConfigureIncomingConnection(
 
 void TestServiceApplication::Create(ApplicationConnection* connection,
                                     InterfaceRequest<TestService> request) {
-  BindToRequest(new TestServiceImpl(connection, this), &request);
+  new TestServiceImpl(app_impl_, this, request.Pass());
+  AddRef();
 }
 
 void TestServiceApplication::Create(ApplicationConnection* connection,
                                     InterfaceRequest<TestTimeService> request) {
-  BindToRequest(new TestTimeServiceImpl(connection), &request);
+  new TestTimeServiceImpl(app_impl_, request.Pass());
 }
 
 void TestServiceApplication::AddRef() {

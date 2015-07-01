@@ -11,7 +11,7 @@
 
 namespace blink {
 
-class BatteryStatus FINAL : public GarbageCollected<BatteryStatus> {
+class BatteryStatus final : public GarbageCollected<BatteryStatus> {
 public:
     static BatteryStatus* create();
     static BatteryStatus* create(bool charging, double chargingTime, double dischargingTime, double level);
@@ -21,7 +21,7 @@ public:
     double dischargingTime() const  { return m_dischargingTime; }
     double level() const  { return m_level; }
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     BatteryStatus();

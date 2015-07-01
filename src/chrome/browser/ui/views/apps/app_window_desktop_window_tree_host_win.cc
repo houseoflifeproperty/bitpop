@@ -27,10 +27,12 @@ AppWindowDesktopWindowTreeHostWin::~AppWindowDesktopWindowTreeHostWin() {
 
 bool AppWindowDesktopWindowTreeHostWin::GetClientAreaInsets(
     gfx::Insets* insets) const {
-  // Use the default client insets for an opaque frame or a glass popup/app
-  // frame.
-  if (!app_window_->glass_frame_view())
+  // The inset added below is only necessary for the native glass frame, i.e.
+  // not for colored frames drawn by Chrome, or when DWM is disabled.
+  // In fullscreen the frame is not visible.
+  if (!app_window_->glass_frame_view() || IsFullscreen()) {
     return false;
+  }
 
   // This tells Windows that most of the window is a client area, meaning Chrome
   // will draw it. Windows still fills in the glass bits because of the
@@ -75,7 +77,7 @@ void AppWindowDesktopWindowTreeHostWin::UpdateDWMFrame() {
     gfx::Insets insets = app_window_->glass_frame_view()->GetGlassInsets();
     // The DWM API's expect values in pixels. We need to convert from DIP to
     // pixels here.
-    insets = insets.Scale(gfx::win::GetDeviceScaleFactor());
+    insets = insets.Scale(gfx::GetDPIScale());
     margins.cxLeftWidth = insets.left();
     margins.cxRightWidth = insets.right();
     margins.cyBottomHeight = insets.bottom();

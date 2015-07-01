@@ -31,18 +31,16 @@
 #include "config.h"
 #include "web/WebSocketImpl.h"
 
+#include "core/dom/DOMArrayBuffer.h"
 #include "core/dom/Document.h"
 #include "core/frame/ConsoleTypes.h"
-#include "modules/websockets/MainThreadWebSocketChannel.h"
-#include "modules/websockets/NewWebSocketChannelImpl.h"
+#include "modules/websockets/DocumentWebSocketChannel.h"
 #include "modules/websockets/WebSocketChannel.h"
-#include "platform/RuntimeEnabledFeatures.h"
-#include "public/platform/WebArrayBuffer.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
+#include "public/web/WebArrayBuffer.h"
 #include "public/web/WebDocument.h"
 #include "web/WebSocketChannelClientProxy.h"
-#include "wtf/ArrayBuffer.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
 
@@ -57,11 +55,7 @@ WebSocketImpl::WebSocketImpl(const WebDocument& document, WebSocketClient* clien
     , m_bufferedAmountAfterClose(0)
 {
     RefPtrWillBeRawPtr<Document> coreDocument = PassRefPtrWillBeRawPtr<Document>(document);
-    if (RuntimeEnabledFeatures::experimentalWebSocketEnabled()) {
-        m_private = NewWebSocketChannelImpl::create(coreDocument.get(), m_channelProxy.get());
-    } else {
-        m_private = MainThreadWebSocketChannel::create(coreDocument.get(), m_channelProxy.get());
-    }
+    m_private = DocumentWebSocketChannel::create(coreDocument.get(), m_channelProxy.get());
 }
 
 WebSocketImpl::~WebSocketImpl()
@@ -99,7 +93,9 @@ WebString WebSocketImpl::extensions()
 
 bool WebSocketImpl::sendText(const WebString& message)
 {
-    size_t size = message.utf8().length();
+    String coreMessage = message;
+    CString encodedMessage = coreMessage.utf8();
+    size_t size = encodedMessage.length();
     m_bufferedAmount += size;
     if (m_isClosingOrClosed)
         m_bufferedAmountAfterClose += size;
@@ -110,7 +106,7 @@ bool WebSocketImpl::sendText(const WebString& message)
     if (m_isClosingOrClosed)
         return true;
 
-    m_private->send(message);
+    m_private->send(encodedMessage);
     return true;
 }
 
@@ -127,7 +123,8 @@ bool WebSocketImpl::sendArrayBuffer(const WebArrayBuffer& webArrayBuffer)
     if (m_isClosingOrClosed)
         return true;
 
-    m_private->send(*PassRefPtr<ArrayBuffer>(webArrayBuffer), 0, webArrayBuffer.byteLength());
+    RefPtr<DOMArrayBuffer> arrayBuffer = PassRefPtr<DOMArrayBuffer>(webArrayBuffer);
+    m_private->send(*arrayBuffer, 0, arrayBuffer->byteLength());
     return true;
 }
 
@@ -150,7 +147,7 @@ void WebSocketImpl::fail(const WebString& reason)
 void WebSocketImpl::disconnect()
 {
     m_private->disconnect();
-    m_client = 0;
+    m_client = nullptr;
 }
 
 void WebSocketImpl::didConnect(const String& subprotocol, const String& extensions)
@@ -163,24 +160,24 @@ void WebSocketImpl::didConnect(const String& subprotocol, const String& extensio
     m_client->didConnect();
 }
 
-void WebSocketImpl::didReceiveMessage(const String& message)
+void WebSocketImpl::didReceiveTextMessage(const String& payload)
 {
-    m_client->didReceiveMessage(WebString(message));
+    m_client->didReceiveMessage(WebString(payload));
 }
 
-void WebSocketImpl::didReceiveBinaryData(PassOwnPtr<Vector<char> > binaryData)
+void WebSocketImpl::didReceiveBinaryMessage(PassOwnPtr<Vector<char>> payload)
 {
     switch (m_binaryType) {
     case BinaryTypeBlob:
         // FIXME: Handle Blob after supporting WebBlob.
         break;
     case BinaryTypeArrayBuffer:
-        m_client->didReceiveArrayBuffer(WebArrayBuffer(ArrayBuffer::create(binaryData->data(), binaryData->size())));
+        m_client->didReceiveArrayBuffer(WebArrayBuffer(DOMArrayBuffer::create(payload->data(), payload->size())));
         break;
     }
 }
 
-void WebSocketImpl::didReceiveMessageError()
+void WebSocketImpl::didError()
 {
     m_client->didReceiveMessageError();
 }

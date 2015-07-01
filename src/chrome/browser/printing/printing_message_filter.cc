@@ -11,14 +11,14 @@
 #include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/printing/printer_query.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_io_data.h"
-#include "chrome/common/print_messages.h"
+#include "chrome/common/pref_names.h"
+#include "components/printing/common/print_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/child_process_host.h"
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
 #endif
 
@@ -34,6 +34,7 @@
 
 #if defined(OS_ANDROID)
 #include "base/strings/string_number_conversions.h"
+#include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/printing/print_view_manager_basic.h"
 #include "printing/printing_context_android.h"
 #endif
@@ -92,11 +93,13 @@ void RenderParamsFromPrintSettings(const PrintSettings& settings,
 PrintingMessageFilter::PrintingMessageFilter(int render_process_id,
                                              Profile* profile)
     : BrowserMessageFilter(PrintMsgStart),
-      profile_io_data_(ProfileIOData::FromResourceContext(
-          profile->GetResourceContext())),
+      is_printing_enabled_(new BooleanPrefMember),
       render_process_id_(render_process_id),
       queue_(g_browser_process->print_job_manager()->queue()) {
   DCHECK(queue_.get());
+  is_printing_enabled_->Init(prefs::kPrintingEnabled, profile->GetPrefs());
+  is_printing_enabled_->MoveToThread(
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
 }
 
 PrintingMessageFilter::~PrintingMessageFilter() {
@@ -135,7 +138,7 @@ bool PrintingMessageFilter::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER_DELAY_REPLY(PrintHostMsg_ScriptedPrint, OnScriptedPrint)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(PrintHostMsg_UpdatePrintSettings,
                                     OnUpdatePrintSettings)
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
     IPC_MESSAGE_HANDLER(PrintHostMsg_CheckForCancel, OnCheckForCancel)
 #endif
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -260,13 +263,13 @@ content::WebContents* PrintingMessageFilter::GetWebContentsForRenderView(
 
 void PrintingMessageFilter::OnIsPrintingEnabled(bool* is_enabled) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  *is_enabled = profile_io_data_->printing_enabled()->GetValue();
+  *is_enabled = is_printing_enabled_->GetValue();
 }
 
 void PrintingMessageFilter::OnGetDefaultPrintSettings(IPC::Message* reply_msg) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   scoped_refptr<PrinterQuery> printer_query;
-  if (!profile_io_data_->printing_enabled()->GetValue()) {
+  if (!is_printing_enabled_->GetValue()) {
     // Reply with NULL query.
     OnGetDefaultPrintSettingsReply(printer_query, reply_msg);
     return;
@@ -280,10 +283,11 @@ void PrintingMessageFilter::OnGetDefaultPrintSettings(IPC::Message* reply_msg) {
   // Loads default settings. This is asynchronous, only the IPC message sender
   // will hang until the settings are retrieved.
   printer_query->GetSettings(
-      PrinterQuery::DEFAULTS,
+      PrinterQuery::GetSettingsAskParam::DEFAULTS,
       0,
       false,
       DEFAULT_MARGINS,
+      false,
       base::Bind(&PrintingMessageFilter::OnGetDefaultPrintSettingsReply,
                  this,
                  printer_query,
@@ -324,10 +328,11 @@ void PrintingMessageFilter::OnScriptedPrint(
         queue_->CreatePrinterQuery(render_process_id_, reply_msg->routing_id());
   }
   printer_query->GetSettings(
-      PrinterQuery::ASK_USER,
+      PrinterQuery::GetSettingsAskParam::ASK_USER,
       params.expected_pages_count,
       params.has_selection,
       params.margin_type,
+      params.is_scripted,
       base::Bind(&PrintingMessageFilter::OnScriptedPrintReply,
                  this,
                  printer_query,
@@ -388,7 +393,7 @@ void PrintingMessageFilter::OnUpdatePrintSettings(
   scoped_ptr<base::DictionaryValue> new_settings(job_settings.DeepCopy());
 
   scoped_refptr<PrinterQuery> printer_query;
-  if (!profile_io_data_->printing_enabled()->GetValue()) {
+  if (!is_printing_enabled_->GetValue()) {
     // Reply with NULL query.
     OnUpdatePrintSettingsReply(printer_query, reply_msg);
     return;
@@ -440,7 +445,7 @@ void PrintingMessageFilter::OnUpdatePrintSettingsReply(
   }
 }
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
 void PrintingMessageFilter::OnCheckForCancel(int32 preview_ui_id,
                                              int preview_request_id,
                                              bool* cancel) {

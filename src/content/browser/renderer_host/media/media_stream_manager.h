@@ -37,6 +37,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/power_monitor/power_observer.h"
 #include "base/system_monitor/system_monitor.h"
+#include "base/threading/thread.h"
 #include "content/browser/renderer_host/media/media_stream_provider.h"
 #include "content/common/content_export.h"
 #include "content/common/media/media_stream_options.h"
@@ -72,7 +73,7 @@ class CONTENT_EXPORT MediaStreamManager
       MediaRequestResponseCallback;
 
   explicit MediaStreamManager(media::AudioManager* audio_manager);
-  virtual ~MediaStreamManager();
+  ~MediaStreamManager() override;
 
   // Used to access VideoCaptureManager.
   VideoCaptureManager* video_capture_manager();
@@ -165,18 +166,14 @@ class CONTENT_EXPORT MediaStreamManager
   void EnsureDeviceMonitorStarted();
 
   // Implements MediaStreamProviderListener.
-  virtual void Opened(MediaStreamType stream_type,
-                      int capture_session_id) OVERRIDE;
-  virtual void Closed(MediaStreamType stream_type,
-                      int capture_session_id) OVERRIDE;
-  virtual void DevicesEnumerated(MediaStreamType stream_type,
-                                 const StreamDeviceInfoArray& devices) OVERRIDE;
-  virtual void Aborted(MediaStreamType stream_type,
-                       int capture_session_id) OVERRIDE;
+  void Opened(MediaStreamType stream_type, int capture_session_id) override;
+  void Closed(MediaStreamType stream_type, int capture_session_id) override;
+  void DevicesEnumerated(MediaStreamType stream_type,
+                         const StreamDeviceInfoArray& devices) override;
+  void Aborted(MediaStreamType stream_type, int capture_session_id) override;
 
   // Implements base::SystemMonitor::DevicesChangedObserver.
-  virtual void OnDevicesChanged(
-      base::SystemMonitor::DeviceType device_type) OVERRIDE;
+  void OnDevicesChanged(base::SystemMonitor::DeviceType device_type) override;
 
   // Called by the tests to specify a fake UI that should be used for next
   // generated stream (or when using --use-fake-ui-for-media-stream).
@@ -195,7 +192,7 @@ class CONTENT_EXPORT MediaStreamManager
   // But for some tests which use TestBrowserThreadBundle, we need to call
   // WillDestroyCurrentMessageLoop explicitly because the notification happens
   // too late. (see http://crbug.com/247525#c14).
-  virtual void WillDestroyCurrentMessageLoop() OVERRIDE;
+  void WillDestroyCurrentMessageLoop() override;
 
   // Sends log messages to the render process hosts whose corresponding render
   // processes are making device requests, to be used by the
@@ -208,8 +205,8 @@ class CONTENT_EXPORT MediaStreamManager
   static void SendMessageToNativeLog(const std::string& message);
 
   // base::PowerObserver overrides.
-  virtual void OnSuspend() OVERRIDE;
-  virtual void OnResume() OVERRIDE;
+  void OnSuspend() override;
+  void OnResume() override;
 
  protected:
   // Used for testing.
@@ -292,7 +289,7 @@ class CONTENT_EXPORT MediaStreamManager
   // MEDIA_TAB_VIDEO_CAPTURE for being posted to the UI by parsing
   // StreamOptions::Constraints for requested tab capture IDs.
   bool SetupTabCaptureRequest(DeviceRequest* request);
-  // Prepare |request| of type MEDIA_LOOPBACK_AUDIO_CAPTURE and/or
+  // Prepare |request| of type MEDIA_DESKTOP_AUDIO_CAPTURE and/or
   // MEDIA_DESKTOP_VIDEO_CAPTURE for being posted to the UI by parsing
   // StreamOptions::Constraints for the requested desktop ID.
   bool SetupScreenCaptureRequest(DeviceRequest* request);
@@ -386,6 +383,9 @@ class CONTENT_EXPORT MediaStreamManager
   media::AudioManager* const audio_manager_;  // not owned
   scoped_refptr<AudioInputDeviceManager> audio_input_device_manager_;
   scoped_refptr<VideoCaptureManager> video_capture_manager_;
+#if defined(OS_WIN)
+  base::Thread video_capture_thread_;
+#endif
 
   // Indicator of device monitoring state.
   bool monitoring_started_;

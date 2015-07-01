@@ -13,13 +13,6 @@
 #include "media/base/test_data_util.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 
-// TODO(wolenetz): Fix Media.YUV* tests on MSVS 2012 x64. crbug.com/180074
-#if defined(OS_WIN) && defined(ARCH_CPU_X86_64) && _MSC_VER == 1700
-#define MAYBE(x) DISABLED_##x
-#else
-#define MAYBE(x) x
-#endif
-
 namespace content {
 
 // Common test results.
@@ -28,7 +21,7 @@ const char MediaBrowserTest::kError[] = "ERROR";
 const char MediaBrowserTest::kFailed[] = "FAILED";
 
 void MediaBrowserTest::RunMediaTestPage(const std::string& html_page,
-                                        const media::QueryParams& query_params,
+                                        const base::StringPairs& query_params,
                                         const std::string& expected_title,
                                         bool http) {
   GURL gurl;
@@ -94,7 +87,7 @@ class MediaTest : public testing::WithParamInterface<bool>,
   void PlayMedia(const std::string& tag,
                  const std::string& media_file,
                  bool http) {
-    media::QueryParams query_params;
+    base::StringPairs query_params;
     query_params.push_back(std::make_pair(tag, media_file));
     RunMediaTestPage("player.html", query_params, kEnded, http);
   }
@@ -104,7 +97,7 @@ class MediaTest : public testing::WithParamInterface<bool>,
     expected += base::IntToString(width);
     expected += " ";
     expected += base::IntToString(height);
-    media::QueryParams query_params;
+    base::StringPairs query_params;
     query_params.push_back(std::make_pair("video", media_file));
     RunMediaTestPage("player.html", query_params, expected, false);
   }
@@ -238,40 +231,44 @@ IN_PROC_BROWSER_TEST_F(MediaTest, Navigate) {
 INSTANTIATE_TEST_CASE_P(File, MediaTest, ::testing::Values(false));
 INSTANTIATE_TEST_CASE_P(Http, MediaTest, ::testing::Values(true));
 
-IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv420pTheora)) {
+IN_PROC_BROWSER_TEST_F(MediaTest, Yuv420pTheora) {
   RunColorFormatTest("yuv420p.ogv", kEnded);
 }
 
-IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv422pTheora)) {
+IN_PROC_BROWSER_TEST_F(MediaTest, Yuv422pTheora) {
   RunColorFormatTest("yuv422p.ogv", kEnded);
 }
 
-IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv444pTheora)) {
+IN_PROC_BROWSER_TEST_F(MediaTest, Yuv444pTheora) {
   RunColorFormatTest("yuv444p.ogv", kEnded);
 }
 
-IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv420pVp8)) {
+IN_PROC_BROWSER_TEST_F(MediaTest, Yuv420pVp8) {
   RunColorFormatTest("yuv420p.webm", kEnded);
 }
 
-IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv444pVp9)) {
+IN_PROC_BROWSER_TEST_F(MediaTest, Yuv444pVp9) {
   RunColorFormatTest("yuv444p.webm", "ENDED");
 }
 
 #if defined(USE_PROPRIETARY_CODECS)
-IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv420pH264)) {
+IN_PROC_BROWSER_TEST_F(MediaTest, Yuv420pH264) {
   RunColorFormatTest("yuv420p.mp4", kEnded);
 }
 
-IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuvj420pH264)) {
+IN_PROC_BROWSER_TEST_F(MediaTest, Yuv420pRec709H264) {
+  RunColorFormatTest("yuv420p_rec709.mp4", kEnded);
+}
+
+IN_PROC_BROWSER_TEST_F(MediaTest, Yuvj420pH264) {
   RunColorFormatTest("yuvj420p.mp4", kEnded);
 }
 
-IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv422pH264)) {
+IN_PROC_BROWSER_TEST_F(MediaTest, Yuv422pH264) {
   RunColorFormatTest("yuv422p.mp4", kEnded);
 }
 
-IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv444pH264)) {
+IN_PROC_BROWSER_TEST_F(MediaTest, Yuv444pH264) {
   RunColorFormatTest("yuv444p.mp4", kEnded);
 }
 

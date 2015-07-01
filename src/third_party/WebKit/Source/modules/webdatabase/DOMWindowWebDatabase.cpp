@@ -40,12 +40,13 @@
 
 namespace blink {
 
-PassRefPtrWillBeRawPtr<Database> DOMWindowWebDatabase::openDatabase(LocalDOMWindow& window, const String& name, const String& version, const String& displayName, unsigned long estimatedSize, DatabaseCallback* creationCallback, ExceptionState& exceptionState)
+Database* DOMWindowWebDatabase::openDatabase(DOMWindow& windowArg, const String& name, const String& version, const String& displayName, unsigned long estimatedSize, DatabaseCallback* creationCallback, ExceptionState& exceptionState)
 {
+    LocalDOMWindow& window = toLocalDOMWindow(windowArg);
     if (!window.isCurrentlyDisplayedInFrame())
         return nullptr;
 
-    RefPtrWillBeRawPtr<Database> database = nullptr;
+    Database* database = nullptr;
     DatabaseManager& dbManager = DatabaseManager::manager();
     DatabaseError error = DatabaseError::None;
     if (RuntimeEnabledFeatures::databaseEnabled() && window.document()->securityOrigin()->canAccessDatabase()) {

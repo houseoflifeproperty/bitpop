@@ -30,10 +30,11 @@ class PermissionBubbleManager
       public content::WebContentsUserData<PermissionBubbleManager>,
       public PermissionBubbleView::Delegate {
  public:
-  // Return the flag-driven enabled state of permissions bubbles.
+  // Return the enabled state of permissions bubbles.
+  // Controlled by a flag and FieldTrial.
   static bool Enabled();
 
-  virtual ~PermissionBubbleManager();
+  ~PermissionBubbleManager() override;
 
   // Adds a new request to the permission bubble. Ownership of the request
   // remains with the caller. The caller must arrange for the request to
@@ -55,32 +56,41 @@ class PermissionBubbleManager
   // Sets the active view for the permission bubble. If this is NULL, it
   // means any existing permission bubble can no longer be shown. Does not
   // take ownership of the view.
-  virtual void SetView(PermissionBubbleView* view) OVERRIDE;
+  void SetView(PermissionBubbleView* view) override;
+
+  // Controls whether incoming permission requests require user gestures.
+  // If |required| is false, requests will be displayed as soon as they come in.
+  // If |required| is true, requests will be silently queued until a request
+  // comes in with a user gesture.
+  void RequireUserGesture(bool required);
 
  private:
-  friend class PermissionBubbleManagerTest;
   friend class DownloadRequestLimiterTest;
+  friend class GeolocationBrowserTest;
+  friend class GeolocationPermissionContextTests;
+  friend class GeolocationPermissionContextParamTests;
+  friend class PermissionBubbleManagerTest;
+  friend class PermissionContextBaseTests;
   friend class content::WebContentsUserData<PermissionBubbleManager>;
 
   explicit PermissionBubbleManager(content::WebContents* web_contents);
 
   // WebContentsObserver:
-  virtual void DocumentOnLoadCompletedInMainFrame() OVERRIDE;
-  virtual void DocumentLoadedInFrame(
-      content::RenderFrameHost* render_frame_host) OVERRIDE;
+  void DocumentOnLoadCompletedInMainFrame() override;
+  void DocumentLoadedInFrame(
+      content::RenderFrameHost* render_frame_host) override;
 
   // If a page on which permissions requests are pending is navigated,
   // they will be finalized as if canceled by the user.
-  virtual void NavigationEntryCommitted(
-      const content::LoadCommittedDetails& details) OVERRIDE;
-  virtual void WebContentsDestroyed() OVERRIDE;
+  void NavigationEntryCommitted(
+      const content::LoadCommittedDetails& details) override;
+  void WebContentsDestroyed() override;
 
   // PermissionBubbleView::Delegate:
-  virtual void ToggleAccept(int request_index, bool new_value) OVERRIDE;
-  virtual void SetCustomizationMode() OVERRIDE;
-  virtual void Accept() OVERRIDE;
-  virtual void Deny() OVERRIDE;
-  virtual void Closing() OVERRIDE;
+  void ToggleAccept(int request_index, bool new_value) override;
+  void Accept() override;
+  void Deny() override;
+  void Closing() override;
 
   // Posts a task which will allow the bubble to become visible if it is needed.
   void ScheduleShowBubble();
@@ -109,6 +119,10 @@ class PermissionBubbleManager
   bool HasUserGestureRequest(
       const std::vector<PermissionBubbleRequest*>& queue);
 
+  // Whether to delay displaying the bubble until a request with a user gesture.
+  // False by default, unless RequireUserGesture(bool) changes the value.
+  bool require_user_gesture_;
+
   // Whether or not we are showing the bubble in this tab.
   bool bubble_showing_;
 
@@ -125,7 +139,6 @@ class PermissionBubbleManager
   bool request_url_has_loaded_;
 
   std::vector<bool> accept_states_;
-  bool customization_mode_;
 
   base::WeakPtrFactory<PermissionBubbleManager> weak_factory_;
 };

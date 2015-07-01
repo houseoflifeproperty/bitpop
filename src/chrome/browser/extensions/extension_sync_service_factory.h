@@ -10,11 +10,11 @@
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 class ExtensionSyncService;
-class Profile;
 
 class ExtensionSyncServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
-  static ExtensionSyncService* GetForProfile(Profile* profile);
+  static ExtensionSyncService* GetForBrowserContext(
+      content::BrowserContext* context);
 
   static ExtensionSyncServiceFactory* GetInstance();
 
@@ -22,12 +22,12 @@ class ExtensionSyncServiceFactory : public BrowserContextKeyedServiceFactory {
   friend struct DefaultSingletonTraits<ExtensionSyncServiceFactory>;
 
   ExtensionSyncServiceFactory();
-  virtual ~ExtensionSyncServiceFactory();
+  ~ExtensionSyncServiceFactory() override;
 
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* profile) const OVERRIDE;
-  virtual content::BrowserContext* GetBrowserContextToUse(
-      content::BrowserContext* context) const OVERRIDE;
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* context) const override;
+  content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const override;
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_SYNC_SERVICE_FACTORY_H_

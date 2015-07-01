@@ -27,38 +27,35 @@
 
 #include "core/html/canvas/WebGLFramebuffer.h"
 
+#include "core/html/canvas/WebGLRenderbuffer.h"
 #include "core/html/canvas/WebGLRenderingContextBase.h"
+#include "core/html/canvas/WebGLTexture.h"
 #include "platform/NotImplemented.h"
 
 namespace blink {
 
 namespace {
 
-    Platform3DObject objectOrZero(WebGLObject* object)
-    {
-        return object ? object->object() : 0;
-    }
-
-    class WebGLRenderbufferAttachment FINAL : public WebGLFramebuffer::WebGLAttachment {
+    class WebGLRenderbufferAttachment final : public WebGLFramebuffer::WebGLAttachment {
     public:
         static PassRefPtrWillBeRawPtr<WebGLFramebuffer::WebGLAttachment> create(WebGLRenderbuffer*);
 
-        virtual void trace(Visitor*) OVERRIDE;
+        DECLARE_VIRTUAL_TRACE();
 
     private:
         explicit WebGLRenderbufferAttachment(WebGLRenderbuffer*);
         WebGLRenderbufferAttachment() { }
 
-        virtual GLsizei width() const OVERRIDE;
-        virtual GLsizei height() const OVERRIDE;
-        virtual GLenum format() const OVERRIDE;
-        virtual GLenum type() const OVERRIDE;
-        virtual WebGLSharedObject* object() const OVERRIDE;
-        virtual bool isSharedObject(WebGLSharedObject*) const OVERRIDE;
-        virtual bool valid() const OVERRIDE;
-        virtual void onDetached(blink::WebGraphicsContext3D*) OVERRIDE;
-        virtual void attach(blink::WebGraphicsContext3D*, GLenum attachment) OVERRIDE;
-        virtual void unattach(blink::WebGraphicsContext3D*, GLenum attachment) OVERRIDE;
+        virtual GLsizei width() const override;
+        virtual GLsizei height() const override;
+        virtual GLenum format() const override;
+        virtual GLenum type() const override;
+        virtual WebGLSharedObject* object() const override;
+        virtual bool isSharedObject(WebGLSharedObject*) const override;
+        virtual bool valid() const override;
+        virtual void onDetached(WebGraphicsContext3D*) override;
+        virtual void attach(WebGraphicsContext3D*, GLenum attachment) override;
+        virtual void unattach(WebGraphicsContext3D*, GLenum attachment) override;
 
         RefPtrWillBeMember<WebGLRenderbuffer> m_renderbuffer;
     };
@@ -68,7 +65,7 @@ namespace {
         return adoptRefWillBeNoop(new WebGLRenderbufferAttachment(renderbuffer));
     }
 
-    void WebGLRenderbufferAttachment::trace(Visitor* visitor)
+    DEFINE_TRACE(WebGLRenderbufferAttachment)
     {
         visitor->trace(m_renderbuffer);
         WebGLFramebuffer::WebGLAttachment::trace(visitor);
@@ -115,12 +112,12 @@ namespace {
         return m_renderbuffer->object();
     }
 
-    void WebGLRenderbufferAttachment::onDetached(blink::WebGraphicsContext3D* context)
+    void WebGLRenderbufferAttachment::onDetached(WebGraphicsContext3D* context)
     {
         m_renderbuffer->onDetached(context);
     }
 
-    void WebGLRenderbufferAttachment::attach(blink::WebGraphicsContext3D* context, GLenum attachment)
+    void WebGLRenderbufferAttachment::attach(WebGraphicsContext3D* context, GLenum attachment)
     {
         Platform3DObject object = objectOrZero(m_renderbuffer.get());
         if (attachment == GC3D_DEPTH_STENCIL_ATTACHMENT_WEBGL && m_renderbuffer->emulatedStencilBuffer()) {
@@ -131,7 +128,7 @@ namespace {
         }
     }
 
-    void WebGLRenderbufferAttachment::unattach(blink::WebGraphicsContext3D* context, GLenum attachment)
+    void WebGLRenderbufferAttachment::unattach(WebGraphicsContext3D* context, GLenum attachment)
     {
         if (attachment == GC3D_DEPTH_STENCIL_ATTACHMENT_WEBGL) {
             context->framebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0);
@@ -147,26 +144,26 @@ namespace {
         return 0;
     }
 
-    class WebGLTextureAttachment FINAL : public WebGLFramebuffer::WebGLAttachment {
+    class WebGLTextureAttachment final : public WebGLFramebuffer::WebGLAttachment {
     public:
         static PassRefPtrWillBeRawPtr<WebGLFramebuffer::WebGLAttachment> create(WebGLTexture*, GLenum target, GLint level);
 
-        virtual void trace(Visitor*) OVERRIDE;
+        DECLARE_VIRTUAL_TRACE();
 
     private:
         WebGLTextureAttachment(WebGLTexture*, GLenum target, GLint level);
         WebGLTextureAttachment() { }
 
-        virtual GLsizei width() const OVERRIDE;
-        virtual GLsizei height() const OVERRIDE;
-        virtual GLenum format() const OVERRIDE;
-        virtual GLenum type() const OVERRIDE;
-        virtual WebGLSharedObject* object() const OVERRIDE;
-        virtual bool isSharedObject(WebGLSharedObject*) const OVERRIDE;
-        virtual bool valid() const OVERRIDE;
-        virtual void onDetached(blink::WebGraphicsContext3D*) OVERRIDE;
-        virtual void attach(blink::WebGraphicsContext3D*, GLenum attachment) OVERRIDE;
-        virtual void unattach(blink::WebGraphicsContext3D*, GLenum attachment) OVERRIDE;
+        virtual GLsizei width() const override;
+        virtual GLsizei height() const override;
+        virtual GLenum format() const override;
+        virtual GLenum type() const override;
+        virtual WebGLSharedObject* object() const override;
+        virtual bool isSharedObject(WebGLSharedObject*) const override;
+        virtual bool valid() const override;
+        virtual void onDetached(WebGraphicsContext3D*) override;
+        virtual void attach(WebGraphicsContext3D*, GLenum attachment) override;
+        virtual void unattach(WebGraphicsContext3D*, GLenum attachment) override;
 
         RefPtrWillBeMember<WebGLTexture> m_texture;
         GLenum m_target;
@@ -178,7 +175,7 @@ namespace {
         return adoptRefWillBeNoop(new WebGLTextureAttachment(texture, target, level));
     }
 
-    void WebGLTextureAttachment::trace(Visitor* visitor)
+    DEFINE_TRACE(WebGLTextureAttachment)
     {
         visitor->trace(m_texture);
         WebGLFramebuffer::WebGLAttachment::trace(visitor);
@@ -221,18 +218,18 @@ namespace {
         return m_texture->object();
     }
 
-    void WebGLTextureAttachment::onDetached(blink::WebGraphicsContext3D* context)
+    void WebGLTextureAttachment::onDetached(WebGraphicsContext3D* context)
     {
         m_texture->onDetached(context);
     }
 
-    void WebGLTextureAttachment::attach(blink::WebGraphicsContext3D* context, GLenum attachment)
+    void WebGLTextureAttachment::attach(WebGraphicsContext3D* context, GLenum attachment)
     {
         Platform3DObject object = objectOrZero(m_texture.get());
         context->framebufferTexture2D(GL_FRAMEBUFFER, attachment, m_target, object, m_level);
     }
 
-    void WebGLTextureAttachment::unattach(blink::WebGraphicsContext3D* context, GLenum attachment)
+    void WebGLTextureAttachment::unattach(WebGraphicsContext3D* context, GLenum attachment)
     {
         if (attachment == GC3D_DEPTH_STENCIL_ATTACHMENT_WEBGL) {
             context->framebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, m_target, 0, m_level);
@@ -253,6 +250,7 @@ namespace {
         case GL_RGBA4:
         case GL_RGB5_A1:
         case GL_RGB565:
+        case GL_SRGB8_ALPHA8_EXT:
             return true;
         default:
             return false;
@@ -276,9 +274,9 @@ PassRefPtrWillBeRawPtr<WebGLFramebuffer> WebGLFramebuffer::create(WebGLRendering
 
 WebGLFramebuffer::WebGLFramebuffer(WebGLRenderingContextBase* ctx)
     : WebGLContextObject(ctx)
+    , m_object(ctx->webContext()->createFramebuffer())
     , m_hasEverBeenBound(false)
 {
-    setObject(ctx->webContext()->createFramebuffer());
 }
 
 WebGLFramebuffer::~WebGLFramebuffer()
@@ -298,7 +296,7 @@ void WebGLFramebuffer::setAttachmentForBoundFramebuffer(GLenum attachment, GLenu
 {
     ASSERT(isBound());
     removeAttachmentFromBoundFramebuffer(attachment);
-    if (!object())
+    if (!m_object)
         return;
     if (texture && texture->object()) {
         m_attachments.add(attachment, WebGLTextureAttachment::create(texture, texTarget, level));
@@ -311,7 +309,7 @@ void WebGLFramebuffer::setAttachmentForBoundFramebuffer(GLenum attachment, WebGL
 {
     ASSERT(isBound());
     removeAttachmentFromBoundFramebuffer(attachment);
-    if (!object())
+    if (!m_object)
         return;
     if (renderbuffer && renderbuffer->object()) {
         m_attachments.add(attachment, WebGLRenderbufferAttachment::create(renderbuffer));
@@ -330,10 +328,10 @@ void WebGLFramebuffer::attach(GLenum attachment, GLenum attachmentPoint)
 
 WebGLSharedObject* WebGLFramebuffer::getAttachmentObject(GLenum attachment) const
 {
-    if (!object())
-        return 0;
+    if (!m_object)
+        return nullptr;
     WebGLAttachment* attachmentObject = getAttachment(attachment);
-    return attachmentObject ? attachmentObject->object() : 0;
+    return attachmentObject ? attachmentObject->object() : nullptr;
 }
 
 bool WebGLFramebuffer::isAttachmentComplete(WebGLAttachment* attachedObject, GLenum attachment, const char** reason) const
@@ -392,7 +390,8 @@ bool WebGLFramebuffer::isAttachmentComplete(WebGLAttachment* attachedObject, GLe
             }
         } else if (object->isTexture()) {
             GLenum type = attachedObject->type();
-            if (internalformat != GL_RGBA && internalformat != GL_RGB) {
+            if (internalformat != GL_RGBA && internalformat != GL_RGB
+                && !(internalformat == GL_SRGB_ALPHA_EXT && context()->extensionEnabled(EXTsRGBName))) {
                 *reason = "the internalformat of the attached texture is not color-renderable";
                 return false;
             }
@@ -431,7 +430,7 @@ WebGLFramebuffer::WebGLAttachment* WebGLFramebuffer::getAttachment(GLenum attach
 void WebGLFramebuffer::removeAttachmentFromBoundFramebuffer(GLenum attachment)
 {
     ASSERT(isBound());
-    if (!object())
+    if (!m_object)
         return;
 
     WebGLAttachment* attachmentObject = getAttachment(attachment);
@@ -457,7 +456,7 @@ void WebGLFramebuffer::removeAttachmentFromBoundFramebuffer(GLenum attachment)
 void WebGLFramebuffer::removeAttachmentFromBoundFramebuffer(WebGLSharedObject* attachment)
 {
     ASSERT(isBound());
-    if (!object())
+    if (!m_object)
         return;
     if (!attachment)
         return;
@@ -465,10 +464,10 @@ void WebGLFramebuffer::removeAttachmentFromBoundFramebuffer(WebGLSharedObject* a
     bool checkMore = true;
     while (checkMore) {
         checkMore = false;
-        for (AttachmentMap::iterator it = m_attachments.begin(); it != m_attachments.end(); ++it) {
-            WebGLAttachment* attachmentObject = it->value.get();
+        for (const auto& it : m_attachments) {
+            WebGLAttachment* attachmentObject = it.value.get();
             if (attachmentObject->isSharedObject(attachment)) {
-                GLenum attachmentType = it->key;
+                GLenum attachmentType = it.key;
                 attachmentObject->unattach(context()->webContext(), attachmentType);
                 removeAttachmentFromBoundFramebuffer(attachmentType);
                 checkMore = true;
@@ -480,7 +479,7 @@ void WebGLFramebuffer::removeAttachmentFromBoundFramebuffer(WebGLSharedObject* a
 
 GLenum WebGLFramebuffer::colorBufferFormat() const
 {
-    if (!object())
+    if (!m_object)
         return 0;
     WebGLAttachment* attachment = getAttachment(GL_COLOR_ATTACHMENT0);
     if (!attachment)
@@ -495,9 +494,9 @@ GLenum WebGLFramebuffer::checkStatus(const char** reason) const
     bool haveDepth = false;
     bool haveStencil = false;
     bool haveDepthStencil = false;
-    for (AttachmentMap::const_iterator it = m_attachments.begin(); it != m_attachments.end(); ++it) {
-        WebGLAttachment* attachment = it->value.get();
-        if (!isAttachmentComplete(attachment, it->key, reason))
+    for (const auto& it : m_attachments) {
+        WebGLAttachment* attachment = it.value.get();
+        if (!isAttachmentComplete(attachment, it.key, reason))
             return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
         if (!attachment->valid()) {
             *reason = "attachment is not valid";
@@ -507,7 +506,7 @@ GLenum WebGLFramebuffer::checkStatus(const char** reason) const
             *reason = "attachment is an unsupported format";
             return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
         }
-        switch (it->key) {
+        switch (it.key) {
         case GL_DEPTH_ATTACHMENT:
             haveDepth = true;
             break;
@@ -545,7 +544,7 @@ GLenum WebGLFramebuffer::checkStatus(const char** reason) const
     return GL_FRAMEBUFFER_COMPLETE;
 }
 
-bool WebGLFramebuffer::onAccess(blink::WebGraphicsContext3D* context3d, const char** reason)
+bool WebGLFramebuffer::onAccess(WebGraphicsContext3D* context3d, const char** reason)
 {
     if (checkStatus(reason) != GL_FRAMEBUFFER_COMPLETE)
         return false;
@@ -560,7 +559,7 @@ bool WebGLFramebuffer::hasStencilBuffer() const
     return attachment && attachment->valid();
 }
 
-void WebGLFramebuffer::deleteObjectImpl(blink::WebGraphicsContext3D* context3d, Platform3DObject object)
+void WebGLFramebuffer::deleteObjectImpl(WebGraphicsContext3D* context3d)
 {
 #if !ENABLE(OILPAN)
     // With Oilpan, both the AttachmentMap and its WebGLAttachment objects are
@@ -570,11 +569,12 @@ void WebGLFramebuffer::deleteObjectImpl(blink::WebGraphicsContext3D* context3d, 
     // The WebGLAttachment-derived classes instead handle detachment
     // on their own when finalizing, so the explicit notification is
     // not needed.
-    for (AttachmentMap::iterator it = m_attachments.begin(); it != m_attachments.end(); ++it)
-        it->value->onDetached(context3d);
+    for (const auto& attachment : m_attachments)
+        attachment.value->onDetached(context3d);
 #endif
 
-    context3d->deleteFramebuffer(object);
+    context3d->deleteFramebuffer(m_object);
+    m_object = 0;
 }
 
 bool WebGLFramebuffer::isBound() const
@@ -627,7 +627,7 @@ GLenum WebGLFramebuffer::getDrawBuffer(GLenum drawBuffer)
     return GL_NONE;
 }
 
-void WebGLFramebuffer::trace(Visitor* visitor)
+DEFINE_TRACE(WebGLFramebuffer)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_attachments);

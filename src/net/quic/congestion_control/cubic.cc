@@ -5,12 +5,13 @@
 #include "net/quic/congestion_control/cubic.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/time/time.h"
-#include "net/quic/congestion_control/cube_root.h"
+#include "net/quic/quic_flags.h"
 #include "net/quic/quic_protocol.h"
+#include "net/quic/quic_time.h"
 
 using std::max;
 
@@ -28,34 +29,41 @@ const int kCubeCongestionWindowScale = 410;
 const uint64 kCubeFactor = (GG_UINT64_C(1) << kCubeScale) /
     kCubeCongestionWindowScale;
 
-const uint32 kNumConnections = 2;
+const uint32 kDefaultNumConnections = 2;
 const float kBeta = 0.7f;  // Default Cubic backoff factor.
 // Additional backoff factor when loss occurs in the concave part of the Cubic
 // curve. This additional backoff factor is expected to give up bandwidth to
 // new concurrent flows and speed up convergence.
 const float kBetaLastMax = 0.85f;
 
-// kNConnectionBeta is the backoff factor after loss for our N-connection
-// emulation, which emulates the effective backoff of an ensemble of N TCP-Reno
-// connections on a single loss event. The effective multiplier is computed as:
-const float kNConnectionBeta = (kNumConnections - 1 + kBeta) / kNumConnections;
-
-// TCPFriendly alpha is described in Section 3.3 of the CUBIC paper. Note that
-// kBeta here is a cwnd multiplier, and is equal to 1-beta from the CUBIC paper.
-// We derive the equivalent kNConnectionAlpha for an N-connection emulation as:
-const float kNConnectionAlpha = 3 * kNumConnections * kNumConnections *
-      (1 - kNConnectionBeta) / (1 + kNConnectionBeta);
-// TODO(jri): Compute kNConnectionBeta and kNConnectionAlpha from
-// number of active streams.
-
 }  // namespace
 
-Cubic::Cubic(const QuicClock* clock, QuicConnectionStats* stats)
+Cubic::Cubic(const QuicClock* clock)
     : clock_(clock),
+      num_connections_(kDefaultNumConnections),
       epoch_(QuicTime::Zero()),
-      last_update_time_(QuicTime::Zero()),
-      stats_(stats) {
+      last_update_time_(QuicTime::Zero()) {
   Reset();
+}
+
+void Cubic::SetNumConnections(int num_connections) {
+  num_connections_ = num_connections;
+}
+
+float Cubic::Alpha() const {
+  // TCPFriendly alpha is described in Section 3.3 of the CUBIC paper. Note that
+  // beta here is a cwnd multiplier, and is equal to 1-beta from the paper.
+  // We derive the equivalent alpha for an N-connection emulation as:
+  const float beta = Beta();
+  return 3 * num_connections_ * num_connections_ * (1 - beta) / (1 + beta);
+}
+
+float Cubic::Beta() const {
+  // kNConnectionBeta is the backoff factor after loss for our N-connection
+  // emulation, which emulates the effective backoff of an ensemble of N
+  // TCP-Reno connections on a single loss event. The effective multiplier is
+  // computed as:
+  return (num_connections_ - 1 + kBeta) / num_connections_;
 }
 
 void Cubic::Reset() {
@@ -70,26 +78,8 @@ void Cubic::Reset() {
   last_target_congestion_window_ = 0;
 }
 
-void Cubic::UpdateCongestionControlStats(
-    QuicTcpCongestionWindow new_cubic_mode_cwnd,
-    QuicTcpCongestionWindow new_reno_mode_cwnd) {
-
-  QuicTcpCongestionWindow highest_new_cwnd = std::max(new_cubic_mode_cwnd,
-                                                      new_reno_mode_cwnd);
-  if (last_congestion_window_ < highest_new_cwnd) {
-    // cwnd will increase to highest_new_cwnd.
-    stats_->cwnd_increase_congestion_avoidance +=
-        highest_new_cwnd - last_congestion_window_;
-    if (new_cubic_mode_cwnd > new_reno_mode_cwnd) {
-      // This cwnd increase is due to cubic mode.
-      stats_->cwnd_increase_cubic_mode +=
-          new_cubic_mode_cwnd - last_congestion_window_;
-    }
-  }
-}
-
-QuicTcpCongestionWindow Cubic::CongestionWindowAfterPacketLoss(
-    QuicTcpCongestionWindow current_congestion_window) {
+QuicPacketCount Cubic::CongestionWindowAfterPacketLoss(
+    QuicPacketCount current_congestion_window) {
   if (current_congestion_window < last_max_congestion_window_) {
     // We never reached the old max, so assume we are competing with another
     // flow. Use our extra back off factor to allow the other flow to go up.
@@ -99,11 +89,11 @@ QuicTcpCongestionWindow Cubic::CongestionWindowAfterPacketLoss(
     last_max_congestion_window_ = current_congestion_window;
   }
   epoch_ = QuicTime::Zero();  // Reset time.
-  return static_cast<int>(current_congestion_window * kNConnectionBeta);
+  return static_cast<int>(current_congestion_window * Beta());
 }
 
-QuicTcpCongestionWindow Cubic::CongestionWindowAfterAck(
-    QuicTcpCongestionWindow current_congestion_window,
+QuicPacketCount Cubic::CongestionWindowAfterAck(
+    QuicPacketCount current_congestion_window,
     QuicTime::Delta delay_min) {
   acked_packets_count_ += 1;  // Packets acked.
   QuicTime current_time = clock_->ApproximateNow();
@@ -128,10 +118,10 @@ QuicTcpCongestionWindow Cubic::CongestionWindowAfterAck(
       time_to_origin_point_ = 0;
       origin_point_congestion_window_ = current_congestion_window;
     } else {
-      time_to_origin_point_ = CubeRoot::Root(kCubeFactor *
-          (last_max_congestion_window_ - current_congestion_window));
-      origin_point_congestion_window_ =
-          last_max_congestion_window_;
+      time_to_origin_point_ =
+          static_cast<uint32>(cbrt(kCubeFactor * (last_max_congestion_window_ -
+                                                  current_congestion_window)));
+      origin_point_congestion_window_ = last_max_congestion_window_;
     }
   }
   // Change the time unit from microseconds to 2^10 fractions per second. Take
@@ -139,13 +129,13 @@ QuicTcpCongestionWindow Cubic::CongestionWindowAfterAck(
   // divide operator.
   int64 elapsed_time =
       (current_time.Add(delay_min).Subtract(epoch_).ToMicroseconds() << 10) /
-      base::Time::kMicrosecondsPerSecond;
+      kNumMicrosPerSecond;
 
   int64 offset = time_to_origin_point_ - elapsed_time;
-  QuicTcpCongestionWindow delta_congestion_window = (kCubeCongestionWindowScale
+  QuicPacketCount delta_congestion_window = (kCubeCongestionWindowScale
       * offset * offset * offset) >> kCubeScale;
 
-  QuicTcpCongestionWindow target_congestion_window =
+  QuicPacketCount target_congestion_window =
       origin_point_congestion_window_ - delta_congestion_window;
 
   DCHECK_LT(0u, estimated_tcp_congestion_window_);
@@ -154,18 +144,14 @@ QuicTcpCongestionWindow Cubic::CongestionWindowAfterAck(
   // suddenly, leading to more than one iteration through the following loop.
   while (true) {
     // Update estimated TCP congestion_window.
-    uint32 required_ack_count =
-        estimated_tcp_congestion_window_ / kNConnectionAlpha;
+    QuicPacketCount required_ack_count = static_cast<QuicPacketCount>(
+        estimated_tcp_congestion_window_ / Alpha());
     if (acked_packets_count_ < required_ack_count) {
       break;
     }
     acked_packets_count_ -= required_ack_count;
     estimated_tcp_congestion_window_++;
   }
-
-  // Update cubic mode and reno mode stats in QuicConnectionStats.
-  UpdateCongestionControlStats(target_congestion_window,
-                               estimated_tcp_congestion_window_);
 
   // We have a new cubic congestion window.
   last_target_congestion_window_ = target_congestion_window;

@@ -23,10 +23,11 @@
 
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
-class SVGFEBlendElement FINAL : public SVGFilterPrimitiveStandardAttributes {
+class SVGFEBlendElement final : public SVGFilterPrimitiveStandardAttributes {
     DEFINE_WRAPPERTYPEINFO();
 public:
     enum Mode {
@@ -57,18 +58,18 @@ public:
     SVGAnimatedString* in2() { return m_in2.get(); }
     SVGAnimatedEnumeration<Mode>* mode() { return m_mode.get(); }
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
     explicit SVGFEBlendElement(Document&);
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName& attrName) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
+    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName& attrName) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual PassRefPtrWillBeRawPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
-    RefPtr<SVGAnimatedString> m_in1;
-    RefPtr<SVGAnimatedString> m_in2;
-    RefPtr<SVGAnimatedEnumeration<Mode> > m_mode;
+    RefPtrWillBeMember<SVGAnimatedString> m_in1;
+    RefPtrWillBeMember<SVGAnimatedString> m_in2;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<Mode>> m_mode;
 };
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGFEBlendElement::Mode>();

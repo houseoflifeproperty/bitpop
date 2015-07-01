@@ -4,7 +4,8 @@
 
 import time
 
-from appengine_wrappers import taskqueue
+from admin_servlets import (DumpRefreshServlet, EnqueueServlet,
+    QueryCommitServlet, ResetCommitServlet)
 from cron_servlet import CronServlet
 from instance_servlet import InstanceServlet
 from patch_servlet import PatchServlet
@@ -16,14 +17,15 @@ from test_servlet import TestServlet
 _DEFAULT_SERVLET = InstanceServlet.GetConstructor()
 
 
-_FORCE_CRON_TARGET = 'force_cron'
-
-
 _SERVLETS = {
   'cron': CronServlet,
+  'enqueue': EnqueueServlet,
   'patch': PatchServlet,
+  'query_commit': QueryCommitServlet,
   'refresh': RefreshServlet,
+  'reset_commit': ResetCommitServlet,
   'test': TestServlet,
+  'dump_refresh': DumpRefreshServlet,
 }
 
 
@@ -36,16 +38,6 @@ class Handler(Servlet):
       if not '/' in servlet_path:
         servlet_path += '/'
       servlet_name, servlet_path = servlet_path.split('/', 1)
-      if servlet_name == _FORCE_CRON_TARGET:
-        queue = taskqueue.Queue()
-        queue.purge()
-        time.sleep(2)
-        queue.add(taskqueue.Task(url='/_cron'))
-        return Response.Ok('Cron job started.')
-      if servlet_name == 'enqueue':
-        queue = taskqueue.Queue()
-        queue.add(taskqueue.Task(url='/%s'%servlet_path))
-        return Response.Ok('Task enqueued.')
       servlet = _SERVLETS.get(servlet_name)
       if servlet is None:
         return Response.NotFound('"%s" servlet not found' %  servlet_path)

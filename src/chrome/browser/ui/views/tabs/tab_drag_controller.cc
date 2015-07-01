@@ -29,23 +29,27 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_function_dispatcher.h"
-#include "ui/aura/env.h"
-#include "ui/aura/window.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/gestures/gesture_recognizer.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/screen.h"
+#include "ui/views/event_monitor.h"
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
-#include "ui/wm/core/coordinate_conversion.h"
-#include "ui/wm/core/window_modality_controller.h"
 
 #if defined(USE_ASH)
 #include "ash/accelerators/accelerator_commands.h"
 #include "ash/shell.h"
 #include "ash/wm/maximize_mode/maximize_mode_controller.h"
 #include "ash/wm/window_state.h"
+#include "ui/wm/core/coordinate_conversion.h"
+#endif
+
+#if defined(USE_AURA)
+#include "ui/aura/env.h"
+#include "ui/aura/window.h"
+#include "ui/wm/core/window_modality_controller.h"
 #endif
 
 using base::UserMetricsAction;
@@ -94,6 +98,17 @@ bool IsDockedOrSnapped(const TabStrip* tab_strip) {
 }
 #endif
 
+#if defined(USE_AURA)
+gfx::NativeWindow GetModalTransient(gfx::NativeWindow window) {
+  return wm::GetModalTransient(window);
+}
+#else
+gfx::NativeWindow GetModalTransient(gfx::NativeWindow window) {
+  NOTIMPLEMENTED();
+  return NULL;
+}
+#endif
+
 // Returns true if |bounds| contains the y-coordinate |y|. The y-coordinate
 // of |bounds| is adjusted by |vertical_adjustment|.
 bool DoesRectContainVerticalPointExpanded(
@@ -121,28 +136,23 @@ void OffsetX(int x_offset, std::vector<gfx::Rect>* rects) {
 // false before WorkspaceLayoutManager sees the visibility change.
 class WindowPositionManagedUpdater : public views::WidgetObserver {
  public:
-  virtual void OnWidgetVisibilityChanged(views::Widget* widget,
-                                         bool visible) OVERRIDE {
-    SetWindowPositionManaged(widget->GetNativeView(), false);
+  void OnWidgetVisibilityChanged(views::Widget* widget, bool visible) override {
+    SetWindowPositionManaged(widget->GetNativeWindow(), false);
   }
 };
 
-// EscapeTracker installs itself as a pre-target handler on aura::Env and runs a
-// callback when it receives the escape key.
+// EscapeTracker installs an event monitor and runs a callback when it receives
+// the escape key.
 class EscapeTracker : public ui::EventHandler {
  public:
   explicit EscapeTracker(const base::Closure& callback)
-      : escape_callback_(callback) {
-    aura::Env::GetInstance()->AddPreTargetHandler(this);
-  }
-
-  virtual ~EscapeTracker() {
-    aura::Env::GetInstance()->RemovePreTargetHandler(this);
+      : escape_callback_(callback),
+        event_monitor_(views::EventMonitor::CreateApplicationMonitor(this)) {
   }
 
  private:
   // ui::EventHandler:
-  virtual void OnKeyEvent(ui::KeyEvent* key) OVERRIDE {
+  void OnKeyEvent(ui::KeyEvent* key) override {
     if (key->type() == ui::ET_KEY_PRESSED &&
         key->key_code() == ui::VKEY_ESCAPE) {
       escape_callback_.Run();
@@ -150,6 +160,7 @@ class EscapeTracker : public ui::EventHandler {
   }
 
   base::Closure escape_callback_;
+  scoped_ptr<views::EventMonitor> event_monitor_;
 
   DISALLOW_COPY_AND_ASSIGN(EscapeTracker);
 };
@@ -217,7 +228,7 @@ TabDragController::~TabDragController() {
 
   if (move_loop_widget_) {
     move_loop_widget_->RemoveObserver(this);
-    SetWindowPositionManaged(move_loop_widget_->GetNativeView(), true);
+    SetWindowPositionManaged(move_loop_widget_->GetNativeWindow(), true);
   }
 
   if (source_tabstrip_)
@@ -575,6 +586,14 @@ TabDragController::DragBrowserToNewTabStrip(
     DetachIntoNewBrowserAndRunMoveLoop(point_in_screen);
     return DRAG_BROWSER_RESULT_STOP;
   }
+
+#if defined(USE_AURA)
+  // Only Aura windows are gesture consumers.
+  ui::GestureRecognizer::Get()->TransferEventsTo(
+      GetAttachedBrowserWidget()->GetNativeView(),
+      target_tabstrip->GetWidget()->GetNativeView());
+#endif
+
   if (is_dragging_window_) {
     // ReleaseCapture() is going to result in calling back to us (because it
     // results in a move). That'll cause all sorts of problems.  Reset the
@@ -594,21 +613,10 @@ TabDragController::DragBrowserToNewTabStrip(
       browser_widget->ReleaseCapture();
     else
       target_tabstrip->GetWidget()->SetCapture(attached_tabstrip_);
-#if defined(OS_WIN)
-    // The Gesture recognizer does not work well currently when capture changes
-    // while a touch gesture is in progress. So we need to manually transfer
-    // gesture sequence and the GR's touch events queue to the new window. This
-    // should really be done somewhere in capture change code and or inside the
-    // GR. But we currently do not have a consistent way for doing it that would
-    // work in all cases. Hence this hack.
-    ui::GestureRecognizer::Get()->TransferEventsTo(
-        browser_widget->GetNativeView(),
-        target_tabstrip->GetWidget()->GetNativeView());
-#endif
 
     // The window is going away. Since the drag is still on going we don't want
     // that to effect the position of any windows.
-    SetWindowPositionManaged(browser_widget->GetNativeView(), false);
+    SetWindowPositionManaged(browser_widget->GetNativeWindow(), false);
 
 #if !defined(OS_LINUX) || defined(OS_CHROMEOS)
     // EndMoveLoop is going to snap the window back to its original location.
@@ -826,7 +834,7 @@ TabStrip* TabDragController::GetTargetTabStripForPoint(
       GetLocalProcessWindow(point_in_screen, is_dragging_window_);
   // Do not allow dragging into a window with a modal dialog, it causes a weird
   // behavior.  See crbug.com/336691
-  if (!wm::GetModalTransient(local_window)) {
+  if (!GetModalTransient(local_window)) {
     TabStrip* tab_strip = GetTabStripForWindow(local_window);
     if (tab_strip && DoesTabStripContain(tab_strip, point_in_screen))
       return tab_strip;
@@ -1017,25 +1025,21 @@ void TabDragController::DetachIntoNewBrowserAndRunMoveLoop(
   gfx::Vector2d drag_offset;
   Browser* browser = CreateBrowserForDrag(
       attached_tabstrip_, point_in_screen, &drag_offset, &drag_bounds);
-#if defined(OS_WIN)
-  gfx::NativeView attached_native_view =
-    attached_tabstrip_->GetWidget()->GetNativeView();
-#endif
-  Detach(can_release_capture_ ? RELEASE_CAPTURE : DONT_RELEASE_CAPTURE);
+
   BrowserView* dragged_browser_view =
       BrowserView::GetBrowserViewForBrowser(browser);
   views::Widget* dragged_widget = dragged_browser_view->GetWidget();
-#if defined(OS_WIN)
-    // The Gesture recognizer does not work well currently when capture changes
-    // while a touch gesture is in progress. So we need to manually transfer
-    // gesture sequence and the GR's touch events queue to the new window. This
-    // should really be done somewhere in capture change code and or inside the
-    // GR. But we currently do not have a consistent way for doing it that would
-    // work in all cases. Hence this hack.
-    ui::GestureRecognizer::Get()->TransferEventsTo(
-        attached_native_view,
-        dragged_widget->GetNativeView());
+
+#if defined(USE_AURA)
+  // Only Aura windows are gesture consumers.
+  gfx::NativeView attached_native_view =
+      attached_tabstrip_->GetWidget()->GetNativeView();
+  ui::GestureRecognizer::Get()->TransferEventsTo(
+      attached_native_view, dragged_widget->GetNativeView());
 #endif
+
+  Detach(can_release_capture_ ? RELEASE_CAPTURE : DONT_RELEASE_CAPTURE);
+
   dragged_widget->SetVisibilityChangedAnimationsEnabled(false);
   Attach(dragged_browser_view->tabstrip(), gfx::Point());
   AdjustBrowserAndTabBoundsForDrag(last_tabstrip_width,
@@ -1337,7 +1341,7 @@ void TabDragController::EndDragImpl(EndDragType type) {
     waiting_for_run_loop_to_exit_ = true;
 
     if (type == NORMAL || (type == TAB_DESTROYED && drag_data_.size() > 1)) {
-      SetWindowPositionManaged(GetAttachedBrowserWidget()->GetNativeView(),
+      SetWindowPositionManaged(GetAttachedBrowserWidget()->GetNativeWindow(),
                                true);
     }
 
@@ -1553,7 +1557,7 @@ gfx::Rect TabDragController::GetViewScreenBounds(
 
 void TabDragController::BringWindowUnderPointToFront(
     const gfx::Point& point_in_screen) {
-  aura::Window* window = GetLocalProcessWindow(point_in_screen, true);
+  gfx::NativeWindow window = GetLocalProcessWindow(point_in_screen, true);
 
   // Only bring browser windows to front - only windows with a TabStrip can
   // be tab drag targets.
@@ -1561,11 +1565,12 @@ void TabDragController::BringWindowUnderPointToFront(
     return;
 
   if (window) {
-    views::Widget* widget_window = views::Widget::GetWidgetForNativeView(
+    views::Widget* widget_window = views::Widget::GetWidgetForNativeWindow(
         window);
     if (!widget_window)
       return;
 
+#if defined(USE_ASH)
     if (host_desktop_type_ == chrome::HOST_DESKTOP_TYPE_ASH) {
       // TODO(varkha): The code below ensures that the phantom drag widget
       // is shown on top of browser windows. The code should be moved to ash/
@@ -1597,6 +1602,9 @@ void TabDragController::BringWindowUnderPointToFront(
     } else {
       widget_window->StackAtTop();
     }
+#else
+    widget_window->StackAtTop();
+#endif
 
     // The previous call made the window appear on top of the dragged window,
     // move the dragged window to the front.
@@ -1733,6 +1741,7 @@ Browser* TabDragController::CreateBrowserForDrag(
 }
 
 gfx::Point TabDragController::GetCursorScreenPoint() {
+#if defined(USE_ASH)
   if (host_desktop_type_ == chrome::HOST_DESKTOP_TYPE_ASH &&
       event_source_ == EVENT_SOURCE_TOUCH &&
       aura::Env::GetInstance()->is_touch_down()) {
@@ -1749,6 +1758,7 @@ gfx::Point TabDragController::GetCursorScreenPoint() {
     wm::ConvertPointToScreen(widget_window->GetRootWindow(), &touch_point);
     return touch_point;
   }
+#endif
 
   return screen_->GetCursorScreenPoint();
 }
@@ -1767,10 +1777,10 @@ gfx::Vector2d TabDragController::GetWindowOffset(
 gfx::NativeWindow TabDragController::GetLocalProcessWindow(
     const gfx::Point& screen_point,
     bool exclude_dragged_view) {
-  std::set<aura::Window*> exclude;
+  std::set<gfx::NativeWindow> exclude;
   if (exclude_dragged_view) {
-    aura::Window* dragged_window =
-        attached_tabstrip_->GetWidget()->GetNativeView();
+    gfx::NativeWindow dragged_window =
+        attached_tabstrip_->GetWidget()->GetNativeWindow();
     if (dragged_window)
       exclude.insert(dragged_window);
   }

@@ -6,7 +6,7 @@
 #define CONTENT_CHILD_INDEXED_DB_INDEXED_DB_MESSAGE_FILTER_H_
 
 #include "base/memory/ref_counted.h"
-#include "content/child/child_message_filter.h"
+#include "content/child/worker_thread_message_filter.h"
 
 struct IndexedDBDatabaseMetadata;
 struct IndexedDBMsg_CallbacksUpgradeNeeded_Params;
@@ -15,27 +15,24 @@ namespace base {
 class MessageLoopProxy;
 }
 
-namespace IPC {
-class Message;
-}
-
 namespace content {
 
-class ThreadSafeSender;
-
-class IndexedDBMessageFilter : public ChildMessageFilter {
+class IndexedDBMessageFilter : public WorkerThreadMessageFilter {
  public:
   explicit IndexedDBMessageFilter(ThreadSafeSender* thread_safe_sender);
 
  protected:
-  virtual ~IndexedDBMessageFilter();
+  ~IndexedDBMessageFilter() override;
 
  private:
-  // ChildMessageFilter implementation:
-  virtual base::TaskRunner* OverrideTaskRunnerForMessage(
-      const IPC::Message& msg) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
-  virtual void OnStaleMessageReceived(const IPC::Message& msg) OVERRIDE;
+  // WorkerThreadMessageFilter:
+  bool ShouldHandleMessage(const IPC::Message& msg) const override;
+  void OnFilteredMessageReceived(const IPC::Message& msg) override;
+  bool GetWorkerThreadIdForMessage(const IPC::Message& msg,
+                                   int* ipc_thread_id) override;
+
+  // ChildMessageFilter:
+  void OnStaleMessageReceived(const IPC::Message& msg) override;
 
   void OnStaleSuccessIDBDatabase(int32 ipc_thread_id,
                                  int32 ipc_callbacks_id,
@@ -43,9 +40,6 @@ class IndexedDBMessageFilter : public ChildMessageFilter {
                                  int32 ipc_object_id,
                                  const IndexedDBDatabaseMetadata&);
   void OnStaleUpgradeNeeded(const IndexedDBMsg_CallbacksUpgradeNeeded_Params&);
-
-  scoped_refptr<base::MessageLoopProxy> main_thread_loop_;
-  scoped_refptr<ThreadSafeSender> thread_safe_sender_;
 
   DISALLOW_COPY_AND_ASSIGN(IndexedDBMessageFilter);
 };

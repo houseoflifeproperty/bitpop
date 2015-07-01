@@ -2,37 +2,37 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "components/search_engines/template_url_service.h"
+
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/run_loop.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/cancelable_task_tracker.h"
-#include "base/test/mock_time_provider.h"
+#include "base/test/simple_test_clock.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
-#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/history/core/browser/history_service.h"
 #include "components/search_engines/keyword_web_data_service.h"
 #include "components/search_engines/search_host_to_urls_map.h"
 #include "components/search_engines/search_terms_data.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_prepopulate_data.h"
-#include "components/search_engines/template_url_service.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::ASCIIToUTF16;
 using base::Time;
 using base::TimeDelta;
-using ::testing::Return;
-using ::testing::StrictMock;
 
 namespace {
 
@@ -70,7 +70,7 @@ TemplateURL* CreateKeywordWithDate(
     Time date_created,
     Time last_modified) {
   TemplateURLData data;
-  data.short_name = base::UTF8ToUTF16(short_name);
+  data.SetShortName(base::UTF8ToUTF16(short_name));
   data.SetKeyword(base::UTF8ToUTF16(keyword));
   data.SetURL(url);
   data.suggestions_url = suggest_url;
@@ -133,8 +133,8 @@ class TemplateURLServiceTest : public testing::Test {
   TemplateURLServiceTest();
 
   // testing::Test:
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   TemplateURL* AddKeywordWithDate(const std::string& short_name,
                                   const std::string& keyword,
@@ -149,6 +149,10 @@ class TemplateURLServiceTest : public testing::Test {
 
   // Verifies the two TemplateURLs are equal.
   void AssertEquals(const TemplateURL& expected, const TemplateURL& actual);
+
+  // Verifies the two timestamps are equal, within the expected degree of
+  // precision.
+  void AssertTimesEqual(const base::Time& expected, const base::Time& actual);
 
   // Create an URL that appears to have been prepopulated, but won't be in the
   // current data. The caller owns the returned TemplateURL*.
@@ -176,12 +180,12 @@ class TemplateURLServiceWithoutFallbackTest : public TemplateURLServiceTest {
  public:
   TemplateURLServiceWithoutFallbackTest() : TemplateURLServiceTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     DefaultSearchManager::SetFallbackSearchEnginesDisabledForTesting(true);
     TemplateURLServiceTest::SetUp();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     TemplateURLServiceTest::TearDown();
     DefaultSearchManager::SetFallbackSearchEnginesDisabledForTesting(false);
   }
@@ -227,17 +231,25 @@ void TemplateURLServiceTest::AssertEquals(const TemplateURL& expected,
   ASSERT_EQ(expected.input_encodings(), actual.input_encodings());
   ASSERT_EQ(expected.id(), actual.id());
   ASSERT_EQ(expected.date_created(), actual.date_created());
-  ASSERT_EQ(expected.last_modified(), actual.last_modified());
+  AssertTimesEqual(expected.last_modified(), actual.last_modified());
   ASSERT_EQ(expected.sync_guid(), actual.sync_guid());
   ASSERT_EQ(expected.search_terms_replacement_key(),
             actual.search_terms_replacement_key());
+}
+
+void TemplateURLServiceTest::AssertTimesEqual(const base::Time& expected,
+                                              const base::Time& actual) {
+  // Because times are stored with a granularity of one second, there is a loss
+  // of precision when serializing and deserializing the timestamps. Hence, only
+  // expect timestamps to be equal to within one second of one another.
+  ASSERT_LT((expected - actual).magnitude(), base::TimeDelta::FromSeconds(1));
 }
 
 TemplateURL* TemplateURLServiceTest::CreatePreloadedTemplateURL(
     bool safe_for_autoreplace,
     int prepopulate_id) {
   TemplateURLData data;
-  data.short_name = ASCIIToUTF16("unittest");
+  data.SetShortName(ASCIIToUTF16("unittest"));
   data.SetKeyword(ASCIIToUTF16("unittest"));
   data.SetURL("http://www.unittest.com/{searchTerms}");
   data.favicon_url = GURL("http://favicon.url");
@@ -273,7 +285,7 @@ TEST_F(TemplateURLServiceTest, AddUpdateRemove) {
   const size_t initial_count = model()->GetTemplateURLs().size();
 
   TemplateURLData data;
-  data.short_name = ASCIIToUTF16("google");
+  data.SetShortName(ASCIIToUTF16("google"));
   data.SetKeyword(ASCIIToUTF16("keyword"));
   data.SetURL("http://www.google.com/foo/bar");
   data.favicon_url = GURL("http://favicon.url");
@@ -305,11 +317,11 @@ TEST_F(TemplateURLServiceTest, AddUpdateRemove) {
                                          NULL));
 
   // We expect the last_modified time to be updated to the present time on an
-  // explicit reset. We have to set up the expectation here because ResetModel
-  // resets the TimeProvider in the TemplateURLService.
-  StrictMock<base::MockTimeProvider> mock_time;
-  model()->set_time_provider(&base::MockTimeProvider::StaticNow);
-  EXPECT_CALL(mock_time, Now()).WillOnce(Return(base::Time::FromDoubleT(1337)));
+  // explicit reset.
+  base::Time now = base::Time::Now();
+  scoped_ptr<base::SimpleTestClock> clock(new base::SimpleTestClock);
+  clock->SetNow(now);
+  model()->set_clock(clock.Pass());
 
   // Mutate an element and verify it succeeded.
   model()->ResetTemplateURL(loaded_url, ASCIIToUTF16("a"), ASCIIToUTF16("b"),
@@ -330,7 +342,7 @@ TEST_F(TemplateURLServiceTest, AddUpdateRemove) {
   AssertEquals(*cloned_url, *loaded_url);
   // We changed a TemplateURL in the service, so ensure that the time was
   // updated.
-  ASSERT_EQ(base::Time::FromDoubleT(1337), loaded_url->last_modified());
+  AssertTimesEqual(now, loaded_url->last_modified());
 
   // Remove an element and verify it succeeded.
   model()->Remove(loaded_url);
@@ -351,7 +363,7 @@ TEST_F(TemplateURLServiceTest, AddSameKeyword) {
   // Test what happens when we try to add a TemplateURL with the same keyword as
   // one in the model.
   TemplateURLData data;
-  data.short_name = ASCIIToUTF16("second");
+  data.SetShortName(ASCIIToUTF16("second"));
   data.SetKeyword(ASCIIToUTF16("keyword"));
   data.SetURL("http://test2");
   data.safe_for_autoreplace = false;
@@ -368,7 +380,7 @@ TEST_F(TemplateURLServiceTest, AddSameKeyword) {
 
   // Now try adding a replaceable TemplateURL.  This should just delete the
   // passed-in URL.
-  data.short_name = ASCIIToUTF16("third");
+  data.SetShortName(ASCIIToUTF16("third"));
   data.SetURL("http://test3");
   data.safe_for_autoreplace = true;
   model()->Add(new TemplateURL(data));
@@ -380,7 +392,7 @@ TEST_F(TemplateURLServiceTest, AddSameKeyword) {
 
   // Now try adding a non-replaceable TemplateURL again.  This should uniquify
   // the existing entry's keyword.
-  data.short_name = ASCIIToUTF16("fourth");
+  data.SetShortName(ASCIIToUTF16("fourth"));
   data.SetURL("http://test4");
   data.safe_for_autoreplace = false;
   TemplateURL* t_url2 = new TemplateURL(data);
@@ -396,7 +408,7 @@ TEST_F(TemplateURLServiceTest, AddSameKeyword) {
 TEST_F(TemplateURLServiceTest, AddExtensionKeyword) {
   test_util()->VerifyLoad();
 
-  TemplateURL* original1 = AddKeywordWithDate(
+  AddKeywordWithDate(
       "replaceable", "keyword1", "http://test1", std::string(), std::string(),
       std::string(), true, "UTF-8", Time(), Time());
   TemplateURL* original2 = AddKeywordWithDate(
@@ -408,30 +420,29 @@ TEST_F(TemplateURLServiceTest, AddExtensionKeyword) {
       model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword3"));
   ASSERT_TRUE(original3);
 
-  // Add an extension keyword that conflicts with each of the above three
-  // keywords.
-  // Both replaceable and non-replaceable keywords should be uniquified.
-  model()->RegisterOmniboxKeyword("test4", "test", "keyword1", "http://test4");
-  TemplateURL* extension1 =
-      model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword1"));
-  ASSERT_TRUE(extension1);
-  EXPECT_EQ(original1,
-            model()->GetTemplateURLForKeyword(ASCIIToUTF16("test1")));
+  // Extension keywords should override replaceable keywords.
+  model()->RegisterOmniboxKeyword("id1", "test", "keyword1", "http://test4");
+  TemplateURL* extension1 = model()->FindTemplateURLForExtension(
+      "id1", TemplateURL::OMNIBOX_API_EXTENSION);
+  EXPECT_TRUE(extension1);
+  EXPECT_EQ(extension1,
+            model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword1")));
 
-  model()->RegisterOmniboxKeyword("test5", "test", "keyword2", "http://test5");
-  TemplateURL* extension2 =
-      model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword2"));
+  // They should not override non-replaceable keywords.
+  model()->RegisterOmniboxKeyword("id2", "test", "keyword2", "http://test5");
+  TemplateURL* extension2 = model()->FindTemplateURLForExtension(
+      "id2", TemplateURL::OMNIBOX_API_EXTENSION);
   ASSERT_TRUE(extension2);
   EXPECT_EQ(original2,
-            model()->GetTemplateURLForKeyword(ASCIIToUTF16("test2")));
+            model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword2")));
 
   // They should override extension keywords added earlier.
-  model()->RegisterOmniboxKeyword("test6", "test", "keyword3", "http://test6");
-  TemplateURL* extension3 =
-      model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword3"));
+  model()->RegisterOmniboxKeyword("id3", "test", "keyword3", "http://test6");
+  TemplateURL* extension3 = model()->FindTemplateURLForExtension(
+      "id3", TemplateURL::OMNIBOX_API_EXTENSION);
   ASSERT_TRUE(extension3);
-  EXPECT_EQ(original3,
-            model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword3_")));
+  EXPECT_EQ(extension3,
+            model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword3")));
 }
 
 TEST_F(TemplateURLServiceTest, AddSameKeywordWithExtensionPresent) {
@@ -445,8 +456,7 @@ TEST_F(TemplateURLServiceTest, AddSameKeywordWithExtensionPresent) {
   TemplateURL* extension =
       model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword"));
   ASSERT_TRUE(extension);
-  // Adding a keyword that matches the extension should cause the extension
-  // to uniquify.
+  // Adding a keyword that matches the extension.
   AddKeywordWithDate(
       "replaceable", "keyword", "http://test1", std::string(),  std::string(),
       std::string(), true, "UTF-8", Time(), Time());
@@ -454,32 +464,29 @@ TEST_F(TemplateURLServiceTest, AddSameKeywordWithExtensionPresent) {
   // Adding another replaceable keyword should remove the existing one, but
   // leave the extension as is.
   TemplateURLData data;
-  data.short_name = ASCIIToUTF16("name1");
+  data.SetShortName(ASCIIToUTF16("name1"));
   data.SetKeyword(ASCIIToUTF16("keyword"));
   data.SetURL("http://test3");
   data.safe_for_autoreplace = true;
   TemplateURL* t_url = new TemplateURL(data);
   model()->Add(t_url);
   EXPECT_EQ(extension,
-            model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword_")));
-  EXPECT_TRUE(model()->GetTemplateURLForHost("test1") == NULL);
+            model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword")));
   EXPECT_EQ(t_url, model()->GetTemplateURLForHost("test3"));
 
   // Adding a nonreplaceable keyword should remove the existing replaceable
-  // keyword.
-  data.short_name = ASCIIToUTF16("name2");
+  // keyword and replace the extension as the associated URL for this keyword,
+  // but not evict the extension from the service entirely.
+  data.SetShortName(ASCIIToUTF16("name2"));
   data.SetURL("http://test4");
   data.safe_for_autoreplace = false;
   TemplateURL* t_url2 = new TemplateURL(data);
   model()->Add(t_url2);
   EXPECT_EQ(t_url2,
             model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword")));
-  EXPECT_TRUE(model()->GetTemplateURLForHost("test3") == NULL);
-  EXPECT_EQ(extension,
-            model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword_")));
 }
 
-TEST_F(TemplateURLServiceTest, RestoreOmniboxExtensionKeyword) {
+TEST_F(TemplateURLServiceTest, NotPersistOmniboxExtensionKeyword) {
   test_util()->VerifyLoad();
 
   // Register an omnibox keyword.
@@ -490,12 +497,8 @@ TEST_F(TemplateURLServiceTest, RestoreOmniboxExtensionKeyword) {
   // Reload the data.
   test_util()->ResetModel(true);
 
-  // Ensure the omnibox keyword is restored correctly.
-  TemplateURL* t_url =
-      model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword"));
-  ASSERT_TRUE(t_url);
-  ASSERT_EQ(TemplateURL::OMNIBOX_API_EXTENSION, t_url->GetType());
-  EXPECT_EQ("test", t_url->GetExtensionId());
+  // Ensure the omnibox keyword is not persisted.
+  ASSERT_FALSE(model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword")));
 }
 
 TEST_F(TemplateURLServiceTest, ClearBrowsingData_Keywords) {
@@ -617,7 +620,7 @@ TEST_F(TemplateURLServiceTest, Reset) {
   test_util()->VerifyLoad();
   const size_t initial_count = model()->GetTemplateURLs().size();
   TemplateURLData data;
-  data.short_name = ASCIIToUTF16("google");
+  data.SetShortName(ASCIIToUTF16("google"));
   data.SetKeyword(ASCIIToUTF16("keyword"));
   data.SetURL("http://www.google.com/foo/bar");
   data.favicon_url = GURL("http://favicon.url");
@@ -629,9 +632,10 @@ TEST_F(TemplateURLServiceTest, Reset) {
   VerifyObserverCount(1);
   base::RunLoop().RunUntilIdle();
 
-  StrictMock<base::MockTimeProvider> mock_time;
-  model()->set_time_provider(&base::MockTimeProvider::StaticNow);
-  EXPECT_CALL(mock_time, Now()).WillOnce(Return(base::Time::FromDoubleT(1337)));
+  base::Time now = base::Time::Now();
+  scoped_ptr<base::SimpleTestClock> clock(new base::SimpleTestClock);
+  clock->SetNow(now);
+  model()->set_clock(clock.Pass());
 
   // Reset the short name, keyword, url and make sure it takes.
   const base::string16 new_short_name(ASCIIToUTF16("a"));
@@ -655,7 +659,7 @@ TEST_F(TemplateURLServiceTest, Reset) {
   const TemplateURL* read_url = model()->GetTemplateURLForKeyword(new_keyword);
   ASSERT_TRUE(read_url);
   AssertEquals(*cloned_url, *read_url);
-  ASSERT_EQ(base::Time::FromDoubleT(1337), read_url->last_modified());
+  AssertTimesEqual(now, read_url->last_modified());
 }
 
 TEST_F(TemplateURLServiceTest, DefaultSearchProvider) {
@@ -740,7 +744,7 @@ TEST_F(TemplateURLServiceTest, DefaultSearchProviderLoadedFromPrefs) {
   test_util()->VerifyLoad();
 
   TemplateURLData data;
-  data.short_name = ASCIIToUTF16("a");
+  data.SetShortName(ASCIIToUTF16("a"));
   data.safe_for_autoreplace = true;
   data.SetURL("http://url/{searchTerms}");
   data.suggestions_url = "http://url2";
@@ -844,7 +848,7 @@ TEST_F(TemplateURLServiceTest, RepairSearchEnginesWithManagedDefault) {
   test_util()->VerifyLoad();
   // Verify that the default manager we are getting is the managed one.
   TemplateURLData data;
-  data.short_name = ASCIIToUTF16(kName);
+  data.SetShortName(ASCIIToUTF16(kName));
   data.SetKeyword(ASCIIToUTF16(kKeyword));
   data.SetURL(kSearchURL);
   data.favicon_url = GURL(kIconURL);
@@ -889,7 +893,7 @@ TEST_F(TemplateURLServiceTest, UpdateKeywordSearchTermsForURL) {
                      "http://sugg1", "http://x/foo#query={searchTerms}",
                      "http://icon1", false, "UTF-8;UTF-16", Time(), Time());
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(data); ++i) {
+  for (size_t i = 0; i < arraysize(data); ++i) {
     TemplateURLService::URLVisitedDetails details = {
       GURL(data[i].url), false
     };
@@ -911,7 +915,7 @@ TEST_F(TemplateURLServiceTest, DontUpdateKeywordSearchForNonReplaceable) {
   AddKeywordWithDate("name", "x", "http://x/foo", "http://sugg1", std::string(),
                      "http://icon1", false, "UTF-8;UTF-16", Time(), Time());
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(data); ++i) {
+  for (size_t i = 0; i < arraysize(data); ++i) {
     TemplateURLService::URLVisitedDetails details = {
       GURL(data[i].url), false
     };
@@ -980,8 +984,9 @@ TEST_F(TemplateURLServiceWithoutFallbackTest, ChangeGoogleBaseValue) {
 // Make sure TemplateURLService generates a KEYWORD_GENERATED visit for
 // KEYWORD visits.
 TEST_F(TemplateURLServiceTest, GenerateVisitOnKeyword) {
-  test_util()->VerifyLoad();
+  test_util()->profile()->CreateBookmarkModel(false);
   ASSERT_TRUE(test_util()->profile()->CreateHistoryService(true, false));
+  test_util()->ResetModel(true);
 
   // Create a keyword.
   TemplateURL* t_url = AddKeywordWithDate(
@@ -990,9 +995,8 @@ TEST_F(TemplateURLServiceTest, GenerateVisitOnKeyword) {
       base::Time::Now(), base::Time::Now());
 
   // Add a visit that matches the url of the keyword.
-  HistoryService* history =
-      HistoryServiceFactory::GetForProfile(test_util()->profile(),
-                                           Profile::EXPLICIT_ACCESS);
+  history::HistoryService* history = HistoryServiceFactory::GetForProfile(
+      test_util()->profile(), ServiceAccessType::EXPLICIT_ACCESS);
   history->AddPage(
       GURL(t_url->url_ref().ReplaceSearchTerms(
           TemplateURLRef::SearchTermsArgs(ASCIIToUTF16("blah")),
@@ -1223,7 +1227,7 @@ TEST_F(TemplateURLServiceTest, TestManagedDefaultSearch) {
 
   // Verify that the default manager we are getting is the managed one.
   TemplateURLData data;
-  data.short_name = ASCIIToUTF16(kName);
+  data.SetShortName(ASCIIToUTF16(kName));
   data.SetKeyword(ASCIIToUTF16(kKeyword));
   data.SetURL(kSearchURL);
   data.favicon_url = GURL(kIconURL);
@@ -1251,7 +1255,7 @@ TEST_F(TemplateURLServiceTest, TestManagedDefaultSearch) {
 
   // Verify that the default manager we are now getting is the correct one.
   TemplateURLData data2;
-  data2.short_name = ASCIIToUTF16(kNewName);
+  data2.SetShortName(ASCIIToUTF16(kNewName));
   data2.SetKeyword(ASCIIToUTF16(kNewKeyword));
   data2.SetURL(kNewSearchURL);
   data2.suggestions_url = kNewSuggestURL;
@@ -1326,7 +1330,7 @@ TEST_F(TemplateURLServiceTest, PatchEmptySyncGUID) {
   const size_t initial_count = model()->GetTemplateURLs().size();
 
   TemplateURLData data;
-  data.short_name = ASCIIToUTF16("google");
+  data.SetShortName(ASCIIToUTF16("google"));
   data.SetKeyword(ASCIIToUTF16("keyword"));
   data.SetURL("http://www.google.com/foo/bar");
   data.sync_guid.clear();
@@ -1355,7 +1359,7 @@ TEST_F(TemplateURLServiceTest, DuplicateInputEncodings) {
   const size_t initial_count = model()->GetTemplateURLs().size();
 
   TemplateURLData data;
-  data.short_name = ASCIIToUTF16("google");
+  data.SetShortName(ASCIIToUTF16("google"));
   data.SetKeyword(ASCIIToUTF16("keyword"));
   data.SetURL("http://www.google.com/foo/bar");
   std::vector<std::string> encodings;
@@ -1466,7 +1470,7 @@ TEST_F(TemplateURLServiceTest, ExtensionEngineVsPolicy) {
   test_util()->VerifyLoad();
   // Verify that the default manager we are getting is the managed one.
   TemplateURLData data;
-  data.short_name = ASCIIToUTF16(kName);
+  data.SetShortName(ASCIIToUTF16(kName));
   data.SetKeyword(ASCIIToUTF16(kKeyword));
   data.SetURL(kSearchURL);
   data.favicon_url = GURL(kIconURL);

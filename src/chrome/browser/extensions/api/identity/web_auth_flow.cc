@@ -5,16 +5,17 @@
 #include "chrome/browser/extensions/api/identity/web_auth_flow.h"
 
 #include "base/base64.h"
-#include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/identity_private.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "components/guest_view/browser/guest_view_base.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
@@ -28,7 +29,6 @@
 #include "extensions/browser/app_window/app_window.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_system.h"
-#include "extensions/browser/guest_view/guest_view_base.h"
 #include "grit/browser_resources.h"
 #include "url/gurl.h"
 
@@ -36,6 +36,7 @@ using content::RenderViewHost;
 using content::ResourceRedirectDetails;
 using content::WebContents;
 using content::WebContentsObserver;
+using guest_view::GuestViewBase;
 
 namespace extensions {
 
@@ -158,9 +159,9 @@ void WebAuthFlow::Observe(int type,
         content::Details<RenderViewHost>(details).ptr());
     WebContents* web_contents = WebContents::FromRenderViewHost(render_view);
     GuestViewBase* guest = GuestViewBase::FromWebContents(web_contents);
-    WebContents* embedder = guest ? guest->embedder_web_contents() : NULL;
+    WebContents* owner = guest ? guest->owner_web_contents() : NULL;
     if (web_contents &&
-        (embedder == WebContentsObserver::web_contents())) {
+        (owner == WebContentsObserver::web_contents())) {
       // Switch from watching the app window to the guest inside it.
       embedded_window_created_ = true;
       WebContentsObserver::Observe(web_contents);
@@ -231,7 +232,7 @@ void WebAuthFlow::DidFailProvisionalLoad(
     delegate_->OnAuthFlowFailure(LOAD_FAILED);
 }
 
-void WebAuthFlow::DidStopLoading(RenderViewHost* render_view_host) {
+void WebAuthFlow::DidStopLoading() {
   AfterUrlLoaded();
 }
 

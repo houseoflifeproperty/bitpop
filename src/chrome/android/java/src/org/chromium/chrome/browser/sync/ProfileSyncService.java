@@ -4,14 +4,19 @@
 
 package org.chromium.chrome.browser.sync;
 
+import android.app.Activity;
 import android.content.Context;
 import android.util.Log;
 
+import org.chromium.base.ActivityState;
+import org.chromium.base.ApplicationStatus;
+import org.chromium.base.ApplicationStatus.ActivityStateListener;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.VisibleForTesting;
+import org.chromium.base.annotations.SuppressFBWarnings;
 import org.chromium.chrome.browser.identity.UniqueIdentificationGenerator;
-import org.chromium.sync.internal_api.pub.SyncDecryptionPassphraseType;
+import org.chromium.sync.internal_api.pub.PassphraseType;
 import org.chromium.sync.internal_api.pub.base.ModelType;
 
 import java.util.HashSet;
@@ -35,8 +40,11 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public class ProfileSyncService {
 
+    /**
+     * Listener for the underlying sync status.
+     */
     public interface SyncStateChangedListener {
-        // Invoked when the underlying sync status has changed.
+        // Invoked when the status has changed.
         public void syncStateChanged();
     }
 
@@ -45,7 +53,7 @@ public class ProfileSyncService {
     @VisibleForTesting
     public static final String SESSION_TAG_PREFIX = "session_sync";
 
-    private static ProfileSyncService sSyncSetupManager;
+    private static ProfileSyncService sProfileSyncService;
 
     @VisibleForTesting
     protected final Context mContext;
@@ -65,18 +73,24 @@ public class ProfileSyncService {
      * @param context the ApplicationContext is retrieved from the context used as an argument.
      * @return a singleton instance of the SyncSetupManager
      */
+    @SuppressFBWarnings("LI_LAZY_INIT")
     public static ProfileSyncService get(Context context) {
         ThreadUtils.assertOnUiThread();
-        if (sSyncSetupManager == null) {
-            sSyncSetupManager = new ProfileSyncService(context);
+        if (sProfileSyncService == null) {
+            sProfileSyncService = new ProfileSyncService(context);
         }
-        return sSyncSetupManager;
+        return sProfileSyncService;
+    }
+
+    @VisibleForTesting
+    public static void overrideForTests(ProfileSyncService profileSyncService) {
+        sProfileSyncService = profileSyncService;
     }
 
     /**
      * This is called pretty early in our application. Avoid any blocking operations here.
      */
-    private ProfileSyncService(Context context) {
+    protected ProfileSyncService(Context context) {
         ThreadUtils.assertOnUiThread();
         // We should store the application context, as we outlive any activity which may create us.
         mContext = context.getApplicationContext();
@@ -85,6 +99,16 @@ public class ProfileSyncService {
         // been set up, but ProfileSyncService::Startup() won't be called until
         // credentials are available.
         mNativeProfileSyncServiceAndroid = nativeInit();
+
+        // When the application gets paused, tell sync to flush the directory to disk.
+        ApplicationStatus.registerStateListenerForAllActivities(new ActivityStateListener() {
+            @Override
+            public void onActivityStateChange(Activity activity, int newState) {
+                if (newState == ActivityState.PAUSED) {
+                    flushDirectory();
+                }
+            }
+        });
     }
 
     @CalledByNative
@@ -118,47 +142,6 @@ public class ProfileSyncService {
         syncStateChanged();
     }
 
-    /**
-     * Signs in to sync, using the existing auth token.
-     */
-    @Deprecated
-    public void syncSignIn(String account) {
-        syncSignIn();
-    }
-
-    /**
-     * Signs in to sync.
-     *
-     * @param account   The username of the account that is signing in.
-     * @param authToken Not used. ProfileSyncService switched to OAuth2 tokens.
-     * Deprecated. Use syncSignIn instead.
-     */
-    @Deprecated
-    public void syncSignInWithAuthToken(String account, String authToken) {
-        syncSignIn(account);
-    }
-
-    public void requestSyncFromNativeChrome(
-            int objectSource, String objectId, long version, String payload) {
-        ThreadUtils.assertOnUiThread();
-        nativeNudgeSyncer(
-                mNativeProfileSyncServiceAndroid, objectSource, objectId, version, payload);
-    }
-
-    public void requestSyncFromNativeChromeForAllTypes() {
-        ThreadUtils.assertOnUiThread();
-        nativeNudgeSyncerForAllTypes(mNativeProfileSyncServiceAndroid);
-    }
-
-    /**
-     * Nudge the syncer to start a new sync cycle.
-     */
-    @VisibleForTesting
-    public void requestSyncCycleForTest() {
-        ThreadUtils.assertOnUiThread();
-        requestSyncFromNativeChromeForAllTypes();
-    }
-
     public String querySyncStatus() {
         ThreadUtils.assertOnUiThread();
         return nativeQuerySyncStatusSummary(mNativeProfileSyncServiceAndroid);
@@ -171,49 +154,29 @@ public class ProfileSyncService {
         ThreadUtils.assertOnUiThread();
         String uniqueTag = generator.getUniqueId(null);
         if (uniqueTag.isEmpty()) {
-            Log.e(TAG, "Unable to get unique tag for sync. " +
-                    "This may lead to unexpected tab sync behavior.");
+            Log.e(TAG, "Unable to get unique tag for sync. "
+                    + "This may lead to unexpected tab sync behavior.");
             return;
         }
         String sessionTag = SESSION_TAG_PREFIX + uniqueTag;
         if (!nativeSetSyncSessionsId(mNativeProfileSyncServiceAndroid, sessionTag)) {
-            Log.e(TAG, "Unable to write session sync tag. " +
-                    "This may lead to unexpected tab sync behavior.");
+            Log.e(TAG, "Unable to write session sync tag. "
+                    + "This may lead to unexpected tab sync behavior.");
         }
     }
 
     /**
-     * Checks if a password or a passphrase is required for decryption of sync data.
+     * Returns the actual passphrase type being used for encryption.
+     * The sync backend must be running (isSyncInitialized() returns true) before
+     * calling this function.
      * <p/>
-     * Returns NONE if the state is unavailable, or decryption passphrase/password is not required.
-     *
-     * @return the enum describing the decryption passphrase type required
+     * This method should only be used if you want to know the raw value. For checking whether
+     * we should ask the user for a passphrase, use isPassphraseRequiredForDecryption().
      */
-    public SyncDecryptionPassphraseType getSyncDecryptionPassphraseTypeIfRequired() {
-        // ProfileSyncService::IsUsingSecondaryPassphrase() requires the sync backend to be
-        // initialized, and that happens just after OnPassphraseRequired(). Therefore, we need to
-        // guard that call with a check of the sync backend since we can not be sure which
-        // passphrase type we should tell the user we need.
-        // This is tracked in:
-        // http://code.google.com/p/chromium/issues/detail?id=108127
-        if (isSyncInitialized() && isPassphraseRequiredForDecryption()) {
-            return getSyncDecryptionPassphraseType();
-        }
-        return SyncDecryptionPassphraseType.NONE;
-    }
-
-    /**
-     * Returns the actual passphrase type being used for encryption. The sync backend must be
-     * running (isSyncInitialized() returns true) before calling this function.
-     * <p/>
-     * This method should only be used if you want to know the raw value. For checking whether we
-     * should ask the user for a passphrase, you should instead use
-     * getSyncDecryptionPassphraseTypeIfRequired().
-     */
-    public SyncDecryptionPassphraseType getSyncDecryptionPassphraseType() {
+    public PassphraseType getPassphraseType() {
         assert isSyncInitialized();
         int passphraseType = nativeGetPassphraseType(mNativeProfileSyncServiceAndroid);
-        return SyncDecryptionPassphraseType.fromInternalValue(passphraseType);
+        return PassphraseType.fromInternalValue(passphraseType);
     }
 
     public boolean isSyncKeystoreMigrationDone() {
@@ -359,13 +322,26 @@ public class ProfileSyncService {
     }
 
     /**
-     * Gets the set of data types that are currently enabled to sync.
+     * Gets the set of data types that are currently syncing.
      *
-     * @return Set of enabled types.
+     * This is affected by whether sync is on.
+     *
+     * @return Set of active data types.
+     */
+    public Set<ModelType> getActiveDataTypes() {
+        long modelTypeSelection = nativeGetActiveDataTypes(mNativeProfileSyncServiceAndroid);
+        return modelTypeSelectionToSet(modelTypeSelection);
+    }
+
+    /**
+     * Gets the set of data types that are enabled in sync.
+     *
+     * This is unaffected by whether sync is on.
+     *
+     * @return Set of preferred types.
      */
     public Set<ModelType> getPreferredDataTypes() {
-        long modelTypeSelection =
-                nativeGetEnabledDataTypes(mNativeProfileSyncServiceAndroid);
+        long modelTypeSelection = nativeGetPreferredDataTypes(mNativeProfileSyncServiceAndroid);
         return modelTypeSelectionToSet(modelTypeSelection);
     }
 
@@ -377,6 +353,9 @@ public class ProfileSyncService {
         }
         if ((modelTypeSelection & ModelTypeSelection.AUTOFILL_PROFILE) != 0) {
             syncTypes.add(ModelType.AUTOFILL_PROFILE);
+        }
+        if ((modelTypeSelection & ModelTypeSelection.AUTOFILL_WALLET) != 0) {
+            syncTypes.add(ModelType.AUTOFILL_WALLET);
         }
         if ((modelTypeSelection & ModelTypeSelection.BOOKMARK) != 0) {
             syncTypes.add(ModelType.BOOKMARK);
@@ -413,6 +392,9 @@ public class ProfileSyncService {
         }
         if ((modelTypeSelection & ModelTypeSelection.SUPERVISED_USER_SETTING) != 0) {
             syncTypes.add(ModelType.MANAGED_USER_SETTING);
+        }
+        if ((modelTypeSelection & ModelTypeSelection.SUPERVISED_USER_WHITELIST) != 0) {
+            syncTypes.add(ModelType.MANAGED_USER_WHITELIST);
         }
         return syncTypes;
     }
@@ -521,6 +503,13 @@ public class ProfileSyncService {
     }
 
     /**
+     * Flushes the sync directory.
+     */
+    public void flushDirectory() {
+        nativeFlushDirectory(mNativeProfileSyncServiceAndroid);
+    }
+
+    /**
      * Returns the time when the last sync cycle was completed.
      *
      * @return The difference measured in microseconds, between last sync cycle completion time
@@ -563,14 +552,45 @@ public class ProfileSyncService {
         return sb.toString();
     }
 
+    /**
+     * @return Whether sync is enabled to sync urls or open tabs with a non custom passphrase.
+     */
+    public boolean isSyncingUrlsWithKeystorePassphrase() {
+        return isSyncInitialized()
+            && getPreferredDataTypes().contains(ModelType.TYPED_URL)
+            && getPassphraseType().equals(PassphraseType.KEYSTORE_PASSPHRASE);
+    }
+
+    /**
+     * Returns whether this client has previously prompted the user for a
+     * passphrase error via the android system notifications.
+     *
+     * Can be called whether or not sync is initialized.
+     *
+     * @return Whether client has prompted for a passphrase error previously.
+     */
+    public boolean isPassphrasePrompted() {
+        return nativeIsPassphrasePrompted(mNativeProfileSyncServiceAndroid);
+    }
+
+    /**
+     * Sets whether this client has previously prompted the user for a
+     * passphrase error via the android system notifications.
+     *
+     * Can be called whether or not sync is initialized.
+     *
+     * @param prompted whether the client has prompted the user previously.
+     */
+    public void setPassphrasePrompted(boolean prompted) {
+        nativeSetPassphrasePrompted(mNativeProfileSyncServiceAndroid,
+                                    prompted);
+    }
+
     // Native methods
-    private native void nativeNudgeSyncer(
-            long nativeProfileSyncServiceAndroid, int objectSource, String objectId, long version,
-            String payload);
-    private native void nativeNudgeSyncerForAllTypes(long nativeProfileSyncServiceAndroid);
     private native long nativeInit();
     private native void nativeEnableSync(long nativeProfileSyncServiceAndroid);
     private native void nativeDisableSync(long nativeProfileSyncServiceAndroid);
+    private native void nativeFlushDirectory(long nativeProfileSyncServiceAndroid);
     private native void nativeSignInSync(long nativeProfileSyncServiceAndroid);
     private native void nativeSignOutSync(long nativeProfileSyncServiceAndroid);
     private native boolean nativeSetSyncSessionsId(
@@ -603,8 +623,8 @@ public class ProfileSyncService {
     private native String nativeGetSyncEnterCustomPassphraseBodyText(
             long nativeProfileSyncServiceAndroid);
     private native boolean nativeIsSyncKeystoreMigrationDone(long nativeProfileSyncServiceAndroid);
-    private native long nativeGetEnabledDataTypes(
-        long nativeProfileSyncServiceAndroid);
+    private native long nativeGetActiveDataTypes(long nativeProfileSyncServiceAndroid);
+    private native long nativeGetPreferredDataTypes(long nativeProfileSyncServiceAndroid);
     private native void nativeSetPreferredDataTypes(
             long nativeProfileSyncServiceAndroid, boolean syncEverything, long modelTypeSelection);
     private native void nativeSetSetupInProgress(
@@ -614,6 +634,9 @@ public class ProfileSyncService {
     private native boolean nativeIsStartSuppressed(long nativeProfileSyncServiceAndroid);
     private native boolean nativeHasKeepEverythingSynced(long nativeProfileSyncServiceAndroid);
     private native boolean nativeHasUnrecoverableError(long nativeProfileSyncServiceAndroid);
+    private native boolean nativeIsPassphrasePrompted(long nativeProfileSyncServiceAndroid);
+    private native void nativeSetPassphrasePrompted(long nativeProfileSyncServiceAndroid,
+                                                    boolean prompted);
     private native String nativeGetAboutInfoForTest(long nativeProfileSyncServiceAndroid);
     private native long nativeGetLastSyncedTimeForTest(long nativeProfileSyncServiceAndroid);
     private native void nativeOverrideNetworkResourcesForTest(

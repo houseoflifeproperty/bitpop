@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_BROWSER_COMPOSITOR_NO_TRANSPORT_IMAGE_TRANSPORT_FACTORY_H_
-#define CONTENT_BROWSER_COMPOSITOR_NO_TRANSPORT_IMAGE_TRANSPORT_FACTORY_H_
+#ifndef CONTENT_BROWSER_COMPOSITOR_TEST_NO_TRANSPORT_IMAGE_TRANSPORT_FACTORY_H_
+#define CONTENT_BROWSER_COMPOSITOR_TEST_NO_TRANSPORT_IMAGE_TRANSPORT_FACTORY_H_
 
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
@@ -19,22 +19,25 @@ namespace content {
 class NoTransportImageTransportFactory : public ImageTransportFactory {
  public:
   NoTransportImageTransportFactory();
-  virtual ~NoTransportImageTransportFactory();
+  ~NoTransportImageTransportFactory() override;
 
   // ImageTransportFactory implementation.
-  virtual ui::ContextFactory* GetContextFactory() OVERRIDE;
-  virtual gfx::GLSurfaceHandle GetSharedSurfaceHandle() OVERRIDE;
-  virtual scoped_ptr<cc::SurfaceIdAllocator> CreateSurfaceIdAllocator()
-      OVERRIDE;
-  virtual cc::SurfaceManager* GetSurfaceManager() OVERRIDE;
-  virtual GLHelper* GetGLHelper() OVERRIDE;
-  virtual void AddObserver(ImageTransportFactoryObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(ImageTransportFactoryObserver* observer) OVERRIDE;
+  ui::ContextFactory* GetContextFactory() override;
+  gfx::GLSurfaceHandle GetSharedSurfaceHandle() override;
+  cc::SurfaceManager* GetSurfaceManager() override;
+  GLHelper* GetGLHelper() override;
+  void AddObserver(ImageTransportFactoryObserver* observer) override;
+  void RemoveObserver(ImageTransportFactoryObserver* observer) override;
 #if defined(OS_MACOSX)
-  virtual void OnSurfaceDisplayed(int surface_id) OVERRIDE {}
+  void OnSurfaceDisplayed(int surface_id) override {}
+  void SetCompositorSuspendedForRecycle(ui::Compositor* compositor,
+                                        bool suspended) override {}
+  bool SurfaceShouldNotShowFramesAfterSuspendForRecycle(
+      int surface_id) const override;
 #endif
 
  private:
+  scoped_ptr<cc::SurfaceManager> surface_manager_;
   scoped_ptr<ui::ContextFactory> context_factory_;
   scoped_refptr<cc::ContextProvider> context_provider_;
   scoped_ptr<GLHelper> gl_helper_;
@@ -45,4 +48,4 @@ class NoTransportImageTransportFactory : public ImageTransportFactory {
 
 }  // namespace content
 
-#endif  // CONTENT_BROWSER_COMPOSITOR_NO_TRANSPORT_IMAGE_TRANSPORT_FACTORY_H_
+#endif  // CONTENT_BROWSER_COMPOSITOR_TEST_NO_TRANSPORT_IMAGE_TRANSPORT_FACTORY_H_

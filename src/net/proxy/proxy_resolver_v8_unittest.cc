@@ -9,7 +9,9 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log_unittest.h"
+#include "net/log/test_net_log.h"
+#include "net/log/test_net_log_entry.h"
+#include "net/log/test_net_log_util.h"
 #include "net/proxy/proxy_info.h"
 #include "net/proxy/proxy_resolver_v8.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -26,15 +28,15 @@ class MockJSBindings : public ProxyResolverV8::JSBindings {
   MockJSBindings() : my_ip_address_count(0), my_ip_address_ex_count(0),
                      should_terminate(false) {}
 
-  virtual void Alert(const base::string16& message) OVERRIDE {
+  void Alert(const base::string16& message) override {
     VLOG(1) << "PAC-alert: " << message;  // Helpful when debugging.
     alerts.push_back(base::UTF16ToUTF8(message));
   }
 
-  virtual bool ResolveDns(const std::string& host,
-                          ResolveDnsOperation op,
-                          std::string* output,
-                          bool* terminate) OVERRIDE {
+  bool ResolveDns(const std::string& host,
+                  ResolveDnsOperation op,
+                  std::string* output,
+                  bool* terminate) override {
     *terminate = should_terminate;
 
     if (op == MY_IP_ADDRESS) {
@@ -65,8 +67,7 @@ class MockJSBindings : public ProxyResolverV8::JSBindings {
     return false;
   }
 
-  virtual void OnError(int line_number,
-                       const base::string16& message) OVERRIDE {
+  void OnError(int line_number, const base::string16& message) override {
     // Helpful when debugging.
     VLOG(1) << "PAC-error: [" << line_number << "] " << message;
 
@@ -102,8 +103,7 @@ class ProxyResolverV8WithMockBindings : public ProxyResolverV8 {
     set_js_bindings(&mock_js_bindings_);
   }
 
-  virtual ~ProxyResolverV8WithMockBindings() {
-  }
+  ~ProxyResolverV8WithMockBindings() override {}
 
   MockJSBindings* mock_js_bindings() {
     return &mock_js_bindings_;
@@ -147,7 +147,7 @@ TEST(ProxyResolverV8Test, Direct) {
   EXPECT_EQ(OK, result);
 
   ProxyInfo proxy_info;
-  CapturingBoundNetLog log;
+  BoundTestNetLog log;
   result = resolver.GetProxyForURL(
       kQueryUrl, &proxy_info, CompletionCallback(), NULL, log.bound());
 
@@ -157,7 +157,7 @@ TEST(ProxyResolverV8Test, Direct) {
   EXPECT_EQ(0U, resolver.mock_js_bindings()->alerts.size());
   EXPECT_EQ(0U, resolver.mock_js_bindings()->errors.size());
 
-  net::CapturingNetLog::CapturedEntryList entries;
+  TestNetLogEntry::List entries;
   log.GetEntries(&entries);
   // No bindings were called, so no log entries.
   EXPECT_EQ(0u, entries.size());
@@ -255,6 +255,12 @@ TEST(ProxyResolverV8Test, NoEntryPoint) {
       kQueryUrl, &proxy_info, CompletionCallback(), NULL, BoundNetLog());
 
   EXPECT_EQ(ERR_FAILED, result);
+
+  MockJSBindings* bindings = resolver.mock_js_bindings();
+  ASSERT_EQ(1U, bindings->errors.size());
+  EXPECT_EQ("FindProxyForURL is undefined or not a function.",
+            bindings->errors[0]);
+  EXPECT_EQ(-1, bindings->errors_line_number[0]);
 }
 
 // Try loading a malformed PAC script.
@@ -277,7 +283,8 @@ TEST(ProxyResolverV8Test, ParseError) {
 
   EXPECT_EQ("Uncaught SyntaxError: Unexpected end of input",
             bindings->errors[0]);
-  EXPECT_EQ(0, bindings->errors_line_number[0]);
+  // TODO: replace expected value with 5 after V8 roll
+  // EXPECT_EQ(0, bindings->errors_line_number[0]);
 }
 
 // Run a PAC script several times, which has side-effects.
@@ -328,6 +335,46 @@ TEST(ProxyResolverV8Test, UnhandledException) {
   EXPECT_EQ("Uncaught ReferenceError: undefined_variable is not defined",
             bindings->errors[0]);
   EXPECT_EQ(3, bindings->errors_line_number[0]);
+}
+
+// Execute a PAC script which throws an exception when first accessing
+// FindProxyForURL
+TEST(ProxyResolverV8Test, ExceptionAccessingFindProxyForURLDuringInit) {
+  ProxyResolverV8WithMockBindings resolver;
+  int result =
+      resolver.SetPacScriptFromDisk("exception_findproxyforurl_during_init.js");
+  EXPECT_EQ(ERR_PAC_SCRIPT_FAILED, result);
+
+  MockJSBindings* bindings = resolver.mock_js_bindings();
+  ASSERT_EQ(2U, bindings->errors.size());
+  EXPECT_EQ("Uncaught crash!", bindings->errors[0]);
+  EXPECT_EQ(9, bindings->errors_line_number[0]);
+  EXPECT_EQ("Accessing FindProxyForURL threw an exception.",
+            bindings->errors[1]);
+  EXPECT_EQ(-1, bindings->errors_line_number[1]);
+}
+
+// Execute a PAC script which throws an exception during the second access to
+// FindProxyForURL
+TEST(ProxyResolverV8Test, ExceptionAccessingFindProxyForURLDuringResolve) {
+  ProxyResolverV8WithMockBindings resolver;
+  int result = resolver.SetPacScriptFromDisk(
+      "exception_findproxyforurl_during_resolve.js");
+  EXPECT_EQ(OK, result);
+
+  ProxyInfo proxy_info;
+  result = resolver.GetProxyForURL(kQueryUrl, &proxy_info, CompletionCallback(),
+                                   NULL, BoundNetLog());
+
+  EXPECT_EQ(ERR_PAC_SCRIPT_FAILED, result);
+
+  MockJSBindings* bindings = resolver.mock_js_bindings();
+  ASSERT_EQ(2U, bindings->errors.size());
+  EXPECT_EQ("Uncaught crash!", bindings->errors[0]);
+  EXPECT_EQ(17, bindings->errors_line_number[0]);
+  EXPECT_EQ("Accessing FindProxyForURL threw an exception.",
+            bindings->errors[1]);
+  EXPECT_EQ(-1, bindings->errors_line_number[1]);
 }
 
 TEST(ProxyResolverV8Test, ReturnUnicode) {

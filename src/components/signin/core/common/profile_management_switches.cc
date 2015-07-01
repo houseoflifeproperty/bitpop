@@ -25,23 +25,21 @@ enum State {
 
 State GetProcessState() {
   // Find the state of both command line args.
-  bool is_new_avatar_menu =
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableNewAvatarMenu);
+  bool is_new_avatar_menu = base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableNewAvatarMenu);
   bool is_new_profile_management =
-      CommandLine::ForCurrentProcess()->HasSwitch(
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableNewProfileManagement);
   bool is_consistent_identity =
-      CommandLine::ForCurrentProcess()->HasSwitch(
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableAccountConsistency);
-  bool not_new_avatar_menu =
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableNewAvatarMenu);
+  bool not_new_avatar_menu = base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableNewAvatarMenu);
   bool not_new_profile_management =
-      CommandLine::ForCurrentProcess()->HasSwitch(
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableNewProfileManagement);
   bool not_consistent_identity =
-      CommandLine::ForCurrentProcess()->HasSwitch(
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableAccountConsistency);
   int count_args = (is_new_avatar_menu ? 1 : 0) +
       (is_new_profile_management ? 1 : 0) +
@@ -81,16 +79,16 @@ State GetProcessState() {
   } else if (is_new_avatar_menu) {
     return STATE_NEW_AVATAR_MENU;
   } else if (not_new_profile_management) {
-    return STATE_OLD_AVATAR_MENU;
+    return STATE_NEW_AVATAR_MENU;
   } else if (not_consistent_identity) {
-    return STATE_OLD_AVATAR_MENU;
+    return STATE_NEW_PROFILE_MANAGEMENT;
   }
 
   // Set the default state
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_IOS)
   State state = STATE_ACCOUNT_CONSISTENCY;
 #else
-  State state = STATE_OLD_AVATAR_MENU;
+  State state = STATE_NEW_PROFILE_MANAGEMENT;
 #endif
 
   if (!trial_type.empty()) {
@@ -101,7 +99,7 @@ State GetProcessState() {
     } else if (trial_type == "NewAvatarMenu") {
       state = STATE_NEW_AVATAR_MENU;
     } else {
-      state = STATE_OLD_AVATAR_MENU;
+      state = STATE_NEW_PROFILE_MANAGEMENT;
     }
   }
 
@@ -110,7 +108,7 @@ State GetProcessState() {
 
 bool CheckFlag(std::string command_switch, State min_state) {
   // Individiual flag settings take precedence.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(command_switch))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(command_switch))
     return true;
 
   return GetProcessState() >= min_state;
@@ -124,19 +122,19 @@ bool IsEnableAccountConsistency() {
   return GetProcessState() >= STATE_ACCOUNT_CONSISTENCY;
 }
 
-bool IsEnableWebBasedSignin() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableWebBasedSignin) && !IsNewProfileManagement();
+bool IsEnableWebviewBasedSignin() {
+  // For now, the webview is enabled only for desktop.
+#if defined(OS_CHROMEOS)
+  return false;
+#else
+  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableIframeBasedSignin);
+#endif
 }
 
 bool IsExtensionsMultiAccount() {
   return CheckFlag(switches::kExtensionsMultiAccount,
-                   STATE_NEW_PROFILE_MANAGEMENT);
-}
-
-bool IsFastUserSwitching() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kFastUserSwitching);
+                   STATE_ACCOUNT_CONSISTENCY);
 }
 
 bool IsGoogleProfileInfo() {

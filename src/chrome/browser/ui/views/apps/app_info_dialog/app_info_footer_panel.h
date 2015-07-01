@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_APPS_APP_INFO_DIALOG_APP_INFO_FOOTER_PANEL_H_
 #define CHROME_BROWSER_UI_VIEWS_APPS_APP_INFO_DIALOG_APP_INFO_FOOTER_PANEL_H_
 
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
@@ -37,23 +38,26 @@ class AppInfoFooterPanel
   AppInfoFooterPanel(gfx::NativeWindow parent_window,
                      Profile* profile,
                      const extensions::Extension* app);
-  virtual ~AppInfoFooterPanel();
+  ~AppInfoFooterPanel() override;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(AppInfoDialogViewsTest,
+                           PinButtonsAreFocusedAfterPinUnpin);
+
   void CreateButtons();
   void LayoutButtons();
 
   // Updates the visibility of the pin/unpin buttons so that only one is visible
-  // at a time.
-  void UpdatePinButtons();
+  // at a time. If |focus_button| is true, sets the focus to whichever button is
+  // now visible.
+  void UpdatePinButtons(bool focus_visible_button);
 
   // Overridden from views::ButtonListener:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   // Overridden from ExtensionUninstallDialog::Delegate:
-  virtual void ExtensionUninstallAccepted() OVERRIDE;
-  virtual void ExtensionUninstallCanceled() OVERRIDE;
+  void ExtensionUninstallAccepted() override;
+  void ExtensionUninstallCanceled() override;
 
   // Create Shortcuts for the app. Must only be called if CanCreateShortcuts()
   // returns true.

@@ -43,20 +43,17 @@ public:
     ICOImageDecoder(ImageSource::AlphaOption, ImageSource::GammaAndColorProfileOption, size_t maxDecodedBytes);
     virtual ~ICOImageDecoder();
 
-    // ImageDecoder
-    virtual String filenameExtension() const OVERRIDE { return "ico"; }
-    virtual void setData(SharedBuffer*, bool allDataReceived) OVERRIDE;
-    virtual bool isSizeAvailable() OVERRIDE;
-    virtual IntSize size() const OVERRIDE;
-    virtual IntSize frameSizeAtIndex(size_t) const OVERRIDE;
-    virtual bool setSize(unsigned width, unsigned height) OVERRIDE;
-    virtual size_t frameCount() OVERRIDE;
-    virtual ImageFrame* frameBufferAtIndex(size_t) OVERRIDE;
+    // ImageDecoder:
+    virtual String filenameExtension() const override { return "ico"; }
+    virtual void setData(SharedBuffer*, bool allDataReceived) override;
+    virtual IntSize size() const override;
+    virtual IntSize frameSizeAtIndex(size_t) const override;
+    virtual bool setSize(unsigned width, unsigned height) override;
     // CAUTION: setFailed() deletes all readers and decoders.  Be careful to
     // avoid accessing deleted memory, especially when calling this from
     // inside BMPImageReader!
-    virtual bool setFailed() OVERRIDE;
-    virtual bool hotSpot(IntPoint&) const OVERRIDE;
+    virtual bool setFailed() override;
+    virtual bool hotSpot(IntPoint&) const override;
 
 private:
     enum ImageType {
@@ -80,6 +77,11 @@ private:
     // Returns true if |a| is a preferable icon entry to |b|.
     // Larger sizes, or greater bitdepths at the same size, are preferable.
     static bool compareEntries(const IconDirectoryEntry& a, const IconDirectoryEntry& b);
+
+    // ImageDecoder:
+    virtual void decodeSize() { decode(0, true); }
+    virtual size_t decodeFrameCount() override;
+    virtual void decode(size_t index) override { decode(index, false); }
 
     inline uint16_t readUint16(int offset) const
     {
@@ -141,9 +143,9 @@ private:
     IconDirectoryEntries m_dirEntries;
 
     // The image decoders for the various frames.
-    typedef Vector<OwnPtr<BMPImageReader> > BMPReaders;
+    typedef Vector<OwnPtr<BMPImageReader>> BMPReaders;
     BMPReaders m_bmpReaders;
-    typedef Vector<OwnPtr<PNGImageDecoder> > PNGDecoders;
+    typedef Vector<OwnPtr<PNGImageDecoder>> PNGDecoders;
     PNGDecoders m_pngDecoders;
 
     // Valid only while a BMPImageReader is decoding, this holds the size

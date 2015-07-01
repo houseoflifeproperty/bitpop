@@ -21,7 +21,7 @@ class MutablePreferenceMacDictionary
   explicit MutablePreferenceMacDictionary(base::DictionaryValue* storage);
 
   // MutableDictionary implementation
-  virtual base::DictionaryValue* operator->() OVERRIDE;
+  base::DictionaryValue* operator->() override;
 
  private:
   base::DictionaryValue* storage_;
@@ -55,13 +55,8 @@ DictionaryHashStoreContents::DictionaryHashStoreContents(
 // static
 void DictionaryHashStoreContents::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
-  registry->RegisterDictionaryPref(
-      kPreferenceMACs,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterStringPref(
-      kSuperMACPref,
-      std::string(),
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterDictionaryPref(kPreferenceMACs);
+  registry->RegisterStringPref(kSuperMACPref, std::string());
 }
 
 std::string DictionaryHashStoreContents::hash_store_id() const {

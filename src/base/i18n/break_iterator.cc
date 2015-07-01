@@ -14,7 +14,7 @@ namespace i18n {
 
 const size_t npos = static_cast<size_t>(-1);
 
-BreakIterator::BreakIterator(const string16& str, BreakType break_type)
+BreakIterator::BreakIterator(const StringPiece16& str, BreakType break_type)
     : iter_(NULL),
       string_(str),
       break_type_(break_type),
@@ -22,7 +22,7 @@ BreakIterator::BreakIterator(const string16& str, BreakType break_type)
       pos_(0) {
 }
 
-BreakIterator::BreakIterator(const string16& str, const string16& rules)
+BreakIterator::BreakIterator(const StringPiece16& str, const string16& rules)
     : iter_(NULL),
       string_(str),
       rules_(rules),
@@ -74,7 +74,8 @@ bool BreakIterator::Init() {
                       static_cast<int32_t>(string_.size()),
                       &status);
     if (U_FAILURE(status)) {
-      NOTREACHED() << "ubrk_open failed";
+      NOTREACHED() << "ubrk_open failed for type " << break_type
+          << " with error " << status;
     }
   }
 
@@ -132,6 +133,7 @@ bool BreakIterator::SetText(const base::char16* text, const size_t length) {
     NOTREACHED() << "ubrk_setText failed";
     return false;
   }
+  string_ = StringPiece16(text, length);
   return true;
 }
 
@@ -172,6 +174,10 @@ bool BreakIterator::IsGraphemeBoundary(size_t position) const {
 }
 
 string16 BreakIterator::GetString() const {
+  return GetStringPiece().as_string();
+}
+
+StringPiece16 BreakIterator::GetStringPiece() const {
   DCHECK(prev_ != npos && pos_ != npos);
   return string_.substr(prev_, pos_ - prev_);
 }

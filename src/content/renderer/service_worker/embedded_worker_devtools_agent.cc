@@ -4,7 +4,6 @@
 
 #include "content/renderer/service_worker/embedded_worker_devtools_agent.h"
 
-#include "content/child/child_thread.h"
 #include "content/common/devtools_messages.h"
 #include "content/renderer/render_thread_impl.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
@@ -36,8 +35,6 @@ bool EmbeddedWorkerDevToolsAgent::OnMessageReceived(
   IPC_MESSAGE_HANDLER(DevToolsAgentMsg_Detach, OnDetach)
   IPC_MESSAGE_HANDLER(DevToolsAgentMsg_DispatchOnInspectorBackend,
                       OnDispatchOnInspectorBackend)
-  IPC_MESSAGE_HANDLER(DevToolsAgentMsg_ResumeWorkerContext,
-                      OnResumeWorkerContext)
   IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -60,10 +57,6 @@ void EmbeddedWorkerDevToolsAgent::OnDetach() {
 void EmbeddedWorkerDevToolsAgent::OnDispatchOnInspectorBackend(
     const std::string& message) {
   webworker_->dispatchDevToolsMessage(WebString::fromUTF8(message));
-}
-
-void EmbeddedWorkerDevToolsAgent::OnResumeWorkerContext() {
-  webworker_->resumeWorkerContext();
 }
 
 }  // namespace content

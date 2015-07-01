@@ -27,6 +27,7 @@
 #include "core/svg/SVGAnimatedNumberOptionalNumber.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FETurbulence.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
@@ -39,7 +40,7 @@ template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGStitchOp
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<TurbulenceType>();
 
-class SVGFETurbulenceElement FINAL : public SVGFilterPrimitiveStandardAttributes {
+class SVGFETurbulenceElement final : public SVGFilterPrimitiveStandardAttributes {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGFETurbulenceElement);
@@ -51,20 +52,20 @@ public:
     SVGAnimatedEnumeration<TurbulenceType>* type() { return m_type.get(); }
     SVGAnimatedInteger* numOctaves() { return m_numOctaves.get(); }
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
     explicit SVGFETurbulenceElement(Document&);
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName& attrName) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
+    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName& attrName) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual PassRefPtrWillBeRawPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
-    RefPtr<SVGAnimatedNumberOptionalNumber> m_baseFrequency;
-    RefPtr<SVGAnimatedNumber> m_seed;
-    RefPtr<SVGAnimatedEnumeration<SVGStitchOptions> > m_stitchTiles;
-    RefPtr<SVGAnimatedEnumeration<TurbulenceType> > m_type;
-    RefPtr<SVGAnimatedInteger> m_numOctaves;
+    RefPtrWillBeMember<SVGAnimatedNumberOptionalNumber> m_baseFrequency;
+    RefPtrWillBeMember<SVGAnimatedNumber> m_seed;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGStitchOptions>> m_stitchTiles;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<TurbulenceType>> m_type;
+    RefPtrWillBeMember<SVGAnimatedInteger> m_numOctaves;
 };
 
 } // namespace blink

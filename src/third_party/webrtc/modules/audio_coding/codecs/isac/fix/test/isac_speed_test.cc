@@ -23,8 +23,8 @@ static const int kIsacOutputSamplingKhz = 16;
 class IsacSpeedTest : public AudioCodecSpeedTest {
  protected:
   IsacSpeedTest();
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
   virtual float EncodeABlock(int16_t* in_data, uint8_t* bit_stream,
                              int max_bytes, int* encoded_bytes);
   virtual float DecodeABlock(const uint8_t* bit_stream, int encoded_bytes,
@@ -86,7 +86,7 @@ float IsacSpeedTest::DecodeABlock(const uint8_t* bit_stream, int encoded_bytes,
   int16_t audio_type;
   clock_t clocks = clock();
   value = WebRtcIsacfix_Decode(ISACFIX_main_inst_,
-                               reinterpret_cast<const uint16_t*>(bit_stream),
+                               bit_stream,
                                encoded_bytes, out_data, &audio_type);
   clocks = clock() - clocks;
   EXPECT_EQ(output_length_sample_, value);

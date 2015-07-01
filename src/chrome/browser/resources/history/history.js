@@ -29,8 +29,10 @@ var selectionAnchor = -1;
 var activeVisit = null;
 
 /** @const */ var Command = cr.ui.Command;
+/** @const */ var FocusOutlineManager = cr.ui.FocusOutlineManager;
 /** @const */ var Menu = cr.ui.Menu;
 /** @const */ var MenuButton = cr.ui.MenuButton;
+/** @const */ var MenuItem = cr.ui.MenuItem;
 
 /**
  * Enum that shows the filtering behavior for a host or URL to a supervised
@@ -48,7 +50,7 @@ var SupervisedUserFilteringBehavior = {
  * The type of the history result object. The definition is based on
  * chrome/browser/ui/webui/history_ui.cc:
  *     BrowsingHistoryHandler::HistoryEntry::ToValue()
- * @typedef {{allTimestamps: Array.<number>,
+ * @typedef {{allTimestamps: Array<number>,
  *            blockedVisit: (boolean|undefined),
  *            dateRelativeDay: (string|undefined),
  *            dateShort: string,
@@ -183,22 +185,26 @@ Visit.prototype.getResultDOM = function(propertyBag) {
   var useMonthDate = propertyBag.useMonthDate || false;
   var focusless = propertyBag.focusless || false;
   var node = createElementWithClassName('li', 'entry');
-  var time = createElementWithClassName('label', 'time');
+  var time = createElementWithClassName('span', 'time');
   var entryBox = createElementWithClassName('div', 'entry-box');
   var domain = createElementWithClassName('div', 'domain');
 
-  this.id_ = this.model_.nextVisitId_++;
+  this.id_ = this.model_.getNextVisitId();
   var self = this;
 
-  // Only create the checkbox if it can be used either to delete an entry or to
-  // block/allow it.
+  // Only create the checkbox if it can be used to delete an entry.
   if (this.model_.editingEntriesAllowed) {
     var checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.id = 'checkbox-' + this.id_;
     checkbox.time = this.date.getTime();
+    checkbox.setAttribute('aria-label', loadTimeData.getStringF(
+        'entrySummary',
+        this.dateTimeOfDay,
+        this.starred_ ? loadTimeData.getString('bookmarked') : '',
+        this.title_,
+        this.domain_));
     checkbox.addEventListener('click', checkboxClicked);
-    time.setAttribute('for', checkbox.id);
     entryBox.appendChild(checkbox);
 
     if (focusless)
@@ -207,7 +213,7 @@ Visit.prototype.getResultDOM = function(propertyBag) {
     if (!isMobileVersion()) {
       // Clicking anywhere in the entryBox will check/uncheck the checkbox.
       entryBox.setAttribute('for', checkbox.id);
-      entryBox.addEventListener('mousedown', entryBoxMousedown);
+      entryBox.addEventListener('mousedown', this.handleMousedown_.bind(this));
       entryBox.addEventListener('click', entryBoxClick);
       entryBox.addEventListener('keydown', this.handleKeydown_.bind(this));
     }
@@ -243,6 +249,10 @@ Visit.prototype.getResultDOM = function(propertyBag) {
       e.preventDefault();
     }.bind(this));
   }
+
+  if (focusless)
+    bookmarkSection.tabIndex = -1;
+
   entryBox.appendChild(bookmarkSection);
 
   var visitEntryWrapper = /** @type {HTMLElement} */(
@@ -266,19 +276,23 @@ Visit.prototype.getResultDOM = function(propertyBag) {
   }
 
   if (isMobileVersion()) {
-    var removeButton = createElementWithClassName('button', 'remove-entry');
-    removeButton.setAttribute('aria-label',
-                              loadTimeData.getString('removeFromHistory'));
-    removeButton.classList.add('custom-appearance');
-    removeButton.addEventListener(
-        'click', this.removeEntryFromHistory_.bind(this));
-    entryBox.appendChild(removeButton);
+    if (this.model_.editingEntriesAllowed) {
+      var removeButton = createElementWithClassName('button', 'remove-entry');
+      removeButton.setAttribute('aria-label',
+                                loadTimeData.getString('removeFromHistory'));
+      removeButton.classList.add('custom-appearance');
+      removeButton.addEventListener(
+          'click', this.removeEntryFromHistory_.bind(this));
+      entryBox.appendChild(removeButton);
 
-    // Support clicking anywhere inside the entry box.
-    entryBox.addEventListener('click', function(e) {
-      if (!e.defaultPrevented)
-        self.titleLink.click();
-    });
+      // Support clicking anywhere inside the entry box.
+      entryBox.addEventListener('click', function(e) {
+        if (!e.defaultPrevented) {
+          self.titleLink.focus();
+          self.titleLink.click();
+        }
+      });
+    }
   } else {
     var dropDown = createElementWithClassName('button', 'drop-down');
     dropDown.value = 'Open action menu';
@@ -489,9 +503,22 @@ Visit.prototype.showMoreFromSite_ = function() {
  */
 Visit.prototype.handleKeydown_ = function(e) {
   // Delete or Backspace should delete the entry if allowed.
-  if ((e.keyIdentifier == 'U+0008' || e.keyIdentifier == 'U+007F') &&
-      !this.model_.isDeletingVisits()) {
+  if (e.keyIdentifier == 'U+0008' || e.keyIdentifier == 'U+007F')
     this.removeEntryFromHistory_(e);
+};
+
+/**
+ * @param {Event} event A mousedown event.
+ * @private
+ */
+Visit.prototype.handleMousedown_ = function(event) {
+  // Prevent text selection when shift-clicking to select multiple entries.
+  if (event.shiftKey) {
+    event.preventDefault();
+
+    var target = assertInstanceof(event.target, HTMLElement);
+    if (this.model_.getView().isInFocusGrid(target))
+      target.focus();
   }
 };
 
@@ -501,8 +528,10 @@ Visit.prototype.handleKeydown_ = function(e) {
  * @private
  */
 Visit.prototype.removeEntryFromHistory_ = function(e) {
-  if (!this.model_.deletingHistoryAllowed)
+  if (!this.model_.deletingHistoryAllowed || this.model_.isDeletingVisits() ||
+      this.domNode_.classList.contains('fade-out')) {
     return;
+  }
 
   this.model_.getView().onBeforeRemove(this);
   this.removeFromHistory();
@@ -605,7 +634,7 @@ HistoryModel.prototype.requestPage = function(page) {
 /**
  * Receiver for history query.
  * @param {HistoryQuery} info An object containing information about the query.
- * @param {Array.<HistoryEntry>} results A list of results.
+ * @param {Array<HistoryEntry>} results A list of results.
  */
 HistoryModel.prototype.addResults = function(info, results) {
   // If no requests are in flight then this was an old request so we drop the
@@ -649,7 +678,7 @@ HistoryModel.prototype.getSize = function() {
  * Get a list of visits between specified index positions.
  * @param {number} start The start index.
  * @param {number} end The end index.
- * @return {Array.<Visit>} A list of visits.
+ * @return {Array<Visit>} A list of visits.
  */
 HistoryModel.prototype.getNumberedRange = function(start, end) {
   return this.visits_.slice(start, end);
@@ -667,7 +696,7 @@ HistoryModel.prototype.hasMoreResults = function() {
 /**
  * Removes a list of visits from the history, and calls |callback| when the
  * removal has successfully completed.
- * @param {Array.<Visit>} visits The visits to remove.
+ * @param {Array<Visit>} visits The visits to remove.
  * @param {Function} callback The function to call after removal succeeds.
  */
 HistoryModel.prototype.removeVisitsFromHistory = function(visits, callback) {
@@ -681,8 +710,8 @@ HistoryModel.prototype.removeVisitsFromHistory = function(visits, callback) {
     });
   }
 
-  chrome.send('removeVisits', toBeRemoved);
   this.deleteCompleteCallback_ = callback;
+  chrome.send('removeVisits', toBeRemoved);
 };
 
 /** @return {boolean} Whether the model is currently deleting a visit. */
@@ -740,6 +769,14 @@ HistoryModel.prototype.removeVisit = function(visit) {
   var index = this.visits_.indexOf(visit);
   if (index >= 0)
     this.visits_.splice(index, 1);
+};
+
+/**
+ * Automatically generates a new visit ID.
+ * @return {number} The next visit ID.
+ */
+HistoryModel.prototype.getNextVisitId = function() {
+  return this.nextVisitId_++;
 };
 
 // HistoryModel, Private: -----------------------------------------------------
@@ -854,33 +891,87 @@ HistoryModel.prototype.getGroupByDomain = function() {
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-// HistoryFocusObserver:
+// HistoryFocusRow:
 
 /**
+ * Provides an implementation for a single column grid.
  * @constructor
- * @implements {cr.ui.FocusRow.Observer}
+ * @extends {cr.ui.FocusRow}
  */
-function HistoryFocusObserver() {}
+function HistoryFocusRow() {}
 
-HistoryFocusObserver.prototype = {
+/**
+ * Decorates |rowElement| so that it can be treated as a HistoryFocusRow item.
+ * @param {Element} rowElement The element representing this row.
+ * @param {Node} boundary Focus events are ignored outside of this node.
+ */
+HistoryFocusRow.decorate = function(rowElement, boundary) {
+  rowElement.__proto__ = HistoryFocusRow.prototype;
+  rowElement.decorate(boundary);
+
+  rowElement.addElementIfPresent_('.entry-box input', 'checkbox');
+  rowElement.addElementIfPresent_('.domain-checkbox', 'checkbox');
+  rowElement.addElementIfPresent_('.bookmark-section.starred', 'star');
+  rowElement.addElementIfPresent_('[is="action-link"]', 'domain');
+  rowElement.addElementIfPresent_('.title a', 'title');
+  rowElement.addElementIfPresent_('.drop-down', 'menu');
+};
+
+HistoryFocusRow.prototype = {
+  __proto__: cr.ui.FocusRow.prototype,
+
   /** @override */
-  onActivate: function(row) {
-    this.getActiveRowElement_(row).classList.add('active');
+  onActiveStateChanged: function(state) {
+    this.classList.toggle('active', state);
   },
 
   /** @override */
-  onDeactivate: function(row) {
-    this.getActiveRowElement_(row).classList.remove('active');
+  getEquivalentElement: function(element) {
+    if (this.contains(element))
+      return element;
+
+    // All elements default to another element with the same type.
+    var equivalent = this.getColumn_(element.getAttribute('column-type'));
+
+    if (!equivalent) {
+      switch (element.getAttribute('column-type')) {
+        case 'star':
+          equivalent = this.getColumn_('title') || this.getColumn_('domain');
+          break;
+        case 'domain':
+          equivalent = this.getColumn_('title');
+          break;
+        case 'title':
+          equivalent = this.getColumn_('domain');
+          break;
+        case 'menu':
+          return this.focusableElements[this.focusableElements.length - 1];
+      }
+    }
+
+    return equivalent || this.focusableElements[0];
   },
 
   /**
-   * @param {cr.ui.FocusRow} row The row to find an element for.
-   * @return {Element} |row|'s "active" element.
+   * @param {string} type The type of column to return.
+   * @return {?Element} The column matching the type.
    * @private
    */
-  getActiveRowElement_: function(row) {
-    return findAncestorByClass(row.items[0], 'entry') ||
-           findAncestorByClass(row.items[0], 'site-domain-wrapper');
+  getColumn_: function(type) {
+    return this.querySelector('[column-type=' + type + ']');
+  },
+
+  /**
+   * @param {string} query A query to select the appropriate element.
+   * @param {string} type The type to use for the element.
+   * @private
+   */
+  addElementIfPresent_: function(query, type) {
+    var element = this.querySelector(query);
+    if (element) {
+      this.addFocusableElement(element);
+      element.setAttribute('column-type', type);
+    }
   },
 };
 
@@ -898,8 +989,7 @@ function HistoryView(model) {
   this.editButtonTd_ = $('edit-button');
   this.editingControlsDiv_ = $('editing-controls');
   this.resultDiv_ = $('results-display');
-  this.focusGrid_ = new cr.ui.FocusGrid(this.resultDiv_,
-                                        new HistoryFocusObserver);
+  this.focusGrid_ = new cr.ui.FocusGrid();
   this.pageDiv_ = $('results-pagination');
   this.model_ = model;
   this.pageIndex_ = 0;
@@ -933,16 +1023,10 @@ function HistoryView(model) {
     self.setPage(self.pageIndex_ + 1);
   });
 
-  var handleRangeChange = function(e) {
-    // Update the results and save the last state.
+  $('timeframe-controls').onchange = function(e) {
     var value = parseInt(e.target.value, 10);
-    self.setRangeInDays(/** @type {HistoryModel.Range.<number>} */(value));
+    self.setRangeInDays(/** @type {HistoryModel.Range<number>} */(value));
   };
-
-  // Add handlers for the range options.
-  $('timeframe-filter-all').addEventListener('change', handleRangeChange);
-  $('timeframe-filter-week').addEventListener('change', handleRangeChange);
-  $('timeframe-filter-month').addEventListener('change', handleRangeChange);
 
   $('range-previous').addEventListener('click', function(e) {
     if (self.getRangeInDays() == HistoryModel.Range.ALL_TIME)
@@ -1137,14 +1221,14 @@ HistoryView.prototype.showNotification = function(innerHTML, isWarning) {
 HistoryView.prototype.onBeforeRemove = function(visit) {
   assert(this.currentVisits_.indexOf(visit) >= 0);
 
-  var pos = this.focusGrid_.getPositionForTarget(document.activeElement);
-  if (!pos)
+  var rowIndex = this.focusGrid_.getRowIndexForTarget(document.activeElement);
+  if (rowIndex == -1)
     return;
 
-  var row = this.focusGrid_.rows[pos.row + 1] ||
-            this.focusGrid_.rows[pos.row - 1];
-  if (row)
-    row.focusIndex(Math.min(pos.col, row.items.length - 1));
+  var rowToFocus = this.focusGrid_.rows[rowIndex + 1] ||
+                   this.focusGrid_.rows[rowIndex - 1];
+  if (rowToFocus)
+    rowToFocus.getEquivalentElement(document.activeElement).focus();
 };
 
 /** @param {Visit} visit The visit about to be unstarred. */
@@ -1152,9 +1236,12 @@ HistoryView.prototype.onBeforeUnstarred = function(visit) {
   assert(this.currentVisits_.indexOf(visit) >= 0);
   assert(visit.bookmarkStar == document.activeElement);
 
-  var pos = this.focusGrid_.getPositionForTarget(document.activeElement);
-  var row = this.focusGrid_.rows[pos.row];
-  row.focusIndex(Math.min(pos.col + 1, row.items.length - 1));
+  var rowIndex = this.focusGrid_.getRowIndexForTarget(document.activeElement);
+  var row = this.focusGrid_.rows[rowIndex];
+
+  // Focus the title or domain when the bookmarked star is removed because the
+  // star will no longer be focusable.
+  row.querySelector('[column-type=title], [column-type=domain]').focus();
 };
 
 /** @param {Visit} visit The visit that was just unstarred. */
@@ -1225,8 +1312,10 @@ HistoryView.prototype.removeVisit = function(visit) {
 HistoryView.prototype.onEntryRemoved = function() {
   this.updateSelectionEditButtons();
 
-  if (this.model_.getSize() == 0)
+  if (this.model_.getSize() == 0) {
+    this.clear_();
     this.onModelReady(true);  // Shows "No entries" message.
+  }
 };
 
 /**
@@ -1245,6 +1334,14 @@ HistoryView.prototype.positionNotificationBar = function() {
   }
 };
 
+/**
+ * @param {Element} el An element to look for.
+ * @return {boolean} Whether |el| is in |this.focusGrid_|.
+ */
+HistoryView.prototype.isInFocusGrid = function(el) {
+  return this.focusGrid_.getRowIndexForTarget(el) != -1;
+};
+
 // HistoryView, private: ------------------------------------------------------
 
 /**
@@ -1257,7 +1354,11 @@ HistoryView.prototype.clear_ = function() {
   if (alertOverlay && alertOverlay.classList.contains('showing'))
     hideConfirmationOverlay();
 
-  this.resultDiv_.textContent = '';
+  // Remove everything but <h3 id="results-header"> (the first child).
+  while (this.resultDiv_.children.length > 1) {
+    this.resultDiv_.removeChild(this.resultDiv_.lastElementChild);
+  }
+  $('results-header').textContent = '';
 
   this.currentVisits_.forEach(function(visit) {
     visit.isRendered = false;
@@ -1313,9 +1414,7 @@ HistoryView.prototype.getGroupedVisitsDOM_ = function(
       createElementWithClassName('div', 'site-domain-arrow'));
   var siteDomain = siteDomainRow.appendChild(
       createElementWithClassName('div', 'site-domain'));
-  var siteDomainLink = siteDomain.appendChild(
-      createElementWithClassName('button', 'link-button'));
-  siteDomainLink.addEventListener('click', function(e) { e.preventDefault(); });
+  var siteDomainLink = siteDomain.appendChild(new ActionLink);
   siteDomainLink.textContent = domain;
   var numberOfVisits = createElementWithClassName('span', 'number-visits');
   var domainElement = document.createElement('span');
@@ -1521,13 +1620,19 @@ HistoryView.prototype.displayResults_ = function(doneLoading) {
   var groupByDomain = this.model_.getGroupByDomain();
 
   if (searchText) {
-    // Add a header for the search results, if there isn't already one.
-    if (!this.resultDiv_.querySelector('h3')) {
-      var header = document.createElement('h3');
-      header.textContent = loadTimeData.getStringF('searchResultsFor',
-                                                   searchText);
-      this.resultDiv_.appendChild(header);
+    var headerText;
+    if (!doneLoading) {
+      headerText = loadTimeData.getStringF('searchResultsFor', searchText);
+    } else if (results.length == 0) {
+      headerText = loadTimeData.getString('noSearchResults');
+    } else {
+      var resultId = results.length == 1 ? 'searchResult' : 'searchResults';
+      headerText = loadTimeData.getStringF('foundSearchResults',
+                                           results.length,
+                                           loadTimeData.getString(resultId),
+                                           searchText);
     }
+    $('results-header').textContent = headerText;
 
     this.addTimeframeInterval_(this.resultDiv_);
 
@@ -1537,11 +1642,7 @@ HistoryView.prototype.displayResults_ = function(doneLoading) {
     if (!this.model_.editingEntriesAllowed)
       searchResults.classList.add('no-checkboxes');
 
-    if (results.length == 0 && doneLoading) {
-      var noSearchResults = searchResults.appendChild(
-          createElementWithClassName('div', 'no-results-message'));
-      noSearchResults.textContent = loadTimeData.getString('noSearchResults');
-    } else {
+    if (doneLoading) {
       for (var i = 0, visit; visit = results[i]; i++) {
         if (!visit.isRendered) {
           searchResults.appendChild(visit.getResultDOM({
@@ -1558,13 +1659,12 @@ HistoryView.prototype.displayResults_ = function(doneLoading) {
 
     this.addTimeframeInterval_(resultsFragment);
 
-    if (results.length == 0 && doneLoading) {
-      var noResults = resultsFragment.appendChild(
-          createElementWithClassName('div', 'no-results-message'));
-      noResults.textContent = loadTimeData.getString('noResults');
-      this.resultDiv_.appendChild(resultsFragment);
+    var noResults = results.length == 0 && doneLoading;
+    $('results-header').textContent = noResults ?
+        loadTimeData.getString('noResults') : '';
+
+    if (noResults)
       return;
-    }
 
     if (this.getRangeInDays() == HistoryModel.Range.MONTH &&
         groupByDomain) {
@@ -1596,31 +1696,22 @@ HistoryView.prototype.displayResults_ = function(doneLoading) {
 };
 
 var focusGridRowSelector = [
-  '.day-results > .entry:not(.fade-out)',
+  ':-webkit-any(.day-results, .search-results) > .entry:not(.fade-out)',
   '.expand .grouped .entry:not(.fade-out)',
   '.site-domain-wrapper'
-].join(', ');
-
-var focusGridColumnSelector = [
-  '.entry-box input',
-  '.bookmark-section.starred',
-  '.title a',
-  '.drop-down',
-  '.domain-checkbox',
-  '.link-button',
 ].join(', ');
 
 /** @private */
 HistoryView.prototype.updateFocusGrid_ = function() {
   var rows = this.resultDiv_.querySelectorAll(focusGridRowSelector);
-  var grid = [];
+  this.focusGrid_.destroy();
 
   for (var i = 0; i < rows.length; ++i) {
     assert(rows[i].parentNode);
-    grid.push(rows[i].querySelectorAll(focusGridColumnSelector));
+    HistoryFocusRow.decorate(rows[i], this.resultDiv_);
+    this.focusGrid_.addRow(rows[i]);
   }
-
-  this.focusGrid_.setGrid(grid);
+  this.focusGrid_.ensureRowActive();
 };
 
 /**
@@ -1630,9 +1721,9 @@ HistoryView.prototype.updateFocusGrid_ = function() {
 HistoryView.prototype.updateNavBar_ = function() {
   this.updateRangeButtons_();
 
-  // Supervised users have the control bar on top, don't show it on the bottom
-  // as well.
-  if (!loadTimeData.getBoolean('isSupervisedProfile')) {
+  // If grouping by domain is enabled, there's a control bar on top, don't show
+  // the one on the bottom as well.
+  if (!loadTimeData.getBoolean('groupByDomain')) {
     $('newest-button').hidden = this.pageIndex_ == 0;
     $('newer-button').hidden = this.pageIndex_ == 0;
     $('older-button').hidden =
@@ -1711,6 +1802,16 @@ HistoryView.prototype.toggleGroupedVisits_ = function(e) {
   }
 
   entry.classList.toggle('expand');
+
+  var row = entry.querySelector('.site-domain-wrapper');
+  var activeRows =
+      this.resultDiv_.getElementsByClassName(cr.ui.FocusRow.ACTIVE_CLASS);
+  for (var i = 0; i < activeRows.length; ++i) {
+    if (activeRows[i] != row) // Ignore |row| to avoid flicker.
+      activeRows[i].makeActive(false);
+  }
+  row.makeActive(true);
+
   this.updateFocusGrid_();
 };
 
@@ -1737,18 +1838,18 @@ function PageState(model, view) {
 
   // TODO(glen): Replace this with a bound method so we don't need
   //     public model and view.
-  this.checker_ = window.setInterval(function(stateObj) {
-    var hashData = stateObj.getHashData();
+  this.checker_ = window.setInterval(function() {
+    var hashData = this.getHashData();
     var page = parseInt(hashData.page, 10);
     var range = parseInt(hashData.range, 10);
     var offset = parseInt(hashData.offset, 10);
-    if (hashData.q != stateObj.model.getSearchText() ||
-        page != stateObj.view.getPage() ||
-        range != stateObj.model.rangeInDays ||
-        offset != stateObj.model.offset) {
-      stateObj.view.setPageState(hashData.q, page, range, offset);
+    if (hashData.q != this.model.getSearchText() ||
+        page != this.view.getPage() ||
+        range != this.model.rangeInDays ||
+        offset != this.model.offset) {
+      this.view.setPageState(hashData.q, page, range, offset);
     }
-  }, 50, this);
+  }.bind(this), 50);
 }
 
 /**
@@ -1833,6 +1934,7 @@ PageState.getHashString = function(term, page, range, offset) {
  */
 function load() {
   uber.onContentFrameLoaded();
+  FocusOutlineManager.forDocument(document);
 
   var searchField = $('search-field');
 
@@ -1862,18 +1964,14 @@ function load() {
       searchField.blur();  // Dismiss the keyboard.
   };
 
-  var mayRemoveVisits = loadTimeData.getBoolean('allowDeletingHistory');
-  $('remove-visit').disabled = !mayRemoveVisits;
+  var removeMenu = getRequiredElement('remove-visit');
+  // Decorate remove-visit before disabling/hiding because the values are
+  // overwritten when decorating a MenuItem that has a Command.
+  cr.ui.decorate(removeMenu, MenuItem);
+  removeMenu.disabled = !loadTimeData.getBoolean('allowDeletingHistory');
+  removeMenu.hidden = loadTimeData.getBoolean('hideDeleteVisitUI');
 
-  if (mayRemoveVisits) {
-    $('remove-visit').addEventListener('activate', function(e) {
-      activeVisit.removeFromHistory();
-      activeVisit = null;
-    });
-  }
-
-  if (!loadTimeData.getBoolean('showDeleteVisitUI'))
-    $('remove-visit').hidden = true;
+  document.addEventListener('command', handleCommand);
 
   searchField.addEventListener('search', doSearch);
   $('search-button').addEventListener('click', doSearch);
@@ -1883,15 +1981,16 @@ function load() {
     activeVisit = null;
   });
 
-  // Only show the controls if the command line switch is activated.
-  if (loadTimeData.getBoolean('groupByDomain') ||
-      loadTimeData.getBoolean('isSupervisedProfile')) {
-    // Hide the top container which has the "Clear browsing data" and "Remove
-    // selected entries" buttons since they're unavailable for supervised users.
-    $('top-container').hidden = true;
+  // Only show the controls if the command line switch is activated or the user
+  // is supervised.
+  if (loadTimeData.getBoolean('groupByDomain')) {
     $('history-page').classList.add('big-topbar-page');
     $('filter-controls').hidden = false;
   }
+  // Hide the top container which has the "Clear browsing data" and "Remove
+  // selected entries" buttons if deleting history is not allowed.
+  if (!loadTimeData.getBoolean('allowDeletingHistory'))
+    $('top-container').hidden = true;
 
   uber.setTitle(loadTimeData.getString('title'));
 
@@ -1918,7 +2017,7 @@ function load() {
     $('history-page').appendChild($('clear-browsing-data'));
   } else {
     window.addEventListener('message', function(e) {
-      e = /** @type {!MessageEvent.<!{method: string}>} */(e);
+      e = /** @type {!MessageEvent<!{method: string}>} */(e);
       if (e.data.method == 'frameSelected')
         searchField.focus();
     });
@@ -1940,6 +2039,26 @@ function load() {
   window.addEventListener('orientationchange', checkKeyboardVisibility);
   window.addEventListener('resize', checkKeyboardVisibility);
 </if> /* is_ios */
+}
+
+/**
+ * Handle all commands in the history page.
+ * @param {!Event} e is a command event.
+ */
+function handleCommand(e) {
+  switch (e.command.id) {
+    case 'remove-visit-command':
+      // Removing visited items needs to be done with a command in order to have
+      // proper focus. This is because the command event is handled after the
+      // menu dialog is no longer visible and focus has returned to the history
+      // items. The activate event is handled when the menu dialog is still
+      // visible and focus is lost.
+      // removeEntryFromHistory_ will update activeVisit to the newly focused
+      // history item.
+      assert(!$('remove-visit').disabled);
+      activeVisit.removeEntryFromHistory_(e);
+      break;
+  }
 }
 
 /**
@@ -1980,10 +2099,23 @@ function showConfirmationOverlay() {
   $('history-page').setAttribute('aria-hidden', 'true');
   uber.invokeMethodOnParent('beginInterceptingEvents');
 
-  // If an element is focused behind the confirm overlay, blur it so focus
-  // doesn't accidentally get stuck behind it.
+  // Change focus to the overlay if any other control was focused by keyboard
+  // before. Otherwise, no one should have focus.
+  var focusOverlay = FocusOutlineManager.forDocument(document).visible &&
+                     document.activeElement != document.body;
   if ($('history-page').contains(document.activeElement))
     document.activeElement.blur();
+
+  if (focusOverlay) {
+    // Wait until the browser knows the button has had a chance to become
+    // visible.
+    window.requestAnimationFrame(function() {
+      var button = cr.ui.overlay.getDefaultButton($('overlay'));
+      if (button)
+        button.focus();
+    });
+  }
+  $('alertOverlay').classList.toggle('focus-on-hide', focusOverlay);
 }
 
 /**
@@ -2060,6 +2192,10 @@ function removeItems() {
         historyView.reload.bind(historyView));
     $('overlay').removeEventListener('cancelOverlay', onCancelRemove);
     hideConfirmationOverlay();
+    if ($('alertOverlay').classList.contains('focus-on-hide') &&
+        FocusOutlineManager.forDocument(document).visible) {
+      $('search-field').focus();
+    }
   }
 
   function onCancelRemove() {
@@ -2074,6 +2210,10 @@ function removeItems() {
     }
     $('overlay').removeEventListener('cancelOverlay', onCancelRemove);
     hideConfirmationOverlay();
+    if ($('alertOverlay').classList.contains('focus-on-hide') &&
+        FocusOutlineManager.forDocument(document).visible) {
+      $('remove-selected').focus();
+    }
   }
 
   if (checked.length) {
@@ -2154,12 +2294,6 @@ function updateParentCheckbox(checkbox) {
   var groupCheckbox = entry.querySelector('.site-domain-wrapper input');
   if (groupCheckbox)
     groupCheckbox.checked = false;
-}
-
-function entryBoxMousedown(event) {
-  // Prevent text selection when shift-clicking to select multiple entries.
-  if (event.shiftKey)
-    event.preventDefault();
 }
 
 /**
@@ -2244,7 +2378,7 @@ function getFilteringStatusDOM(filteringBehavior) {
 /**
  * Our history system calls this function with results from searches.
  * @param {HistoryQuery} info An object containing information about the query.
- * @param {Array.<HistoryEntry>} results A list of results.
+ * @param {Array<HistoryEntry>} results A list of results.
  */
 function historyResult(info, results) {
   historyModel.addResults(info, results);

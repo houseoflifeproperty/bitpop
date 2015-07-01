@@ -64,6 +64,7 @@
           'conditions': [
             ['os_posix==1 and OS!="mac"', {
               'cflags!': ['-fvisibility=hidden'],
+              'libraries': ['-lm'],
             }],
             ['OS=="mac"', {
               'conditions': [
@@ -82,15 +83,32 @@
               'sources': [
                 'libexif.def',
               ],
+              'conditions': [
+                ['MSVS_VERSION < "2015"', {
+                  'defines': [
+                    # This seems like a hack, but this is what Safari Win does.
+                    # Luckily it is no longer needed/allowed with VS 2015.
+                    'snprintf=_snprintf',
+                  ],
+                }],
+              ],
               'defines': [
-                # This seems like a hack, but this is what WebKit Win does.
-                'snprintf=_snprintf',
                 'inline=__inline',
               ],
               'msvs_disabled_warnings': [
                 4018, # size/unsigned mismatch
                 4267, # size_t -> ExifLong truncation on amd64
               ],
+              # As of VS 2013 Update 3, building this project with /analyze hits
+              # an internal compiler error on exif-entry.c. This halts the build
+              # and prevents subsequent analysis. Therefore, /analyze is
+              # disabled for this project. See this bug for details:
+              # https://connect.microsoft.com/VisualStudio/feedback/details/1014689/internal-compiler-error
+              'msvs_settings': {
+                'VCCLCompilerTool': {
+                  'AdditionalOptions!': [ '/analyze' ]
+                },
+              },
             }],
           ],
         },

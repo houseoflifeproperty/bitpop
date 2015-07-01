@@ -39,12 +39,14 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
+#include "core/dom/shadow/ComposedTreeTraversal.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/markup.h"
 #include "core/events/EventListener.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/frame/Settings.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
@@ -52,7 +54,9 @@
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
+#include "core/page/SpatialNavigation.h"
+#include "platform/Language.h"
 #include "platform/text/BidiResolver.h"
 #include "platform/text/BidiTextRun.h"
 #include "platform/text/TextRunIterator.h"
@@ -124,8 +128,10 @@ static inline CSSValueID unicodeBidiAttributeForDirAuto(HTMLElement* element)
 unsigned HTMLElement::parseBorderWidthAttribute(const AtomicString& value) const
 {
     unsigned borderWidth = 0;
-    if (value.isEmpty() || !parseHTMLNonNegativeInteger(value, borderWidth))
-        return hasTagName(tableTag) ? 1 : borderWidth;
+    if (value.isEmpty() || !parseHTMLNonNegativeInteger(value, borderWidth)) {
+        if (hasTagName(tableTag) && !value.isNull())
+            return 1;
+    }
     return borderWidth;
 }
 
@@ -139,7 +145,28 @@ void HTMLElement::mapLanguageAttributeToLocale(const AtomicString& value, Mutabl
 {
     if (!value.isEmpty()) {
         // Have to quote so the locale id is treated as a string instead of as a CSS keyword.
-        addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitLocale, quoteCSSString(value));
+        addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitLocale, serializeString(value));
+
+        // FIXME: Remove the following UseCounter code when we collect enough
+        // data.
+        UseCounter::count(document(), UseCounter::LangAttribute);
+        if (isHTMLHtmlElement(*this))
+            UseCounter::count(document(), UseCounter::LangAttributeOnHTML);
+        else if (isHTMLBodyElement(*this))
+            UseCounter::count(document(), UseCounter::LangAttributeOnBody);
+        String htmlLanguage = value.string();
+        size_t firstSeparator = htmlLanguage.find('-');
+        if (firstSeparator != kNotFound)
+            htmlLanguage = htmlLanguage.left(firstSeparator);
+        String uiLanguage = defaultLanguage();
+        firstSeparator = uiLanguage.find('-');
+        if (firstSeparator != kNotFound)
+            uiLanguage = uiLanguage.left(firstSeparator);
+        firstSeparator = uiLanguage.find('_');
+        if (firstSeparator != kNotFound)
+            uiLanguage = uiLanguage.left(firstSeparator);
+        if (!equalIgnoringCase(htmlLanguage, uiLanguage))
+            UseCounter::count(document(), UseCounter::LangAttributeDoesNotMatchToUILocale);
     } else {
         // The empty string means the language is explicitly unknown.
         addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitLocale, CSSValueAuto);
@@ -210,97 +237,106 @@ const AtomicString& HTMLElement::eventNameForAttributeName(const QualifiedName& 
     if (!attrName.namespaceURI().isNull())
         return nullAtom;
 
-    if (!attrName.localName().startsWith("on", false))
+    if (!attrName.localName().startsWith("on", TextCaseInsensitive))
         return nullAtom;
 
     typedef HashMap<AtomicString, AtomicString> StringToStringMap;
     DEFINE_STATIC_LOCAL(StringToStringMap, attributeNameToEventNameMap, ());
     if (!attributeNameToEventNameMap.size()) {
-        attributeNameToEventNameMap.set(onabortAttr.localName(), EventTypeNames::abort);
-        attributeNameToEventNameMap.set(onanimationendAttr.localName(), EventTypeNames::animationend);
-        attributeNameToEventNameMap.set(onanimationiterationAttr.localName(), EventTypeNames::animationiteration);
-        attributeNameToEventNameMap.set(onanimationstartAttr.localName(), EventTypeNames::animationstart);
-        attributeNameToEventNameMap.set(onautocompleteAttr.localName(), EventTypeNames::autocomplete);
-        attributeNameToEventNameMap.set(onautocompleteerrorAttr.localName(), EventTypeNames::autocompleteerror);
-        attributeNameToEventNameMap.set(onbeforecopyAttr.localName(), EventTypeNames::beforecopy);
-        attributeNameToEventNameMap.set(onbeforecutAttr.localName(), EventTypeNames::beforecut);
-        attributeNameToEventNameMap.set(onbeforepasteAttr.localName(), EventTypeNames::beforepaste);
-        attributeNameToEventNameMap.set(onblurAttr.localName(), EventTypeNames::blur);
-        attributeNameToEventNameMap.set(oncancelAttr.localName(), EventTypeNames::cancel);
-        attributeNameToEventNameMap.set(oncanplayAttr.localName(), EventTypeNames::canplay);
-        attributeNameToEventNameMap.set(oncanplaythroughAttr.localName(), EventTypeNames::canplaythrough);
-        attributeNameToEventNameMap.set(onchangeAttr.localName(), EventTypeNames::change);
-        attributeNameToEventNameMap.set(onclickAttr.localName(), EventTypeNames::click);
-        attributeNameToEventNameMap.set(oncloseAttr.localName(), EventTypeNames::close);
-        attributeNameToEventNameMap.set(oncontextmenuAttr.localName(), EventTypeNames::contextmenu);
-        attributeNameToEventNameMap.set(oncopyAttr.localName(), EventTypeNames::copy);
-        attributeNameToEventNameMap.set(oncuechangeAttr.localName(), EventTypeNames::cuechange);
-        attributeNameToEventNameMap.set(oncutAttr.localName(), EventTypeNames::cut);
-        attributeNameToEventNameMap.set(ondblclickAttr.localName(), EventTypeNames::dblclick);
-        attributeNameToEventNameMap.set(ondragAttr.localName(), EventTypeNames::drag);
-        attributeNameToEventNameMap.set(ondragendAttr.localName(), EventTypeNames::dragend);
-        attributeNameToEventNameMap.set(ondragenterAttr.localName(), EventTypeNames::dragenter);
-        attributeNameToEventNameMap.set(ondragleaveAttr.localName(), EventTypeNames::dragleave);
-        attributeNameToEventNameMap.set(ondragoverAttr.localName(), EventTypeNames::dragover);
-        attributeNameToEventNameMap.set(ondragstartAttr.localName(), EventTypeNames::dragstart);
-        attributeNameToEventNameMap.set(ondropAttr.localName(), EventTypeNames::drop);
-        attributeNameToEventNameMap.set(ondurationchangeAttr.localName(), EventTypeNames::durationchange);
-        attributeNameToEventNameMap.set(onemptiedAttr.localName(), EventTypeNames::emptied);
-        attributeNameToEventNameMap.set(onendedAttr.localName(), EventTypeNames::ended);
-        attributeNameToEventNameMap.set(onerrorAttr.localName(), EventTypeNames::error);
-        attributeNameToEventNameMap.set(onfocusAttr.localName(), EventTypeNames::focus);
-        attributeNameToEventNameMap.set(onfocusinAttr.localName(), EventTypeNames::focusin);
-        attributeNameToEventNameMap.set(onfocusoutAttr.localName(), EventTypeNames::focusout);
-        attributeNameToEventNameMap.set(oninputAttr.localName(), EventTypeNames::input);
-        attributeNameToEventNameMap.set(oninvalidAttr.localName(), EventTypeNames::invalid);
-        attributeNameToEventNameMap.set(onkeydownAttr.localName(), EventTypeNames::keydown);
-        attributeNameToEventNameMap.set(onkeypressAttr.localName(), EventTypeNames::keypress);
-        attributeNameToEventNameMap.set(onkeyupAttr.localName(), EventTypeNames::keyup);
-        attributeNameToEventNameMap.set(onloadAttr.localName(), EventTypeNames::load);
-        attributeNameToEventNameMap.set(onloadeddataAttr.localName(), EventTypeNames::loadeddata);
-        attributeNameToEventNameMap.set(onloadedmetadataAttr.localName(), EventTypeNames::loadedmetadata);
-        attributeNameToEventNameMap.set(onloadstartAttr.localName(), EventTypeNames::loadstart);
-        attributeNameToEventNameMap.set(onmousedownAttr.localName(), EventTypeNames::mousedown);
-        attributeNameToEventNameMap.set(onmouseenterAttr.localName(), EventTypeNames::mouseenter);
-        attributeNameToEventNameMap.set(onmouseleaveAttr.localName(), EventTypeNames::mouseleave);
-        attributeNameToEventNameMap.set(onmousemoveAttr.localName(), EventTypeNames::mousemove);
-        attributeNameToEventNameMap.set(onmouseoutAttr.localName(), EventTypeNames::mouseout);
-        attributeNameToEventNameMap.set(onmouseoverAttr.localName(), EventTypeNames::mouseover);
-        attributeNameToEventNameMap.set(onmouseupAttr.localName(), EventTypeNames::mouseup);
-        attributeNameToEventNameMap.set(onmousewheelAttr.localName(), EventTypeNames::mousewheel);
-        attributeNameToEventNameMap.set(onpasteAttr.localName(), EventTypeNames::paste);
-        attributeNameToEventNameMap.set(onpauseAttr.localName(), EventTypeNames::pause);
-        attributeNameToEventNameMap.set(onplayAttr.localName(), EventTypeNames::play);
-        attributeNameToEventNameMap.set(onplayingAttr.localName(), EventTypeNames::playing);
-        attributeNameToEventNameMap.set(onprogressAttr.localName(), EventTypeNames::progress);
-        attributeNameToEventNameMap.set(onratechangeAttr.localName(), EventTypeNames::ratechange);
-        attributeNameToEventNameMap.set(onresetAttr.localName(), EventTypeNames::reset);
-        attributeNameToEventNameMap.set(onresizeAttr.localName(), EventTypeNames::resize);
-        attributeNameToEventNameMap.set(onscrollAttr.localName(), EventTypeNames::scroll);
-        attributeNameToEventNameMap.set(onseekedAttr.localName(), EventTypeNames::seeked);
-        attributeNameToEventNameMap.set(onseekingAttr.localName(), EventTypeNames::seeking);
-        attributeNameToEventNameMap.set(onselectAttr.localName(), EventTypeNames::select);
-        attributeNameToEventNameMap.set(onselectstartAttr.localName(), EventTypeNames::selectstart);
-        attributeNameToEventNameMap.set(onshowAttr.localName(), EventTypeNames::show);
-        attributeNameToEventNameMap.set(onstalledAttr.localName(), EventTypeNames::stalled);
-        attributeNameToEventNameMap.set(onsubmitAttr.localName(), EventTypeNames::submit);
-        attributeNameToEventNameMap.set(onsuspendAttr.localName(), EventTypeNames::suspend);
-        attributeNameToEventNameMap.set(ontimeupdateAttr.localName(), EventTypeNames::timeupdate);
-        attributeNameToEventNameMap.set(ontoggleAttr.localName(), EventTypeNames::toggle);
-        attributeNameToEventNameMap.set(ontouchcancelAttr.localName(), EventTypeNames::touchcancel);
-        attributeNameToEventNameMap.set(ontouchendAttr.localName(), EventTypeNames::touchend);
-        attributeNameToEventNameMap.set(ontouchmoveAttr.localName(), EventTypeNames::touchmove);
-        attributeNameToEventNameMap.set(ontouchstartAttr.localName(), EventTypeNames::touchstart);
-        attributeNameToEventNameMap.set(ontransitionendAttr.localName(), EventTypeNames::webkitTransitionEnd);
-        attributeNameToEventNameMap.set(onvolumechangeAttr.localName(), EventTypeNames::volumechange);
-        attributeNameToEventNameMap.set(onwaitingAttr.localName(), EventTypeNames::waiting);
-        attributeNameToEventNameMap.set(onwebkitanimationendAttr.localName(), EventTypeNames::webkitAnimationEnd);
-        attributeNameToEventNameMap.set(onwebkitanimationiterationAttr.localName(), EventTypeNames::webkitAnimationIteration);
-        attributeNameToEventNameMap.set(onwebkitanimationstartAttr.localName(), EventTypeNames::webkitAnimationStart);
-        attributeNameToEventNameMap.set(onwebkitfullscreenchangeAttr.localName(), EventTypeNames::webkitfullscreenchange);
-        attributeNameToEventNameMap.set(onwebkitfullscreenerrorAttr.localName(), EventTypeNames::webkitfullscreenerror);
-        attributeNameToEventNameMap.set(onwebkittransitionendAttr.localName(), EventTypeNames::webkitTransitionEnd);
-        attributeNameToEventNameMap.set(onwheelAttr.localName(), EventTypeNames::wheel);
+        struct AttrToEventName {
+            const QualifiedName& attr;
+            const AtomicString& event;
+        };
+        AttrToEventName attrToEventNames[] = {
+            { onabortAttr, EventTypeNames::abort },
+            { onanimationendAttr, EventTypeNames::animationend },
+            { onanimationiterationAttr, EventTypeNames::animationiteration },
+            { onanimationstartAttr, EventTypeNames::animationstart },
+            { onautocompleteAttr, EventTypeNames::autocomplete },
+            { onautocompleteerrorAttr, EventTypeNames::autocompleteerror },
+            { onbeforecopyAttr, EventTypeNames::beforecopy },
+            { onbeforecutAttr, EventTypeNames::beforecut },
+            { onbeforepasteAttr, EventTypeNames::beforepaste },
+            { onblurAttr, EventTypeNames::blur },
+            { oncancelAttr, EventTypeNames::cancel },
+            { oncanplayAttr, EventTypeNames::canplay },
+            { oncanplaythroughAttr, EventTypeNames::canplaythrough },
+            { onchangeAttr, EventTypeNames::change },
+            { onclickAttr, EventTypeNames::click },
+            { oncloseAttr, EventTypeNames::close },
+            { oncontextmenuAttr, EventTypeNames::contextmenu },
+            { oncopyAttr, EventTypeNames::copy },
+            { oncuechangeAttr, EventTypeNames::cuechange },
+            { oncutAttr, EventTypeNames::cut },
+            { ondblclickAttr, EventTypeNames::dblclick },
+            { ondragAttr, EventTypeNames::drag },
+            { ondragendAttr, EventTypeNames::dragend },
+            { ondragenterAttr, EventTypeNames::dragenter },
+            { ondragleaveAttr, EventTypeNames::dragleave },
+            { ondragoverAttr, EventTypeNames::dragover },
+            { ondragstartAttr, EventTypeNames::dragstart },
+            { ondropAttr, EventTypeNames::drop },
+            { ondurationchangeAttr, EventTypeNames::durationchange },
+            { onemptiedAttr, EventTypeNames::emptied },
+            { onendedAttr, EventTypeNames::ended },
+            { onerrorAttr, EventTypeNames::error },
+            { onfocusAttr, EventTypeNames::focus },
+            { onfocusinAttr, EventTypeNames::focusin },
+            { onfocusoutAttr, EventTypeNames::focusout },
+            { oninputAttr, EventTypeNames::input },
+            { oninvalidAttr, EventTypeNames::invalid },
+            { onkeydownAttr, EventTypeNames::keydown },
+            { onkeypressAttr, EventTypeNames::keypress },
+            { onkeyupAttr, EventTypeNames::keyup },
+            { onloadAttr, EventTypeNames::load },
+            { onloadeddataAttr, EventTypeNames::loadeddata },
+            { onloadedmetadataAttr, EventTypeNames::loadedmetadata },
+            { onloadstartAttr, EventTypeNames::loadstart },
+            { onmousedownAttr, EventTypeNames::mousedown },
+            { onmouseenterAttr, EventTypeNames::mouseenter },
+            { onmouseleaveAttr, EventTypeNames::mouseleave },
+            { onmousemoveAttr, EventTypeNames::mousemove },
+            { onmouseoutAttr, EventTypeNames::mouseout },
+            { onmouseoverAttr, EventTypeNames::mouseover },
+            { onmouseupAttr, EventTypeNames::mouseup },
+            { onmousewheelAttr, EventTypeNames::mousewheel },
+            { onpasteAttr, EventTypeNames::paste },
+            { onpauseAttr, EventTypeNames::pause },
+            { onplayAttr, EventTypeNames::play },
+            { onplayingAttr, EventTypeNames::playing },
+            { onprogressAttr, EventTypeNames::progress },
+            { onratechangeAttr, EventTypeNames::ratechange },
+            { onresetAttr, EventTypeNames::reset },
+            { onresizeAttr, EventTypeNames::resize },
+            { onscrollAttr, EventTypeNames::scroll },
+            { onseekedAttr, EventTypeNames::seeked },
+            { onseekingAttr, EventTypeNames::seeking },
+            { onselectAttr, EventTypeNames::select },
+            { onselectstartAttr, EventTypeNames::selectstart },
+            { onshowAttr, EventTypeNames::show },
+            { onstalledAttr, EventTypeNames::stalled },
+            { onsubmitAttr, EventTypeNames::submit },
+            { onsuspendAttr, EventTypeNames::suspend },
+            { ontimeupdateAttr, EventTypeNames::timeupdate },
+            { ontoggleAttr, EventTypeNames::toggle },
+            { ontouchcancelAttr, EventTypeNames::touchcancel },
+            { ontouchendAttr, EventTypeNames::touchend },
+            { ontouchmoveAttr, EventTypeNames::touchmove },
+            { ontouchstartAttr, EventTypeNames::touchstart },
+            { ontransitionendAttr, EventTypeNames::webkitTransitionEnd },
+            { onvolumechangeAttr, EventTypeNames::volumechange },
+            { onwaitingAttr, EventTypeNames::waiting },
+            { onwebkitanimationendAttr, EventTypeNames::webkitAnimationEnd },
+            { onwebkitanimationiterationAttr, EventTypeNames::webkitAnimationIteration },
+            { onwebkitanimationstartAttr, EventTypeNames::webkitAnimationStart },
+            { onwebkitfullscreenchangeAttr, EventTypeNames::webkitfullscreenchange },
+            { onwebkitfullscreenerrorAttr, EventTypeNames::webkitfullscreenerror },
+            { onwebkittransitionendAttr, EventTypeNames::webkitTransitionEnd },
+            { onwheelAttr, EventTypeNames::wheel },
+        };
+
+        for (size_t i = 0; i < WTF_ARRAY_LENGTH(attrToEventNames); i++)
+            attributeNameToEventNameMap.set(attrToEventNames[i].attr.localName(), attrToEventNames[i].event);
     }
 
     return attributeNameToEventNameMap.get(attrName.localName());
@@ -308,7 +344,7 @@ const AtomicString& HTMLElement::eventNameForAttributeName(const QualifiedName& 
 
 void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (name == tabindexAttr)
+    if (name == tabindexAttr || name == tabstopAttr)
         return Element::parseAttribute(name, value);
 
     if (name == dirAttr) {
@@ -389,10 +425,10 @@ void HTMLElement::setInnerText(const String& text, ExceptionState& exceptionStat
         return;
     }
 
-    // FIXME: Do we need to be able to detect preserveNewline style even when there's no renderer?
-    // FIXME: Can the renderer be out of date here? Do we need to call updateStyleIfNeeded?
+    // FIXME: Do we need to be able to detect preserveNewline style even when there's no layoutObject?
+    // FIXME: Can the layoutObject be out of date here? Do we need to call updateStyleIfNeeded?
     // For example, for the contents of textarea elements that are display:none?
-    RenderObject* r = renderer();
+    LayoutObject* r = layoutObject();
     if (r && r->style()->preserveNewline()) {
         if (!text.contains('\r')) {
             replaceChildrenWithText(this, text, exceptionState);
@@ -640,26 +676,6 @@ static inline bool elementAffectsDirectionality(const Node* node)
     return node->isHTMLElement() && (isHTMLBDIElement(toHTMLElement(*node)) || toHTMLElement(*node).hasAttribute(dirAttr));
 }
 
-static void setHasDirAutoFlagRecursively(Node* firstNode, bool flag, Node* lastNode = 0)
-{
-    firstNode->setSelfOrAncestorHasDirAutoAttribute(flag);
-
-    Node* node = firstNode->firstChild();
-
-    while (node) {
-        if (elementAffectsDirectionality(node)) {
-            if (node == lastNode)
-                return;
-            node = NodeTraversal::nextSkippingChildren(*node, firstNode);
-            continue;
-        }
-        node->setSelfOrAncestorHasDirAutoAttribute(flag);
-        if (node == lastNode)
-            return;
-        node = NodeTraversal::next(*node, firstNode);
-    }
-}
-
 void HTMLElement::childrenChanged(const ChildrenChange& change)
 {
     Element::childrenChanged(change);
@@ -668,18 +684,17 @@ void HTMLElement::childrenChanged(const ChildrenChange& change)
 
 bool HTMLElement::hasDirectionAuto() const
 {
+    // <bdi> defaults to dir="auto"
+    // https://html.spec.whatwg.org/multipage/semantics.html#the-bdi-element
     const AtomicString& direction = fastGetAttribute(dirAttr);
     return (isHTMLBDIElement(*this) && direction == nullAtom) || equalIgnoringCase(direction, "auto");
 }
 
 TextDirection HTMLElement::directionalityIfhasDirAutoAttribute(bool& isAuto) const
 {
-    if (!(selfOrAncestorHasDirAutoAttribute() && hasDirectionAuto())) {
-        isAuto = false;
+    isAuto = hasDirectionAuto();
+    if (!isAuto)
         return LTR;
-    }
-
-    isAuto = true;
     return directionality();
 }
 
@@ -688,18 +703,18 @@ TextDirection HTMLElement::directionality(Node** strongDirectionalityTextNode) c
     if (isHTMLInputElement(*this)) {
         HTMLInputElement* inputElement = toHTMLInputElement(const_cast<HTMLElement*>(this));
         bool hasStrongDirectionality;
-        TextDirection textDirection = determineDirectionality(inputElement->value(), hasStrongDirectionality);
+        TextDirection textDirection = determineDirectionality(inputElement->value(), &hasStrongDirectionality);
         if (strongDirectionalityTextNode)
             *strongDirectionalityTextNode = hasStrongDirectionality ? inputElement : 0;
         return textDirection;
     }
 
-    Node* node = firstChild();
+    Node* node = ComposedTreeTraversal::firstChild(*this);
     while (node) {
         // Skip bdi, script, style and text form controls.
         if (equalIgnoringCase(node->nodeName(), "bdi") || isHTMLScriptElement(*node) || isHTMLStyleElement(*node)
             || (node->isElementNode() && toElement(node)->isTextFormControl())) {
-            node = NodeTraversal::nextSkippingChildren(*node, this);
+            node = ComposedTreeTraversal::nextSkippingChildren(*node, this);
             continue;
         }
 
@@ -707,32 +722,39 @@ TextDirection HTMLElement::directionality(Node** strongDirectionalityTextNode) c
         if (node->isElementNode()) {
             AtomicString dirAttributeValue = toElement(node)->fastGetAttribute(dirAttr);
             if (isValidDirAttribute(dirAttributeValue)) {
-                node = NodeTraversal::nextSkippingChildren(*node, this);
+                node = ComposedTreeTraversal::nextSkippingChildren(*node, this);
                 continue;
             }
         }
 
         if (node->isTextNode()) {
             bool hasStrongDirectionality;
-            TextDirection textDirection = determineDirectionality(node->textContent(true), hasStrongDirectionality);
+            TextDirection textDirection = determineDirectionality(node->textContent(true), &hasStrongDirectionality);
             if (hasStrongDirectionality) {
                 if (strongDirectionalityTextNode)
                     *strongDirectionalityTextNode = node;
                 return textDirection;
             }
         }
-        node = NodeTraversal::next(*node, this);
+        node = ComposedTreeTraversal::next(*node, this);
     }
     if (strongDirectionalityTextNode)
         *strongDirectionalityTextNode = 0;
     return LTR;
 }
 
+bool HTMLElement::selfOrAncestorHasDirAutoAttribute() const
+{
+    return layoutObject() && layoutObject()->style() && layoutObject()->style()->selfOrAncestorHasDirAutoAttribute();
+}
+
 void HTMLElement::dirAttributeChanged(const AtomicString& value)
 {
-    Element* parent = parentElement();
-
-    if (parent && parent->isHTMLElement() && parent->selfOrAncestorHasDirAutoAttribute())
+    // If an ancestor has dir=auto, and this node has the first character,
+    // changes to dir attribute may affect the ancestor.
+    updateDistribution();
+    Element* parent = ComposedTreeTraversal::parentElement(*this);
+    if (parent && parent->isHTMLElement() && toHTMLElement(parent)->selfOrAncestorHasDirAutoAttribute())
         toHTMLElement(parent)->adjustDirectionalityIfNeededAfterChildAttributeChanged(this);
 
     if (equalIgnoringCase(value, "auto"))
@@ -742,14 +764,12 @@ void HTMLElement::dirAttributeChanged(const AtomicString& value)
 void HTMLElement::adjustDirectionalityIfNeededAfterChildAttributeChanged(Element* child)
 {
     ASSERT(selfOrAncestorHasDirAutoAttribute());
-    Node* strongDirectionalityTextNode;
-    TextDirection textDirection = directionality(&strongDirectionalityTextNode);
-    setHasDirAutoFlagRecursively(child, false);
-    if (renderer() && renderer()->style() && renderer()->style()->direction() != textDirection) {
+    TextDirection textDirection = directionality();
+    if (layoutObject() && layoutObject()->style() && layoutObject()->style()->direction() != textDirection) {
         Element* elementToAdjust = this;
-        for (; elementToAdjust; elementToAdjust = elementToAdjust->parentElement()) {
+        for (; elementToAdjust; elementToAdjust = ComposedTreeTraversal::parentElement(*elementToAdjust)) {
             if (elementAffectsDirectionality(elementToAdjust)) {
-                elementToAdjust->setNeedsStyleRecalc(SubtreeStyleChange);
+                elementToAdjust->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::WritingModeChange));
                 return;
             }
         }
@@ -758,13 +778,9 @@ void HTMLElement::adjustDirectionalityIfNeededAfterChildAttributeChanged(Element
 
 void HTMLElement::calculateAndAdjustDirectionality()
 {
-    Node* strongDirectionalityTextNode;
-    TextDirection textDirection = directionality(&strongDirectionalityTextNode);
-    setHasDirAutoFlagRecursively(this, hasDirectionAuto(), strongDirectionalityTextNode);
-    for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot())
-        setHasDirAutoFlagRecursively(root, hasDirectionAuto());
-    if (renderer() && renderer()->style() && renderer()->style()->direction() != textDirection)
-        setNeedsStyleRecalc(SubtreeStyleChange);
+    TextDirection textDirection = directionality();
+    if (layoutObject() && layoutObject()->style() && layoutObject()->style()->direction() != textDirection)
+        setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::WritingModeChange));
 }
 
 void HTMLElement::adjustDirectionalityIfNeededAfterChildrenChanged(const ChildrenChange& change)
@@ -772,13 +788,9 @@ void HTMLElement::adjustDirectionalityIfNeededAfterChildrenChanged(const Childre
     if (!selfOrAncestorHasDirAutoAttribute())
         return;
 
-    Node* oldMarkedNode = change.siblingBeforeChange ? NodeTraversal::nextSkippingChildren(*change.siblingBeforeChange) : 0;
-    while (oldMarkedNode && elementAffectsDirectionality(oldMarkedNode))
-        oldMarkedNode = NodeTraversal::nextSkippingChildren(*oldMarkedNode, this);
-    if (oldMarkedNode)
-        setHasDirAutoFlagRecursively(oldMarkedNode, false);
+    updateDistribution();
 
-    for (Element* elementToAdjust = this; elementToAdjust; elementToAdjust = elementToAdjust->parentElement()) {
+    for (Element* elementToAdjust = this; elementToAdjust; elementToAdjust = ComposedTreeTraversal::parentElement(*elementToAdjust)) {
         if (elementAffectsDirectionality(elementToAdjust)) {
             toHTMLElement(elementToAdjust)->calculateAndAdjustDirectionality();
             return;
@@ -902,6 +914,13 @@ bool HTMLElement::isInteractiveContent() const
     return false;
 }
 
+HTMLMenuElement* HTMLElement::assignedContextMenu() const
+{
+    if (HTMLMenuElement* menu = contextMenu())
+        return menu;
+
+    return parentElement() && parentElement()->isHTMLElement() ? toHTMLElement(parentElement())->assignedContextMenu() : nullptr;
+}
 
 HTMLMenuElement* HTMLElement::contextMenu() const
 {
@@ -969,7 +988,7 @@ bool HTMLElement::matchesReadWritePseudoClass() const
 
 void HTMLElement::handleKeypressEvent(KeyboardEvent* event)
 {
-    if (!document().settings() || !document().settings()->spatialNavigationEnabled() || !supportsFocus())
+    if (!isSpatialNavigationEnabled(document().frame()) || !supportsFocus())
         return;
     // if the element is a text form control (like <input type=text> or <textarea>)
     // or has contentEditable attribute on, we should enter a space or newline

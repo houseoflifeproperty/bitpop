@@ -19,23 +19,21 @@
 // system level install and setting as default browser.
 class GoogleChromeSxSDistribution : public GoogleChromeDistribution {
  public:
-  virtual base::string16 GetBaseAppName() OVERRIDE;
-  virtual base::string16 GetShortcutName(ShortcutType shortcut_type) OVERRIDE;
-  virtual int GetIconIndex(ShortcutType shortcut_type) OVERRIDE;
-  virtual base::string16 GetStartMenuShortcutSubfolder(
-      Subfolder subfolder_type) OVERRIDE;
-  virtual base::string16 GetBaseAppId() OVERRIDE;
-  virtual base::string16 GetBrowserProgIdPrefix() OVERRIDE;
-  virtual base::string16 GetBrowserProgIdDesc() OVERRIDE;
-  virtual base::string16 GetInstallSubDir() OVERRIDE;
-  virtual base::string16 GetUninstallRegPath() OVERRIDE;
-  virtual DefaultBrowserControlPolicy GetDefaultBrowserControlPolicy() OVERRIDE;
-  virtual bool GetChromeChannel(base::string16* channel) OVERRIDE;
-  virtual bool GetCommandExecuteImplClsid(
-      base::string16* handler_class_uuid) OVERRIDE;
-  virtual bool AppHostIsSupported() OVERRIDE;
-  virtual bool ShouldSetExperimentLabels() OVERRIDE;
-  virtual bool HasUserExperiments() OVERRIDE;
+  base::string16 GetBaseAppName() override;
+  base::string16 GetShortcutName(ShortcutType shortcut_type) override;
+  int GetIconIndex(ShortcutType shortcut_type) override;
+  base::string16 GetStartMenuShortcutSubfolder(
+      Subfolder subfolder_type) override;
+  base::string16 GetBaseAppId() override;
+  base::string16 GetBrowserProgIdPrefix() override;
+  base::string16 GetBrowserProgIdDesc() override;
+  base::string16 GetInstallSubDir() override;
+  base::string16 GetUninstallRegPath() override;
+  DefaultBrowserControlPolicy GetDefaultBrowserControlPolicy() override;
+  bool GetChromeChannel(base::string16* channel) override;
+  bool GetCommandExecuteImplClsid(base::string16* handler_class_uuid) override;
+  bool ShouldSetExperimentLabels() override;
+  bool HasUserExperiments() override;
   // returns the channel name for GoogleChromeSxSDistribution
   static base::string16 ChannelName();
  private:

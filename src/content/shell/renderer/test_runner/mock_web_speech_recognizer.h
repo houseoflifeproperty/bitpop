@@ -16,6 +16,7 @@ namespace blink {
 class WebSpeechRecognitionHandle;
 class WebSpeechRecognitionParams;
 class WebSpeechRecognizerClient;
+class WebString;
 }
 
 namespace content {
@@ -83,7 +84,7 @@ class MockWebSpeechRecognizer : public blink::WebSpeechRecognizer {
    public:
     StepTask(MockWebSpeechRecognizer* object)
         : WebMethodTask<MockWebSpeechRecognizer>(object) {}
-    virtual void RunIfValid() OVERRIDE;
+    void RunIfValid() override;
 
    private:
     DISALLOW_COPY_AND_ASSIGN(StepTask);

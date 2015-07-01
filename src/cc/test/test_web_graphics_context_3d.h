@@ -20,7 +20,9 @@
 #include "cc/test/ordered_texture_map.h"
 #include "cc/test/test_texture.h"
 #include "third_party/khronos/GLES2/gl2.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
+
+extern "C" typedef struct _ClientBuffer* ClientBuffer;
 
 namespace cc {
 class TestContextSupport;
@@ -246,20 +248,21 @@ class TestWebGraphicsContext3D {
                           GLsizeiptr size,
                           const void* data,
                           GLenum usage);
+  virtual void pixelStorei(GLenum pname, GLint param);
   virtual void* mapBufferCHROMIUM(GLenum target,
                                   GLenum access);
   virtual GLboolean unmapBufferCHROMIUM(GLenum target);
 
-  virtual GLuint createImageCHROMIUM(GLsizei width,
+  virtual GLuint createImageCHROMIUM(ClientBuffer buffer,
+                                     GLsizei width,
                                      GLsizei height,
-                                     GLenum internalformat,
-                                     GLenum usage);
+                                     GLenum internalformat);
   virtual void destroyImageCHROMIUM(GLuint image_id);
-  virtual void getImageParameterivCHROMIUM(GLuint image_id,
-                                           GLenum pname,
-                                           GLint* params);
-  virtual void* mapImageCHROMIUM(GLuint image_id);
-  virtual void unmapImageCHROMIUM(GLuint image_id);
+  virtual GLuint createGpuMemoryBufferImageCHROMIUM(GLsizei width,
+                                                    GLsizei height,
+                                                    GLenum internalformat,
+                                                    GLenum usage);
+
   virtual void texImageIOSurface2DCHROMIUM(GLenum target,
                                            GLsizei width,
                                            GLsizei height,
@@ -283,11 +286,7 @@ class TestWebGraphicsContext3D {
     times_end_query_succeeds_ = times;
   }
 
-  // When set, mapImageCHROMIUM and mapBufferCHROMIUM will return NULL after
-  // this many times.
-  void set_times_map_image_chromium_succeeds(int times) {
-    times_map_image_chromium_succeeds_ = times;
-  }
+  // When set, mapBufferCHROMIUM will return NULL after this many times.
   void set_times_map_buffer_chromium_succeeds(int times) {
     times_map_buffer_chromium_succeeds_ = times;
   }
@@ -329,6 +328,12 @@ class TestWebGraphicsContext3D {
   void set_support_sync_query(bool support) {
     test_capabilities_.gpu.sync_query = support;
   }
+  void set_support_image(bool support) {
+    test_capabilities_.gpu.image = support;
+  }
+  void set_support_texture_rectangle(bool support) {
+    test_capabilities_.gpu.texture_rectangle = support;
+  }
 
   // When this context is lost, all contexts in its share group are also lost.
   void add_share_group_context(TestWebGraphicsContext3D* context3d) {
@@ -347,11 +352,18 @@ class TestWebGraphicsContext3D {
   virtual GLuint NextImageId();
   virtual void RetireImageId(GLuint id);
 
+  virtual GLuint NextFramebufferId();
+  virtual void RetireFramebufferId(GLuint id);
+
+  virtual GLuint NextRenderbufferId();
+  virtual void RetireRenderbufferId(GLuint id);
+
   void SetMaxTransferBufferUsageBytes(size_t max_transfer_buffer_usage_bytes);
   size_t max_used_transfer_buffer_usage_bytes() const {
     return max_used_transfer_buffer_usage_bytes_;
   }
 
+  void SetMaxSamples(int max_samples);
   void set_test_support(TestContextSupport* test_support) {
     test_support_ = test_support;
   }
@@ -362,11 +374,7 @@ class TestWebGraphicsContext3D {
   void clear_reshape_called() { reshape_called_ = false; }
   float scale_factor() const { return scale_factor_; }
 
-  enum UpdateType {
-    NoUpdate = 0,
-    PrepareTexture,
-    PostSubBuffer
-  };
+  enum UpdateType { NO_UPDATE = 0, PREPARE_TEXTURE, POST_SUB_BUFFER };
 
   gfx::Rect update_rect() const { return update_rect_; }
 
@@ -417,9 +425,11 @@ class TestWebGraphicsContext3D {
     unsigned next_buffer_id;
     unsigned next_image_id;
     unsigned next_texture_id;
-    base::ScopedPtrHashMap<unsigned, Buffer> buffers;
-    base::ScopedPtrHashMap<unsigned, Image> images;
+    unsigned next_renderbuffer_id;
+    base::ScopedPtrHashMap<unsigned, scoped_ptr<Buffer>> buffers;
+    base::hash_set<unsigned> images;
     OrderedTextureMap textures;
+    base::hash_set<unsigned> renderbuffer_set;
 
    private:
     friend class base::RefCountedThreadSafe<Namespace>;
@@ -432,6 +442,7 @@ class TestWebGraphicsContext3D {
   void CreateNamespace();
   GLuint BoundTextureId(GLenum target);
   scoped_refptr<TestTexture> BoundTexture(GLenum target);
+  scoped_refptr<TestTexture> UnboundTexture(GLuint texture);
   void CheckTextureIsBound(GLenum target);
 
   unsigned context_id_;
@@ -439,7 +450,6 @@ class TestWebGraphicsContext3D {
   int times_bind_texture_succeeds_;
   int times_end_query_succeeds_;
   bool context_lost_;
-  int times_map_image_chromium_succeeds_;
   int times_map_buffer_chromium_succeeds_;
   int current_used_transfer_buffer_usage_bytes_;
   int max_used_transfer_buffer_usage_bytes_;
@@ -449,6 +459,9 @@ class TestWebGraphicsContext3D {
   base::hash_set<unsigned> program_set_;
   unsigned next_shader_id_;
   base::hash_set<unsigned> shader_set_;
+  unsigned next_framebuffer_id_;
+  base::hash_set<unsigned> framebuffer_set_;
+  unsigned current_framebuffer_;
   std::vector<TestWebGraphicsContext3D*> shared_contexts_;
   int max_texture_size_;
   bool reshape_called_;
@@ -460,6 +473,7 @@ class TestWebGraphicsContext3D {
   UpdateType last_update_type_;
   unsigned next_insert_sync_point_;
   unsigned last_waited_sync_point_;
+  int unpack_alignment_;
 
   unsigned bound_buffer_;
   TextureTargets texture_targets_;

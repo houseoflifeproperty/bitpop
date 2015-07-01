@@ -37,22 +37,16 @@ namespace blink {
 class CSSSelector;
 class ContainerNode;
 class Element;
-class RenderScrollbar;
-class RenderStyle;
+class LayoutScrollbar;
+class ComputedStyle;
 
 class SelectorChecker {
     WTF_MAKE_NONCOPYABLE(SelectorChecker);
 public:
-    enum Match { SelectorMatches, SelectorFailsLocally, SelectorFailsAllSiblings, SelectorFailsCompletely };
     enum VisitedMatchType { VisitedMatchDisabled, VisitedMatchEnabled };
     enum Mode { ResolvingStyle = 0, CollectingStyleRules, CollectingCSSRules, QueryingRules, SharingRules };
-    explicit SelectorChecker(Document&, Mode);
-    enum ContextFlags {
-        // FIXME: Revmoe DefaultBehavior.
-        DefaultBehavior = 0,
-        ScopeContainsLastMatchedElement = 1,
-        TreatShadowHostAsNormalScope = 2,
-    };
+
+    explicit SelectorChecker(Mode);
 
     struct SelectorCheckingContext {
         STACK_ALLOCATED();
@@ -66,13 +60,14 @@ public:
             , visitedMatchType(visitedMatchType)
             , pseudoId(NOPSEUDO)
             , elementStyle(0)
-            , scrollbar(0)
+            , scrollbar(nullptr)
             , scrollbarPart(NoPart)
             , isSubSelector(false)
             , hasScrollbarPseudo(false)
             , hasSelectionPseudo(false)
             , isUARule(false)
-            , contextFlags(DefaultBehavior)
+            , scopeContainsLastMatchedElement(false)
+            , treatShadowHostAsNormalScope(false)
         {
         }
 
@@ -82,14 +77,15 @@ public:
         RawPtrWillBeMember<const ContainerNode> scope;
         VisitedMatchType visitedMatchType;
         PseudoId pseudoId;
-        RenderStyle* elementStyle;
-        RenderScrollbar* scrollbar;
+        ComputedStyle* elementStyle;
+        RawPtrWillBeMember<LayoutScrollbar> scrollbar;
         ScrollbarPart scrollbarPart;
         bool isSubSelector;
         bool hasScrollbarPseudo;
         bool hasSelectionPseudo;
         bool isUARule;
-        ContextFlags contextFlags;
+        bool scopeContainsLastMatchedElement;
+        bool treatShadowHostAsNormalScope;
     };
 
     struct MatchResult {
@@ -101,83 +97,26 @@ public:
         unsigned specificity;
     };
 
-    template<typename SiblingTraversalStrategy>
-    Match match(const SelectorCheckingContext&, const SiblingTraversalStrategy&, MatchResult* = 0) const;
+    bool match(const SelectorCheckingContext&, MatchResult* = 0) const;
 
-    template<typename SiblingTraversalStrategy>
-    bool checkOne(const SelectorCheckingContext&, const SiblingTraversalStrategy&, unsigned* specificity = 0) const;
-
-    bool strictParsing() const { return m_strictParsing; }
-
-    Mode mode() const { return m_mode; }
-
-    static bool tagMatches(const Element&, const QualifiedName&);
-    static bool isCommonPseudoClassSelector(const CSSSelector&);
     static bool matchesFocusPseudoClass(const Element&);
-    static bool matchesSpatialNavigationFocusPseudoClass(const Element&);
-    static bool matchesListBoxPseudoClass(const Element&);
-    static bool checkExactAttribute(const Element&, const QualifiedName& selectorAttributeName, const StringImpl* value);
-
-    enum LinkMatchMask { MatchLink = 1, MatchVisited = 2, MatchAll = MatchLink | MatchVisited };
-    static unsigned determineLinkMatchType(const CSSSelector&);
-
-    static bool isHostInItsShadowTree(const Element&, const ContainerNode* scope);
 
 private:
-    template<typename SiblingTraversalStrategy>
-    Match matchForSubSelector(const SelectorCheckingContext&, const SiblingTraversalStrategy&, MatchResult*) const;
-    template<typename SiblingTraversalStrategy>
-    Match matchForRelation(const SelectorCheckingContext&, const SiblingTraversalStrategy&, MatchResult*) const;
-    template<typename SiblingTraversalStrategy>
-    Match matchForShadowDistributed(const Element*, const SiblingTraversalStrategy&, SelectorCheckingContext& nextContext, MatchResult* = 0) const;
-    template<typename SiblingTraversalStrategy>
-    Match matchForPseudoShadow(const ContainerNode*, const SelectorCheckingContext&, const SiblingTraversalStrategy&, MatchResult*) const;
+    bool checkOne(const SelectorCheckingContext&, unsigned* specificity = 0) const;
 
-    bool checkScrollbarPseudoClass(const SelectorCheckingContext&, Document*, const CSSSelector&) const;
+    enum Match { SelectorMatches, SelectorFailsLocally, SelectorFailsAllSiblings, SelectorFailsCompletely };
+    Match matchSelector(const SelectorCheckingContext&, MatchResult* = 0) const;
+    Match matchForSubSelector(const SelectorCheckingContext&, MatchResult*) const;
+    Match matchForRelation(const SelectorCheckingContext&, MatchResult*) const;
+    Match matchForShadowDistributed(const SelectorCheckingContext&, const Element&, MatchResult*) const;
+    Match matchForPseudoShadow(const SelectorCheckingContext&, const ContainerNode*, MatchResult*) const;
+    bool checkPseudoClass(const SelectorCheckingContext&, unsigned* specificity) const;
+    bool checkPseudoElement(const SelectorCheckingContext&) const;
+    bool checkScrollbarPseudoClass(const SelectorCheckingContext&) const;
+    bool checkPseudoHost(const SelectorCheckingContext&, unsigned*) const;
 
-    static bool isFrameFocused(const Element&);
-
-    bool m_strictParsing;
     Mode m_mode;
 };
-
-inline bool SelectorChecker::isCommonPseudoClassSelector(const CSSSelector& selector)
-{
-    if (selector.match() != CSSSelector::PseudoClass)
-        return false;
-    CSSSelector::PseudoType pseudoType = selector.pseudoType();
-    return pseudoType == CSSSelector::PseudoLink
-        || pseudoType == CSSSelector::PseudoAnyLink
-        || pseudoType == CSSSelector::PseudoVisited
-        || pseudoType == CSSSelector::PseudoFocus;
-}
-
-inline bool SelectorChecker::tagMatches(const Element& element, const QualifiedName& tagQName)
-{
-    if (tagQName == anyQName())
-        return true;
-    const AtomicString& localName = tagQName.localName();
-    if (localName != starAtom && localName != element.localName())
-        return false;
-    const AtomicString& namespaceURI = tagQName.namespaceURI();
-    return namespaceURI == starAtom || namespaceURI == element.namespaceURI();
-}
-
-inline bool SelectorChecker::checkExactAttribute(const Element& element, const QualifiedName& selectorAttributeName, const StringImpl* value)
-{
-    AttributeCollection attributes = element.attributesWithoutUpdate();
-    AttributeCollection::iterator end = attributes.end();
-    for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
-        if (it->matches(selectorAttributeName) && (!value || it->value().impl() == value))
-            return true;
-    }
-    return false;
-}
-
-inline bool SelectorChecker::isHostInItsShadowTree(const Element& element, const ContainerNode* scope)
-{
-    return scope && scope->isInShadowTree() && scope->shadowHost() == element;
-}
 
 }
 

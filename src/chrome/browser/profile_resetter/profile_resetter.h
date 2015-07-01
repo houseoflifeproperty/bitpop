@@ -52,11 +52,11 @@ class ProfileResetter : public base::NonThreadSafe,
   // Bit vector for Resettable enum.
   typedef uint32 ResettableFlags;
 
-  COMPILE_ASSERT(sizeof(ResettableFlags) == sizeof(Resettable),
-                 type_ResettableFlags_doesnt_match_Resettable);
+  static_assert(sizeof(ResettableFlags) == sizeof(Resettable),
+                "ResettableFlags should be the same size as Resettable");
 
   explicit ProfileResetter(Profile* profile);
-  virtual ~ProfileResetter();
+  ~ProfileResetter() override;
 
   // Resets |resettable_flags| and calls |callback| on the UI thread on
   // completion. |default_settings| allows the caller to specify some default
@@ -84,7 +84,7 @@ class ProfileResetter : public base::NonThreadSafe,
   void ResetShortcuts();
 
   // BrowsingDataRemover::Observer:
-  virtual void OnBrowsingDataRemoverDone() OVERRIDE;
+  void OnBrowsingDataRemoverDone() override;
 
   // Callback for when TemplateURLService has loaded.
   void OnTemplateURLServiceLoaded();

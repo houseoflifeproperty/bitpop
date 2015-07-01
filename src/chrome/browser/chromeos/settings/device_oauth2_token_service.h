@@ -15,6 +15,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/stl_util.h"
 #include "base/time/time.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "google_apis/gaia/gaia_oauth_client.h"
 #include "google_apis/gaia/oauth2_token_service.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -56,33 +57,32 @@ class DeviceOAuth2TokenService : public OAuth2TokenService,
   static void RegisterPrefs(PrefRegistrySimple* registry);
 
   // Implementation of OAuth2TokenService.
-  virtual bool RefreshTokenIsAvailable(const std::string& account_id)
-      const OVERRIDE;
+  bool RefreshTokenIsAvailable(const std::string& account_id) const override;
 
   // Pull the robot account ID from device policy.
   virtual std::string GetRobotAccountId() const;
 
   // gaia::GaiaOAuthClient::Delegate implementation.
-  virtual void OnRefreshTokenResponse(const std::string& access_token,
-                                      int expires_in_seconds) OVERRIDE;
-  virtual void OnGetTokenInfoResponse(
-      scoped_ptr<base::DictionaryValue> token_info) OVERRIDE;
-  virtual void OnOAuthError() OVERRIDE;
-  virtual void OnNetworkError(int response_code) OVERRIDE;
+  void OnRefreshTokenResponse(const std::string& access_token,
+                              int expires_in_seconds) override;
+  void OnGetTokenInfoResponse(
+      scoped_ptr<base::DictionaryValue> token_info) override;
+  void OnOAuthError() override;
+  void OnNetworkError(int response_code) override;
 
  protected:
   // Implementation of OAuth2TokenService.
-  virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE;
-  virtual void FetchOAuth2Token(RequestImpl* request,
-                                const std::string& account_id,
-                                net::URLRequestContextGetter* getter,
-                                const std::string& client_id,
-                                const std::string& client_secret,
-                                const ScopeSet& scopes) OVERRIDE;
-  virtual OAuth2AccessTokenFetcher* CreateAccessTokenFetcher(
+  net::URLRequestContextGetter* GetRequestContext() override;
+  void FetchOAuth2Token(RequestImpl* request,
+                        const std::string& account_id,
+                        net::URLRequestContextGetter* getter,
+                        const std::string& client_id,
+                        const std::string& client_secret,
+                        const ScopeSet& scopes) override;
+  OAuth2AccessTokenFetcher* CreateAccessTokenFetcher(
       const std::string& account_id,
       net::URLRequestContextGetter* getter,
-      OAuth2AccessTokenConsumer* consumer) OVERRIDE;
+      OAuth2AccessTokenConsumer* consumer) override;
 
  private:
   struct PendingRequest;
@@ -105,11 +105,14 @@ class DeviceOAuth2TokenService : public OAuth2TokenService,
     STATE_TOKEN_VALID,
   };
 
+  // Invoked by CrosSettings when the robot account ID becomes available.
+  void OnServiceAccountIdentityChanged();
+
   // Use DeviceOAuth2TokenServiceFactory to get an instance of this class.
   // Ownership of |token_encryptor| will be taken.
   explicit DeviceOAuth2TokenService(net::URLRequestContextGetter* getter,
                                     PrefService* local_state);
-  virtual ~DeviceOAuth2TokenService();
+  ~DeviceOAuth2TokenService() override;
 
   // Returns the refresh token for account_id.
   std::string GetRefreshToken(const std::string& account_id) const;
@@ -161,6 +164,9 @@ class DeviceOAuth2TokenService : public OAuth2TokenService,
   std::string refresh_token_;
 
   scoped_ptr<gaia::GaiaOAuthClient> gaia_oauth_client_;
+
+  scoped_ptr<CrosSettings::ObserverSubscription>
+      service_account_identity_subscription_;
 
   base::WeakPtrFactory<DeviceOAuth2TokenService> weak_ptr_factory_;
 

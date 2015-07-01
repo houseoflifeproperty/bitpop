@@ -8,7 +8,9 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/supervised_user/supervised_user_service_observer.h"
+#include "chrome/browser/supervised_user/supervised_user_url_filter.h"
 #include "content/public/browser/interstitial_page_delegate.h"
 #include "url/gurl.h"
 
@@ -25,30 +27,42 @@ class Profile;
 class SupervisedUserInterstitial : public content::InterstitialPageDelegate,
                                    public SupervisedUserServiceObserver {
  public:
+  // Interstitial type, used for testing.
+  static content::InterstitialPageDelegate::TypeID kTypeForTesting;
+
   static void Show(content::WebContents* web_contents,
                    const GURL& url,
+                   SupervisedUserURLFilter::FilteringBehaviorReason reason,
                    const base::Callback<void(bool)>& callback);
 
  private:
-  SupervisedUserInterstitial(content::WebContents* web_contents,
-                             const GURL& url,
-                             const base::Callback<void(bool)>& callback);
-  virtual ~SupervisedUserInterstitial();
+  SupervisedUserInterstitial(
+      content::WebContents* web_contents,
+      const GURL& url,
+      SupervisedUserURLFilter::FilteringBehaviorReason reason,
+      const base::Callback<void(bool)>& callback);
+  ~SupervisedUserInterstitial() override;
 
   bool Init();
 
   // InterstitialPageDelegate implementation.
-  virtual std::string GetHTMLContents() OVERRIDE;
-  virtual void CommandReceived(const std::string& command) OVERRIDE;
-  virtual void OnProceed() OVERRIDE;
-  virtual void OnDontProceed() OVERRIDE;
+  std::string GetHTMLContents() override;
+  void CommandReceived(const std::string& command) override;
+  void OnProceed() override;
+  void OnDontProceed() override;
+  content::InterstitialPageDelegate::TypeID GetTypeForTesting() const override;
 
   // SupervisedUserServiceObserver implementation.
-  virtual void OnURLFilterChanged() OVERRIDE;
+  void OnURLFilterChanged() override;
+  // TODO(treib): Also listen to OnCustodianInfoChanged and update as required.
 
-  // Returns whether the blocked URL is now allowed. Called initially before the
-  // interstitial is shown (to catch race conditions), or when the URL filtering
-  // prefs change.
+  void OnAccessRequestAdded(bool success);
+
+  // Returns whether we should now proceed on a previously-blocked URL.
+  // Called initially before the interstitial is shown (to catch race
+  // conditions), or when the URL filtering prefs change. Note that this does
+  // not include the asynchronous online checks, so if those are enabled, then
+  // the return value indicates only "allow" or "don't know".
   bool ShouldProceed();
 
   void DispatchContinueRequest(bool continue_request);
@@ -61,8 +75,11 @@ class SupervisedUserInterstitial : public content::InterstitialPageDelegate,
   content::InterstitialPage* interstitial_page_;  // Owns us.
 
   GURL url_;
+  SupervisedUserURLFilter::FilteringBehaviorReason reason_;
 
   base::Callback<void(bool)> callback_;
+
+  base::WeakPtrFactory<SupervisedUserInterstitial> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SupervisedUserInterstitial);
 };

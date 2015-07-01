@@ -7,13 +7,13 @@
 #include "chrome/browser/ui/panels/panel_mouse_watcher.h"
 #include "chrome/browser/ui/panels/panel_mouse_watcher_observer.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 
 class TestMouseObserver : public PanelMouseWatcherObserver {
  public:
   TestMouseObserver() : mouse_movements_(0) {}
   // Overridden from PanelMouseWatcherObserver:
-  virtual void OnMouseMove(const gfx::Point& mouse_position) OVERRIDE {
+  void OnMouseMove(const gfx::Point& mouse_position) override {
     ++mouse_movements_;
   }
   int mouse_movements_;

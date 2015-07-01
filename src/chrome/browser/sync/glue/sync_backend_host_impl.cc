@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/profiler/scoped_tracker.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
@@ -107,6 +108,9 @@ void SyncBackendHostImpl::Initialize(
     syncer::ReportUnrecoverableErrorFunction
         report_unrecoverable_error_function,
     syncer::NetworkResources* network_resources) {
+  // TODO(pavely): Remove ScopedTracker below once crbug.com/426272 is fixed.
+  tracked_objects::ScopedTracker tracker1(FROM_HERE_WITH_EXPLICIT_FUNCTION(
+      "426272 SyncBackendHostImpl::Initialize registrar"));
   registrar_.reset(new browser_sync::SyncBackendRegistrar(name_,
                                             profile_,
                                             sync_thread.Pass()));
@@ -115,17 +119,23 @@ void SyncBackendHostImpl::Initialize(
   frontend_ = frontend;
   DCHECK(frontend);
 
+  // TODO(pavely): Remove ScopedTracker below once crbug.com/426272 is fixed.
+  tracked_objects::ScopedTracker tracker2(FROM_HERE_WITH_EXPLICIT_FUNCTION(
+      "426272 SyncBackendHostImpl::Initialize locks"));
   syncer::ModelSafeRoutingInfo routing_info;
   std::vector<scoped_refptr<syncer::ModelSafeWorker> > workers;
   registrar_->GetModelSafeRoutingInfo(&routing_info);
   registrar_->GetWorkers(&workers);
+  // TODO(pavely): Remove ScopedTracker below once crbug.com/426272 is fixed.
+  tracked_objects::ScopedTracker tracker3(FROM_HERE_WITH_EXPLICIT_FUNCTION(
+      "426272 SyncBackendHostImpl::Initialize init"));
 
   InternalComponentsFactory::Switches factory_switches = {
     InternalComponentsFactory::ENCRYPTION_KEYSTORE,
     InternalComponentsFactory::BACKOFF_NORMAL
   };
 
-  CommandLine* cl = CommandLine::ForCurrentProcess();
+  base::CommandLine* cl = base::CommandLine::ForCurrentProcess();
   if (cl->HasSwitch(switches::kSyncShortInitialRetryOverride)) {
     factory_switches.backoff_override =
         InternalComponentsFactory::BACKOFF_SHORT_INITIAL_RETRY_OVERRIDE;
@@ -177,7 +187,7 @@ void SyncBackendHostImpl::StartSyncingWithServer() {
 
   registrar_->sync_thread()->message_loop()->PostTask(FROM_HERE,
       base::Bind(&SyncBackendHostCore::DoStartSyncing,
-                 core_.get(), routing_info));
+                 core_.get(), routing_info, sync_prefs_->GetLastPollTime()));
 }
 
 void SyncBackendHostImpl::SetEncryptionPassphrase(const std::string& passphrase,
@@ -314,11 +324,11 @@ void SyncBackendHostImpl::UnregisterInvalidationIds() {
   }
 }
 
-void SyncBackendHostImpl::ConfigureDataTypes(
+syncer::ModelTypeSet SyncBackendHostImpl::ConfigureDataTypes(
     syncer::ConfigureReason reason,
     const DataTypeConfigStateMap& config_state_map,
-    const base::Callback<void(syncer::ModelTypeSet,
-                              syncer::ModelTypeSet)>& ready_task,
+    const base::Callback<void(syncer::ModelTypeSet, syncer::ModelTypeSet)>&
+        ready_task,
     const base::Callback<void()>& retry_callback) {
   // Only one configure is allowed at a time.  This is guaranteed by our
   // callers.  The SyncBackendHostImpl requests one configure as the backend is
@@ -435,6 +445,12 @@ void SyncBackendHostImpl::ConfigureDataTypes(
                          routing_info,
                          ready_task,
                          retry_callback);
+
+  DCHECK(syncer::Intersection(active_types, types_to_purge).Empty());
+  DCHECK(syncer::Intersection(active_types, fatal_types).Empty());
+  DCHECK(syncer::Intersection(active_types, unapply_types).Empty());
+  DCHECK(syncer::Intersection(active_types, inactive_types).Empty());
+  return syncer::Difference(active_types, types_to_download);
 }
 
 void SyncBackendHostImpl::EnableEncryptEverything() {
@@ -505,6 +521,12 @@ void SyncBackendHostImpl::GetModelSafeRoutingInfo(
   } else {
     NOTREACHED();
   }
+}
+
+void SyncBackendHostImpl::FlushDirectory() const {
+  DCHECK(initialized());
+  registrar_->sync_thread()->message_loop()->PostTask(FROM_HERE,
+      base::Bind(&SyncBackendHostCore::SaveChanges, core_));
 }
 
 void SyncBackendHostImpl::RequestBufferedProtocolEventsAndEnableForwarding() {
@@ -593,6 +615,11 @@ void SyncBackendHostImpl::FinishConfigureDataTypesOnFrontendLoop(
     const syncer::ModelTypeSet failed_configuration_types,
     const base::Callback<void(syncer::ModelTypeSet,
                               syncer::ModelTypeSet)>& ready_task) {
+  // TODO(erikchen): Remove ScopedTracker below once http://crbug.com/458406 is
+  // fixed.
+  tracked_objects::ScopedTracker tracking_profile1(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "458406 SyncBackendHostImpl::FinishConfigureDataTOFL"));
   if (!frontend_)
     return;
 
@@ -602,6 +629,11 @@ void SyncBackendHostImpl::FinishConfigureDataTypesOnFrontendLoop(
         ModelTypeSetToObjectIdSet(enabled_types));
   }
 
+  // TODO(erikchen): Remove ScopedTracker below once http://crbug.com/458406 is
+  // fixed.
+  tracked_objects::ScopedTracker tracking_profile2(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "458406 SyncBackendHostImpl::FinishConfigureDataTOFL::ReadyTask"));
   if (!ready_task.is_null())
     ready_task.Run(succeeded_configuration_types, failed_configuration_types);
 }
@@ -610,7 +642,7 @@ void SyncBackendHostImpl::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK_EQ(type, chrome::NOTIFICATION_SYNC_REFRESH_LOCAL);
 
   content::Details<const syncer::ModelTypeSet> state_details(details);
@@ -624,14 +656,6 @@ void SyncBackendHostImpl::AddExperimentalTypes() {
   syncer::Experiments experiments;
   if (core_->sync_manager()->ReceivedExperiment(&experiments))
     frontend_->OnExperimentsChanged(experiments);
-}
-
-void SyncBackendHostImpl::HandleControlTypesDownloadRetry() {
-  DCHECK_EQ(base::MessageLoop::current(), frontend_loop_);
-  if (!frontend_)
-    return;
-
-  frontend_->OnSyncConfigureRetry();
 }
 
 void SyncBackendHostImpl::HandleInitializationSuccessOnFrontendLoop(
@@ -694,6 +718,9 @@ void SyncBackendHostImpl::HandleSyncCycleCompletedOnFrontendLoop(
   last_snapshot_ = snapshot;
 
   SDVLOG(1) << "Got snapshot " << snapshot.ToString();
+
+  if (!snapshot.poll_finish_time().is_null())
+    sync_prefs_->SetLastPollTime(snapshot.poll_finish_time());
 
   // Process any changes to the datatypes we're syncing.
   // TODO(sync): add support for removing types.

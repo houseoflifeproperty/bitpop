@@ -31,10 +31,11 @@
 #include "config.h"
 
 #include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8BindingForTesting.h"
 #include "core/page/Page.h"
 #include "core/page/PageSerializer.h"
-#include "core/testing/URLTestHelpers.h"
 #include "platform/SerializedResource.h"
+#include "platform/testing/URLTestHelpers.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebThread.h"
@@ -75,11 +76,6 @@ protected:
         Platform::current()->unitTestSupport()->unregisterAllMockedURLs();
     }
 
-    void setBaseUrl(const char* url)
-    {
-        m_baseUrl = toKURL(url);
-    }
-
     void setBaseFolder(const char* folder)
     {
         m_folder = WebString::fromUTF8(folder);
@@ -107,7 +103,7 @@ protected:
     void serialize(const char* url)
     {
         FrameTestHelpers::loadFrame(m_helper.webView()->mainFrame(), KURL(m_baseUrl, url).string().utf8().data());
-        PageSerializer serializer(&m_resources);
+        PageSerializer serializer(&m_resources, nullptr);
         serializer.serialize(m_helper.webViewImpl()->mainFrameImpl()->frame()->page());
     }
 

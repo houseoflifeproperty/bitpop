@@ -5,16 +5,18 @@
 {
   'targets': [
     {
+      # GN: //third_party/junit:hamcrest
       'target_name': 'hamcrest_jar',
       'type': 'none',
       'variables': {
-        'jar_path': 'src/lib/hamcrest-core-1.3.jar',
+        'jar_path': 'src/lib/hamcrest-core-1.1.jar',
       },
       'includes': [
         '../../build/host_prebuilt_jar.gypi',
       ]
     },
     {
+      # GN: //third_party/junit:junit
       'target_name': 'junit_jar',
       'type': 'none',
       'dependencies': [

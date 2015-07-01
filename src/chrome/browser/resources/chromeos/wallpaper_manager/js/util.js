@@ -2,22 +2,290 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-var WallpaperUtil = {};
+var WallpaperUtil = {
+  strings: null,  // Object that contains all the flags
+  syncFs: null,   // syncFileSystem handler
+  webkitFs: null  // webkitFileSystem handler
+};
+
+/**
+ * Deletes |wallpaperFileName| and its associated thumbnail from local FS.
+ * @param {string} wallpaperFilename Name of the file that will be deleted
+ */
+WallpaperUtil.deleteWallpaperFromLocalFS = function(wallpaperFilename) {
+  WallpaperUtil.requestLocalFS(function(fs) {
+    var originalPath = Constants.WallpaperDirNameEnum.ORIGINAL + '/' +
+                       wallpaperFilename;
+    var thumbnailPath = Constants.WallpaperDirNameEnum.THUMBNAIL + '/' +
+                        wallpaperFilename;
+    fs.root.getFile(originalPath,
+                    {create: false},
+                    function(fe) {
+                      fe.remove(function() {}, null);
+                    },
+                    // NotFoundError is expected. After we receive a delete
+                    // event from either original wallpaper or wallpaper
+                    // thumbnail, we delete both of them in local FS to achieve
+                    // a faster synchronization. So each file is expected to be
+                    // deleted twice and the second attempt is a noop.
+                    function(e) {
+                      if (e.name != 'NotFoundError')
+                        WallpaperUtil.onFileSystemError(e);
+                    });
+    fs.root.getFile(thumbnailPath,
+                    {create: false},
+                    function(fe) {
+                      fe.remove(function() {}, null);
+                    },
+                    function(e) {
+                      if (e.name != 'NotFoundError')
+                        WallpaperUtil.onFileSystemError(e);
+                    });
+  });
+};
+
+/**
+ * Loads a wallpaper from sync file system and saves it and its thumbnail to
+ *     local file system.
+ * @param {string} wallpaperFileEntry File name of wallpaper image.
+ */
+WallpaperUtil.storeWallpaperFromSyncFSToLocalFS = function(wallpaperFileEntry) {
+  var filenName = wallpaperFileEntry.name;
+  var storeDir = Constants.WallpaperDirNameEnum.ORIGINAL;
+  if (filenName.indexOf(Constants.CustomWallpaperThumbnailSuffix) != -1)
+    storeDir = Constants.WallpaperDirNameEnum.THUMBNAIL;
+  filenName = filenName.replace(Constants.CustomWallpaperThumbnailSuffix, '');
+  wallpaperFileEntry.file(function(file) {
+    var reader = new FileReader();
+    reader.onloadend = function() {
+      WallpaperUtil.storeWallpaperToLocalFS(filenName, reader.result, storeDir);
+    };
+    reader.readAsArrayBuffer(file);
+  }, WallpaperUtil.onFileSystemError);
+};
+
+/**
+ * Deletes |wallpaperFileName| and its associated thumbnail from syncFileSystem.
+ * @param {string} wallpaperFilename Name of the file that will be deleted.
+ */
+WallpaperUtil.deleteWallpaperFromSyncFS = function(wallpaperFilename) {
+  var thumbnailFilename = wallpaperFilename +
+                          Constants.CustomWallpaperThumbnailSuffix;
+  var success = function(fs) {
+    fs.root.getFile(wallpaperFilename,
+                    {create: false},
+                    function(fe) {
+                      fe.remove(function() {}, null);
+                    },
+                    WallpaperUtil.onFileSystemError);
+    fs.root.getFile(thumbnailFilename,
+                    {create: false},
+                    function(fe) {
+                      fe.remove(function() {}, null);
+                    },
+                    WallpaperUtil.onFileSystemError);
+  };
+  WallpaperUtil.requestSyncFS(success);
+};
+
+/**
+ * Executes callback after requesting the sync settings.
+ * @param {function} callback The callback will be executed.
+ */
+WallpaperUtil.enabledSyncThemesCallback = function(callback) {
+  chrome.wallpaperPrivate.getSyncSetting(function(setting) {
+    callback(setting.syncThemes);
+  });
+};
+
+/**
+ * Request a syncFileSystem handle and run callback on it.
+ * @param {function} callback The callback to execute after syncFileSystem
+ *     handler is available.
+ */
+WallpaperUtil.requestSyncFS = function(callback) {
+  WallpaperUtil.enabledSyncThemesCallback(function(syncEnabled) {
+    if (!syncEnabled)
+      return;
+    if (WallpaperUtil.syncFs) {
+      callback(WallpaperUtil.syncFs);
+    } else {
+      chrome.syncFileSystem.requestFileSystem(function(fs) {
+        WallpaperUtil.syncFs = fs;
+        callback(WallpaperUtil.syncFs);
+      });
+    }
+  });
+};
+
+/**
+ * Request a Local Fs handle and run callback on it.
+ * @param {function} callback The callback to execute after Local handler is
+ *     available.
+ */
+WallpaperUtil.requestLocalFS = function(callback) {
+  if (WallpaperUtil.webkitFs) {
+    callback(WallpaperUtil.webkitFs);
+  } else {
+    window.webkitRequestFileSystem(window.PERSISTENT, 1024 * 1024 * 100,
+                                   function(fs) {
+                                     WallpaperUtil.webkitFs = fs;
+                                     callback(fs);
+                                   });
+  }
+};
+
+/**
+ * Print error to console.error.
+ * @param {Event} e The error will be printed to console.error.
+ */
+// TODO(ranj): Handle different errors differently.
+WallpaperUtil.onFileSystemError = function(e) {
+  console.error(e);
+};
+
+/**
+ * Write jpeg/png file data into file entry.
+ * @param {FileEntry} fileEntry The file entry that going to be writen.
+ * @param {ArrayBuffer} wallpaperData Data for image file.
+ * @param {function=} writeCallback The callback that will be executed after
+ *     writing data.
+ */
+WallpaperUtil.writeFile = function(fileEntry, wallpaperData, writeCallback) {
+  fileEntry.createWriter(function(fileWriter) {
+    var blob = new Blob([new Int8Array(wallpaperData)]);
+    fileWriter.write(blob);
+    if (writeCallback)
+      writeCallback();
+  }, WallpaperUtil.onFileSystemError);
+};
+
+/**
+ * Write jpeg/png file data into syncFileSystem.
+ * @param {string} wallpaperFilename The filename that going to be writen.
+ * @param {ArrayBuffer} wallpaperData Data for image file.
+ */
+WallpaperUtil.storeWallpaperToSyncFS = function(wallpaperFilename,
+                                                wallpaperData) {
+  var callback = function(fs) {
+    fs.root.getFile(wallpaperFilename,
+                    {create: false},
+                    function() {},  // already exists
+                    function(e) {  // not exists, create
+                      fs.root.getFile(wallpaperFilename, {create: true},
+                                      function(fe) {
+                                        WallpaperUtil.writeFile(
+                                            fe, wallpaperData);
+                                      },
+                                      WallpaperUtil.onFileSystemError);
+                    });
+  };
+  WallpaperUtil.requestSyncFS(callback);
+};
+
+/**
+ * Stores jpeg/png wallpaper into |localDir| in local file system.
+ * @param {string} wallpaperFilename File name of wallpaper image.
+ * @param {ArrayBuffer} wallpaperData The wallpaper data.
+ * @param {string} saveDir The path to store wallpaper in local file system.
+ */
+WallpaperUtil.storeWallpaperToLocalFS = function(wallpaperFilename,
+    wallpaperData, saveDir) {
+  if (!wallpaperData) {
+    console.error('wallpaperData is null');
+    return;
+  }
+  var getDirSuccess = function(dirEntry) {
+    dirEntry.getFile(wallpaperFilename,
+                    {create: false},
+                    function() {},  // already exists
+                    function(e) {   // not exists, create
+                    dirEntry.getFile(wallpaperFilename, {create: true},
+                                     function(fe) {
+                                       WallpaperUtil.writeFile(fe,
+                                                               wallpaperData);
+                                     },
+                                     WallpaperUtil.onFileSystemError);
+                    });
+  };
+  WallpaperUtil.requestLocalFS(function(fs) {
+    fs.root.getDirectory(saveDir, {create: true}, getDirSuccess,
+                         WallpaperUtil.onFileSystemError);
+  });
+};
+
+/**
+ * Sets wallpaper from synced file system.
+ * @param {string} wallpaperFilename File name used to set wallpaper.
+ * @param {string} wallpaperLayout Layout used to set wallpaper.
+ * @param {function=} onSuccess Callback if set successfully.
+ */
+WallpaperUtil.setCustomWallpaperFromSyncFS = function(
+    wallpaperFilename, wallpaperLayout, onSuccess) {
+  var setWallpaperFromSyncCallback = function(fs) {
+    if (!wallpaperFilename) {
+      console.error('wallpaperFilename is not provided.');
+      return;
+    }
+    if (!wallpaperLayout)
+      wallpaperLayout = 'CENTER_CROPPED';
+    fs.root.getFile(wallpaperFilename, {create: false}, function(fileEntry) {
+      fileEntry.file(function(file) {
+        var reader = new FileReader();
+        reader.onloadend = function() {
+          chrome.wallpaperPrivate.setCustomWallpaper(
+              reader.result,
+              wallpaperLayout,
+              true,
+              wallpaperFilename,
+              function(thumbnailData) {
+                // TODO(ranj): Ignore 'canceledWallpaper' error.
+                if (chrome.runtime.lastError) {
+                  console.error(chrome.runtime.lastError.message);
+                  return;
+                }
+                WallpaperUtil.storeWallpaperToLocalFS(wallpaperFilename,
+                    reader.result, Constants.WallpaperDirNameEnum.ORIGINAL);
+                WallpaperUtil.storeWallpaperToLocalFS(wallpaperFilename,
+                    reader.result, Constants.WallpaperDirNameEnum.THUMBNAIL);
+                if (onSuccess)
+                  onSuccess();
+              });
+        };
+        reader.readAsArrayBuffer(file);
+      }, WallpaperUtil.onFileSystemError);
+    }, function(e) {}  // fail to read file, expected due to download delay
+    );
+  };
+  WallpaperUtil.requestSyncFS(setWallpaperFromSyncCallback);
+};
 
 /**
  * Saves value to local storage that associates with key.
  * @param {string} key The key that associates with value.
  * @param {string} value The value to save to local storage.
- * @param {boolen} sync True if the value is saved to sync storage.
- * @param {function=} opt_callback The callback on success, or on failure.
+ * @param {function=} opt_callback The callback on success.
  */
-WallpaperUtil.saveToStorage = function(key, value, sync, opt_callback) {
+WallpaperUtil.saveToLocalStorage = function(key, value, opt_callback) {
   var items = {};
   items[key] = value;
-  if (sync)
-    Constants.WallpaperSyncStorage.set(items, opt_callback);
-  else
-    Constants.WallpaperLocalStorage.set(items, opt_callback);
+  Constants.WallpaperLocalStorage.set(items, opt_callback);
+};
+
+/**
+ * Saves value to sync storage that associates with key if sync theme is
+ * enabled.
+ * @param {string} key The key that associates with value.
+ * @param {string} value The value to save to sync storage.
+ * @param {function=} opt_callback The callback on success.
+ */
+WallpaperUtil.saveToSyncStorage = function(key, value, opt_callback) {
+  var items = {};
+  items[key] = value;
+  WallpaperUtil.enabledSyncThemesCallback(function(syncEnabled) {
+    if (syncEnabled)
+      Constants.WallpaperSyncStorage.set(items, opt_callback);
+  });
 };
 
 /**
@@ -34,10 +302,10 @@ WallpaperUtil.saveWallpaperInfo = function(url, layout, source) {
       layout: layout,
       source: source
   };
-  WallpaperUtil.saveToStorage(Constants.AccessLocalWallpaperInfoKey,
-                              wallpaperInfo, false, function() {
-    WallpaperUtil.saveToStorage(Constants.AccessSyncWallpaperInfoKey,
-                                wallpaperInfo, true);
+  WallpaperUtil.saveToLocalStorage(Constants.AccessLocalWallpaperInfoKey,
+                              wallpaperInfo, function() {
+    WallpaperUtil.saveToSyncStorage(Constants.AccessSyncWallpaperInfoKey,
+                                wallpaperInfo);
   });
 };
 
@@ -65,7 +333,7 @@ WallpaperUtil.fetchURL = function(url, type, onSuccess, onFailure, opt_xhr) {
       if (this.status == 200) {
         onSuccess(this);
       } else {
-        onFailure();
+        onFailure(this.status);
       }
     });
     xhr.addEventListener('error', onFailure);

@@ -13,9 +13,12 @@ import subprocess
 import sys
 
 from gyp.common import OrderedSet
+import gyp.MSVSUtil
 import gyp.MSVSVersion
 
+
 windows_quoter_regex = re.compile(r'(\\*)"')
+
 
 def QuoteForRspFile(arg):
   """Quote a command line argument so that it appears as one argument when
@@ -220,6 +223,17 @@ class MsvsSettings(object):
     if unsupported:
       raise Exception('\n'.join(unsupported))
 
+  def GetExtension(self):
+    """Returns the extension for the target, with no leading dot.
+
+    Uses 'product_extension' if specified, otherwise uses MSVS defaults based on
+    the target type.
+    """
+    ext = self.spec.get('product_extension', None)
+    if ext:
+      return ext
+    return gyp.MSVSUtil.TARGET_TYPE_EXT.get(self.spec['type'], '')
+
   def GetVSMacroEnv(self, base_to_build=None, config=None):
     """Get a dict of variables mapping internal VS macro names to their gyp
     equivalents."""
@@ -227,16 +241,22 @@ class MsvsSettings(object):
     target_name = self.spec.get('product_prefix', '') + \
         self.spec.get('product_name', self.spec['target_name'])
     target_dir = base_to_build + '\\' if base_to_build else ''
+    target_ext = '.' + self.GetExtension()
+    target_file_name = target_name + target_ext
+
     replacements = {
-        '$(OutDir)\\': target_dir,
-        '$(TargetDir)\\': target_dir,
-        '$(IntDir)': '$!INTERMEDIATE_DIR',
-        '$(InputPath)': '${source}',
         '$(InputName)': '${root}',
-        '$(ProjectName)': self.spec['target_name'],
-        '$(TargetName)': target_name,
+        '$(InputPath)': '${source}',
+        '$(IntDir)': '$!INTERMEDIATE_DIR',
+        '$(OutDir)\\': target_dir,
         '$(PlatformName)': target_platform,
         '$(ProjectDir)\\': '',
+        '$(ProjectName)': self.spec['target_name'],
+        '$(TargetDir)\\': target_dir,
+        '$(TargetExt)': target_ext,
+        '$(TargetFileName)': target_file_name,
+        '$(TargetName)': target_name,
+        '$(TargetPath)': os.path.join(target_dir, target_file_name),
     }
     replacements.update(GetGlobalVSMacroEnv(self.vs_version))
     return replacements
@@ -318,6 +338,15 @@ class MsvsSettings(object):
       ('VCCLCompilerTool', 'AdditionalIncludeDirectories'), config, default=[]))
     return [self.ConvertVSMacros(p, config=config) for p in includes]
 
+  def AdjustMidlIncludeDirs(self, midl_include_dirs, config):
+    """Updates midl_include_dirs to expand VS specific paths, and adds the
+    system include dirs used for platform SDK and similar."""
+    config = self._TargetConfig(config)
+    includes = midl_include_dirs + self.msvs_system_include_dirs[config]
+    includes.extend(self._Setting(
+      ('VCMIDLTool', 'AdditionalIncludeDirectories'), config, default=[]))
+    return [self.ConvertVSMacros(p, config=config) for p in includes]
+
   def GetComputedDefines(self, config):
     """Returns the set of defines that are injected to the defines list based
     on other VS settings."""
@@ -378,6 +407,13 @@ class MsvsSettings(object):
     else:
       return None
 
+  def GetNoImportLibrary(self, config):
+    """If NoImportLibrary: true, ninja will not expect the output to include
+    an import library."""
+    config = self._TargetConfig(config)
+    noimplib = self._Setting(('NoImportLibrary',), config)
+    return noimplib == 'true'
+
   def GetAsmflags(self, config):
     """Returns the flags that need to be added to ml invocations."""
     config = self._TargetConfig(config)
@@ -403,9 +439,14 @@ class MsvsSettings(object):
     cl('OmitFramePointers', map={'false': '-', 'true': ''}, prefix='/Oy')
     cl('EnableIntrinsicFunctions', map={'false': '-', 'true': ''}, prefix='/Oi')
     cl('FavorSizeOrSpeed', map={'1': 't', '2': 's'}, prefix='/O')
+    cl('FloatingPointModel',
+        map={'0': 'precise', '1': 'strict', '2': 'fast'}, prefix='/fp:',
+        default='0')
     cl('WholeProgramOptimization', map={'true': '/GL'})
     cl('WarningLevel', prefix='/W')
     cl('WarnAsError', map={'true': '/WX'})
+    cl('CallingConvention',
+        map={'0': 'd', '1': 'r', '2': 'z', '3': 'v'}, prefix='/G')
     cl('DebugInformationFormat',
         map={'1': '7', '3': 'i', '4': 'I'}, prefix='/Z')
     cl('RuntimeTypeInfo', map={'true': '/GR', 'false': '/GR-'})
@@ -422,10 +463,11 @@ class MsvsSettings(object):
     cl('EnablePREfast', map={'true': '/analyze'})
     cl('AdditionalOptions', prefix='')
     cl('EnableEnhancedInstructionSet',
-       map={'1': 'SSE', '2': 'SSE2', '3': 'AVX', '4': 'IA32'}, prefix='/arch:')
+        map={'1': 'SSE', '2': 'SSE2', '3': 'AVX', '4': 'IA32', '5': 'AVX2'},
+        prefix='/arch:')
     cflags.extend(['/FI' + f for f in self._Setting(
         ('VCCLCompilerTool', 'ForcedIncludeFiles'), config, default=[])])
-    if self.vs_version.short_name in ('2013', '2013e'):
+    if self.vs_version.short_name in ('2013', '2013e', '2015'):
       # New flag required in 2013 to maintain previous PDB behavior.
       cflags.append('/FS')
     # ninja handles parallelism by itself, don't have the compiler do it too.
@@ -476,7 +518,8 @@ class MsvsSettings(object):
     libflags.extend(self._GetAdditionalLibraryDirectories(
         'VCLibrarianTool', config, gyp_to_build_path))
     lib('LinkTimeCodeGeneration', map={'true': '/LTCG'})
-    lib('TargetMachine', map={'1': 'X86', '17': 'X64'}, prefix='/MACHINE:')
+    lib('TargetMachine', map={'1': 'X86', '17': 'X64', '3': 'ARM'},
+        prefix='/MACHINE:')
     lib('AdditionalOptions')
     return libflags
 
@@ -519,7 +562,8 @@ class MsvsSettings(object):
                           'VCLinkerTool', append=ldflags)
     self._GetDefFileAsLdflags(ldflags, gyp_to_build_path)
     ld('GenerateDebugInformation', map={'true': '/DEBUG'})
-    ld('TargetMachine', map={'1': 'X86', '17': 'X64'}, prefix='/MACHINE:')
+    ld('TargetMachine', map={'1': 'X86', '17': 'X64', '3': 'ARM'},
+       prefix='/MACHINE:')
     ldflags.extend(self._GetAdditionalLibraryDirectories(
         'VCLinkerTool', config, gyp_to_build_path))
     ld('DelayLoadDLLs', prefix='/DELAYLOAD:')
@@ -570,9 +614,16 @@ class MsvsSettings(object):
     ld('Profile', map={'true': '/PROFILE'})
     ld('LargeAddressAware',
         map={'1': ':NO', '2': ''}, prefix='/LARGEADDRESSAWARE')
-    ld('ImageHasSafeExceptionHandlers', map={'true': '/SAFESEH'})
     # TODO(scottmg): This should sort of be somewhere else (not really a flag).
     ld('AdditionalDependencies', prefix='')
+
+    if self.GetArch(config) == 'x86':
+      safeseh_default = 'true'
+    else:
+      safeseh_default = None
+    ld('ImageHasSafeExceptionHandlers',
+        map={'false': ':NO', 'true': ''}, prefix='/SAFESEH',
+        default=safeseh_default)
 
     # If the base address is not specifically controlled, DYNAMICBASE should
     # be on by default.
@@ -868,7 +919,8 @@ def GetVSVersion(generator_flags):
   global vs_version
   if not vs_version:
     vs_version = gyp.MSVSVersion.SelectVisualStudioVersion(
-        generator_flags.get('msvs_version', 'auto'))
+        generator_flags.get('msvs_version', 'auto'),
+        allow_fallback=False)
   return vs_version
 
 def _GetVsvarsSetupArgs(generator_flags, arch):

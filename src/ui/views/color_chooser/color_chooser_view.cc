@@ -57,7 +57,7 @@ bool GetColorFromText(const base::string16& text, SkColor* result) {
 // interface.
 class LocatedEventHandlerView : public views::View {
  public:
-  virtual ~LocatedEventHandlerView() {}
+  ~LocatedEventHandlerView() override {}
 
  protected:
   LocatedEventHandlerView() {}
@@ -66,17 +66,17 @@ class LocatedEventHandlerView : public views::View {
   virtual void ProcessEventAtLocation(const gfx::Point& location) = 0;
 
   // views::View overrides:
-  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE {
+  bool OnMousePressed(const ui::MouseEvent& event) override {
     ProcessEventAtLocation(event.location());
     return true;
   }
 
-  virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE {
+  bool OnMouseDragged(const ui::MouseEvent& event) override {
     ProcessEventAtLocation(event.location());
     return true;
   }
 
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
+  void OnGestureEvent(ui::GestureEvent* event) override {
     if (event->type() == ui::ET_GESTURE_TAP ||
         event->type() == ui::ET_GESTURE_TAP_DOWN ||
         event->IsScrollGestureEvent()) {
@@ -123,11 +123,11 @@ class ColorChooserView::HueView : public LocatedEventHandlerView {
 
  private:
   // LocatedEventHandlerView overrides:
-  virtual void ProcessEventAtLocation(const gfx::Point& point) OVERRIDE;
+  void ProcessEventAtLocation(const gfx::Point& point) override;
 
   // View overrides:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  void OnPaint(gfx::Canvas* canvas) override;
 
   ColorChooserView* chooser_view_;
   int level_;
@@ -144,7 +144,7 @@ ColorChooserView::HueView::HueView(ColorChooserView* chooser_view)
 void ColorChooserView::HueView::OnHueChanged(SkScalar hue) {
   SkScalar height = SkIntToScalar(kSaturationValueSize - 1);
   SkScalar hue_max = SkIntToScalar(360);
-  int level = SkScalarDiv(SkScalarMul(hue_max - hue, height), hue_max);
+  int level = (hue_max - hue) * height / hue_max;
   level += kBorderWidth;
   if (level_ != level) {
     level_ = level;
@@ -157,10 +157,8 @@ void ColorChooserView::HueView::ProcessEventAtLocation(
   level_ = std::max(kBorderWidth,
                     std::min(height() - 1 - kBorderWidth, point.y()));
   int base_height = kSaturationValueSize - 1;
-  chooser_view_->OnHueChosen(SkScalarDiv(
-      SkScalarMul(SkIntToScalar(360),
-                  SkIntToScalar(base_height - (level_ - kBorderWidth))),
-      SkIntToScalar(base_height)));
+  chooser_view_->OnHueChosen(360.f * (base_height - (level_ - kBorderWidth)) /
+                             base_height);
   SchedulePaint();
 }
 
@@ -181,10 +179,8 @@ void ColorChooserView::HueView::OnPaint(gfx::Canvas* canvas) {
                    SK_ColorGRAY);
   int base_left = kHueIndicatorSize + kBorderWidth;
   for (int y = 0; y < kSaturationValueSize; ++y) {
-    hsv[0] = SkScalarDiv(SkScalarMul(SkIntToScalar(360),
-                                     SkIntToScalar(
-                                         kSaturationValueSize - 1 - y)),
-                    SkIntToScalar(kSaturationValueSize - 1));
+    hsv[0] =
+        360.f * (kSaturationValueSize - 1 - y) / (kSaturationValueSize - 1);
     canvas->FillRect(gfx::Rect(base_left, y + kBorderWidth, kHueBarWidth, 1),
                      SkHSVToColor(hsv));
   }
@@ -235,11 +231,11 @@ class ColorChooserView::SaturationValueView : public LocatedEventHandlerView {
 
  private:
   // LocatedEventHandlerView overrides:
-  virtual void ProcessEventAtLocation(const gfx::Point& point) OVERRIDE;
+  void ProcessEventAtLocation(const gfx::Point& point) override;
 
   // View overrides:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  void OnPaint(gfx::Canvas* canvas) override;
 
   ColorChooserView* chooser_view_;
   SkScalar hue_;
@@ -282,10 +278,8 @@ void ColorChooserView::SaturationValueView::OnSaturationValueChanged(
 void ColorChooserView::SaturationValueView::ProcessEventAtLocation(
     const gfx::Point& point) {
   SkScalar scalar_size = SkIntToScalar(kSaturationValueSize - 1);
-  SkScalar saturation = SkScalarDiv(
-      SkIntToScalar(point.x() - kBorderWidth), scalar_size);
-  SkScalar value = SK_Scalar1 - SkScalarDiv(
-      SkIntToScalar(point.y() - kBorderWidth), scalar_size);
+  SkScalar saturation = (point.x() - kBorderWidth) / scalar_size;
+  SkScalar value = SK_Scalar1 - (point.y() - kBorderWidth) / scalar_size;
   saturation = SkScalarPin(saturation, 0, SK_Scalar1);
   value = SkScalarPin(value, 0, SK_Scalar1);
   OnSaturationValueChanged(saturation, value);

@@ -13,7 +13,6 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_utils.h"
-#include "extensions/browser/extension_system.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 
@@ -27,11 +26,11 @@ typedef ExtensionBrowserTest ProcessManagerBrowserTest;
 // and background pages.
 IN_PROC_BROWSER_TEST_F(ProcessManagerBrowserTest,
                        ExtensionHostCreation) {
-  ProcessManager* pm = ExtensionSystem::Get(profile())->process_manager();
+  ProcessManager* pm = ProcessManager::Get(profile());
 
   // We start with no background hosts.
   ASSERT_EQ(0u, pm->background_hosts().size());
-  ASSERT_EQ(0u, pm->GetAllViews().size());
+  ASSERT_EQ(0u, pm->GetAllFrames().size());
 
   // Load an extension with a background page.
   scoped_refptr<const Extension> extension =
@@ -42,10 +41,10 @@ IN_PROC_BROWSER_TEST_F(ProcessManagerBrowserTest,
 
   // Process manager gains a background host.
   EXPECT_EQ(1u, pm->background_hosts().size());
-  EXPECT_EQ(1u, pm->GetAllViews().size());
+  EXPECT_EQ(1u, pm->GetAllFrames().size());
   EXPECT_TRUE(pm->GetBackgroundHostForExtension(extension->id()));
   EXPECT_TRUE(pm->GetSiteInstanceForURL(extension->url()));
-  EXPECT_EQ(1u, pm->GetRenderViewHostsForExtension(extension->id()).size());
+  EXPECT_EQ(1u, pm->GetRenderFrameHostsForExtension(extension->id()).size());
   EXPECT_FALSE(pm->IsBackgroundHostClosing(extension->id()));
   EXPECT_EQ(0, pm->GetLazyKeepaliveCount(extension.get()));
 
@@ -54,10 +53,10 @@ IN_PROC_BROWSER_TEST_F(ProcessManagerBrowserTest,
 
   // Background host disappears.
   EXPECT_EQ(0u, pm->background_hosts().size());
-  EXPECT_EQ(0u, pm->GetAllViews().size());
+  EXPECT_EQ(0u, pm->GetAllFrames().size());
   EXPECT_FALSE(pm->GetBackgroundHostForExtension(extension->id()));
   EXPECT_TRUE(pm->GetSiteInstanceForURL(extension->url()));
-  EXPECT_EQ(0u, pm->GetRenderViewHostsForExtension(extension->id()).size());
+  EXPECT_EQ(0u, pm->GetRenderFrameHostsForExtension(extension->id()).size());
   EXPECT_FALSE(pm->IsBackgroundHostClosing(extension->id()));
   EXPECT_EQ(0, pm->GetLazyKeepaliveCount(extension.get()));
 }
@@ -68,7 +67,7 @@ IN_PROC_BROWSER_TEST_F(ProcessManagerBrowserTest,
 // Disabled due to flake, see http://crbug.com/315242
 IN_PROC_BROWSER_TEST_F(ProcessManagerBrowserTest,
                        DISABLED_PopupHostCreation) {
-  ProcessManager* pm = ExtensionSystem::Get(profile())->process_manager();
+  ProcessManager* pm = ProcessManager::Get(profile());
 
   // Load an extension with the ability to open a popup but no background
   // page.
@@ -80,9 +79,9 @@ IN_PROC_BROWSER_TEST_F(ProcessManagerBrowserTest,
 
   // No background host was added.
   EXPECT_EQ(0u, pm->background_hosts().size());
-  EXPECT_EQ(0u, pm->GetAllViews().size());
+  EXPECT_EQ(0u, pm->GetAllFrames().size());
   EXPECT_FALSE(pm->GetBackgroundHostForExtension(popup->id()));
-  EXPECT_EQ(0u, pm->GetRenderViewHostsForExtension(popup->id()).size());
+  EXPECT_EQ(0u, pm->GetRenderFrameHostsForExtension(popup->id()).size());
   EXPECT_TRUE(pm->GetSiteInstanceForURL(popup->url()));
   EXPECT_FALSE(pm->IsBackgroundHostClosing(popup->id()));
   EXPECT_EQ(0, pm->GetLazyKeepaliveCount(popup.get()));
@@ -99,9 +98,9 @@ IN_PROC_BROWSER_TEST_F(ProcessManagerBrowserTest,
 
   // We now have a view, but still no background hosts.
   EXPECT_EQ(0u, pm->background_hosts().size());
-  EXPECT_EQ(1u, pm->GetAllViews().size());
+  EXPECT_EQ(1u, pm->GetAllFrames().size());
   EXPECT_FALSE(pm->GetBackgroundHostForExtension(popup->id()));
-  EXPECT_EQ(1u, pm->GetRenderViewHostsForExtension(popup->id()).size());
+  EXPECT_EQ(1u, pm->GetRenderFrameHostsForExtension(popup->id()).size());
   EXPECT_TRUE(pm->GetSiteInstanceForURL(popup->url()));
   EXPECT_FALSE(pm->IsBackgroundHostClosing(popup->id()));
   EXPECT_EQ(0, pm->GetLazyKeepaliveCount(popup.get()));
@@ -111,11 +110,11 @@ IN_PROC_BROWSER_TEST_F(ProcessManagerBrowserTest,
 // interact with an installed extension with that ID. Regression test
 // for bug 357382.
 IN_PROC_BROWSER_TEST_F(ProcessManagerBrowserTest, HttpHostMatchingExtensionId) {
-  ProcessManager* pm = ExtensionSystem::Get(profile())->process_manager();
+  ProcessManager* pm = ProcessManager::Get(profile());
 
   // We start with no background hosts.
   ASSERT_EQ(0u, pm->background_hosts().size());
-  ASSERT_EQ(0u, pm->GetAllViews().size());
+  ASSERT_EQ(0u, pm->GetAllFrames().size());
 
   // Load an extension with a background page.
   scoped_refptr<const Extension> extension =
@@ -125,7 +124,7 @@ IN_PROC_BROWSER_TEST_F(ProcessManagerBrowserTest, HttpHostMatchingExtensionId) {
 
   // Set up a test server running at http://[extension-id]
   ASSERT_TRUE(extension.get());
-  const std::string aliased_host = extension->id();
+  const std::string& aliased_host = extension->id();
   host_resolver()->AddRule(aliased_host, "127.0.0.1");
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   GURL url =
@@ -145,13 +144,12 @@ IN_PROC_BROWSER_TEST_F(ProcessManagerBrowserTest, HttpHostMatchingExtensionId) {
   content::WebContents* tab_web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   EXPECT_EQ(url, tab_web_contents->GetVisibleURL());
-  EXPECT_TRUE(NULL == pm->GetExtensionForRenderViewHost(
-                          tab_web_contents->GetRenderViewHost()))
+  EXPECT_FALSE(pm->GetExtensionForWebContents(tab_web_contents))
       << "Non-extension content must not have an associated extension";
-  ASSERT_EQ(1u, pm->GetRenderViewHostsForExtension(extension->id()).size());
+  ASSERT_EQ(1u, pm->GetRenderFrameHostsForExtension(extension->id()).size());
   content::WebContents* extension_web_contents =
-      content::WebContents::FromRenderViewHost(
-          *pm->GetRenderViewHostsForExtension(extension->id()).begin());
+      content::WebContents::FromRenderFrameHost(
+          *pm->GetRenderFrameHostsForExtension(extension->id()).begin());
   EXPECT_TRUE(extension_web_contents->GetSiteInstance() !=
               tab_web_contents->GetSiteInstance());
   EXPECT_TRUE(pm->GetSiteInstanceForURL(extension->url()) !=

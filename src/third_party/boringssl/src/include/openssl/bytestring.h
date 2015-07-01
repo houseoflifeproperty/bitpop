@@ -47,7 +47,7 @@ OPENSSL_EXPORT void CBS_init(CBS *cbs, const uint8_t *data, size_t len);
  * otherwise. */
 OPENSSL_EXPORT int CBS_skip(CBS *cbs, size_t len);
 
-/* CBS_data returns a pointer to the contains of |cbs|. */
+/* CBS_data returns a pointer to the contents of |cbs|. */
 OPENSSL_EXPORT const uint8_t *CBS_data(const CBS *cbs);
 
 /* CBS_len returns the number of bytes remaining in |cbs|. */
@@ -134,12 +134,19 @@ OPENSSL_EXPORT int CBS_get_u24_length_prefixed(CBS *cbs, CBS *out);
  * element must match |tag_value|. It returns one on success and zero
  * on error.
  *
- * Tag numbers greater than 31 are not supported. */
+ * Tag numbers greater than 30 are not supported (i.e. short form only). */
 OPENSSL_EXPORT int CBS_get_asn1(CBS *cbs, CBS *out, unsigned tag_value);
 
 /* CBS_get_asn1_element acts like |CBS_get_asn1| but |out| will include the
  * ASN.1 header bytes too. */
 OPENSSL_EXPORT int CBS_get_asn1_element(CBS *cbs, CBS *out, unsigned tag_value);
+
+/* CBS_peek_asn1_tag looks ahead at the next ASN.1 tag and returns one
+ * if the next ASN.1 element on |cbs| would have tag |tag_value|. If
+ * |cbs| is empty or the tag does not match, it returns zero. Note: if
+ * it returns one, CBS_get_asn1 may still fail if the rest of the
+ * element is malformed. */
+OPENSSL_EXPORT int CBS_peek_asn1_tag(const CBS *cbs, unsigned tag_value);
 
 /* CBS_get_any_asn1_element sets |*out| to contain the next ASN.1 element from
  * |*cbs| (including header bytes) and advances |*cbs|. It sets |*out_tag| to
@@ -148,7 +155,7 @@ OPENSSL_EXPORT int CBS_get_asn1_element(CBS *cbs, CBS *out, unsigned tag_value);
  * header. Each of |out|, |out_tag|, and |out_header_len| may be NULL to ignore
  * the value.
  *
- * Tag numbers greater than 31 are not supported. */
+ * Tag numbers greater than 30 are not supported (i.e. short form only). */
 OPENSSL_EXPORT int CBS_get_any_asn1_element(CBS *cbs, CBS *out,
                                             unsigned *out_tag,
                                             size_t *out_header_len);
@@ -158,6 +165,41 @@ OPENSSL_EXPORT int CBS_get_any_asn1_element(CBS *cbs, CBS *out,
  * where error includes the integer being negative, or too large to represent
  * in 64 bits. */
 OPENSSL_EXPORT int CBS_get_asn1_uint64(CBS *cbs, uint64_t *out);
+
+/* CBS_get_optional_asn1 gets an optional explicitly-tagged element
+ * from |cbs| tagged with |tag| and sets |*out| to its contents. If
+ * present, it sets |*out_present| to one, otherwise zero. It returns
+ * one on success, whether or not the element was present, and zero on
+ * decode failure. */
+OPENSSL_EXPORT int CBS_get_optional_asn1(CBS *cbs, CBS *out, int *out_present,
+                                         unsigned tag);
+
+/* CBS_get_optional_asn1_octet_string gets an optional
+ * explicitly-tagged OCTET STRING from |cbs|. If present, it sets
+ * |*out| to the string and |*out_present| to one. Otherwise, it sets
+ * |*out| to empty and |*out_present| to zero. |out_present| may be
+ * NULL. It returns one on success, whether or not the element was
+ * present, and zero on decode failure. */
+OPENSSL_EXPORT int CBS_get_optional_asn1_octet_string(CBS *cbs, CBS *out,
+                                                      int *out_present,
+                                                      unsigned tag);
+
+/* CBS_get_optional_asn1_uint64 gets an optional explicitly-tagged
+ * INTEGER from |cbs|. If present, it sets |*out| to the
+ * value. Otherwise, it sets |*out| to |default_value|. It returns one
+ * on success, whether or not the element was present, and zero on
+ * decode failure. */
+OPENSSL_EXPORT int CBS_get_optional_asn1_uint64(CBS *cbs, uint64_t *out,
+                                                unsigned tag,
+                                                uint64_t default_value);
+
+/* CBS_get_optional_asn1_bool gets an optional, explicitly-tagged BOOLEAN from
+ * |cbs|. If present, it sets |*out| to either zero or one, based on the
+ * boolean. Otherwise, it sets |*out| to |default_value|. It returns one on
+ * success, whether or not the element was present, and zero on decode
+ * failure. */
+OPENSSL_EXPORT int CBS_get_optional_asn1_bool(CBS *cbs, int *out, unsigned tag,
+                                              int default_value);
 
 
 /* CRYPTO ByteBuilder.
@@ -245,7 +287,9 @@ OPENSSL_EXPORT int CBB_add_u24_length_prefixed(CBB *cbb, CBB *out_contents);
 
 /* CBB_add_asn sets |*out_contents| to a |CBB| into which the contents of an
  * ASN.1 object can be written. The |tag| argument will be used as the tag for
- * the object. It returns one on success or zero on error. */
+ * the object. Passing in |tag| number 31 will return in an error since only
+ * single octet identifiers are supported. It returns one on success or zero
+ * on error. */
 OPENSSL_EXPORT int CBB_add_asn1(CBB *cbb, CBB *out_contents, uint8_t tag);
 
 /* CBB_add_bytes appends |len| bytes from |data| to |cbb|. It returns one on
@@ -269,6 +313,11 @@ OPENSSL_EXPORT int CBB_add_u16(CBB *cbb, uint16_t value);
 /* CBB_add_u24 appends a 24-bit, big-endian number from |value| to |cbb|. It
  * returns one on success and zero otherwise. */
 OPENSSL_EXPORT int CBB_add_u24(CBB *cbb, uint32_t value);
+
+/* CBB_add_asn1_uint64 writes an ASN.1 INTEGER into |cbb| using |CBB_add_asn1|
+ * and writes |value| in its contents. It returns one on success and zero on
+ * error. */
+OPENSSL_EXPORT int CBB_add_asn1_uint64(CBB *cbb, uint64_t value);
 
 
 #if defined(__cplusplus)

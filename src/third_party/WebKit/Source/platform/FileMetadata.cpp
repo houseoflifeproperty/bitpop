@@ -46,7 +46,7 @@ bool getFileSize(const String& path, long long& result)
     return true;
 }
 
-bool getFileModificationTime(const String& path, time_t& result)
+bool getFileModificationTime(const String& path, double& result)
 {
     FileMetadata metadata;
     if (!getFileMetadata(path, metadata))
@@ -57,8 +57,8 @@ bool getFileModificationTime(const String& path, time_t& result)
 
 bool getFileMetadata(const String& path, FileMetadata& metadata)
 {
-    blink::WebFileInfo webFileInfo;
-    if (!blink::Platform::current()->fileUtilities()->getFileInfo(path, webFileInfo))
+    WebFileInfo webFileInfo;
+    if (!Platform::current()->fileUtilities()->getFileInfo(path, webFileInfo))
         return false;
     metadata.modificationTime = webFileInfo.modificationTime;
     metadata.length = webFileInfo.length;
@@ -68,12 +68,12 @@ bool getFileMetadata(const String& path, FileMetadata& metadata)
 
 String directoryName(const String& path)
 {
-    return blink::Platform::current()->fileUtilities()->directoryName(path);
+    return Platform::current()->fileUtilities()->directoryName(path);
 }
 
 KURL filePathToURL(const String& path)
 {
-    return blink::Platform::current()->fileUtilities()->filePathToURL(path);
+    return Platform::current()->fileUtilities()->filePathToURL(path);
 }
 
 } // namespace blink

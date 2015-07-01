@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_RENDERER_SHARED_WORKER_EMBEDDED_SHARED_WORKER_STUB_H
-#define CONTENT_RENDERER_SHARED_WORKER_EMBEDDED_SHARED_WORKER_STUB_H
+#ifndef CONTENT_RENDERER_SHARED_WORKER_EMBEDDED_SHARED_WORKER_STUB_H_
+#define CONTENT_RENDERER_SHARED_WORKER_EMBEDDED_SHARED_WORKER_STUB_H_
 
 #include <vector>
 
@@ -22,7 +22,7 @@ class WebMessagePortChannel;
 class WebNotificationPresenter;
 class WebSecurityOrigin;
 class WebSharedWorker;
-class WebWorkerPermissionClientProxy;
+class WebWorkerContentSettingsClientProxy;
 }
 
 namespace content {
@@ -42,28 +42,31 @@ class EmbeddedSharedWorkerStub : public IPC::Listener,
       int route_id);
 
   // IPC::Listener implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnChannelError() OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnChannelError() override;
 
   // blink::WebSharedWorkerClient implementation.
-  virtual void workerContextClosed() OVERRIDE;
-  virtual void workerContextDestroyed() OVERRIDE;
-  virtual void workerReadyForInspection() OVERRIDE;
-  virtual void workerScriptLoaded() OVERRIDE;
-  virtual void workerScriptLoadFailed() OVERRIDE;
-  virtual void selectAppCacheID(long long) OVERRIDE;
-  virtual blink::WebNotificationPresenter* notificationPresenter() OVERRIDE;
+  virtual void workerContextClosed() override;
+  virtual void workerContextDestroyed() override;
+  virtual void workerReadyForInspection() override;
+  virtual void workerScriptLoaded() override;
+  virtual void workerScriptLoadFailed() override;
+  virtual void selectAppCacheID(long long) override;
+  virtual blink::WebNotificationPresenter* notificationPresenter() override;
   virtual blink::WebApplicationCacheHost* createApplicationCacheHost(
-      blink::WebApplicationCacheHostClient*) OVERRIDE;
-  virtual blink::WebWorkerPermissionClientProxy*
-      createWorkerPermissionClientProxy(
-          const blink::WebSecurityOrigin& origin) OVERRIDE;
-  virtual void dispatchDevToolsMessage(
-      const blink::WebString& message) OVERRIDE;
-  virtual void saveDevToolsAgentState(const blink::WebString& state) OVERRIDE;
+      blink::WebApplicationCacheHostClient*) override;
+  virtual blink::WebWorkerContentSettingsClientProxy*
+      createWorkerContentSettingsClientProxy(
+          const blink::WebSecurityOrigin& origin) override;
+  virtual blink::WebServiceWorkerNetworkProvider*
+      createServiceWorkerNetworkProvider(blink::WebDataSource*) override;
+  virtual void sendDevToolsMessage(
+      int call_id,
+      const blink::WebString& message,
+      const blink::WebString& state) override;
 
  private:
-  virtual ~EmbeddedSharedWorkerStub();
+  ~EmbeddedSharedWorkerStub() override;
 
   void Shutdown();
   bool Send(IPC::Message* message);
@@ -91,4 +94,4 @@ class EmbeddedSharedWorkerStub : public IPC::Listener,
 
 }  // namespace content
 
-#endif  // CONTENT_RENDERER_SHARED_WORKER_EMBEDDED_SHARED_WORKER_STUB_H
+#endif  // CONTENT_RENDERER_SHARED_WORKER_EMBEDDED_SHARED_WORKER_STUB_H_

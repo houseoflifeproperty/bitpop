@@ -5,8 +5,6 @@
 #ifndef V8_COMPILER_RAW_MACHINE_ASSEMBLER_H_
 #define V8_COMPILER_RAW_MACHINE_ASSEMBLER_H_
 
-#include "src/v8.h"
-
 #include "src/compiler/common-operator.h"
 #include "src/compiler/graph-builder.h"
 #include "src/compiler/linkage.h"
@@ -44,20 +42,22 @@ class RawMachineAssembler : public GraphBuilder {
     DISALLOW_COPY_AND_ASSIGN(Label);
   };
 
-  RawMachineAssembler(Graph* graph, MachineSignature* machine_sig,
-                      MachineType word = kMachPtr);
-  virtual ~RawMachineAssembler() {}
+  RawMachineAssembler(Isolate* isolate, Graph* graph,
+                      const MachineSignature* machine_sig,
+                      MachineType word = kMachPtr,
+                      MachineOperatorBuilder::Flags flags =
+                          MachineOperatorBuilder::Flag::kNoFlags);
+  ~RawMachineAssembler() override {}
 
-  Isolate* isolate() const { return zone()->isolate(); }
   Zone* zone() const { return graph()->zone(); }
   MachineOperatorBuilder* machine() { return &machine_; }
   CommonOperatorBuilder* common() { return &common_; }
   CallDescriptor* call_descriptor() const { return call_descriptor_; }
   size_t parameter_count() const { return machine_sig_->parameter_count(); }
-  MachineSignature* machine_sig() const { return machine_sig_; }
+  const MachineSignature* machine_sig() const { return machine_sig_; }
 
   Node* UndefinedConstant() {
-    Unique<Object> unique = Unique<Object>::CreateImmovable(
+    Unique<HeapObject> unique = Unique<HeapObject>::CreateImmovable(
         isolate()->factory()->undefined_value());
     return NewNode(common()->HeapConstant(unique));
   }
@@ -80,12 +80,18 @@ class RawMachineAssembler : public GraphBuilder {
   Node* NumberConstant(double value) {
     return NewNode(common()->NumberConstant(value));
   }
+  Node* Float32Constant(float value) {
+    return NewNode(common()->Float32Constant(value));
+  }
   Node* Float64Constant(double value) {
     return NewNode(common()->Float64Constant(value));
   }
-  Node* HeapConstant(Handle<Object> object) {
-    Unique<Object> val = Unique<Object>::CreateUninitialized(object);
+  Node* HeapConstant(Handle<HeapObject> object) {
+    Unique<HeapObject> val = Unique<HeapObject>::CreateUninitialized(object);
     return NewNode(common()->HeapConstant(val));
+  }
+  Node* ExternalConstant(ExternalReference address) {
+    return NewNode(common()->ExternalConstant(address));
   }
 
   Node* Projection(int index, Node* a) {
@@ -94,17 +100,18 @@ class RawMachineAssembler : public GraphBuilder {
 
   // Memory Operations.
   Node* Load(MachineType rep, Node* base) {
-    return Load(rep, base, Int32Constant(0));
+    return Load(rep, base, IntPtrConstant(0));
   }
   Node* Load(MachineType rep, Node* base, Node* index) {
-    return NewNode(machine()->Load(rep), base, index);
+    return NewNode(machine()->Load(rep), base, index, graph()->start(),
+                   graph()->start());
   }
   void Store(MachineType rep, Node* base, Node* value) {
-    Store(rep, base, Int32Constant(0), value);
+    Store(rep, base, IntPtrConstant(0), value);
   }
   void Store(MachineType rep, Node* base, Node* index, Node* value) {
     NewNode(machine()->Store(StoreRepresentation(rep, kNoWriteBarrier)), base,
-            index, value);
+            index, value, graph()->start(), graph()->start());
   }
   // Arithmetic Operations.
   Node* WordAnd(Node* a, Node* b) {
@@ -168,6 +175,7 @@ class RawMachineAssembler : public GraphBuilder {
   Node* Word32Ror(Node* a, Node* b) {
     return NewNode(machine()->Word32Ror(), a, b);
   }
+  Node* Word32Clz(Node* a) { return NewNode(machine()->Word32Clz(), a); }
   Node* Word32Equal(Node* a, Node* b) {
     return NewNode(machine()->Word32Equal(), a, b);
   }
@@ -222,17 +230,14 @@ class RawMachineAssembler : public GraphBuilder {
   Node* Int32Mul(Node* a, Node* b) {
     return NewNode(machine()->Int32Mul(), a, b);
   }
-  Node* Int32Div(Node* a, Node* b) {
-    return NewNode(machine()->Int32Div(), a, b);
+  Node* Int32MulHigh(Node* a, Node* b) {
+    return NewNode(machine()->Int32MulHigh(), a, b);
   }
-  Node* Int32UDiv(Node* a, Node* b) {
-    return NewNode(machine()->Int32UDiv(), a, b);
+  Node* Int32Div(Node* a, Node* b) {
+    return NewNode(machine()->Int32Div(), a, b, graph()->start());
   }
   Node* Int32Mod(Node* a, Node* b) {
-    return NewNode(machine()->Int32Mod(), a, b);
-  }
-  Node* Int32UMod(Node* a, Node* b) {
-    return NewNode(machine()->Int32UMod(), a, b);
+    return NewNode(machine()->Int32Mod(), a, b, graph()->start());
   }
   Node* Int32LessThan(Node* a, Node* b) {
     return NewNode(machine()->Int32LessThan(), a, b);
@@ -240,11 +245,20 @@ class RawMachineAssembler : public GraphBuilder {
   Node* Int32LessThanOrEqual(Node* a, Node* b) {
     return NewNode(machine()->Int32LessThanOrEqual(), a, b);
   }
+  Node* Uint32Div(Node* a, Node* b) {
+    return NewNode(machine()->Uint32Div(), a, b, graph()->start());
+  }
   Node* Uint32LessThan(Node* a, Node* b) {
     return NewNode(machine()->Uint32LessThan(), a, b);
   }
   Node* Uint32LessThanOrEqual(Node* a, Node* b) {
     return NewNode(machine()->Uint32LessThanOrEqual(), a, b);
+  }
+  Node* Uint32Mod(Node* a, Node* b) {
+    return NewNode(machine()->Uint32Mod(), a, b, graph()->start());
+  }
+  Node* Uint32MulHigh(Node* a, Node* b) {
+    return NewNode(machine()->Uint32MulHigh(), a, b);
   }
   Node* Int32GreaterThan(Node* a, Node* b) { return Int32LessThan(b, a); }
   Node* Int32GreaterThanOrEqual(Node* a, Node* b) {
@@ -264,18 +278,15 @@ class RawMachineAssembler : public GraphBuilder {
   Node* Int64Div(Node* a, Node* b) {
     return NewNode(machine()->Int64Div(), a, b);
   }
-  Node* Int64UDiv(Node* a, Node* b) {
-    return NewNode(machine()->Int64UDiv(), a, b);
-  }
   Node* Int64Mod(Node* a, Node* b) {
     return NewNode(machine()->Int64Mod(), a, b);
-  }
-  Node* Int64UMod(Node* a, Node* b) {
-    return NewNode(machine()->Int64UMod(), a, b);
   }
   Node* Int64Neg(Node* a) { return Int64Sub(Int64Constant(0), a); }
   Node* Int64LessThan(Node* a, Node* b) {
     return NewNode(machine()->Int64LessThan(), a, b);
+  }
+  Node* Uint64LessThan(Node* a, Node* b) {
+    return NewNode(machine()->Uint64LessThan(), a, b);
   }
   Node* Int64LessThanOrEqual(Node* a, Node* b) {
     return NewNode(machine()->Int64LessThanOrEqual(), a, b);
@@ -283,6 +294,12 @@ class RawMachineAssembler : public GraphBuilder {
   Node* Int64GreaterThan(Node* a, Node* b) { return Int64LessThan(b, a); }
   Node* Int64GreaterThanOrEqual(Node* a, Node* b) {
     return Int64LessThanOrEqual(b, a);
+  }
+  Node* Uint64Div(Node* a, Node* b) {
+    return NewNode(machine()->Uint64Div(), a, b);
+  }
+  Node* Uint64Mod(Node* a, Node* b) {
+    return NewNode(machine()->Uint64Mod(), a, b);
   }
 
   // TODO(turbofan): What is this used for?
@@ -311,6 +328,37 @@ class RawMachineAssembler : public GraphBuilder {
 
 #undef INTPTR_BINOP
 
+  Node* Float32Add(Node* a, Node* b) {
+    return NewNode(machine()->Float32Add(), a, b);
+  }
+  Node* Float32Sub(Node* a, Node* b) {
+    return NewNode(machine()->Float32Sub(), a, b);
+  }
+  Node* Float32Mul(Node* a, Node* b) {
+    return NewNode(machine()->Float32Mul(), a, b);
+  }
+  Node* Float32Div(Node* a, Node* b) {
+    return NewNode(machine()->Float32Div(), a, b);
+  }
+  Node* Float32Abs(Node* a) { return NewNode(machine()->Float32Abs(), a); }
+  Node* Float32Sqrt(Node* a) { return NewNode(machine()->Float32Sqrt(), a); }
+  Node* Float32Equal(Node* a, Node* b) {
+    return NewNode(machine()->Float32Equal(), a, b);
+  }
+  Node* Float32NotEqual(Node* a, Node* b) {
+    return WordBinaryNot(Float32Equal(a, b));
+  }
+  Node* Float32LessThan(Node* a, Node* b) {
+    return NewNode(machine()->Float32LessThan(), a, b);
+  }
+  Node* Float32LessThanOrEqual(Node* a, Node* b) {
+    return NewNode(machine()->Float32LessThanOrEqual(), a, b);
+  }
+  Node* Float32GreaterThan(Node* a, Node* b) { return Float32LessThan(b, a); }
+  Node* Float32GreaterThanOrEqual(Node* a, Node* b) {
+    return Float32LessThanOrEqual(b, a);
+  }
+
   Node* Float64Add(Node* a, Node* b) {
     return NewNode(machine()->Float64Add(), a, b);
   }
@@ -326,6 +374,8 @@ class RawMachineAssembler : public GraphBuilder {
   Node* Float64Mod(Node* a, Node* b) {
     return NewNode(machine()->Float64Mod(), a, b);
   }
+  Node* Float64Abs(Node* a) { return NewNode(machine()->Float64Abs(), a); }
+  Node* Float64Sqrt(Node* a) { return NewNode(machine()->Float64Sqrt(), a); }
   Node* Float64Equal(Node* a, Node* b) {
     return NewNode(machine()->Float64Equal(), a, b);
   }
@@ -344,6 +394,9 @@ class RawMachineAssembler : public GraphBuilder {
   }
 
   // Conversions.
+  Node* ChangeFloat32ToFloat64(Node* a) {
+    return NewNode(machine()->ChangeFloat32ToFloat64(), a);
+  }
   Node* ChangeInt32ToFloat64(Node* a) {
     return NewNode(machine()->ChangeInt32ToFloat64(), a);
   }
@@ -362,12 +415,41 @@ class RawMachineAssembler : public GraphBuilder {
   Node* ChangeUint32ToUint64(Node* a) {
     return NewNode(machine()->ChangeUint32ToUint64(), a);
   }
+  Node* TruncateFloat64ToFloat32(Node* a) {
+    return NewNode(machine()->TruncateFloat64ToFloat32(), a);
+  }
   Node* TruncateFloat64ToInt32(Node* a) {
     return NewNode(machine()->TruncateFloat64ToInt32(), a);
   }
   Node* TruncateInt64ToInt32(Node* a) {
     return NewNode(machine()->TruncateInt64ToInt32(), a);
   }
+  Node* Float64RoundDown(Node* a) {
+    return NewNode(machine()->Float64RoundDown(), a);
+  }
+  Node* Float64RoundTruncate(Node* a) {
+    return NewNode(machine()->Float64RoundTruncate(), a);
+  }
+  Node* Float64RoundTiesAway(Node* a) {
+    return NewNode(machine()->Float64RoundTiesAway(), a);
+  }
+
+  // Float64 bit operations.
+  Node* Float64ExtractLowWord32(Node* a) {
+    return NewNode(machine()->Float64ExtractLowWord32(), a);
+  }
+  Node* Float64ExtractHighWord32(Node* a) {
+    return NewNode(machine()->Float64ExtractHighWord32(), a);
+  }
+  Node* Float64InsertLowWord32(Node* a, Node* b) {
+    return NewNode(machine()->Float64InsertLowWord32(), a, b);
+  }
+  Node* Float64InsertHighWord32(Node* a, Node* b) {
+    return NewNode(machine()->Float64InsertHighWord32(), a, b);
+  }
+
+  // Stack operations.
+  Node* LoadStackPointer() { return NewNode(machine()->LoadStackPointer()); }
 
   // Parameters.
   Node* Parameter(size_t index);
@@ -376,6 +458,8 @@ class RawMachineAssembler : public GraphBuilder {
   Label* Exit();
   void Goto(Label* label);
   void Branch(Node* condition, Label* true_val, Label* false_val);
+  void Switch(Node* index, Label* default_label, int32_t* case_values,
+              Label** case_labels, size_t case_count);
   // Call through CallFunctionStub with lazy deopt and frame-state.
   Node* CallFunctionStub0(Node* function, Node* receiver, Node* context,
                           Node* frame_state, CallFunctionFlags flags);
@@ -404,8 +488,8 @@ class RawMachineAssembler : public GraphBuilder {
   Schedule* Export();
 
  protected:
-  virtual Node* MakeNode(const Operator* op, int input_count,
-                         Node** inputs) FINAL;
+  Node* MakeNode(const Operator* op, int input_count, Node** inputs,
+                 bool incomplete) final;
 
   bool ScheduleValid() { return schedule_ != NULL; }
 
@@ -422,7 +506,7 @@ class RawMachineAssembler : public GraphBuilder {
   Schedule* schedule_;
   MachineOperatorBuilder machine_;
   CommonOperatorBuilder common_;
-  MachineSignature* machine_sig_;
+  const MachineSignature* machine_sig_;
   CallDescriptor* call_descriptor_;
   Node** parameters_;
   Label exit_label_;

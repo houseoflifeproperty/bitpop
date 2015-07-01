@@ -4,6 +4,7 @@
 
 #include "ui/views/widget/desktop_aura/x11_whole_screen_move_loop.h"
 
+#include <X11/keysym.h>
 #include <X11/Xlib.h>
 
 #include "base/bind.h"
@@ -20,8 +21,21 @@
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
 #include "ui/events/platform/scoped_event_dispatcher.h"
 #include "ui/events/platform/x11/x11_event_source.h"
+#include "ui/views/widget/desktop_aura/x11_pointer_grab.h"
 
 namespace views {
+
+// XGrabKey requires the modifier mask to explicitly be specified.
+const unsigned int kModifiersMasks[] = {
+  0,                                // No additional modifier.
+  Mod2Mask,                         // Num lock
+  LockMask,                         // Caps lock
+  Mod5Mask,                         // Scroll lock
+  Mod2Mask | LockMask,
+  Mod2Mask | Mod5Mask,
+  LockMask | Mod5Mask,
+  Mod2Mask | LockMask | Mod5Mask
+};
 
 X11WholeScreenMoveLoop::X11WholeScreenMoveLoop(X11MoveLoopDelegate* delegate)
     : delegate_(delegate),
@@ -32,18 +46,17 @@ X11WholeScreenMoveLoop::X11WholeScreenMoveLoop(X11MoveLoopDelegate* delegate)
       grabbed_pointer_(false),
       canceled_(false),
       weak_factory_(this) {
-  last_xmotion_.type = LASTEvent;
 }
 
 X11WholeScreenMoveLoop::~X11WholeScreenMoveLoop() {}
 
 void X11WholeScreenMoveLoop::DispatchMouseMovement() {
-  if (!weak_factory_.HasWeakPtrs())
+  if (!last_motion_in_screen_)
     return;
-  weak_factory_.InvalidateWeakPtrs();
-  DCHECK_EQ(MotionNotify, last_xmotion_.type);
-  delegate_->OnMouseMovement(&last_xmotion_);
-  last_xmotion_.type = LASTEvent;
+  delegate_->OnMouseMovement(last_motion_in_screen_->location(),
+                             last_motion_in_screen_->flags(),
+                             last_motion_in_screen_->time_stamp());
+  last_motion_in_screen_.reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -59,10 +72,16 @@ uint32_t X11WholeScreenMoveLoop::DispatchEvent(const ui::PlatformEvent& event) {
     return ui::POST_DISPATCH_PERFORM_DEFAULT;
 
   XEvent* xev = event;
-  switch (xev->type) {
-    case MotionNotify: {
-      last_xmotion_ = xev->xmotion;
-      if (!weak_factory_.HasWeakPtrs()) {
+  ui::EventType type = ui::EventTypeFromNative(xev);
+  switch (type) {
+    case ui::ET_MOUSE_MOVED:
+    case ui::ET_MOUSE_DRAGGED: {
+      bool dispatch_mouse_event = !last_motion_in_screen_.get();
+      last_motion_in_screen_.reset(
+          static_cast<ui::MouseEvent*>(ui::EventFromNative(xev).release()));
+      last_motion_in_screen_->set_location(
+          ui::EventSystemLocationFromNative(xev));
+      if (dispatch_mouse_event) {
         // Post a task to dispatch mouse movement event when control returns to
         // the message loop. This allows smoother dragging since the events are
         // dispatched without waiting for the drag widget updates.
@@ -73,8 +92,11 @@ uint32_t X11WholeScreenMoveLoop::DispatchEvent(const ui::PlatformEvent& event) {
       }
       return ui::POST_DISPATCH_NONE;
     }
-    case ButtonRelease: {
-      if (xev->xbutton.button == Button1) {
+    case ui::ET_MOUSE_RELEASED: {
+      int button = (xev->type == ButtonRelease)
+          ? xev->xbutton.button
+          : ui::EventButtonFromNative(xev);
+      if (button == Button1) {
         // Assume that drags are being done with the left mouse button. Only
         // break the drag if the left mouse button was released.
         DispatchMouseMovement();
@@ -89,45 +111,16 @@ uint32_t X11WholeScreenMoveLoop::DispatchEvent(const ui::PlatformEvent& event) {
       }
       return ui::POST_DISPATCH_NONE;
     }
-    case KeyPress: {
+    case ui::ET_KEY_PRESSED:
       if (ui::KeyboardCodeFromXKeyEvent(xev) == ui::VKEY_ESCAPE) {
         canceled_ = true;
         EndMoveLoop();
         return ui::POST_DISPATCH_NONE;
       }
       break;
-    }
-    case GenericEvent: {
-      ui::EventType type = ui::EventTypeFromNative(xev);
-      switch (type) {
-        case ui::ET_MOUSE_MOVED:
-        case ui::ET_MOUSE_DRAGGED:
-        case ui::ET_MOUSE_RELEASED: {
-          XEvent xevent = {0};
-          if (type == ui::ET_MOUSE_RELEASED) {
-            xevent.type = ButtonRelease;
-            xevent.xbutton.button = ui::EventButtonFromNative(xev);
-          } else {
-            xevent.type = MotionNotify;
-          }
-          xevent.xany.display = xev->xgeneric.display;
-          xevent.xany.window = grab_input_window_;
-          // The fields used below are in the same place for all of events
-          // above. Using xmotion from XEvent's unions to avoid repeating
-          // the code.
-          xevent.xmotion.root = DefaultRootWindow(xev->xgeneric.display);
-          xevent.xmotion.time = ui::EventTimeFromNative(xev).InMilliseconds();
-          gfx::Point point(ui::EventSystemLocationFromNative(xev));
-          xevent.xmotion.x_root = point.x();
-          xevent.xmotion.y_root = point.y();
-          return DispatchEvent(&xevent);
-        }
-        default:
-          break;
-      }
-    }
+    default:
+      break;
   }
-
   return ui::POST_DISPATCH_PERFORM_DEFAULT;
 }
 
@@ -160,10 +153,7 @@ bool X11WholeScreenMoveLoop::RunMoveLoop(aura::Window* source,
     }
   }
 
-  if (!GrabKeyboard()) {
-    XDestroyWindow(gfx::GetXDisplay(), grab_input_window_);
-    return false;
-  }
+  GrabEscKey();
 
   scoped_ptr<ui::ScopedEventDispatcher> old_dispatcher =
       nested_dispatcher_.Pass();
@@ -179,6 +169,8 @@ bool X11WholeScreenMoveLoop::RunMoveLoop(aura::Window* source,
     should_reset_mouse_flags_ = true;
   }
 
+  base::WeakPtr<X11WholeScreenMoveLoop> alive(weak_factory_.GetWeakPtr());
+
   in_move_loop_ = true;
   canceled_ = false;
   base::MessageLoopForUI* loop = base::MessageLoopForUI::current();
@@ -186,20 +178,17 @@ bool X11WholeScreenMoveLoop::RunMoveLoop(aura::Window* source,
   base::RunLoop run_loop;
   quit_closure_ = run_loop.QuitClosure();
   run_loop.Run();
+
+  if (!alive)
+    return false;
+
   nested_dispatcher_ = old_dispatcher.Pass();
   return !canceled_;
 }
 
 void X11WholeScreenMoveLoop::UpdateCursor(gfx::NativeCursor cursor) {
-  if (in_move_loop_) {
-    // We cannot call GrabPointer() because we do not want to change the
-    // "owner_events" property of the active pointer grab.
-    XChangeActivePointerGrab(
-        gfx::GetXDisplay(),
-        ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
-        cursor.platform(),
-        CurrentTime);
-  }
+  if (in_move_loop_)
+    ChangeActivePointerGrabCursor(cursor.platform());
 }
 
 void X11WholeScreenMoveLoop::EndMoveLoop() {
@@ -207,8 +196,7 @@ void X11WholeScreenMoveLoop::EndMoveLoop() {
     return;
 
   // Prevent DispatchMouseMovement from dispatching any posted motion event.
-  weak_factory_.InvalidateWeakPtrs();
-  last_xmotion_.type = LASTEvent;
+  last_motion_in_screen_.reset();
 
   // We undo our emulated mouse click from RunMoveLoop();
   if (should_reset_mouse_flags_) {
@@ -221,13 +209,16 @@ void X11WholeScreenMoveLoop::EndMoveLoop() {
   // the chrome process.
 
   // Ungrab before we let go of the window.
-  XDisplay* display = gfx::GetXDisplay();
   if (grabbed_pointer_)
-    XUngrabPointer(display, CurrentTime);
+    UngrabPointer();
   else
     UpdateCursor(initial_cursor_);
 
-  XUngrabKeyboard(display, CurrentTime);
+  XDisplay* display = gfx::GetXDisplay();
+  unsigned int esc_keycode = XKeysymToKeycode(display, XK_Escape);
+  for (size_t i = 0; i < arraysize(kModifiersMasks); ++i) {
+    XUngrabKey(display, esc_keycode, kModifiersMasks[i], grab_input_window_);
+  }
 
   // Restore the previous dispatcher.
   nested_dispatcher_.reset();
@@ -245,16 +236,7 @@ bool X11WholeScreenMoveLoop::GrabPointer(gfx::NativeCursor cursor) {
 
   // Pass "owner_events" as false so that X sends all mouse events to
   // |grab_input_window_|.
-  int ret = XGrabPointer(
-      display,
-      grab_input_window_,
-      False,  // owner_events
-      ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
-      GrabModeAsync,
-      GrabModeAsync,
-      None,
-      cursor.platform(),
-      CurrentTime);
+  int ret = ::views::GrabPointer(grab_input_window_, false, cursor.platform());
   if (ret != GrabSuccess) {
     DLOG(ERROR) << "Grabbing pointer for dragging failed: "
                 << ui::GetX11ErrorString(display, ret);
@@ -264,20 +246,13 @@ bool X11WholeScreenMoveLoop::GrabPointer(gfx::NativeCursor cursor) {
   return ret == GrabSuccess;
 }
 
-bool X11WholeScreenMoveLoop::GrabKeyboard() {
+void X11WholeScreenMoveLoop::GrabEscKey() {
   XDisplay* display = gfx::GetXDisplay();
-  int ret = XGrabKeyboard(display,
-                          grab_input_window_,
-                          False,
-                          GrabModeAsync,
-                          GrabModeAsync,
-                          CurrentTime);
-  if (ret != GrabSuccess) {
-    DLOG(ERROR) << "Grabbing keyboard for dragging failed: "
-                << ui::GetX11ErrorString(display, ret);
-    return false;
+  unsigned int esc_keycode = XKeysymToKeycode(display, XK_Escape);
+  for (size_t i = 0; i < arraysize(kModifiersMasks); ++i) {
+    XGrabKey(display, esc_keycode, kModifiersMasks[i], grab_input_window_,
+             False, GrabModeAsync, GrabModeAsync);
   }
-  return true;
 }
 
 Window X11WholeScreenMoveLoop::CreateDragInputWindow(XDisplay* display) {

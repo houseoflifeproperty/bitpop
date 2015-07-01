@@ -6,10 +6,9 @@
 #define NET_URL_REQUEST_URL_REQUEST_JOB_MANAGER_H_
 
 #include <string>
-#include <vector>
 
-#include "base/synchronization/lock.h"
-#include "base/threading/platform_thread.h"
+#include "base/threading/thread_checker.h"
+#include "net/base/net_export.h"
 #include "net/url_request/url_request.h"
 
 template <typename T> struct DefaultSingletonTraits;
@@ -24,7 +23,7 @@ namespace net {
 //   URLRequest is designed to have all consumers on a single thread, and
 //   so no attempt is made to support Interceptor instances being
 //   registered/unregistered or in any way poked on multiple threads.
-class URLRequestJobManager {
+class NET_EXPORT URLRequestJobManager {
  public:
   // Returns the singleton instance.
   static URLRequestJobManager* GetInstance();
@@ -51,12 +50,7 @@ class URLRequestJobManager {
   // Returns true if the manager has a built-in handler for |scheme|.
   static bool SupportsScheme(const std::string& scheme);
 
-  // Register/unregister a request interceptor.
-  void RegisterRequestInterceptor(URLRequest::Interceptor* interceptor);
-  void UnregisterRequestInterceptor(URLRequest::Interceptor* interceptor);
-
  private:
-  typedef std::vector<URLRequest::Interceptor*> InterceptorList;
   friend struct DefaultSingletonTraits<URLRequestJobManager>;
 
   URLRequestJobManager();
@@ -68,11 +62,12 @@ class URLRequestJobManager {
   // set the allowed thread.
   bool IsAllowedThread() const {
 #if 0
-    if (!allowed_thread_initialized_) {
-      allowed_thread_ = base::PlatformThread::CurrentId();
-      allowed_thread_initialized_ = true;
-    }
-    return allowed_thread_ == base::PlatformThread::CurrentId();
+    return thread_checker_.CalledOnValidThread();
+  }
+
+  // We use this to assert that CreateJob and the registration functions all
+  // run on the same thread.
+  base::ThreadChecker thread_checker_;
 #else
     // The previous version of this check used GetCurrentThread on Windows to
     // get thread handles to compare. Unfortunately, GetCurrentThread returns
@@ -84,15 +79,7 @@ class URLRequestJobManager {
     // check back on.
     return true;
   }
-
-  // We use this to assert that CreateJob and the registration functions all
-  // run on the same thread.
-  mutable base::PlatformThreadId allowed_thread_;
-  mutable bool allowed_thread_initialized_;
 #endif
-
-  mutable base::Lock lock_;
-  InterceptorList interceptors_;
 
   DISALLOW_COPY_AND_ASSIGN(URLRequestJobManager);
 };

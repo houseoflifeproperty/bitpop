@@ -36,7 +36,6 @@
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/chrome_pages.h"
@@ -86,13 +85,13 @@ bool g_should_do_autofill_personal_data_manager_first_run = false;
 class ImportEndedObserver : public importer::ImporterProgressObserver {
  public:
   ImportEndedObserver() : ended_(false) {}
-  virtual ~ImportEndedObserver() {}
+  ~ImportEndedObserver() override {}
 
   // importer::ImporterProgressObserver:
-  virtual void ImportStarted() OVERRIDE {}
-  virtual void ImportItemStarted(importer::ImportItem item) OVERRIDE {}
-  virtual void ImportItemEnded(importer::ImportItem item) OVERRIDE {}
-  virtual void ImportEnded() OVERRIDE {
+  void ImportStarted() override {}
+  void ImportItemStarted(importer::ImportItem item) override {}
+  void ImportItemEnded(importer::ImportItem item) override {}
+  void ImportEnded() override {
     ended_ = true;
     if (!callback_for_import_end_.is_null())
       callback_for_import_end_.Run();
@@ -134,9 +133,9 @@ class FirstRunDelayedTasks : public content::NotificationObserver {
                    content::NotificationService::AllSources());
   }
 
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     // After processing the notification we always delete ourselves.
     if (type == extensions::NOTIFICATION_EXTENSIONS_READY_DEPRECATED) {
       Profile* profile = content::Source<Profile>(source).ptr();
@@ -149,7 +148,7 @@ class FirstRunDelayedTasks : public content::NotificationObserver {
 
  private:
   // Private ctor forces it to be created only in the heap.
-  virtual ~FirstRunDelayedTasks() {}
+  ~FirstRunDelayedTasks() override {}
 
   // The extension work is to basically trigger an extension update check.
   // If the extension specified in the master pref is older than the live
@@ -172,7 +171,7 @@ void DoDelayedInstallExtensionsIfNeeded(
     installer::MasterPreferences* install_prefs) {
   base::DictionaryValue* extensions = 0;
   if (install_prefs->GetExtensionsBlock(&extensions)) {
-    VLOG(1) << "Extensions block found in master preferences";
+    DVLOG(1) << "Extensions block found in master preferences";
     DoDelayedInstallExtensions();
   }
 }
@@ -311,12 +310,12 @@ class FirstRunBubbleLauncher : public content::NotificationObserver {
 
  private:
   FirstRunBubbleLauncher();
-  virtual ~FirstRunBubbleLauncher();
+  ~FirstRunBubbleLauncher() override;
 
   // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   content::NotificationRegistrar registrar_;
 
@@ -365,22 +364,23 @@ void FirstRunBubbleLauncher::Observe(
   content::WebContents* contents =
       browser->tab_strip_model()->GetActiveWebContents();
 
-  // Suppress the first run bubble if a Gaia sign in page, the continue
-  // URL for the sign in page or the sync setup page is showing.
+  // Suppress the first run bubble if a Gaia sign in page or the sync setup
+  // page is showing.
   if (contents &&
       (contents->GetURL().GetOrigin().spec() ==
            chrome::kChromeUIChromeSigninURL ||
        gaia::IsGaiaSignonRealm(contents->GetURL().GetOrigin()) ||
-       signin::IsContinueUrlForWebBasedSigninFlow(contents->GetURL()) ||
-       (contents->GetURL() ==
-        chrome::GetSettingsUrl(chrome::kSyncSetupSubPage)))) {
+       contents->GetURL() ==
+           chrome::GetSettingsUrl(chrome::kSyncSetupSubPage))) {
     return;
   }
 
   if (contents && contents->GetURL().SchemeIs(content::kChromeUIScheme)) {
+#if defined(OS_WIN)
     // Suppress the first run bubble if 'make chrome metro' flow is showing.
     if (contents->GetURL().host() == chrome::kChromeUIMetroFlowHost)
       return;
+#endif
 
     // Suppress the first run bubble if the NTP sync promo bubble is showing
     // or if sign in is in progress.
@@ -542,6 +542,8 @@ void SetupMasterPrefsFromInstallPrefs(
       installer::master_preferences::kDistroImportBookmarksFromFilePref,
       &out_prefs->import_bookmarks_path);
 
+  out_prefs->compressed_variations_seed =
+      install_prefs.GetCompressedVariationsSeed();
   out_prefs->variations_seed = install_prefs.GetVariationsSeed();
   out_prefs->variations_seed_signature =
       install_prefs.GetVariationsSeedSignature();
@@ -591,7 +593,8 @@ MasterPrefs::~MasterPrefs() {}
 bool IsChromeFirstRun() {
   if (internal::g_first_run == internal::FIRST_RUN_UNKNOWN) {
     internal::g_first_run = internal::FIRST_RUN_FALSE;
-    const CommandLine* command_line = CommandLine::ForCurrentProcess();
+    const base::CommandLine* command_line =
+        base::CommandLine::ForCurrentProcess();
     if (command_line->HasSwitch(switches::kForceFirstRun) ||
         (!command_line->HasSwitch(switches::kNoFirstRun) &&
          !internal::IsFirstRunSentinelPresent())) {
@@ -602,7 +605,7 @@ bool IsChromeFirstRun() {
 }
 
 #if defined(OS_MACOSX)
-bool IsFirstRunSuppressed(const CommandLine& command_line) {
+bool IsFirstRunSuppressed(const base::CommandLine& command_line) {
   return command_line.HasSwitch(switches::kNoFirstRun);
 }
 #endif
@@ -619,10 +622,7 @@ std::string GetPingDelayPrefName() {
 }
 
 void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
-  registry->RegisterIntegerPref(
-      GetPingDelayPrefName().c_str(),
-      0,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(GetPingDelayPrefName().c_str(), 0);
 }
 
 bool SetShowFirstRunBubblePref(FirstRunBubbleOptions show_bubble_option) {

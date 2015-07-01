@@ -4,7 +4,9 @@
 
 #include "chrome/browser/extensions/app_sync_data.h"
 
+#include "chrome/common/extensions/manifest_handlers/app_icon_color_info.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
+#include "chrome/common/extensions/manifest_handlers/linked_app_icons.h"
 #include "extensions/common/extension.h"
 #include "sync/api/sync_data.h"
 #include "sync/protocol/app_specifics.pb.h"
@@ -12,39 +14,67 @@
 
 namespace extensions {
 
+AppSyncData::LinkedAppIconInfo::LinkedAppIconInfo() {
+}
+
+AppSyncData::LinkedAppIconInfo::~LinkedAppIconInfo() {
+}
+
 AppSyncData::AppSyncData() {}
-
-AppSyncData::AppSyncData(const syncer::SyncData& sync_data) {
-  PopulateFromSyncData(sync_data);
-}
-
-AppSyncData::AppSyncData(const syncer::SyncChange& sync_change) {
-  PopulateFromSyncData(sync_change.sync_data());
-  extension_sync_data_.set_uninstalled(
-      sync_change.change_type() == syncer::SyncChange::ACTION_DELETE);
-}
 
 AppSyncData::AppSyncData(const Extension& extension,
                          bool enabled,
                          bool incognito_enabled,
                          bool remote_install,
+                         ExtensionSyncData::OptionalBoolean all_urls_enabled,
                          const syncer::StringOrdinal& app_launch_ordinal,
                          const syncer::StringOrdinal& page_ordinal,
                          extensions::LaunchType launch_type)
     : extension_sync_data_(extension,
                            enabled,
                            incognito_enabled,
-                           remote_install),
+                           remote_install,
+                           all_urls_enabled),
       app_launch_ordinal_(app_launch_ordinal),
       page_ordinal_(page_ordinal),
       launch_type_(launch_type) {
   if (extension.from_bookmark()) {
     bookmark_app_description_ = extension.description();
     bookmark_app_url_ = AppLaunchInfo::GetLaunchWebURL(&extension).spec();
+    bookmark_app_icon_color_ = AppIconColorInfo::GetIconColorString(&extension);
+    extensions::LinkedAppIcons icons =
+        LinkedAppIcons::GetLinkedAppIcons(&extension);
+    for (const auto& icon : icons.icons) {
+      LinkedAppIconInfo linked_icon;
+      linked_icon.url = icon.url;
+      linked_icon.size = icon.size;
+      linked_icons_.push_back(linked_icon);
+    }
   }
 }
 
 AppSyncData::~AppSyncData() {}
+
+// static
+scoped_ptr<AppSyncData> AppSyncData::CreateFromSyncData(
+    const syncer::SyncData& sync_data) {
+  scoped_ptr<AppSyncData> data(new AppSyncData);
+  if (data->PopulateFromSyncData(sync_data))
+    return data.Pass();
+  return scoped_ptr<AppSyncData>();
+}
+
+// static
+scoped_ptr<AppSyncData> AppSyncData::CreateFromSyncChange(
+    const syncer::SyncChange& sync_change) {
+  scoped_ptr<AppSyncData> data(CreateFromSyncData(sync_change.sync_data()));
+  if (!data.get())
+    return scoped_ptr<AppSyncData>();
+
+  data->extension_sync_data_.set_uninstalled(sync_change.change_type() ==
+                                             syncer::SyncChange::ACTION_DELETE);
+  return data.Pass();
+}
 
 syncer::SyncData AppSyncData::GetSyncData() const {
   sync_pb::EntitySpecifics specifics;
@@ -84,13 +114,25 @@ void AppSyncData::PopulateAppSpecifics(sync_pb::AppSpecifics* specifics) const {
   if (!bookmark_app_description_.empty())
     specifics->set_bookmark_app_description(bookmark_app_description_);
 
+  if (!bookmark_app_icon_color_.empty())
+    specifics->set_bookmark_app_icon_color(bookmark_app_icon_color_);
+
+  for (const auto& linked_icon : linked_icons_) {
+    sync_pb::LinkedAppIconInfo* linked_app_icon_info =
+        specifics->add_linked_app_icons();
+    linked_app_icon_info->set_url(linked_icon.url.spec());
+    linked_app_icon_info->set_size(linked_icon.size);
+  }
+
   extension_sync_data_.PopulateExtensionSpecifics(
       specifics->mutable_extension());
 }
 
-void AppSyncData::PopulateFromAppSpecifics(
+bool AppSyncData::PopulateFromAppSpecifics(
     const sync_pb::AppSpecifics& specifics) {
-  extension_sync_data_.PopulateFromExtensionSpecifics(specifics.extension());
+  if (!extension_sync_data_.PopulateFromExtensionSpecifics(
+          specifics.extension()))
+    return false;
 
   app_launch_ordinal_ = syncer::StringOrdinal(specifics.app_launch_ordinal());
   page_ordinal_ = syncer::StringOrdinal(specifics.page_ordinal());
@@ -101,10 +143,24 @@ void AppSyncData::PopulateFromAppSpecifics(
 
   bookmark_app_url_ = specifics.bookmark_app_url();
   bookmark_app_description_ = specifics.bookmark_app_description();
+  bookmark_app_icon_color_ = specifics.bookmark_app_icon_color();
+
+  for (int i = 0; i < specifics.linked_app_icons_size(); ++i) {
+    const sync_pb::LinkedAppIconInfo& linked_app_icon_info =
+        specifics.linked_app_icons(i);
+    if (linked_app_icon_info.has_url() && linked_app_icon_info.has_size()) {
+      LinkedAppIconInfo linked_icon;
+      linked_icon.url = GURL(linked_app_icon_info.url());
+      linked_icon.size = linked_app_icon_info.size();
+      linked_icons_.push_back(linked_icon);
+    }
+  }
+
+  return true;
 }
 
-void AppSyncData::PopulateFromSyncData(const syncer::SyncData& sync_data) {
-  PopulateFromAppSpecifics(sync_data.GetSpecifics().app());
+bool AppSyncData::PopulateFromSyncData(const syncer::SyncData& sync_data) {
+  return PopulateFromAppSpecifics(sync_data.GetSpecifics().app());
 }
 
 }  // namespace extensions

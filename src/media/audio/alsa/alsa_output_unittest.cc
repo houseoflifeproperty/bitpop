@@ -85,14 +85,14 @@ class MockAudioManagerAlsa : public AudioManagerAlsa {
   // of active output streams. It is because the number of active streams
   // is managed inside MakeAudioOutputStream, and we don't use
   // MakeAudioOutputStream to create the stream in the tests.
-  virtual void ReleaseOutputStream(AudioOutputStream* stream) OVERRIDE {
+  void ReleaseOutputStream(AudioOutputStream* stream) override {
     DCHECK(stream);
     delete stream;
   }
 
   // We don't mock this method since all tests will do the same thing
   // and use the current task runner.
-  virtual scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() OVERRIDE {
+  scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() override {
     return base::MessageLoop::current()->message_loop_proxy();
   }
 
@@ -163,6 +163,7 @@ class AlsaPcmOutputStreamTest : public testing::Test {
   static char kSurround70[];
   static char kSurround71[];
   static void* kFakeHints[];
+  static char kGenericSurround50[];
 
   StrictMock<MockAlsaWrapper> mock_alsa_wrapper_;
   scoped_ptr<StrictMock<MockAudioManagerAlsa> > mock_manager_;
@@ -202,6 +203,7 @@ char AlsaPcmOutputStreamTest::kSurround71[] = "surround71:CARD=foo,DEV=0";
 void* AlsaPcmOutputStreamTest::kFakeHints[] = {
     kSurround40, kSurround41, kSurround50, kSurround51,
     kSurround70, kSurround71, NULL };
+char AlsaPcmOutputStreamTest::kGenericSurround50[] = "surround50";
 
 // Custom action to clear a memory buffer.
 ACTION(ClearBuffer) {
@@ -644,10 +646,7 @@ TEST_F(AlsaPcmOutputStreamTest, BufferPacket_Underrun) {
       .WillOnce(Return(SND_PCM_STATE_XRUN));
   EXPECT_CALL(mock_alsa_wrapper_, PcmAvailUpdate(_))
       .WillRepeatedly(Return(0));  // Buffer is full.
-  EXPECT_CALL(mock_callback,
-              OnMoreData(_, AllOf(
-                  Field(&AudioBuffersState::pending_bytes, 0),
-                  Field(&AudioBuffersState::hardware_delay_bytes, 0))))
+  EXPECT_CALL(mock_callback, OnMoreData(_, 0))
       .WillOnce(DoAll(ClearBuffer(), Return(kTestFramesPerPacket / 2)));
 
   bool source_exhausted;
@@ -749,18 +748,21 @@ TEST_F(AlsaPcmOutputStreamTest, AutoSelectDevice_FallbackDevices) {
   // operations should be as follows.  Assume the multi-channel device name is
   // surround50:
   //
-  //   1) Try open "surround50"
-  //   2) Try open "plug:surround50".
-  //   3) Try open "default".
-  //   4) Try open "plug:default".
-  //   5) Give up trying to open.
+  //   1) Try open "surround50:CARD=foo,DEV=0"
+  //   2) Try open "plug:surround50:CARD=foo,DEV=0".
+  //   3) Try open "plug:surround50".
+  //   4) Try open "default".
+  //   5) Try open "plug:default".
+  //   6) Give up trying to open.
   //
   const string first_try = kSurround50;
   const string second_try = string(AlsaPcmOutputStream::kPlugPrefix) +
                             kSurround50;
-  const string third_try = AlsaPcmOutputStream::kDefaultDevice;
-  const string fourth_try = string(AlsaPcmOutputStream::kPlugPrefix) +
-                            AlsaPcmOutputStream::kDefaultDevice;
+  const string third_try = string(AlsaPcmOutputStream::kPlugPrefix) +
+                           kGenericSurround50;
+  const string fourth_try = AlsaPcmOutputStream::kDefaultDevice;
+  const string fifth_try = string(AlsaPcmOutputStream::kPlugPrefix) +
+                           AlsaPcmOutputStream::kDefaultDevice;
 
   EXPECT_CALL(mock_alsa_wrapper_, DeviceNameHint(_, _, _))
       .WillOnce(DoAll(SetArgumentPointee<2>(&kFakeHints[0]), Return(0)));
@@ -781,6 +783,8 @@ TEST_F(AlsaPcmOutputStreamTest, AutoSelectDevice_FallbackDevices) {
   EXPECT_CALL(mock_alsa_wrapper_, PcmOpen(_, StrEq(third_try.c_str()), _, _))
       .WillOnce(Return(kTestFailedErrno));
   EXPECT_CALL(mock_alsa_wrapper_, PcmOpen(_, StrEq(fourth_try.c_str()), _, _))
+      .WillOnce(Return(kTestFailedErrno));
+  EXPECT_CALL(mock_alsa_wrapper_, PcmOpen(_, StrEq(fifth_try.c_str()), _, _))
       .WillOnce(Return(kTestFailedErrno));
 
   AlsaPcmOutputStream* test_stream = CreateStream(CHANNEL_LAYOUT_5_0);

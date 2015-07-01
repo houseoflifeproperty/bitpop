@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef PPAPI_CONTENT_RENDERER_PEPPER_HOST_RESOURCE_VAR_H_
-#define PPAPI_CONTENT_RENDERER_PEPPER_HOST_RESOURCE_VAR_H_
+#ifndef CONTENT_RENDERER_PEPPER_HOST_RESOURCE_VAR_H_
+#define CONTENT_RENDERER_PEPPER_HOST_RESOURCE_VAR_H_
 
 #include "base/memory/scoped_ptr.h"
 #include "ipc/ipc_message.h"
@@ -32,16 +32,16 @@ class HostResourceVar : public ppapi::ResourceVar {
                   const IPC::Message& creation_message);
 
   // ResourceVar override.
-  virtual PP_Resource GetPPResource() const OVERRIDE;
-  virtual int GetPendingRendererHostId() const OVERRIDE;
-  virtual int GetPendingBrowserHostId() const OVERRIDE;
-  virtual const IPC::Message* GetCreationMessage() const OVERRIDE;
-  virtual bool IsPending() const OVERRIDE;
+  PP_Resource GetPPResource() const override;
+  int GetPendingRendererHostId() const override;
+  int GetPendingBrowserHostId() const override;
+  const IPC::Message* GetCreationMessage() const override;
+  bool IsPending() const override;
 
   void set_pending_browser_host_id(int id) { pending_browser_host_id_ = id; }
 
  protected:
-  virtual ~HostResourceVar();
+  ~HostResourceVar() override;
 
  private:
   // Real resource ID in the plugin. 0 if one has not yet been created
@@ -63,4 +63,4 @@ class HostResourceVar : public ppapi::ResourceVar {
 
 }  // namespace content
 
-#endif
+#endif  // CONTENT_RENDERER_PEPPER_HOST_RESOURCE_VAR_H_

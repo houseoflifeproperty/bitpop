@@ -4,31 +4,23 @@
 
 #include "mojo/shell/switches.h"
 
+#include "base/basictypes.h"
+
 namespace switches {
 
-// Used to specify the type of child process (switch values from
-// |ChildProcess::Type|).
-const char kChildProcessType[] = "child-process-type";
-
-// Comma separated list like:
-// text/html,mojo://mojo_html_viewer,application/bravo,https://abarth.com/bravo
-const char kContentHandlers[] = "content-handlers";
-
-// Force dynamically loaded apps / services to be loaded irrespective of cache
-// instructions.
-const char kDisableCache[] = "disable-cache";
+// If set apps downloaded are not deleted.
+const char kDontDeleteOnDownload[] = "dont-delete-on-download";
 
 // Load apps in separate processes.
 // TODO(vtl): Work in progress; doesn't work. Flip this to "disable" (or maybe
 // change it to "single-process") when it works.
 const char kEnableMultiprocess[] = "enable-multiprocess";
 
-// Map mojo: URLs to a shared library of similar name at this origin. See
-// mojo_url_resolver.cc for details.
-const char kOrigin[] = "origin";
-
-// Enables the mojo spy, which acts as a man-in-the-middle inspector for
-// message pipes and other activities. This is work in progress.
-const char kSpy[] = "spy";
+// If set apps downloaded are saved in with a predictable filename, to help
+// remote debugging: when gdb is used through gdbserver, it needs to be able to
+// find locally any loaded library. For this, gdb use the filename of the
+// library. When using this flag, the application are named with the sha256 of
+// their content.
+const char kPredictableAppFilenames[] = "predictable-app-filenames";
 
 }  // namespace switches

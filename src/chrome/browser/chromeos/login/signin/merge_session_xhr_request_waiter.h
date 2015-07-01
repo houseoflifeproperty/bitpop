@@ -24,16 +24,16 @@ class MergeSessionXHRRequestWaiter : public OAuth2LoginManager::Observer {
   MergeSessionXHRRequestWaiter(
       Profile* profile,
       const MergeSessionThrottle::CompletionCallback& callback);
-  virtual ~MergeSessionXHRRequestWaiter();
+  ~MergeSessionXHRRequestWaiter() override;
 
   // Starts waiting for merge session completion for |profile_|.
   void StartWaiting();
 
  private:
   // OAuth2LoginManager::Observer overrides.
-  virtual void OnSessionRestoreStateChanged(
+  void OnSessionRestoreStateChanged(
       Profile* user_profile,
-      OAuth2LoginManager::SessionRestoreState state) OVERRIDE;
+      OAuth2LoginManager::SessionRestoreState state) override;
 
   // Timeout callback.
   void OnTimeout();

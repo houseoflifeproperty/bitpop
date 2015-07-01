@@ -15,24 +15,31 @@
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
+#include "content/browser/site_instance_impl.h"
 #include "content/common/accessibility_mode_enums.h"
 #include "content/common/content_export.h"
+#include "content/common/frame_message_enums.h"
+#include "content/common/frame_replication_state.h"
 #include "content/common/mojo/service_registry_impl.h"
+#include "content/common/navigation_params.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/common/javascript_message_type.h"
 #include "net/http/http_response_headers.h"
-#include "third_party/WebKit/public/platform/WebNotificationPermission.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/base/page_transition_types.h"
 
+#if defined(OS_ANDROID)
+#include "content/browser/mojo/service_registry_android.h"
+#endif
+
 class GURL;
 struct AccessibilityHostMsg_EventParams;
+struct AccessibilityHostMsg_FindInPageResultParams;
 struct AccessibilityHostMsg_LocationChangeParams;
 struct FrameHostMsg_DidFailProvisionalLoadWithError_Params;
 struct FrameHostMsg_OpenURL_Params;
-struct FrameHostMsg_BeginNavigation_Params;
-struct FrameMsg_Navigate_Params;
+struct FrameMsg_TextTrackSettings_Params;
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
 struct FrameHostMsg_ShowPopup_Params;
 #endif
@@ -48,76 +55,138 @@ class CrossProcessFrameConnector;
 class CrossSiteTransferringRequest;
 class FrameTree;
 class FrameTreeNode;
+class PermissionServiceContext;
 class RenderFrameHostDelegate;
 class RenderFrameProxyHost;
 class RenderProcessHost;
 class RenderViewHostImpl;
+class RenderWidgetHostDelegate;
 class RenderWidgetHostImpl;
+class RenderWidgetHostView;
+class ResourceRequestBody;
+class StreamHandle;
+class TimeoutMonitor;
 struct ContextMenuParams;
 struct GlobalRequestID;
 struct Referrer;
-struct ShowDesktopNotificationHostMsgParams;
+struct ResourceResponse;
 struct TransitionLayerData;
+
+// Flag arguments for RenderFrameHost creation.
+enum CreateRenderFrameFlags {
+  // The RFH will be initially placed on the swapped out hosts list.
+  CREATE_RF_SWAPPED_OUT = 1 << 0,
+  // The new RenderFrame is being created for a navigation of the
+  // top-level frame.
+  CREATE_RF_FOR_MAIN_FRAME_NAVIGATION = 1 << 1,
+  // The RenderFrame is initially hidden.
+  CREATE_RF_HIDDEN = 1 << 2,
+  // The RenderFrameHost will have a new RenderWidgetHost created and
+  // attached to it. This is used when the RenderFrameHost is in a different
+  // process from its parent frame.
+  CREATE_RF_NEEDS_RENDER_WIDGET_HOST = 1 << 3
+};
 
 class CONTENT_EXPORT RenderFrameHostImpl
     : public RenderFrameHost,
       public BrowserAccessibilityDelegate {
  public:
+  typedef base::Callback<void(const ui::AXTreeUpdate&)>
+      AXTreeSnapshotCallback;
+
+  // Keeps track of the state of the RenderFrameHostImpl, particularly with
+  // respect to swap out.
+  enum RenderFrameHostImplState {
+    // The standard state for a RFH handling the communication with an active
+    // RenderFrame.
+    STATE_DEFAULT = 0,
+    // The RFH has not received the SwapOutACK yet, but the new page has
+    // committed in a different RFH.  Upon reception of the SwapOutACK, the RFH
+    // will either enter STATE_SWAPPED_OUT (if it is a main frame and there are
+    // other active frames in its SiteInstance) or it will be deleted.
+    STATE_PENDING_SWAP_OUT,
+    // The RFH is swapped out and stored inside a RenderFrameProxyHost, being
+    // used as a placeholder to allow cross-process communication.  Only main
+    // frames can enter this state.
+    STATE_SWAPPED_OUT,
+  };
+  // Helper function to determine whether the RFH state should contribute to the
+  // number of active frames of a SiteInstance or not.
+  static bool IsRFHStateActive(RenderFrameHostImplState rfh_state);
+
+  // An accessibility reset is only allowed to prevent very rare corner cases
+  // or race conditions where the browser and renderer get out of sync. If
+  // this happens more than this many times, kill the renderer.
+  static const int kMaxAccessibilityResets = 5;
+
   static RenderFrameHostImpl* FromID(int process_id, int routing_id);
 
-  virtual ~RenderFrameHostImpl();
+  ~RenderFrameHostImpl() override;
 
   // RenderFrameHost
-  virtual int GetRoutingID() OVERRIDE;
-  virtual SiteInstance* GetSiteInstance() OVERRIDE;
-  virtual RenderProcessHost* GetProcess() OVERRIDE;
-  virtual RenderFrameHost* GetParent() OVERRIDE;
-  virtual const std::string& GetFrameName() OVERRIDE;
-  virtual bool IsCrossProcessSubframe() OVERRIDE;
-  virtual GURL GetLastCommittedURL() OVERRIDE;
-  virtual gfx::NativeView GetNativeView() OVERRIDE;
-  virtual void ExecuteJavaScript(
-      const base::string16& javascript) OVERRIDE;
-  virtual void ExecuteJavaScript(
+  int GetRoutingID() override;
+  SiteInstanceImpl* GetSiteInstance() override;
+  RenderProcessHost* GetProcess() override;
+  RenderFrameHost* GetParent() override;
+  const std::string& GetFrameName() override;
+  bool IsCrossProcessSubframe() override;
+  GURL GetLastCommittedURL() override;
+  gfx::NativeView GetNativeView() override;
+  void ExecuteJavaScript(const base::string16& javascript) override;
+  void ExecuteJavaScript(const base::string16& javascript,
+                         const JavaScriptResultCallback& callback) override;
+  void ExecuteJavaScriptWithUserGestureForTests(
+      const base::string16& javascript) override;
+  void ExecuteJavaScriptInIsolatedWorld(
       const base::string16& javascript,
-      const JavaScriptResultCallback& callback) OVERRIDE;
-  virtual void ExecuteJavaScriptForTests(
-      const base::string16& javascript) OVERRIDE;
-  virtual RenderViewHost* GetRenderViewHost() OVERRIDE;
-  virtual ServiceRegistry* GetServiceRegistry() OVERRIDE;
+      const JavaScriptResultCallback& callback,
+      int world_id) override;
+  void ActivateFindInPageResultForAccessibility(int request_id) override;
+  RenderViewHost* GetRenderViewHost() override;
+  ServiceRegistry* GetServiceRegistry() override;
+  blink::WebPageVisibilityState GetVisibilityState() override;
+  void InsertVisualStateCallback(
+      const VisualStateCallback& callback) override;
 
   // IPC::Sender
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
+  bool Send(IPC::Message* msg) override;
 
   // IPC::Listener
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& msg) override;
 
   // BrowserAccessibilityDelegate
-  virtual void AccessibilitySetFocus(int acc_obj_id) OVERRIDE;
-  virtual void AccessibilityDoDefaultAction(int acc_obj_id) OVERRIDE;
-  virtual void AccessibilityShowMenu(const gfx::Point& global_point) OVERRIDE;
-  virtual void AccessibilityScrollToMakeVisible(
-      int acc_obj_id, const gfx::Rect& subfocus) OVERRIDE;
-  virtual void AccessibilityScrollToPoint(
-      int acc_obj_id, const gfx::Point& point) OVERRIDE;
-  virtual void AccessibilitySetTextSelection(
-      int acc_obj_id, int start_offset, int end_offset) OVERRIDE;
-  virtual bool AccessibilityViewHasFocus() const OVERRIDE;
-  virtual gfx::Rect AccessibilityGetViewBounds() const OVERRIDE;
-  virtual gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds)
-      const OVERRIDE;
-  virtual void AccessibilityHitTest(const gfx::Point& point) OVERRIDE;
-  virtual void AccessibilityFatalError() OVERRIDE;
-  virtual gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget() OVERRIDE;
-  virtual gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible()
-      OVERRIDE;
-  virtual BrowserAccessibilityManager* AccessibilityGetChildFrame(
-      int accessibility_node_id) OVERRIDE;
-  virtual BrowserAccessibility* AccessibilityGetParentFrame() OVERRIDE;
+  void AccessibilitySetFocus(int acc_obj_id) override;
+  void AccessibilityDoDefaultAction(int acc_obj_id) override;
+  void AccessibilityShowMenu(const gfx::Point& global_point) override;
+  void AccessibilityScrollToMakeVisible(int acc_obj_id,
+                                        const gfx::Rect& subfocus) override;
+  void AccessibilityScrollToPoint(int acc_obj_id,
+                                  const gfx::Point& point) override;
+  void AccessibilitySetTextSelection(int acc_obj_id,
+                                     int start_offset,
+                                     int end_offset) override;
+  void AccessibilitySetValue(int acc_obj_id, const base::string16& value)
+      override;
+  bool AccessibilityViewHasFocus() const override;
+  gfx::Rect AccessibilityGetViewBounds() const override;
+  gfx::Point AccessibilityOriginInScreen(
+      const gfx::Rect& bounds) const override;
+  void AccessibilityHitTest(const gfx::Point& point) override;
+  void AccessibilitySetAccessibilityFocus(int acc_obj_id) override;
+  void AccessibilityFatalError() override;
+  gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget() override;
+  gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible() override;
+  BrowserAccessibilityManager* AccessibilityGetChildFrame(
+      int accessibility_node_id) override;
+  void AccessibilityGetAllChildFrames(
+      std::vector<BrowserAccessibilityManager*>* child_frames) override;
+  BrowserAccessibility* AccessibilityGetParentFrame() override;
 
   // Creates a RenderFrame in the renderer process.  Only called for
   // cross-process subframe navigations in --site-per-process.
-  bool CreateRenderFrame(int parent_routing_id);
+  bool CreateRenderFrame(int parent_routing_id,
+                         int previous_sibling_routing_id,
+                         int proxy_routing_id);
 
   // Returns whether the RenderFrame in the renderer process has been created
   // and still has a connection.  This is valid for all frames.
@@ -126,9 +195,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // Tracks whether the RenderFrame for this RenderFrameHost has been created in
   // the renderer process.  This is currently only used for subframes.
   // TODO(creis): Use this for main frames as well when RVH goes away.
-  void set_render_frame_created(bool created) {
-    render_frame_created_ = created;
-  }
+  void SetRenderFrameCreated(bool created);
 
   // Called for renderer-created windows to resume requests from this frame,
   // after they are blocked in RenderWidgetHelper::CreateNewWindow.
@@ -136,14 +203,27 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   int routing_id() const { return routing_id_; }
   void OnCreateChildFrame(int new_routing_id,
-                          const std::string& frame_name);
+                          const std::string& frame_name,
+                          SandboxFlags sandbox_flags);
 
   RenderViewHostImpl* render_view_host() { return render_view_host_; }
   RenderFrameHostDelegate* delegate() { return delegate_; }
   FrameTreeNode* frame_tree_node() { return frame_tree_node_; }
-  // TODO(nasko): The RenderWidgetHost will be owned by RenderFrameHost in
-  // the future, so update this accessor to return the right pointer.
+
+  // Returns this RenderFrameHost's loading state. This method is only used by
+  // FrameTreeNode. The proper way to check whether a frame is loading is to
+  // call FrameTreeNode::IsLoading.
+  bool is_loading() const { return is_loading_; }
+
+  // This returns the RenderFrameHost's owned RenderWidgetHost if it has one,
+  // or else it returns nullptr.
+  // If the RenderFrameHost is the page's main frame, this returns instead a
+  // pointer to the RenderViewHost (which inherits RenderWidgetHost).
   RenderWidgetHostImpl* GetRenderWidgetHost();
+
+  // This returns the RenderWidgetHostView that can be used to control
+  // focus and visibility for this frame.
+  RenderWidgetHostView* GetView();
 
   // This function is called when this is a swapped out RenderFrameHost that
   // lives in the same process as the parent frame. The
@@ -185,22 +265,33 @@ class CONTENT_EXPORT RenderFrameHostImpl
       const TransitionLayerData& transition_data);
 
   // Tells the renderer that this RenderFrame is being swapped out for one in a
-  // different renderer process.  It should run its unload handler, move to
-  // a blank document and create a RenderFrameProxy to replace the RenderFrame.
-  // The renderer should preserve the Proxy object until it exits, in case we
-  // come back.  The renderer can exit if it has no other active RenderFrames,
-  // but not until WasSwappedOut is called (when it is no longer visible).
-  void SwapOut(RenderFrameProxyHost* proxy);
+  // different renderer process.  It should run its unload handler and move to
+  // a blank document.  If |proxy| is not null, it should also create a
+  // RenderFrameProxy to replace the RenderFrame and set it to |is_loading|
+  // state. The renderer should preserve the RenderFrameProxy object until it
+  // exits, in case we come back.  The renderer can exit if it has no other
+  // active RenderFrames, but not until WasSwappedOut is called.
+  void SwapOut(RenderFrameProxyHost* proxy, bool is_loading);
 
-  void OnSwappedOut(bool timed_out);
-  bool is_swapped_out() { return is_swapped_out_; }
-  void set_swapped_out(bool is_swapped_out) {
-    is_swapped_out_ = is_swapped_out;
-  }
+  // Whether an ongoing navigation is waiting for a BeforeUnload ACK from the
+  // RenderFrame. Currently this only happens in cross-site navigations.
+  // PlzNavigate: this happens in every browser-initiated navigation that is not
+  // same-page.
+  bool IsWaitingForBeforeUnloadACK() const;
 
-  // Sets the RVH for |this| as pending shutdown. |on_swap_out| will be called
-  // when the SwapOutACK is received.
-  void SetPendingShutdown(const base::Closure& on_swap_out);
+  // Whether the RFH is waiting for an unload ACK from the renderer.
+  bool IsWaitingForUnloadACK() const;
+
+  // Called when either the SwapOut request has been acknowledged or has timed
+  // out.
+  void OnSwappedOut();
+
+  // Whether this RenderFrameHost has been swapped out, such that the frame is
+  // now rendered by a RenderFrameHost in a different process.
+  bool is_swapped_out() const { return rfh_state_ == STATE_SWAPPED_OUT; }
+
+  // The current state of this RFH.
+  RenderFrameHostImplState rfh_state() const { return rfh_state_; }
 
   // Sends the given navigation message. Use this rather than sending it
   // yourself since this does the internal bookkeeping described below. This
@@ -209,10 +300,21 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // If a cross-site request is in progress, we may be suspended while waiting
   // for the onbeforeunload handler, so this function might buffer the message
   // rather than sending it.
-  void Navigate(const FrameMsg_Navigate_Params& params);
+  void Navigate(const CommonNavigationParams& common_params,
+                const StartNavigationParams& start_params,
+                const RequestNavigationParams& request_params);
 
   // Load the specified URL; this is a shortcut for Navigate().
   void NavigateToURL(const GURL& url);
+
+  // Treat this prospective navigation as though it originated from the frame.
+  // Used, e.g., for a navigation request that originated from a RemoteFrame.
+  // |source_site_instance| is the SiteInstance of the frame that initiated the
+  // navigation.
+  // TODO(creis): Remove this method and have RenderFrameProxyHost call
+  // RequestOpenURL with its FrameTreeNode.
+  void OpenURL(const FrameHostMsg_OpenURL_Params& params,
+               SiteInstance* source_site_instance);
 
   // Stop the load in progress.
   void Stop();
@@ -241,10 +343,11 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // RenderFrameHost.
   void CancelSuspendedNavigations();
 
-  // Runs the beforeunload handler for this frame. |for_cross_site_transition|
-  // indicates whether this call is for the current frame during a cross-process
+  // Runs the beforeunload handler for this frame. |for_navigation| indicates
+  // whether this call is for the current frame during a cross-process
   // navigation. False means we're closing the entire tab.
-  void DispatchBeforeUnload(bool for_cross_site_transition);
+  // PlzNavigate: this call happens on all browser-initiated navigations.
+  void DispatchBeforeUnload(bool for_navigation);
 
   // Set the frame's opener to null in the renderer process in response to an
   // action in another renderer process.
@@ -261,9 +364,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
                               const base::string16& user_input,
                               bool dialog_was_suppressed);
 
-  // Called when an HTML5 notification is closed.
-  void NotificationClosed(int notification_id);
-
   // Clears any outstanding transition request. This is called when we hear the
   // response or commit.
   void ClearPendingTransitionRequestData();
@@ -271,12 +371,19 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // Send a message to the renderer process to change the accessibility mode.
   void SetAccessibilityMode(AccessibilityMode AccessibilityMode);
 
+  // Request a one-time snapshot of the accessibility tree without changing
+  // the accessibility mode.
+  void RequestAXTreeSnapshot(AXTreeSnapshotCallback callback);
+
   // Turn on accessibility testing. The given callback will be run
   // every time an accessibility notification is received from the
   // renderer process, and the accessibility tree it sent can be
   // retrieved using GetAXTreeForTesting().
   void SetAccessibilityCallbackForTesting(
       const base::Callback<void(ui::AXEvent, int)>& callback);
+
+  // Send a message to the render process to change text track style settings.
+  void SetTextTrackSettings(const FrameMsg_TextTrackSettings_Params& params);
 
   // Returns a snapshot of the accessibility tree received from the
   // renderer as of the last time an accessibility notification was
@@ -293,6 +400,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // NULL.
   BrowserAccessibilityManager* GetOrCreateBrowserAccessibilityManager();
 
+  void set_no_create_browser_accessibility_manager_for_testing(bool flag) {
+    no_create_browser_accessibility_manager_for_testing_ = flag;
+  }
+
 #if defined(OS_WIN)
   void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent);
@@ -306,18 +417,49 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void DidCancelPopupMenu();
 #endif
 
+  // PlzNavigate: Indicates that a navigation is ready to commit and can be
+  // handled by this RenderFrame.
+  void CommitNavigation(ResourceResponse* response,
+                        scoped_ptr<StreamHandle> body,
+                        const CommonNavigationParams& common_params,
+                        const RequestNavigationParams& request_params);
+
+  // PlzNavigate
+  // Indicates that a navigation failed and that this RenderFrame should display
+  // an error page.
+  void FailedNavigation(const CommonNavigationParams& common_params,
+                        const RequestNavigationParams& request_params,
+                        bool has_stale_copy_in_cache,
+                        int error_code);
+
+  // Sets up the Mojo connection between this instance and its associated render
+  // frame if it has not yet been set up.
+  void SetUpMojoIfNeeded();
+
+  // Tears down the browser-side state relating to the Mojo connection between
+  // this instance and its associated render frame.
+  void InvalidateMojoConnection();
+
+  // Returns whether the frame is focused. A frame is considered focused when it
+  // is the parent chain of the focused frame within the frame tree. In
+  // addition, its associated RenderWidgetHost has to be focused.
+  bool IsFocused();
+
  protected:
   friend class RenderFrameHostFactory;
 
+  // |flags| is a combination of CreateRenderFrameFlags.
   // TODO(nasko): Remove dependency on RenderViewHost here. RenderProcessHost
   // should be the abstraction needed here, but we need RenderViewHost to pass
   // into WebContentsObserver::FrameDetached for now.
-  RenderFrameHostImpl(RenderViewHostImpl* render_view_host,
+  RenderFrameHostImpl(SiteInstance* site_instance,
+                      RenderViewHostImpl* render_view_host,
                       RenderFrameHostDelegate* delegate,
+                      RenderWidgetHostDelegate* rwh_delegate,
                       FrameTree* frame_tree,
                       FrameTreeNode* frame_tree_node,
                       int routing_id,
-                      bool is_swapped_out);
+                      int flags);
 
  private:
   friend class TestRenderFrameHost;
@@ -333,7 +475,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnDetach();
   void OnFrameFocused();
   void OnOpenURL(const FrameHostMsg_OpenURL_Params& params);
-  void OnDocumentOnLoadCompleted();
+  void OnDocumentOnLoadCompleted(
+      FrameMsg_UILoadMetricsReportType::Value report_type,
+      base::TimeTicks ui_timestamp);
   void OnDidStartProvisionalLoadForFrame(const GURL& url,
                                          bool is_transition_navigation);
   void OnDidFailProvisionalLoadWithError(
@@ -343,13 +487,16 @@ class CONTENT_EXPORT RenderFrameHostImpl
       int error_code,
       const base::string16& error_description);
   void OnDidCommitProvisionalLoad(const IPC::Message& msg);
+  void OnDidDropNavigation();
   void OnBeforeUnloadACK(
       bool proceed,
       const base::TimeTicks& renderer_before_unload_start_time,
       const base::TimeTicks& renderer_before_unload_end_time);
   void OnSwapOutACK();
+  void OnRenderProcessGone(int status, int error_code);
   void OnContextMenu(const ContextMenuParams& params);
   void OnJavaScriptExecuteResponse(int id, const base::ListValue& result);
+  void OnVisualStateResponse(uint64 id);
   void OnRunJavaScriptMessage(const base::string16& message,
                               const base::string16& default_prompt,
                               const GURL& frame_url,
@@ -359,53 +506,75 @@ class CONTENT_EXPORT RenderFrameHostImpl
                                 const base::string16& message,
                                 bool is_reload,
                                 IPC::Message* reply_msg);
-  void OnRequestPlatformNotificationPermission(const GURL& origin,
-                                               int request_id);
-  void OnShowDesktopNotification(
-      int notification_id,
-      const ShowDesktopNotificationHostMsgParams& params);
-  void OnCancelDesktopNotification(int notification_id);
   void OnTextSurroundingSelectionResponse(const base::string16& content,
                                           size_t start_offset,
                                           size_t end_offset);
   void OnDidAccessInitialDocument();
   void OnDidDisownOpener();
+  void OnDidChangeName(const std::string& name);
   void OnDidAssignPageId(int32 page_id);
-  void OnUpdateTitle(int32 page_id,
-                     const base::string16& title,
+  void OnDidChangeSandboxFlags(int32 frame_routing_id, SandboxFlags flags);
+  void OnUpdateTitle(const base::string16& title,
                      blink::WebTextDirection title_direction);
   void OnUpdateEncoding(const std::string& encoding);
-  void OnBeginNavigation(
-      const FrameHostMsg_BeginNavigation_Params& params);
+  void OnBeginNavigation(const CommonNavigationParams& common_params,
+                         const BeginNavigationParams& begin_params,
+                         scoped_refptr<ResourceRequestBody> body);
+  void OnDispatchLoad();
   void OnAccessibilityEvents(
-      const std::vector<AccessibilityHostMsg_EventParams>& params);
+      const std::vector<AccessibilityHostMsg_EventParams>& params,
+      int reset_token);
   void OnAccessibilityLocationChanges(
       const std::vector<AccessibilityHostMsg_LocationChangeParams>& params);
+  void OnAccessibilityFindInPageResult(
+      const AccessibilityHostMsg_FindInPageResultParams& params);
+  void OnAccessibilitySnapshotResponse(int callback_id,
+                                       const ui::AXTreeUpdate& snapshot);
+  void OnToggleFullscreen(bool enter_fullscreen);
+  void OnDidStartLoading(bool to_different_document);
+  void OnDidStopLoading();
+  void OnDidChangeLoadProgress(double load_progress);
 
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
   void OnShowPopup(const FrameHostMsg_ShowPopup_Params& params);
   void OnHidePopup();
 #endif
 
+  // Registers Mojo services that this frame host makes available.
+  void RegisterMojoServices();
+
+  // Updates the state of this RenderFrameHost and clears any waiting state
+  // that is no longer relevant.
+  void SetState(RenderFrameHostImplState rfh_state);
+
   // Returns whether the given URL is allowed to commit in the current process.
   // This is a more conservative check than RenderProcessHost::FilterURL, since
   // it will be used to kill processes that commit unauthorized URLs.
   bool CanCommitURL(const GURL& url);
 
-  void PlatformNotificationPermissionRequestDone(
-      int request_id, blink::WebNotificationPermission permission);
-
   // Update the the singleton FrameAccessibility instance with a map
   // from accessibility node id to the frame routing id of a cross-process
   // iframe.
   void UpdateCrossProcessIframeAccessibility(
-      const std::map<int32, int> node_to_frame_routing_id_map);
+      const std::map<int32, int>& node_to_frame_routing_id_map);
 
   // Update the the singleton FrameAccessibility instance with a map
   // from accessibility node id to the browser plugin instance id of a
   // guest WebContents.
   void UpdateGuestFrameAccessibility(
-      const std::map<int32, int> node_to_browser_plugin_instance_id_map);
+      const std::map<int32, int>& node_to_browser_plugin_instance_id_map);
+
+  // Asserts that the given RenderFrameHostImpl is part of the same browser
+  // context (and crashes if not), then returns whether the given frame is
+  // part of the same site instance.
+  bool IsSameSiteInstance(RenderFrameHostImpl* other_render_frame_host);
+
+  // Informs the content client that geolocation permissions were used.
+  void DidUseGeolocationPermission();
+
+  void UpdatePermissionsForNavigation(
+      const CommonNavigationParams& common_params,
+      const RequestNavigationParams& request_params);
 
   // For now, RenderFrameHosts indirectly keep RenderViewHosts alive via a
   // refcount that calls Shutdown when it reaches zero.  This allows each
@@ -416,6 +585,17 @@ class CONTENT_EXPORT RenderFrameHostImpl
   RenderViewHostImpl* render_view_host_;
 
   RenderFrameHostDelegate* delegate_;
+
+  // The SiteInstance associated with this RenderFrameHost. All content drawn
+  // in this RenderFrameHost is part of this SiteInstance. Cannot change over
+  // time.
+  scoped_refptr<SiteInstanceImpl> site_instance_;
+
+  // The renderer process this RenderFrameHost is associated with. It is
+  // equivalent to the result of site_instance_->GetProcess(), but that
+  // method has the side effect of creating the process if it doesn't exist.
+  // Cache a pointer to avoid unnecessary process creation.
+  RenderProcessHost* process_;
 
   // |cross_process_frame_connector_| passes messages from an out-of-process
   // child frame to the parent process for compositing.
@@ -446,12 +626,20 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // The mapping of pending JavaScript calls created by
   // ExecuteJavaScript and their corresponding callbacks.
   std::map<int, JavaScriptResultCallback> javascript_callbacks_;
+  std::map<uint64, VisualStateCallback> visual_state_callbacks_;
 
-  // Map from notification_id to a callback to cancel them.
-  std::map<int, base::Closure> cancel_notification_callbacks_;
+  // RenderFrameHosts that need management of the rendering and input events
+  // for their frame subtrees require RenderWidgetHosts. This typically
+  // means frames that are rendered in different processes from their parent
+  // frames.
+  // TODO(kenrb): Later this will also be used on the top-level frame, when
+  // RenderFrameHost owns its RenderViewHost.
+  RenderWidgetHostImpl* render_widget_host_;
 
   int routing_id_;
-  bool is_swapped_out_;
+
+  // The current state of this RenderFrameHost.
+  RenderFrameHostImplState rfh_state_;
 
   // Tracks whether the RenderFrame for this RenderFrameHost has been created in
   // the renderer process.  Currently only used for subframes.
@@ -464,24 +652,84 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // RenderFrameHost.
   bool navigations_suspended_;
 
-  // We only buffer the params for a suspended navigation while this RFH is the
-  // pending RenderFrameHost of a RenderFrameHostManager. There will only ever
-  // be one suspended navigation, because RenderFrameHostManager will destroy
-  // the pending RenderFrameHost and create a new one if a second navigation
-  // occurs.
-  scoped_ptr<FrameMsg_Navigate_Params> suspended_nav_params_;
+  // Holds the parameters for a suspended navigation. This can only happen while
+  // this RFH is the pending RenderFrameHost of a RenderFrameHostManager. There
+  // will only ever be one suspended navigation, because RenderFrameHostManager
+  // will destroy the pending RenderFrameHost and create a new one if a second
+  // navigation occurs.
+  // PlzNavigate: unused as navigations are never suspended.
+  scoped_ptr<NavigationParams> suspended_nav_params_;
 
   // When the last BeforeUnload message was sent.
   base::TimeTicks send_before_unload_start_time_;
 
-  ServiceRegistryImpl service_registry_;
+  // Set to true when there is a pending FrameMsg_ShouldClose message.  This
+  // ensures we don't spam the renderer with multiple beforeunload requests.
+  // When either this value or IsWaitingForUnloadACK is true, the value of
+  // unload_ack_is_for_cross_site_transition_ indicates whether this is for a
+  // cross-site transition or a tab close attempt.
+  // TODO(clamy): Remove this boolean and add one more state to the state
+  // machine.
+  bool is_waiting_for_beforeunload_ack_;
 
+  // Valid only when is_waiting_for_beforeunload_ack_ or
+  // IsWaitingForUnloadACK is true.  This tells us if the unload request
+  // is for closing the entire tab ( = false), or only this RenderFrameHost in
+  // the case of a navigation ( = true). Currently only cross-site navigations
+  // require a beforeUnload/unload ACK.
+  // PlzNavigate: all navigations require a beforeUnload ACK.
+  bool unload_ack_is_for_navigation_;
+
+  // Indicates whether this RenderFrameHost is in the process of loading a
+  // document or not.
+  bool is_loading_;
+
+  // PlzNavigate
+  // Used to track whether a commit is expected in this frame. Only used in
+  // tests.
+  bool pending_commit_;
+
+  // Used to swap out or shut down this RFH when the unload event is taking too
+  // long to execute, depending on the number of active frames in the
+  // SiteInstance.
+  scoped_ptr<TimeoutMonitor> swapout_event_monitor_timeout_;
+
+  scoped_ptr<ServiceRegistryImpl> service_registry_;
+
+#if defined(OS_ANDROID)
+  scoped_ptr<ServiceRegistryAndroid> service_registry_android_;
+#endif
+
+  // The object managing the accessibility tree for this frame.
   scoped_ptr<BrowserAccessibilityManager> browser_accessibility_manager_;
+
+  // This is nonzero if we sent an accessibility reset to the renderer and
+  // we're waiting for an IPC containing this reset token (sequentially
+  // assigned) and a complete replacement accessibility tree.
+  int accessibility_reset_token_;
+
+  // A count of the number of times we needed to reset accessibility, so
+  // we don't keep trying to reset forever.
+  int accessibility_reset_count_;
+
+  // The mapping from callback id to corresponding callback for pending
+  // accessibility tree snapshot calls created by RequestAXTreeSnapshot.
+  std::map<int, AXTreeSnapshotCallback> ax_tree_snapshot_callbacks_;
 
   // Callback when an event is received, for testing.
   base::Callback<void(ui::AXEvent, int)> accessibility_testing_callback_;
   // The most recently received accessibility tree - for testing only.
   scoped_ptr<ui::AXTree> ax_tree_for_testing_;
+  // Flag to not create a BrowserAccessibilityManager, for testing. If one
+  // already exists it will still be used.
+  bool no_create_browser_accessibility_manager_for_testing_;
+
+  // PlzNavigate: Owns the stream used in navigations to store the body of the
+  // response once it has started.
+  scoped_ptr<StreamHandle> stream_handle_;
+
+  // Context shared for each PermissionService instance created for this RFH.
+  scoped_ptr<PermissionServiceContext> permission_service_context_;
 
   // NOTE: This must be the last member.
   base::WeakPtrFactory<RenderFrameHostImpl> weak_ptr_factory_;

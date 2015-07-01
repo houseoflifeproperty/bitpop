@@ -107,24 +107,24 @@ class CONTENT_EXPORT WebRTCInternals : public NotificationObserver,
   FRIEND_TEST_ALL_PREFIXES(WebRtcAecDumpBrowserTest,
                            CallWithAecDumpEnabledThenDisabled);
   FRIEND_TEST_ALL_PREFIXES(WebRtcAecDumpBrowserTest, TwoCallsWithAecDump);
-  FRIEND_TEST_ALL_PREFIXES(WebRTCInternalsTest,
+  FRIEND_TEST_ALL_PREFIXES(WebRtcInternalsTest,
                            AecRecordingFileSelectionCanceled);
 
   WebRTCInternals();
-  virtual ~WebRTCInternals();
+  ~WebRTCInternals() override;
 
   void SendUpdate(const std::string& command, base::Value* value);
 
   // NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const NotificationSource& source,
+               const NotificationDetails& details) override;
 
   // ui::SelectFileDialog::Listener implementation.
-  virtual void FileSelected(const base::FilePath& path,
-                            int index,
-                            void* unused_params) OVERRIDE;
-  virtual void FileSelectionCanceled(void* params) OVERRIDE;
+  void FileSelected(const base::FilePath& path,
+                    int index,
+                    void* unused_params) override;
+  void FileSelectionCanceled(void* params) override;
 
   // Called when a renderer exits (including crashes).
   void OnRendererExit(int render_process_id);

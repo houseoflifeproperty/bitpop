@@ -78,19 +78,21 @@ void WriteNode::SetTitle(const std::string& title) {
   bool encrypted_without_overwriting_name = (needs_encryption &&
       entry_->GetNonUniqueName() != kEncryptedString);
 
+  // For bookmarks, we also set the title field in the specifics.
+  // TODO(zea): refactor bookmarks to not need this functionality.
+  sync_pb::EntitySpecifics specifics = GetEntitySpecifics();
+  if (GetModelType() == BOOKMARKS &&
+      specifics.bookmark().title() != new_legal_title) {
+    specifics.mutable_bookmark()->set_title(new_legal_title);
+    SetEntitySpecifics(specifics);  // Does it's own encryption checking.
+    title_matches = false;
+  }
+
   // If the title matches and the NON_UNIQUE_NAME is properly overwritten as
   // necessary, nothing needs to change.
   if (title_matches && !encrypted_without_overwriting_name) {
     DVLOG(2) << "Title matches, dropping change.";
     return;
-  }
-
-  // For bookmarks, we also set the title field in the specifics.
-  // TODO(zea): refactor bookmarks to not need this functionality.
-  if (GetModelType() == BOOKMARKS) {
-    sync_pb::EntitySpecifics specifics = GetEntitySpecifics();
-    specifics.mutable_bookmark()->set_title(new_legal_title);
-    SetEntitySpecifics(specifics);  // Does it's own encryption checking.
   }
 
   // For bookmarks, this has to happen after we set the title in the specifics,
@@ -166,8 +168,8 @@ void WriteNode::SetPasswordSpecifics(
   // This will only update password_specifics if the underlying unencrypted blob
   // was different from |data| or was not encrypted with the proper passphrase.
   if (!cryptographer->Encrypt(data, password_specifics->mutable_encrypted())) {
-    NOTREACHED() << "Failed to encrypt password, possibly due to sync node "
-                 << "corruption";
+    LOG(ERROR) << "Failed to encrypt password, possibly due to sync node "
+               << "corruption";
     return;
   }
   SetEntitySpecifics(entity_specifics);
@@ -337,6 +339,7 @@ bool WriteNode::InitBookmarkByCreation(const BaseNode& parent,
   }
 
   syncable::Id parent_id = parent.GetEntry()->GetId();
+  DCHECK(!parent_id.IsNull());
 
   // Start out with a dummy name.  We expect
   // the caller to set a meaningful name after creation.
@@ -352,19 +355,35 @@ bool WriteNode::InitBookmarkByCreation(const BaseNode& parent,
   // Entries are untitled folders by default.
   entry_->PutIsDir(true);
 
-  // Now set the predecessor, which sets IS_UNSYNCED as necessary.
-  return PutPredecessor(predecessor);
+  if (!PutPredecessor(predecessor)) {
+    return false;
+  }
+
+  // Mark this entry as unsynced, to wake up the syncer.
+  MarkForSyncing();
+  return true;
+}
+
+WriteNode::InitUniqueByCreationResult WriteNode::InitUniqueByCreation(
+    ModelType model_type,
+    const BaseNode& parent,
+    const std::string& tag) {
+  return InitUniqueByCreationImpl(model_type, parent.GetEntry()->GetId(), tag);
+}
+
+WriteNode::InitUniqueByCreationResult WriteNode::InitUniqueByCreation(
+    ModelType model_type,
+    const std::string& tag) {
+  return InitUniqueByCreationImpl(model_type, syncable::Id(), tag);
 }
 
 // Create a new node with default properties and a client defined unique tag,
 // and bind this WriteNode to it.
 // Return true on success. If the tag exists in the database, then
 // we will attempt to undelete the node.
-// TODO(chron): Code datatype into hash tag.
-// TODO(chron): Is model type ever lost?
-WriteNode::InitUniqueByCreationResult WriteNode::InitUniqueByCreation(
+WriteNode::InitUniqueByCreationResult WriteNode::InitUniqueByCreationImpl(
     ModelType model_type,
-    const BaseNode& parent,
+    const syncable::Id& parent_id,
     const std::string& tag) {
   // This DCHECK will only fail if init is called twice.
   DCHECK(!entry_);
@@ -374,8 +393,6 @@ WriteNode::InitUniqueByCreationResult WriteNode::InitUniqueByCreation(
   }
 
   const std::string hash = syncable::GenerateSyncableHash(model_type, tag);
-
-  syncable::Id parent_id = parent.GetEntry()->GetId();
 
   // Start out with a dummy name.  We expect
   // the caller to set a meaningful name after creation.
@@ -421,29 +438,30 @@ WriteNode::InitUniqueByCreationResult WriteNode::InitUniqueByCreation(
       sync_pb::EntitySpecifics specifics;
       AddDefaultFieldValue(model_type, &specifics);
       existing_entry->PutSpecifics(specifics);
-
-      entry_ = existing_entry.release();
-    } else {
-      return INIT_FAILED_ENTRY_ALREADY_EXISTS;
-    }
+    }  // Else just reuse the existing entry.
+    entry_ = existing_entry.release();
   } else {
     entry_ = new syncable::MutableEntry(transaction_->GetWrappedWriteTrans(),
                                         syncable::CREATE,
                                         model_type, parent_id, dummy);
-    if (!entry_->good())
-      return INIT_FAILED_COULD_NOT_CREATE_ENTRY;
-
-    // Only set IS_DIR for new entries. Don't bitflip undeleted ones.
-    entry_->PutUniqueClientTag(hash);
   }
+
+  if (!entry_->good())
+    return INIT_FAILED_COULD_NOT_CREATE_ENTRY;
+
+  // Has no impact if the client tag is already set.
+  entry_->PutUniqueClientTag(hash);
 
   // We don't support directory and tag combinations.
   entry_->PutIsDir(false);
 
-  // Now set the predecessor, which sets IS_UNSYNCED as necessary.
-  bool success = PutPredecessor(NULL);
-  if (!success)
-    return INIT_FAILED_SET_PREDECESSOR;
+  if (!parent_id.IsNull()) {
+    if (!PutPredecessor(NULL))
+      return INIT_FAILED_SET_PREDECESSOR;
+  }
+
+  // Mark this entry as unsynced, to wake up the syncer.
+  MarkForSyncing();
 
   return INIT_SUCCESS;
 }
@@ -457,11 +475,12 @@ bool WriteNode::SetPosition(const BaseNode& new_parent,
   }
 
   syncable::Id new_parent_id = new_parent.GetEntry()->GetId();
+  DCHECK(!new_parent_id.IsNull());
 
   // Filter out redundant changes if both the parent and the predecessor match.
   if (new_parent_id == entry_->GetParentId()) {
     const syncable::Id& old = entry_->GetPredecessorId();
-    if ((!predecessor && old.IsRoot()) ||
+    if ((!predecessor && old.IsNull()) ||
         (predecessor && (old == predecessor->GetEntry()->GetId()))) {
       return true;
     }
@@ -469,8 +488,13 @@ bool WriteNode::SetPosition(const BaseNode& new_parent,
 
   entry_->PutParentId(new_parent_id);
 
-  // Now set the predecessor, which sets IS_UNSYNCED as necessary.
-  return PutPredecessor(predecessor);
+  if (!PutPredecessor(predecessor)) {
+    return false;
+  }
+
+  // Mark this entry as unsynced, to wake up the syncer.
+  MarkForSyncing();
+  return true;
 }
 
 void WriteNode::SetAttachmentMetadata(
@@ -505,14 +529,10 @@ void WriteNode::Drop() {
 }
 
 bool WriteNode::PutPredecessor(const BaseNode* predecessor) {
+  DCHECK(!entry_->GetParentId().IsNull());
   syncable::Id predecessor_id = predecessor ?
       predecessor->GetEntry()->GetId() : syncable::Id();
-  if (!entry_->PutPredecessor(predecessor_id))
-    return false;
-  // Mark this entry as unsynced, to wake up the syncer.
-  MarkForSyncing();
-
-  return true;
+  return entry_->PutPredecessor(predecessor_id);
 }
 
 void WriteNode::MarkForSyncing() {

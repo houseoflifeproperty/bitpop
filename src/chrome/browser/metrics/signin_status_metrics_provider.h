@@ -10,35 +10,30 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observer.h"
+#include "chrome/browser/metrics/signin_status_metrics_provider_base.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser_list_observer.h"
-#include "components/metrics/metrics_provider.h"
 #include "components/signin/core/browser/signin_manager_base.h"
 
 class Browser;
-class ChromeUserMetricsExtension;
-
-namespace base {
-class FilePath;
-}
 
 namespace metrics {
 class ChromeUserMetricsExtension;
 }
 
-// Collect login status of all opened profiles during one UMA session and record
-// the value into a histogram before UMA log is uploaded. It's currently not
-// supported on platform chromeos, Android or iOS.
-class SigninStatusMetricsProvider : public metrics::MetricsProvider,
+// Collect login status of all opened profiles during one UMA session and
+// record the value into a histogram before UMA log is uploaded on platform
+// Windows, Linux, Mac and Android.
+class SigninStatusMetricsProvider : public SigninStatusMetricsProviderBase,
                                     public chrome::BrowserListObserver,
                                     public SigninManagerBase::Observer,
                                     public SigninManagerFactory::Observer {
  public:
-  virtual ~SigninStatusMetricsProvider();
+  ~SigninStatusMetricsProvider() override;
 
-  // metrics::MetricsProvider:
-  virtual void ProvideGeneralMetrics(
-      metrics::ChromeUserMetricsExtension* uma_proto) OVERRIDE;
+  // SigninStatusMetricsProviderBase:
+  void ProvideGeneralMetrics(
+      metrics::ChromeUserMetricsExtension* uma_proto) override;
 
   // Factory method, creates a new instance of this class.
   static SigninStatusMetricsProvider* CreateInstance();
@@ -57,32 +52,20 @@ class SigninStatusMetricsProvider : public metrics::MetricsProvider,
   FRIEND_TEST_ALL_PREFIXES(SigninStatusMetricsProvider, GoogleSigninSucceeded);
   FRIEND_TEST_ALL_PREFIXES(SigninStatusMetricsProvider, GoogleSignedOut);
 
-  // Possible sign-in status of all opened profiles during one UMA session. For
-  // MIXED_SIGNIN_STATUS, at least one signed-in profile and at least one
-  // unsigned-in profile were opened between two UMA log uploads.
-  enum ProfilesSigninStatus {
-    ALL_PROFILES_SIGNED_IN,
-    ALL_PROFILES_NOT_SIGNED_IN,
-    MIXED_SIGNIN_STATUS,
-    UNKNOWN_SIGNIN_STATUS,
-    ERROR_GETTING_SIGNIN_STATUS,
-    SIGNIN_STATUS_MAX,
-  };
-
   // chrome::BrowserListObserver:
   // This will never be called on Android.
-  virtual void OnBrowserAdded(Browser* browser) OVERRIDE;
+  void OnBrowserAdded(Browser* browser) override;
 
   // SigninManagerFactory::Observer:
-  virtual void SigninManagerCreated(SigninManagerBase* manager) OVERRIDE;
-  virtual void SigninManagerShutdown(SigninManagerBase* manager) OVERRIDE;
+  void SigninManagerCreated(SigninManagerBase* manager) override;
+  void SigninManagerShutdown(SigninManagerBase* manager) override;
 
   // SigninManagerBase::Observer:
-  virtual void GoogleSigninSucceeded(const std::string& account_id,
-                                     const std::string& username,
-                                     const std::string& password) OVERRIDE;
-  virtual void GoogleSignedOut(const std::string& account_id,
-                               const std::string& username) OVERRIDE;
+  void GoogleSigninSucceeded(const std::string& account_id,
+                             const std::string& username,
+                             const std::string& password) override;
+  void GoogleSignedOut(const std::string& account_id,
+                       const std::string& username) override;
 
   // Obtain sign-in status and add observers.
   void Initialize();
@@ -100,15 +83,8 @@ class SigninStatusMetricsProvider : public metrics::MetricsProvider,
   // Compute current sign-in status of all opened profiles.
   void ComputeCurrentSigninStatus();
 
-  // Sets the value of |signin_status_|. It ensures that |signin_status_| will
-  // not be changed if its value is already ERROR_GETTING_SIGNIN_STATUS.
-  void SetSigninStatus(ProfilesSigninStatus new_status);
-
   // Get the current recorded sign-in status. For testing purpose only.
-  ProfilesSigninStatus GetSigninStatusForTesting();
-
-  // Sign-in status of all profiles seen so far.
-  ProfilesSigninStatus signin_status_;
+  SigninStatus GetSigninStatusForTesting();
 
   // Used to track the SigninManagers that this instance is observing so that
   // this instance can be removed as an observer on its destruction.

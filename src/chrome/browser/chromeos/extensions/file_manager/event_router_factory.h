@@ -25,20 +25,20 @@ class EventRouterFactory : public BrowserContextKeyedServiceFactory {
 
  protected:
   // BrowserContextKeyedBaseFactory overrides:
-  virtual content::BrowserContext* GetBrowserContextToUse(
-      content::BrowserContext* context) const OVERRIDE;
-  virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
-  virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
+  content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const override;
+  bool ServiceIsCreatedWithBrowserContext() const override;
+  bool ServiceIsNULLWhileTesting() const override;
 
  private:
   friend struct DefaultSingletonTraits<EventRouterFactory>;
 
   EventRouterFactory();
-  virtual ~EventRouterFactory();
+  ~EventRouterFactory() override;
 
   // BrowserContextKeyedServiceFactory:
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* context) const OVERRIDE;
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* context) const override;
 };
 
 }  // namespace file_manager

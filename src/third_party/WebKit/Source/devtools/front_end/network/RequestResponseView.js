@@ -46,38 +46,39 @@ WebInspector.RequestResponseView.prototype = {
         if (this._sourceView || !WebInspector.RequestView.hasTextContent(this.request))
             return this._sourceView;
 
+        var contentProvider = new WebInspector.RequestResponseView.ContentProvider(this.request);
         if (this.request.resourceSize >= WebInspector.RequestResponseView._maxFormattedResourceSize) {
-            this._sourceView = new WebInspector.ResourceSourceFrameFallback(this.request);
+            this._sourceView = new WebInspector.ResourceSourceFrameFallback(contentProvider);
             return this._sourceView;
         }
 
-        var sourceFrame = new WebInspector.ResourceSourceFrame(this.request);
-        sourceFrame.setHighlighterType(this.request.type.canonicalMimeType() || this.request.mimeType);
+        var sourceFrame = new WebInspector.ResourceSourceFrame(contentProvider);
+        sourceFrame.setHighlighterType(this.request.resourceType().canonicalMimeType() || this.request.mimeType);
         this._sourceView = sourceFrame;
         return this._sourceView;
     },
 
     /**
      * @param {string} message
-     * @return {!WebInspector.EmptyView}
+     * @return {!WebInspector.EmptyWidget}
      */
     _createMessageView: function(message)
     {
-        return new WebInspector.EmptyView(message);
+        return new WebInspector.EmptyWidget(message);
     },
 
     contentLoaded: function()
     {
         if ((!this.request.content || !this.sourceView) && !this.request.contentError()) {
-            if (!this._emptyView) {
-                this._emptyView = this._createMessageView(WebInspector.UIString("This request has no response data available."));
-                this._emptyView.show(this.element);
-                this.innerView = this._emptyView;
+            if (!this._emptyWidget) {
+                this._emptyWidget = this._createMessageView(WebInspector.UIString("This request has no response data available."));
+                this._emptyWidget.show(this.element);
+                this.innerView = this._emptyWidget;
             }
         } else {
-            if (this._emptyView) {
-                this._emptyView.detach();
-                delete this._emptyView;
+            if (this._emptyWidget) {
+                this._emptyWidget.detach();
+                delete this._emptyWidget;
             }
 
             if (this.request.content && this.sourceView) {
@@ -93,4 +94,63 @@ WebInspector.RequestResponseView.prototype = {
     },
 
     __proto__: WebInspector.RequestContentView.prototype
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.ContentProvider}
+ * @param {!WebInspector.NetworkRequest} request
+ */
+WebInspector.RequestResponseView.ContentProvider = function(request) {
+    this._request = request;
+}
+
+WebInspector.RequestResponseView.ContentProvider.prototype = {
+    /**
+     * @override
+     * @return {string}
+     */
+    contentURL: function()
+    {
+        return this._request.contentURL();
+    },
+
+    /**
+     * @override
+     * @return {!WebInspector.ResourceType}
+     */
+    contentType: function()
+    {
+        return this._request.resourceType();
+    },
+
+    /**
+     * @override
+     * @param {function(?string)} callback
+     */
+    requestContent: function(callback)
+    {
+        /**
+         * @param {?string} content
+         * @this {WebInspector.RequestResponseView.ContentProvider}
+         */
+        function decodeContent(content)
+        {
+            callback(this._request.contentEncoded ? window.atob(content || "") : content);
+        }
+
+        this._request.requestContent(decodeContent.bind(this));
+    },
+
+    /**
+     * @override
+     * @param {string} query
+     * @param {boolean} caseSensitive
+     * @param {boolean} isRegex
+     * @param {function(!Array.<!WebInspector.ContentProvider.SearchMatch>)} callback
+     */
+    searchInContent: function(query, caseSensitive, isRegex, callback)
+    {
+        this._request.searchInContent(query, caseSensitive, isRegex, callback);
+    }
 }

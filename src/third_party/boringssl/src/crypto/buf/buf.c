@@ -56,6 +56,8 @@
 
 #include <openssl/buf.h>
 
+#include <string.h>
+
 #include <openssl/mem.h>
 #include <openssl/err.h>
 
@@ -187,7 +189,8 @@ char *BUF_strndup(const char *buf, size_t size) {
     return NULL;
   }
 
-  BUF_strlcpy(ret, buf, alloc_size);
+  memcpy(ret, buf, size);
+  ret[size] = '\0';
   return ret;
 }
 

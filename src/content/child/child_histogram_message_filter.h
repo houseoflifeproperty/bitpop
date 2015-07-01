@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_CHILD_HISTOGRAM_MESSAGE_FILTER_H_
-#define CONTENT_CHILD_HISTOGRAM_MESSAGE_FILTER_H_
+#ifndef CONTENT_CHILD_CHILD_HISTOGRAM_MESSAGE_FILTER_H_
+#define CONTENT_CHILD_CHILD_HISTOGRAM_MESSAGE_FILTER_H_
 
 #include <string>
 #include <vector>
@@ -24,16 +24,16 @@ class ChildHistogramMessageFilter : public IPC::MessageFilter {
   ChildHistogramMessageFilter();
 
   // IPC::MessageFilter implementation.
-  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
-  virtual void OnFilterRemoved() OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  void OnFilterAdded(IPC::Sender* sender) override;
+  void OnFilterRemoved() override;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   void SendHistograms(int sequence_number);
 
  private:
   typedef std::vector<std::string> HistogramPickledList;
 
-  virtual ~ChildHistogramMessageFilter();
+  ~ChildHistogramMessageFilter() override;
 
   // Message handlers.
   virtual void OnGetChildHistogramData(int sequence_number);
@@ -54,4 +54,4 @@ class ChildHistogramMessageFilter : public IPC::MessageFilter {
 
 }  // namespace content
 
-#endif  // CONTENT_CHILD_HISTOGRAM_MESSAGE_FILTER_H_
+#endif  // CONTENT_CHILD_CHILD_HISTOGRAM_MESSAGE_FILTER_H_

@@ -10,15 +10,18 @@
 #include "base/metrics/histogram.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
+#include "chrome/browser/chromeos/login/screens/user_image_model.h"
 #include "chrome/browser/chromeos/login/ui/webui_login_display.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/generated_resources.h"
 #include "chromeos/audio/chromeos_sounds.h"
+#include "components/login/localized_values_builder.h"
 #include "components/user_manager/user.h"
 #include "components/user_manager/user_image/default_user_images.h"
 #include "grit/browser_resources.h"
+#include "media/audio/sounds/sounds_manager.h"
 #include "net/base/data_url.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -34,7 +37,7 @@ namespace chromeos {
 
 UserImageScreenHandler::UserImageScreenHandler()
     : BaseScreenHandler(kJsScreenPath),
-      screen_(NULL),
+      model_(nullptr),
       show_on_init_(false),
       is_ready_(false) {
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
@@ -46,9 +49,8 @@ UserImageScreenHandler::UserImageScreenHandler()
 }
 
 UserImageScreenHandler::~UserImageScreenHandler() {
-  if (screen_) {
-    screen_->OnActorDestroyed(this);
-  }
+  if (model_)
+    model_->OnViewDestroyed(this);
 }
 
 void UserImageScreenHandler::Initialize() {
@@ -58,9 +60,14 @@ void UserImageScreenHandler::Initialize() {
   }
 }
 
-void UserImageScreenHandler::SetDelegate(
-    UserImageScreenActor::Delegate* screen) {
-  screen_ = screen;
+void UserImageScreenHandler::Bind(UserImageModel& model) {
+  model_ = &model;
+  BaseScreenHandler::SetBaseScreen(model_);
+}
+
+void UserImageScreenHandler::Unbind() {
+  model_ = nullptr;
+  BaseScreenHandler::SetBaseScreen(nullptr);
 }
 
 void UserImageScreenHandler::Show() {
@@ -72,10 +79,8 @@ void UserImageScreenHandler::Show() {
   ShowScreen(OobeUI::kScreenUserImagePicker, NULL);
 
   // When shown, query camera presence.
-  if (!screen_)
-    return;
-  if (is_ready_)
-    screen_->OnScreenReady();
+  if (model_ && is_ready_)
+    model_->OnScreenReady();
 }
 
 void UserImageScreenHandler::Hide() {
@@ -85,7 +90,7 @@ void UserImageScreenHandler::PrepareToShow() {
 }
 
 void UserImageScreenHandler::DeclareLocalizedValues(
-    LocalizedValuesBuilder* builder) {
+    ::login::LocalizedValuesBuilder* builder) {
   builder->Add("userImageScreenTitle", IDS_USER_IMAGE_SCREEN_TITLE);
   builder->Add("userImageScreenDescription",
                IDS_OPTIONS_CHANGE_PICTURE_DIALOG_TEXT);
@@ -107,6 +112,8 @@ void UserImageScreenHandler::DeclareLocalizedValues(
   builder->Add("photoDiscardAccessibleText",
                IDS_OPTIONS_PHOTO_DISCARD_ACCESSIBLE_TEXT);
   builder->Add("syncingPreferences", IDS_IMAGE_SCREEN_SYNCING_PREFERENCES);
+  builder->Add("syncingPreferencesNewGaia",
+               IDS_IMAGE_SCREEN_SYNCING_PREFERENCES_NEW_GAIA_FLOW);
 }
 
 void UserImageScreenHandler::RegisterMessages() {
@@ -120,23 +127,6 @@ void UserImageScreenHandler::RegisterMessages() {
               &UserImageScreenHandler::HandleImageAccepted);
   AddCallback("onUserImageScreenShown",
               &UserImageScreenHandler::HandleScreenShown);
-}
-
-void UserImageScreenHandler::SelectImage(int index) {
-  if (page_is_ready())
-    CallJS("setSelectedImage", user_manager::GetDefaultImageUrl(index));
-}
-
-void UserImageScreenHandler::SendProfileImage(const std::string& data_url) {
-  if (page_is_ready())
-    CallJS("setProfileImage", data_url);
-}
-
-void UserImageScreenHandler::OnProfileImageAbsent() {
-  if (page_is_ready()) {
-    scoped_ptr<base::Value> null_value(base::Value::CreateNullValue());
-    CallJS("setProfileImage", *null_value);
-  }
 }
 
 // TODO(antrim) : It looks more like parameters for "Init" rather than callback.
@@ -157,21 +147,12 @@ void UserImageScreenHandler::HandleGetImages() {
     image_urls.Append(image_data.release());
   }
   CallJS("setDefaultImages", image_urls);
-  if (!screen_)
-    return;
-  if (screen_->selected_image() != user_manager::User::USER_IMAGE_INVALID)
-    SelectImage(screen_->selected_image());
-
-  if (screen_->profile_picture_data_url() != url::kAboutBlankURL)
-    SendProfileImage(screen_->profile_picture_data_url());
-  else if (screen_->profile_picture_absent())
-    OnProfileImageAbsent();
 }
 
 void UserImageScreenHandler::HandleScreenReady() {
   is_ready_ = true;
-  if (screen_)
-    screen_->OnScreenReady();
+  if (model_)
+    model_->OnScreenReady();
 }
 
 void UserImageScreenHandler::HandlePhotoTaken(const std::string& image_url) {
@@ -180,8 +161,8 @@ void UserImageScreenHandler::HandlePhotoTaken(const std::string& image_url) {
     NOTREACHED();
   DCHECK_EQ("image/png", mime_type);
 
-  if (screen_)
-    screen_->OnPhotoTaken(raw_data);
+  if (model_)
+    model_->OnPhotoTaken(raw_data);
 }
 
 void UserImageScreenHandler::HandleTakePhoto() {
@@ -195,13 +176,13 @@ void UserImageScreenHandler::HandleDiscardPhoto() {
 void UserImageScreenHandler::HandleSelectImage(const std::string& image_url,
                                                const std::string& image_type,
                                                bool is_user_selection) {
-  if (screen_)
-    screen_->OnImageSelected(image_type, image_url, is_user_selection);
+  if (model_)
+    model_->OnImageSelected(image_type, image_url, is_user_selection);
 }
 
 void UserImageScreenHandler::HandleImageAccepted() {
-  if (screen_)
-    screen_->OnImageAccepted();
+  if (model_)
+    model_->OnImageAccepted();
 }
 
 void UserImageScreenHandler::HandleScreenShown() {
@@ -210,10 +191,6 @@ void UserImageScreenHandler::HandleScreenShown() {
   base::TimeDelta delta = base::Time::Now() - screen_show_time_;
   VLOG(1) << "Screen load time: " << delta.InSecondsF();
   UMA_HISTOGRAM_TIMES("UserImage.ScreenIsShownTime", delta);
-}
-
-void UserImageScreenHandler::SetCameraPresent(bool present) {
-  CallJS("setCameraPresent", present);
 }
 
 void UserImageScreenHandler::HideCurtain() {

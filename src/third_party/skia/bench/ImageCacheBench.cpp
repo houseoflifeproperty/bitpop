@@ -12,11 +12,10 @@ namespace {
 static void* gGlobalAddress;
 class TestKey : public SkResourceCache::Key {
 public:
-    void*    fPtr;
     intptr_t fValue;
 
-    TestKey(intptr_t value) : fPtr(&gGlobalAddress), fValue(value) {
-        this->init(sizeof(fPtr) + sizeof(fValue));
+    TestKey(intptr_t value) : fValue(value) {
+        this->init(&gGlobalAddress, 0, sizeof(fValue));
     }
 };
 struct TestRec : public SkResourceCache::Rec {
@@ -25,8 +24,8 @@ struct TestRec : public SkResourceCache::Rec {
 
     TestRec(const TestKey& key, intptr_t value) : fKey(key), fValue(value) {}
 
-    virtual const Key& getKey() const SK_OVERRIDE { return fKey; }
-    virtual size_t bytesUsed() const SK_OVERRIDE { return sizeof(fKey) + sizeof(fValue); }
+    const Key& getKey() const override { return fKey; }
+    size_t bytesUsed() const override { return sizeof(fKey) + sizeof(fValue); }
 
     static bool Visitor(const SkResourceCache::Rec&, void*) {
         return true;
@@ -50,11 +49,11 @@ public:
     }
 
 protected:
-    virtual const char* onGetName() SK_OVERRIDE {
+    const char* onGetName() override {
         return "imagecache";
     }
 
-    virtual void onDraw(const int loops, SkCanvas*) SK_OVERRIDE {
+    void onDraw(const int loops, SkCanvas*) override {
         if (fCache.getTotalBytesUsed() == 0) {
             this->populateCache();
         }

@@ -10,6 +10,7 @@
 #include "cc/blink/cc_blink_export.h"
 #include "third_party/WebKit/public/platform/WebCompositorAnimationCurve.h"
 #include "third_party/WebKit/public/platform/WebCompositorSupport.h"
+#include "third_party/WebKit/public/platform/WebContentLayerClient.h"
 #include "third_party/WebKit/public/platform/WebLayer.h"
 #include "third_party/WebKit/public/platform/WebTransformOperations.h"
 
@@ -44,6 +45,9 @@ class CC_BLINK_EXPORT WebCompositorSupportImpl
   virtual blink::WebCompositorAnimation* createAnimation(
       const blink::WebCompositorAnimationCurve& curve,
       blink::WebCompositorAnimation::TargetProperty target,
+#ifdef WEB_COMPOSITOR_SUPPORT_CREATE_ANIMATION_SUPPORTS_GROUP
+      int group_id,
+#endif
       int animation_id);
   virtual blink::WebFilterAnimationCurve* createFilterAnimationCurve();
   virtual blink::WebFloatAnimationCurve* createFloatAnimationCurve();

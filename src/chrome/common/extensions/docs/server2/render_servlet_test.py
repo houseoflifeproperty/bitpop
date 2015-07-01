@@ -38,11 +38,15 @@ class RenderServletTest(unittest.TestCase):
     self.assertEqual(
         Response.Redirect('https://developer.chrome.com/extensions',
             permanent=False),
-        self._Render('/chrome/extensions', host='http://code.google.com'))
+        self._Render('/chrome/extensions', host='code.google.com'))
     self.assertEqual(
         Response.Redirect('https://developer.chrome.com/extensions',
             permanent=False),
-        self._Render('/chrome/extensions', host='https://code.google.com'))
+        self._Render('/chrome/extensions', host='code.google.com'))
+    self.assertEqual(
+        Response.Redirect('https://developer.chrome.com/devtools/docs/network',
+            permanent=False),
+        self._Render('/chrome/devtools/docs/network', host='code.google.com'))
 
   def testNotFound(self):
     def create_404_response(real_path):
@@ -106,10 +110,9 @@ class RenderServletTest(unittest.TestCase):
                     len(ReadFile('%s%s.html' % (PUBLIC_TEMPLATES, html_file))))
 
   def testIndexRender(self):
-    response = self._Render('extensions')
-    self.assertEqual(200, response.status)
-    self.assertEqual(self._Render('extensions/index').content.ToString(),
-                     response.content.ToString())
+    self.assertEqual(200, self._Render('extensions').status)
+    self.assertEqual(('/extensions', False),
+                     self._Render('extensions/index').GetRedirect())
 
   def testOtherRedirectsJsonRedirect(self):
     response = self._Render('apps/webview_tag')

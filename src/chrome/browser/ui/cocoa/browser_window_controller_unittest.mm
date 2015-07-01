@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,35 +8,21 @@
 #import "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
-#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/signin/fake_signin_manager.h"
-#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/browser/sync/profile_sync_service_factory.h"
-#include "chrome/browser/sync/profile_sync_service_mock.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
+#import "chrome/browser/ui/cocoa/fast_resize_view.h"
 #include "chrome/browser/ui/cocoa/find_bar/find_bar_bridge.h"
 #include "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/grit/chromium_strings.h"
-#include "chrome/grit/generated_resources.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/signin/core/browser/fake_auth_status_provider.h"
-#include "components/signin/core/browser/profile_oauth2_token_service.h"
-#include "components/signin/core/browser/signin_error_controller.h"
-#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
-#include "ui/base/l10n/l10n_util.h"
-#include "ui/base/l10n/l10n_util_mac.h"
 
 using ::testing::Return;
 
@@ -78,7 +64,7 @@ using ::testing::Return;
 
 class BrowserWindowControllerTest : public CocoaProfileTest {
  public:
-  virtual void SetUp() {
+  void SetUp() override {
     CocoaProfileTest::SetUp();
     ASSERT_TRUE(browser());
 
@@ -86,7 +72,7 @@ class BrowserWindowControllerTest : public CocoaProfileTest {
                                                      takeOwnership:NO];
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     [controller_ close];
     CocoaProfileTest::TearDown();
   }
@@ -138,7 +124,7 @@ TEST_F(BrowserWindowControllerTest, TestNormal) {
   Browser* popup_browser(new Browser(
       Browser::CreateParams(Browser::TYPE_POPUP, profile(),
                             chrome::GetActiveDesktop())));
-  NSWindow *cocoaWindow = popup_browser->window()->GetNativeWindow();
+  NSWindow* cocoaWindow = popup_browser->window()->GetNativeWindow();
   BrowserWindowController* controller =
       static_cast<BrowserWindowController*>([cocoaWindow windowController]);
   ASSERT_TRUE([controller isKindOfClass:[BrowserWindowController class]]);
@@ -155,7 +141,7 @@ TEST_F(BrowserWindowControllerTest, TestSetBounds) {
                                chrome::GetActiveDesktop());
   params.initial_bounds = gfx::Rect(0, 0, 50, 50);
   Browser* browser = new Browser(params);
-  NSWindow *cocoaWindow = browser->window()->GetNativeWindow();
+  NSWindow* cocoaWindow = browser->window()->GetNativeWindow();
   BrowserWindowController* controller =
     static_cast<BrowserWindowController*>([cocoaWindow windowController]);
 
@@ -181,7 +167,7 @@ TEST_F(BrowserWindowControllerTest, TestSetBoundsPopup) {
                                chrome::GetActiveDesktop());
   params.initial_bounds = gfx::Rect(0, 0, 50, 50);
   Browser* browser = new Browser(params);
-  NSWindow *cocoaWindow = browser->window()->GetNativeWindow();
+  NSWindow* cocoaWindow = browser->window()->GetNativeWindow();
   BrowserWindowController* controller =
     static_cast<BrowserWindowController*>([cocoaWindow windowController]);
 
@@ -217,6 +203,28 @@ TEST_F(BrowserWindowControllerTest, BookmarkBarControllerIndirection) {
   EXPECT_TRUE([controller_ isBookmarkBarVisible]);
 }
 
+TEST_F(BrowserWindowControllerTest, BookmarkBarToggleRespectMinWindowHeight) {
+  Browser::CreateParams params(Browser::TYPE_TABBED, profile(),
+                               chrome::GetActiveDesktop());
+  params.initial_bounds = gfx::Rect(0, 0, 50, 280);
+  Browser* browser = new Browser(params);
+  NSWindow* cocoaWindow = browser->window()->GetNativeWindow();
+  BrowserWindowController* controller =
+   static_cast<BrowserWindowController*>([cocoaWindow windowController]);
+  BrowserWindow* browser_window = [controller browserWindow];
+  gfx::Rect bounds = browser_window->GetBounds();
+  EXPECT_EQ(280, bounds.height());
+
+  // Try to set the bounds smaller than the minimum.
+  // Explicitly show the bar. Can't use chrome::ToggleBookmarkBarWhenVisible()
+  // because of the notification issues.
+  [controller adjustWindowHeightBy:-20];
+  bounds = browser_window->GetBounds();
+  EXPECT_EQ(272, bounds.height());
+
+  [controller close];
+}
+
 #if 0
 // TODO(jrg): This crashes trying to create the BookmarkBarController, adding
 // an observer to the BookmarkModel.
@@ -241,21 +249,63 @@ TEST_F(BrowserWindowControllerTest, TestIncognitoWidthSpace) {
 
 namespace {
 
+// Returns the frame of the view in window coordinates.
+NSRect FrameInWindowForView(NSView* view) {
+  return [[view superview] convertRect:[view frame] toView:nil];
+}
+
+// Whether the view's frame is within the bounds of the superview.
+BOOL ViewContainmentValid(NSView* view) {
+  if (NSIsEmptyRect([view frame]))
+    return YES;
+
+  return NSContainsRect([[view superview] bounds], [view frame]);
+}
+
+// Checks the view hierarchy rooted at |view| to ensure that each view is
+// properly contained.
+BOOL ViewHierarchyContainmentValid(NSView* view) {
+  // TODO(erikchen): Fix these views to have correct containment.
+  // http://crbug.com/397665.
+  if ([view isKindOfClass:NSClassFromString(@"DownloadShelfView")])
+    return YES;
+  if ([view isKindOfClass:NSClassFromString(@"BookmarkBarToolbarView")])
+    return YES;
+  if ([view isKindOfClass:NSClassFromString(@"BrowserActionsContainerView")])
+    return YES;
+
+  if (!ViewContainmentValid(view)) {
+    LOG(ERROR) << "View violates containment: " <<
+        [[view description] UTF8String];
+    return NO;
+  }
+
+  for (NSView* subview in [view subviews]) {
+    BOOL result = ViewHierarchyContainmentValid(subview);
+    if (!result)
+      return NO;
+  }
+
+  return YES;
+}
+
 // Verifies that the toolbar, infobar, tab content area, and download shelf
 // completely fill the area under the tabstrip.
 void CheckViewPositions(BrowserWindowController* controller) {
-  NSRect contentView = [[[controller window] contentView] bounds];
-  NSRect tabstrip = [[controller tabStripView] frame];
-  NSRect toolbar = [[controller toolbarView] frame];
-  NSRect infobar = [[controller infoBarContainerView] frame];
-  NSRect contentArea = [[controller tabContentArea] frame];
+  EXPECT_TRUE(ViewHierarchyContainmentValid([[controller window] contentView]));
+
+  NSRect contentView = FrameInWindowForView([[controller window] contentView]);
+  NSRect tabstrip = FrameInWindowForView([controller tabStripView]);
+  NSRect toolbar = FrameInWindowForView([controller toolbarView]);
+  NSRect infobar = FrameInWindowForView([controller infoBarContainerView]);
+  NSRect tabContent = FrameInWindowForView([controller tabContentArea]);
   NSRect download = NSZeroRect;
   if ([[[controller downloadShelf] view] superview])
     download = [[[controller downloadShelf] view] frame];
 
   EXPECT_EQ(NSMinY(contentView), NSMinY(download));
-  EXPECT_EQ(NSMaxY(download), NSMinY(contentArea));
-  EXPECT_EQ(NSMaxY(contentArea), NSMinY(infobar));
+  EXPECT_EQ(NSMaxY(download), NSMinY(tabContent));
+  EXPECT_EQ(NSMaxY(tabContent), NSMinY(infobar));
 
   // Bookmark bar frame is random memory when hidden.
   if ([controller bookmarkBarVisible]) {
@@ -283,7 +333,7 @@ TEST_F(BrowserWindowControllerTest, TestAdjustWindowHeight) {
   // height. It should change appropriately (and only downwards). Then get it to
   // shrink by the same amount; it should return to its original state.
   NSRect initialFrame = NSMakeRect(workarea.origin.x, workarea.origin.y + 100,
-                                   200, 200);
+                                   200, 280);
   [window setFrame:initialFrame display:YES];
   [controller_ resetWindowGrowthState];
   [controller_ adjustWindowHeightBy:40];
@@ -300,7 +350,7 @@ TEST_F(BrowserWindowControllerTest, TestAdjustWindowHeight) {
   // should still change, but it should not grow down below the work area; it
   // should instead move upwards. Then shrink it and make sure it goes back to
   // the way it was.
-  initialFrame = NSMakeRect(workarea.origin.x, workarea.origin.y, 200, 200);
+  initialFrame = NSMakeRect(workarea.origin.x, workarea.origin.y, 200, 280);
   [window setFrame:initialFrame display:YES];
   [controller_ resetWindowGrowthState];
   [controller_ adjustWindowHeightBy:40];
@@ -315,7 +365,7 @@ TEST_F(BrowserWindowControllerTest, TestAdjustWindowHeight) {
 
   // Put the window slightly offscreen and try again.  The height should not
   // change this time.
-  initialFrame = NSMakeRect(workarea.origin.x - 10, 0, 200, 200);
+  initialFrame = NSMakeRect(workarea.origin.x - 10, 0, 200, 280);
   [window setFrame:initialFrame display:YES];
   [controller_ resetWindowGrowthState];
   [controller_ adjustWindowHeightBy:40];
@@ -337,7 +387,7 @@ TEST_F(BrowserWindowControllerTest, TestAdjustWindowHeight) {
   // then continue to grow up. Then shrink it, and it should return to where it
   // was.
   initialFrame = NSMakeRect(workarea.origin.x, workarea.origin.y + 5,
-                            200, 200);
+                            200, 280);
   [window setFrame:initialFrame display:YES];
   [controller_ resetWindowGrowthState];
   [controller_ adjustWindowHeightBy:40];
@@ -366,7 +416,7 @@ TEST_F(BrowserWindowControllerTest, TestAdjustWindowHeight) {
   // Place the window at the bottom of the screen and grow; it should grow
   // upwards. Move the window off the bottom, then shrink. It should then shrink
   // from the bottom.
-  initialFrame = NSMakeRect(workarea.origin.x, workarea.origin.y, 200, 200);
+  initialFrame = NSMakeRect(workarea.origin.x, workarea.origin.y, 200, 280);
   [window setFrame:initialFrame display:YES];
   [controller_ resetWindowGrowthState];
   [controller_ adjustWindowHeightBy:40];
@@ -620,7 +670,7 @@ TEST_F(BrowserWindowControllerTest, TestFindBarOnTop) {
   [controller_ addFindBar:bridge.find_bar_cocoa_controller()];
 
   // Test that the Z-order of the find bar is on top of everything.
-  NSArray* subviews = [[[controller_ window] contentView] subviews];
+  NSArray* subviews = [controller_.chromeContentView subviews];
   NSUInteger findBar_index =
       [subviews indexOfObject:[controller_ findBarView]];
   EXPECT_NE(NSNotFound, findBar_index);
@@ -633,146 +683,6 @@ TEST_F(BrowserWindowControllerTest, TestFindBarOnTop) {
 
   EXPECT_GT(findBar_index, toolbar_index);
   EXPECT_GT(findBar_index, bookmark_index);
-}
-
-TEST_F(BrowserWindowControllerTest, TestSigninMenuItemNoErrors) {
-  base::scoped_nsobject<NSMenuItem> syncMenuItem(
-      [[NSMenuItem alloc] initWithTitle:@""
-                                 action:@selector(commandDispatch)
-                          keyEquivalent:@""]);
-  [syncMenuItem setTag:IDC_SHOW_SYNC_SETUP];
-
-  NSString* startSignin =
-    l10n_util::GetNSStringFWithFixup(
-        IDS_SYNC_MENU_PRE_SYNCED_LABEL,
-        l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME));
-
-  // Make sure shouldShow parameter is obeyed, and we get the default
-  // label if not signed in.
-  [BrowserWindowController updateSigninItem:syncMenuItem
-                                 shouldShow:YES
-                             currentProfile:profile()];
-
-  EXPECT_TRUE([[syncMenuItem title] isEqualTo:startSignin]);
-  EXPECT_FALSE([syncMenuItem isHidden]);
-
-  [BrowserWindowController updateSigninItem:syncMenuItem
-                                 shouldShow:NO
-                             currentProfile:profile()];
-  EXPECT_TRUE([[syncMenuItem title] isEqualTo:startSignin]);
-  EXPECT_TRUE([syncMenuItem isHidden]);
-
-  // Now sign in.
-  std::string username = "foo@example.com";
-  NSString* alreadySignedIn =
-    l10n_util::GetNSStringFWithFixup(IDS_SYNC_MENU_SYNCED_LABEL,
-                                     base::UTF8ToUTF16(username));
-  SigninManager* signin = SigninManagerFactory::GetForProfile(profile());
-  signin->SetAuthenticatedUsername(username);
-  ProfileSyncService* sync =
-    ProfileSyncServiceFactory::GetForProfile(profile());
-  sync->SetSyncSetupCompleted();
-  [BrowserWindowController updateSigninItem:syncMenuItem
-                                 shouldShow:YES
-                             currentProfile:profile()];
-  EXPECT_TRUE([[syncMenuItem title] isEqualTo:alreadySignedIn]);
-  EXPECT_FALSE([syncMenuItem isHidden]);
-}
-
-TEST_F(BrowserWindowControllerTest, TestSigninMenuItemAuthError) {
-  base::scoped_nsobject<NSMenuItem> syncMenuItem(
-      [[NSMenuItem alloc] initWithTitle:@""
-                                 action:@selector(commandDispatch)
-                          keyEquivalent:@""]);
-  [syncMenuItem setTag:IDC_SHOW_SYNC_SETUP];
-
-  // Now sign in.
-  std::string username = "foo@example.com";
-  SigninManager* signin = SigninManagerFactory::GetForProfile(profile());
-  signin->SetAuthenticatedUsername(username);
-  ProfileSyncService* sync =
-      ProfileSyncServiceFactory::GetForProfile(profile());
-  sync->SetSyncSetupCompleted();
-  // Force an auth error.
-  FakeAuthStatusProvider provider(
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile())->
-          signin_error_controller());
-  GoogleServiceAuthError error(
-      GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
-  provider.SetAuthError("user@gmail.com", "user@gmail.com", error);
-  [BrowserWindowController updateSigninItem:syncMenuItem
-                                 shouldShow:YES
-                             currentProfile:profile()];
-  NSString* authError =
-    l10n_util::GetNSStringWithFixup(IDS_SYNC_SIGN_IN_ERROR_WRENCH_MENU_ITEM);
-  EXPECT_TRUE([[syncMenuItem title] isEqualTo:authError]);
-  EXPECT_FALSE([syncMenuItem isHidden]);
-
-}
-
-// If there's a separator after the signin menu item, make sure it is hidden/
-// shown when the signin menu item is.
-TEST_F(BrowserWindowControllerTest, TestSigninMenuItemWithSeparator) {
-  base::scoped_nsobject<NSMenu> menu([[NSMenu alloc] initWithTitle:@""]);
-  NSMenuItem* signinMenuItem =
-      [menu addItemWithTitle:@""
-                      action:@selector(commandDispatch)
-               keyEquivalent:@""];
-  [signinMenuItem setTag:IDC_SHOW_SYNC_SETUP];
-  NSMenuItem* followingSeparator = [NSMenuItem separatorItem];
-  [menu addItem:followingSeparator];
-  [signinMenuItem setHidden:NO];
-  [followingSeparator setHidden:NO];
-
-  [BrowserWindowController updateSigninItem:signinMenuItem
-                                 shouldShow:NO
-                             currentProfile:profile()];
-
-  EXPECT_FALSE([followingSeparator isEnabled]);
-  EXPECT_TRUE([signinMenuItem isHidden]);
-  EXPECT_TRUE([followingSeparator isHidden]);
-
-  [BrowserWindowController updateSigninItem:signinMenuItem
-                                 shouldShow:YES
-                             currentProfile:profile()];
-
-  EXPECT_FALSE([followingSeparator isEnabled]);
-  EXPECT_FALSE([signinMenuItem isHidden]);
-  EXPECT_FALSE([followingSeparator isHidden]);
-}
-
-// If there's a non-separator item after the signin menu item, it should not
-// change state when the signin menu item is hidden/shown.
-TEST_F(BrowserWindowControllerTest, TestSigninMenuItemWithNonSeparator) {
-  base::scoped_nsobject<NSMenu> menu([[NSMenu alloc] initWithTitle:@""]);
-  NSMenuItem* signinMenuItem =
-      [menu addItemWithTitle:@""
-                      action:@selector(commandDispatch)
-               keyEquivalent:@""];
-  [signinMenuItem setTag:IDC_SHOW_SYNC_SETUP];
-  NSMenuItem* followingNonSeparator =
-      [menu addItemWithTitle:@""
-                      action:@selector(commandDispatch)
-               keyEquivalent:@""];
-  [signinMenuItem setHidden:NO];
-  [followingNonSeparator setHidden:NO];
-
-  [BrowserWindowController updateSigninItem:signinMenuItem
-                                 shouldShow:NO
-                             currentProfile:profile()];
-
-  EXPECT_TRUE([followingNonSeparator isEnabled]);
-  EXPECT_TRUE([signinMenuItem isHidden]);
-  EXPECT_FALSE([followingNonSeparator isHidden]);
-
-  [followingNonSeparator setHidden:YES];
-  [BrowserWindowController updateSigninItem:signinMenuItem
-                                 shouldShow:YES
-                             currentProfile:profile()];
-
-  EXPECT_TRUE([followingNonSeparator isEnabled]);
-  EXPECT_FALSE([signinMenuItem isHidden]);
-  EXPECT_TRUE([followingNonSeparator isHidden]);
 }
 
 // Verify that hit testing works correctly when the bookmark bar overlaps
@@ -800,7 +710,7 @@ TEST_F(BrowserWindowControllerTest, BookmarkBarHitTest) {
 
 class BrowserWindowFullScreenControllerTest : public CocoaProfileTest {
  public:
-  virtual void SetUp() {
+  void SetUp() override {
     CocoaProfileTest::SetUp();
     ASSERT_TRUE(browser());
 
@@ -809,7 +719,7 @@ class BrowserWindowFullScreenControllerTest : public CocoaProfileTest {
                                                          takeOwnership:NO];
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     [controller_ close];
     CocoaProfileTest::TearDown();
   }
@@ -820,7 +730,7 @@ class BrowserWindowFullScreenControllerTest : public CocoaProfileTest {
 
 // Check if the window is front most or if one of its child windows (such
 // as a status bubble) is front most.
-static bool IsFrontWindow(NSWindow *window) {
+static bool IsFrontWindow(NSWindow* window) {
   NSWindow* frontmostWindow = [[NSApp orderedWindows] objectAtIndex:0];
   return [frontmostWindow isEqual:window] ||
          [[frontmostWindow parentWindow] isEqual:window];
@@ -838,7 +748,7 @@ TEST_F(BrowserWindowFullScreenControllerTest, DISABLED_TestFullscreen) {
   [controller_ showWindow:nil];
   EXPECT_FALSE([controller_ isInAnyFullscreenMode]);
 
-  [controller_ enterFullscreenWithChrome];
+  [controller_ enterBrowserFullscreenWithToolbar:YES];
   WaitForFullScreenTransition();
   EXPECT_TRUE([controller_ isInAnyFullscreenMode]);
 
@@ -860,7 +770,7 @@ TEST_F(BrowserWindowFullScreenControllerTest, DISABLED_TestActivate) {
   [controller_ activate];
   EXPECT_TRUE(IsFrontWindow([controller_ window]));
 
-  [controller_ enterFullscreenWithChrome];
+  [controller_ enterBrowserFullscreenWithToolbar:YES];
   WaitForFullScreenTransition();
   [controller_ activate];
 
@@ -888,6 +798,7 @@ TEST_F(BrowserWindowFullScreenControllerTest, DISABLED_TestActivate) {
                                   styleMask:NSBorderlessWindowMask
                                     backing:NSBackingStoreBuffered
                                       defer:NO]);
+  [[testFullscreenWindow_ contentView] setWantsLayer:YES];
   return testFullscreenWindow_.get();
 }
 @end

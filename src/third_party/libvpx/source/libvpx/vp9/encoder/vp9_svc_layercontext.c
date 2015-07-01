@@ -14,6 +14,8 @@
 #include "vp9/encoder/vp9_svc_layercontext.h"
 #include "vp9/encoder/vp9_extend.h"
 
+#define SMALL_FRAME_FB_IDX 7
+
 void vp9_init_layer_context(VP9_COMP *const cpi) {
   SVC *const svc = &cpi->svc;
   const VP9EncoderConfig *const oxcf = &cpi->oxcf;
@@ -28,6 +30,27 @@ void vp9_init_layer_context(VP9_COMP *const cpi) {
     layer_end = svc->number_temporal_layers;
   } else {
     layer_end = svc->number_spatial_layers;
+
+    if (cpi->oxcf.error_resilient_mode == 0 && cpi->oxcf.pass == 2) {
+      if (vp9_realloc_frame_buffer(&cpi->svc.empty_frame.img,
+                                   cpi->common.width, cpi->common.height,
+                                   cpi->common.subsampling_x,
+                                   cpi->common.subsampling_y,
+#if CONFIG_VP9_HIGHBITDEPTH
+                                 cpi->common.use_highbitdepth,
+#endif
+                                 VP9_ENC_BORDER_IN_PIXELS,
+                                 cpi->common.byte_alignment,
+                                 NULL, NULL, NULL))
+        vpx_internal_error(&cpi->common.error, VPX_CODEC_MEM_ERROR,
+                           "Failed to allocate empty frame for multiple frame "
+                           "contexts");
+
+      memset(cpi->svc.empty_frame.img.buffer_alloc, 0x80,
+             cpi->svc.empty_frame.img.buffer_alloc_sz);
+      cpi->svc.empty_frame_width = cpi->common.width;
+      cpi->svc.empty_frame_height = cpi->common.height;
+    }
   }
 
   for (layer = 0; layer < layer_end; ++layer) {
@@ -56,6 +79,7 @@ void vp9_init_layer_context(VP9_COMP *const cpi) {
       lc->target_bandwidth = oxcf->ts_target_bitrate[layer];
       lrc->last_q[INTER_FRAME] = oxcf->worst_allowed_q;
       lrc->avg_frame_qindex[INTER_FRAME] = oxcf->worst_allowed_q;
+      lrc->avg_frame_qindex[KEY_FRAME] = oxcf->worst_allowed_q;
     } else {
       lc->target_bandwidth = oxcf->ss_target_bitrate[layer];
       lrc->last_q[KEY_FRAME] = oxcf->best_allowed_q;
@@ -64,11 +88,11 @@ void vp9_init_layer_context(VP9_COMP *const cpi) {
                                           oxcf->best_allowed_q) / 2;
       lrc->avg_frame_qindex[INTER_FRAME] = (oxcf->worst_allowed_q +
                                             oxcf->best_allowed_q) / 2;
-      if (oxcf->ss_play_alternate[layer])
+      if (oxcf->ss_enable_auto_arf[layer])
         lc->alt_ref_idx = alt_ref_idx++;
       else
-        lc->alt_ref_idx = -1;
-      lc->gold_ref_idx = -1;
+        lc->alt_ref_idx = INVALID_IDX;
+      lc->gold_ref_idx = INVALID_IDX;
     }
 
     lrc->buffer_level = oxcf->starting_buffer_level_ms *
@@ -171,7 +195,7 @@ void vp9_update_spatial_layer_framerate(VP9_COMP *const cpi, double framerate) {
                                    oxcf->two_pass_vbrmin_section / 100);
   lrc->max_frame_bandwidth = (int)(((int64_t)lrc->avg_frame_bandwidth *
                                    oxcf->two_pass_vbrmax_section) / 100);
-  vp9_rc_set_gf_max_interval(cpi, lrc);
+  vp9_rc_set_gf_interval_range(cpi, lrc);
 }
 
 void vp9_restore_layer_context(VP9_COMP *const cpi) {
@@ -255,6 +279,7 @@ static void get_layer_resolution(const int width_org, const int height_org,
 int vp9_svc_start_frame(VP9_COMP *const cpi) {
   int width = 0, height = 0;
   LAYER_CONTEXT *lc;
+  struct lookahead_entry *buf;
   int count = 1 << (cpi->svc.number_temporal_layers - 1);
 
   cpi->svc.spatial_layer_id = cpi->svc.spatial_layer_to_encode;
@@ -284,7 +309,7 @@ int vp9_svc_start_frame(VP9_COMP *const cpi) {
       cpi->ref_frame_flags &= (~VP9_LAST_FLAG & ~VP9_ALT_FLAG);
     }
   } else {
-    if (cpi->oxcf.ss_play_alternate[cpi->svc.spatial_layer_id]) {
+    if (cpi->oxcf.ss_enable_auto_arf[cpi->svc.spatial_layer_id]) {
       cpi->alt_fb_idx = lc->alt_ref_idx;
       if (!lc->has_alt_frame)
         cpi->ref_frame_flags &= (~VP9_ALT_FLAG);
@@ -296,7 +321,7 @@ int vp9_svc_start_frame(VP9_COMP *const cpi) {
         LAYER_CONTEXT *lc_lower =
             &cpi->svc.layer_context[cpi->svc.spatial_layer_id - 1];
 
-        if (cpi->oxcf.ss_play_alternate[cpi->svc.spatial_layer_id - 1] &&
+        if (cpi->oxcf.ss_enable_auto_arf[cpi->svc.spatial_layer_id - 1] &&
             lc_lower->alt_ref_source != NULL)
           cpi->alt_fb_idx = lc_lower->alt_ref_idx;
         else if (cpi->svc.spatial_layer_id >= 2)
@@ -310,13 +335,58 @@ int vp9_svc_start_frame(VP9_COMP *const cpi) {
   get_layer_resolution(cpi->oxcf.width, cpi->oxcf.height,
                        lc->scaling_factor_num, lc->scaling_factor_den,
                        &width, &height);
-  if (vp9_set_size_literal(cpi, width, height) != 0)
-    return VPX_CODEC_INVALID_PARAM;
+
+  // Workaround for multiple frame contexts. In some frames we can't use prev_mi
+  // since its previous frame could be changed during decoding time. The idea is
+  // we put a empty invisible frame in front of them, then we will not use
+  // prev_mi when encoding these frames.
+
+  buf = vp9_lookahead_peek(cpi->lookahead, 0);
+  if (cpi->oxcf.error_resilient_mode == 0 && cpi->oxcf.pass == 2 &&
+      cpi->svc.encode_empty_frame_state == NEED_TO_ENCODE &&
+      lc->rc.frames_to_key != 0 &&
+      !(buf != NULL && (buf->flags & VPX_EFLAG_FORCE_KF))) {
+    if ((cpi->svc.number_temporal_layers > 1 &&
+         cpi->svc.temporal_layer_id < cpi->svc.number_temporal_layers - 1) ||
+        (cpi->svc.number_spatial_layers > 1 &&
+         cpi->svc.spatial_layer_id == 0)) {
+      struct lookahead_entry *buf = vp9_lookahead_peek(cpi->lookahead, 0);
+
+      if (buf != NULL) {
+        cpi->svc.empty_frame.ts_start = buf->ts_start;
+        cpi->svc.empty_frame.ts_end = buf->ts_end;
+        cpi->svc.encode_empty_frame_state = ENCODING;
+        cpi->common.show_frame = 0;
+        cpi->ref_frame_flags = 0;
+        cpi->common.frame_type = INTER_FRAME;
+        cpi->lst_fb_idx =
+            cpi->gld_fb_idx = cpi->alt_fb_idx = SMALL_FRAME_FB_IDX;
+
+        // Gradually make the empty frame smaller to save bits. Make it half of
+        // its previous size because of the scaling factor restriction.
+        cpi->svc.empty_frame_width >>= 1;
+        cpi->svc.empty_frame_width = (cpi->svc.empty_frame_width + 1) & ~1;
+        if (cpi->svc.empty_frame_width < 16)
+          cpi->svc.empty_frame_width = 16;
+
+        cpi->svc.empty_frame_height >>= 1;
+        cpi->svc.empty_frame_height = (cpi->svc.empty_frame_height + 1) & ~1;
+        if (cpi->svc.empty_frame_height < 16)
+          cpi->svc.empty_frame_height = 16;
+
+        width = cpi->svc.empty_frame_width;
+        height = cpi->svc.empty_frame_height;
+      }
+    }
+  }
 
   cpi->oxcf.worst_allowed_q = vp9_quantizer_to_qindex(lc->max_q);
   cpi->oxcf.best_allowed_q = vp9_quantizer_to_qindex(lc->min_q);
 
   vp9_change_config(cpi, &cpi->oxcf);
+
+  if (vp9_set_size_literal(cpi, width, height) != 0)
+    return VPX_CODEC_INVALID_PARAM;
 
   vp9_set_high_precision_mv(cpi, 1);
 

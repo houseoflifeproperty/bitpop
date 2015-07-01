@@ -69,7 +69,7 @@ class PluginDataRemoverImpl::Context
         is_removing_(false),
         browser_context_path_(browser_context->GetPath()),
         resource_context_(browser_context->GetResourceContext()) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
   }
 
   void Init(const std::string& mime_type) {
@@ -95,7 +95,7 @@ class PluginDataRemoverImpl::Context
     if (!plugins.empty())  // May be empty for some tests.
       plugin_path = plugins[0].path;
 
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
     remove_start_time_ = base::Time::Now();
     is_removing_ = true;
     // Balanced in On[Ppapi]ChannelOpened or OnError. Exactly one them will
@@ -122,32 +122,28 @@ class PluginDataRemoverImpl::Context
   }
 
   // PluginProcessHost::Client methods.
-  virtual int ID() OVERRIDE {
+  int ID() override {
     // Generate a unique identifier for this PluginProcessHostClient.
     return ChildProcessHostImpl::GenerateChildProcessUniqueId();
   }
 
-  virtual bool OffTheRecord() OVERRIDE {
-    return false;
-  }
+  bool OffTheRecord() override { return false; }
 
-  virtual ResourceContext* GetResourceContext() OVERRIDE {
-    return resource_context_;
-  }
+  ResourceContext* GetResourceContext() override { return resource_context_; }
 
-  virtual void SetPluginInfo(const WebPluginInfo& info) OVERRIDE {}
+  void SetPluginInfo(const WebPluginInfo& info) override {}
 
-  virtual void OnFoundPluginProcessHost(PluginProcessHost* host) OVERRIDE {}
+  void OnFoundPluginProcessHost(PluginProcessHost* host) override {}
 
-  virtual void OnSentPluginChannelRequest() OVERRIDE {}
+  void OnSentPluginChannelRequest() override {}
 
-  virtual void OnChannelOpened(const IPC::ChannelHandle& handle) OVERRIDE {
+  void OnChannelOpened(const IPC::ChannelHandle& handle) override {
     ConnectToChannel(handle, false);
     // Balancing the AddRef call.
     Release();
   }
 
-  virtual void OnError() OVERRIDE {
+  void OnError() override {
     LOG(ERROR) << "Couldn't open plugin channel";
     SignalDone();
     // Balancing the AddRef call.
@@ -155,16 +151,15 @@ class PluginDataRemoverImpl::Context
   }
 
   // PpapiPluginProcessHost::BrokerClient implementation.
-  virtual void GetPpapiChannelInfo(base::ProcessHandle* renderer_handle,
-                                   int* renderer_id) OVERRIDE {
+  void GetPpapiChannelInfo(base::ProcessHandle* renderer_handle,
+                           int* renderer_id) override {
     *renderer_handle = base::kNullProcessHandle;
     *renderer_id = 0;
   }
 
-  virtual void OnPpapiChannelOpened(
-      const IPC::ChannelHandle& channel_handle,
-      base::ProcessId  /* peer_pid */,
-      int /* child_id */) OVERRIDE {
+  void OnPpapiChannelOpened(const IPC::ChannelHandle& channel_handle,
+                            base::ProcessId /* peer_pid */,
+                            int /* child_id */) override {
     if (!channel_handle.name.empty())
       ConnectToChannel(channel_handle, true);
 
@@ -173,7 +168,7 @@ class PluginDataRemoverImpl::Context
   }
 
   // IPC::Listener methods.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     IPC_BEGIN_MESSAGE_MAP(Context, message)
       IPC_MESSAGE_HANDLER(PluginProcessHostMsg_ClearSiteDataResult,
                           OnClearSiteDataResult)
@@ -185,7 +180,7 @@ class PluginDataRemoverImpl::Context
     return true;
   }
 
-  virtual void OnChannelError() OVERRIDE {
+  void OnChannelError() override {
     if (is_removing_) {
       NOTREACHED() << "Channel error";
       SignalDone();
@@ -197,7 +192,7 @@ class PluginDataRemoverImpl::Context
  private:
   friend struct BrowserThread::DeleteOnThread<BrowserThread::IO>;
   friend class base::DeleteHelper<Context>;
-  virtual ~Context() {}
+  ~Context() override {}
 
   IPC::Message* CreatePpapiClearSiteDataMsg(uint64 max_age) {
     base::FilePath profile_path =
@@ -217,9 +212,9 @@ class PluginDataRemoverImpl::Context
                                       kClearAllData, max_age);
   }
 
-  // Connects the client side of a newly opened plug-in channel.
+  // Connects the client side of a newly opened plugin channel.
   void ConnectToChannel(const IPC::ChannelHandle& handle, bool is_ppapi) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
     // If we timed out, don't bother connecting.
     if (!is_removing_)
@@ -269,7 +264,7 @@ class PluginDataRemoverImpl::Context
   // Signals that we are finished with removing data (successful or not). This
   // method is safe to call multiple times.
   void SignalDone() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
     if (!is_removing_)
       return;
     is_removing_ = false;
@@ -293,7 +288,7 @@ class PluginDataRemoverImpl::Context
   // The name of the plugin. Use only on the I/O thread.
   std::string plugin_name_;
 
-  // The channel is NULL until we have opened a connection to the plug-in
+  // The channel is NULL until we have opened a connection to the plugin
   // process.
   scoped_ptr<IPC::Channel> channel_;
 };

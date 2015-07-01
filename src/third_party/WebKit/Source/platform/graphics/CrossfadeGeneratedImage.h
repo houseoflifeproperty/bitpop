@@ -41,24 +41,22 @@ public:
         return adoptRef(new CrossfadeGeneratedImage(fromImage, toImage, percentage, crossfadeSize, size));
     }
 
-    virtual void setContainerSize(const IntSize&) OVERRIDE { }
-    virtual bool usesContainerSize() const OVERRIDE { return false; }
-    virtual bool hasRelativeWidth() const OVERRIDE { return false; }
-    virtual bool hasRelativeHeight() const OVERRIDE { return false; }
+    virtual void setContainerSize(const IntSize&) override { }
+    virtual bool usesContainerSize() const override { return false; }
+    virtual bool hasRelativeWidth() const override { return false; }
+    virtual bool hasRelativeHeight() const override { return false; }
 
-    virtual IntSize size() const OVERRIDE { return m_crossfadeSize; }
+    virtual IntSize size() const override { return m_crossfadeSize; }
 
 protected:
-    virtual void draw(GraphicsContext*, const FloatRect&, const FloatRect&,
-        CompositeOperator, WebBlendMode) OVERRIDE;
-    virtual void drawPattern(GraphicsContext*, const FloatRect&,
-        const FloatSize&, const FloatPoint&, CompositeOperator,
-        const FloatRect&, WebBlendMode, const IntSize& repeatSpacing) OVERRIDE;
+    void draw(GraphicsContext*, const FloatRect&, const FloatRect&,
+        SkXfermode::Mode, RespectImageOrientationEnum) override;
+    virtual void drawTile(GraphicsContext*, const FloatRect&) final;
 
     CrossfadeGeneratedImage(Image* fromImage, Image* toImage, float percentage, IntSize crossfadeSize, const IntSize&);
 
 private:
-    void drawCrossfade(GraphicsContext*);
+    void drawCrossfade(GraphicsContext*, SkXfermode::Mode);
 
     Image* m_fromImage;
     Image* m_toImage;

@@ -16,8 +16,8 @@
 #include "third_party/WebKit/public/platform/WebCanvas.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/events/latency_info.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
 
 using blink::WebCanvas;
 
@@ -33,7 +33,7 @@ class PepperGraphics2DHostTest : public testing::Test {
 
   PepperGraphics2DHostTest() : renderer_ppapi_host_(NULL, 12345) {}
 
-  virtual ~PepperGraphics2DHostTest() {
+  ~PepperGraphics2DHostTest() override {
     ppapi::ProxyAutoLock proxy_lock;
     host_.reset();
   }
@@ -67,7 +67,7 @@ class PepperGraphics2DHostTest : public testing::Test {
         ppapi::proxy::ResourceMessageCallParams(host_->pp_resource(), 0));
     std::vector<ui::LatencyInfo> latency;
     host_->OnHostMsgFlush(&context, latency);
-    host_->ViewFlushedPaint();
+    host_->ViewInitiatedPaint();
     host_->SendOffscreenFlushAck();
   }
 
@@ -147,7 +147,7 @@ TEST_F(PepperGraphics2DHostTest, ConvertToLogicalPixels) {
                // Check negative scroll deltas
                {10, 10, 20, 20, 5, 5, 10, 10, -6, -4, -3, -2, 0.5, true},
                {10, 10, 20, 20, 5, 5, 10, 10, -6, -3, -3, -1, 0.5, false}, };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     gfx::Rect r1(tests[i].x1, tests[i].y1, tests[i].w1, tests[i].h1);
     gfx::Rect r2(tests[i].x2, tests[i].y2, tests[i].w2, tests[i].h2);
     gfx::Rect orig = r1;

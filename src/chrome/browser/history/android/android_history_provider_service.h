@@ -8,8 +8,8 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/task/cancelable_task_tracker.h"
-#include "components/history/core/android/android_history_types.h"
-#include "sql/statement.h"
+#include "components/favicon_base/favicon_callback.h"
+#include "components/history/core/browser/android/android_history_types.h"
 
 class Profile;
 
@@ -165,6 +165,13 @@ class AndroidHistoryProviderService {
       const std::vector<base::string16>& selection_args,
       const std::string& sort_order,
       const QueryCallback& callback,
+      base::CancelableTaskTracker* tracker);
+
+  // Returns the largest Favicon for |favicon_id| and invokes
+  // the |callback| to return the result.
+  base::CancelableTaskTracker::TaskId GetLargestRawFaviconForID(
+      favicon_base::FaviconID favicon_id,
+      const favicon_base::FaviconRawBitmapCallback& callback,
       base::CancelableTaskTracker* tracker);
 
  private:

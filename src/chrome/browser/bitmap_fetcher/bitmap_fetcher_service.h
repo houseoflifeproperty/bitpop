@@ -9,7 +9,7 @@
 #include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "chrome/browser/bitmap_fetcher_delegate.h"
+#include "chrome/browser/bitmap_fetcher/bitmap_fetcher_delegate.h"
 #include "components/keyed_service/core/keyed_service.h"
 
 namespace content {
@@ -37,12 +37,13 @@ class BitmapFetcherService : public KeyedService,
 
     // Called whenever the image changes. Called with an empty image if the
     // fetch failed or the request ended for any reason.
+    // TODO(dschuyler) The comment differs from what the code does, follow-up.
     virtual void OnImageChanged(RequestId request_id,
                                 const SkBitmap& answers_image) = 0;
   };
 
   explicit BitmapFetcherService(content::BrowserContext* context);
-  virtual ~BitmapFetcherService();
+  ~BitmapFetcherService() override;
 
   // Cancels a request, if it is still in-flight.
   void CancelRequest(RequestId requestId);
@@ -81,7 +82,7 @@ class BitmapFetcherService : public KeyedService,
   void RemoveFetcher(const chrome::BitmapFetcher* fetcher);
 
   // BitmapFetcherDelegate implementation.
-  virtual void OnFetchComplete(const GURL url, const SkBitmap* bitmap) OVERRIDE;
+  void OnFetchComplete(const GURL& url, const SkBitmap* bitmap) override;
 
   // Currently active image fetchers.
   BitmapFetchers active_fetchers_;

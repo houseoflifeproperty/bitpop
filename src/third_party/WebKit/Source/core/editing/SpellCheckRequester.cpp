@@ -58,7 +58,7 @@ SpellCheckRequest::~SpellCheckRequest()
 {
 }
 
-void SpellCheckRequest::trace(Visitor* visitor)
+DEFINE_TRACE(SpellCheckRequest)
 {
     visitor->trace(m_requester);
     visitor->trace(m_checkingRange);
@@ -139,8 +139,8 @@ SpellCheckRequester::~SpellCheckRequester()
 #if !ENABLE(OILPAN)
     if (m_processingRequest)
         m_processingRequest->requesterDestroyed();
-    for (RequestQueue::iterator i = m_requestQueue.begin(); i != m_requestQueue.end(); ++i)
-        (*i)->requesterDestroyed();
+    for (const auto& requestQueue : m_requestQueue)
+        requestQueue->requesterDestroyed();
 #endif
 }
 
@@ -170,7 +170,7 @@ bool SpellCheckRequester::canCheckAsynchronously(Range* range) const
 
 bool SpellCheckRequester::isCheckable(Range* range) const
 {
-    if (!range || !range->firstNode() || !range->firstNode()->renderer())
+    if (!range || !range->firstNode() || !range->firstNode()->layoutObject())
         return false;
     const Node* node = range->startContainer();
     if (node && node->isElementNode() && !toElement(node)->isSpellCheckingEnabled())
@@ -225,11 +225,11 @@ void SpellCheckRequester::enqueueRequest(PassRefPtrWillBeRawPtr<SpellCheckReques
 
     // Spellcheck requests for chunks of text in the same element should not overwrite each other.
     if (!continuation) {
-        for (RequestQueue::iterator it = m_requestQueue.begin(); it != m_requestQueue.end(); ++it) {
-            if (request->rootEditableElement() != (*it)->rootEditableElement())
+        for (auto& requestQueue : m_requestQueue) {
+            if (request->rootEditableElement() != requestQueue->rootEditableElement())
                 continue;
 
-            *it = request;
+            requestQueue = request;
             return;
         }
     }
@@ -276,7 +276,7 @@ void SpellCheckRequester::didCheckCancel(int sequence)
     didCheck(sequence, results);
 }
 
-void SpellCheckRequester::trace(Visitor* visitor)
+DEFINE_TRACE(SpellCheckRequester)
 {
     visitor->trace(m_frame);
     visitor->trace(m_processingRequest);

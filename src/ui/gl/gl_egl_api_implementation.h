@@ -15,7 +15,6 @@ class GLContext;
 struct GLWindowSystemBindingInfo;
 
 void InitializeStaticGLBindingsEGL();
-void InitializeDynamicGLBindingsEGL(GLContext* context);
 void InitializeDebugGLBindingsEGL();
 void ClearGLBindingsEGL();
 bool GetGLWindowSystemBindingInfoEGL(GLWindowSystemBindingInfo* info);
@@ -29,7 +28,7 @@ class GL_EXPORT EGLApiBase : public EGLApi {
 
  protected:
   EGLApiBase();
-  virtual ~EGLApiBase();
+  ~EGLApiBase() override;
   void InitializeBase(DriverEGL* driver);
 
   DriverEGL* driver_;
@@ -38,7 +37,7 @@ class GL_EXPORT EGLApiBase : public EGLApi {
 class GL_EXPORT RealEGLApi : public EGLApiBase {
  public:
   RealEGLApi();
-  virtual ~RealEGLApi();
+  ~RealEGLApi() override;
   void Initialize(DriverEGL* driver);
 };
 
@@ -47,7 +46,7 @@ class GL_EXPORT RealEGLApi : public EGLApiBase {
 class GL_EXPORT TraceEGLApi : public EGLApi {
  public:
   TraceEGLApi(EGLApi* egl_api) : egl_api_(egl_api) { }
-  virtual ~TraceEGLApi();
+  ~TraceEGLApi() override;
 
   // Include the auto-generated part of this class. We split this because
   // it means we can easily edit the non-auto generated parts right here in

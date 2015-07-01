@@ -64,6 +64,11 @@ bool GoogleServiceAuthError::operator==(
           second_factor_ == b.second_factor_);
 }
 
+bool GoogleServiceAuthError::operator!=(
+    const GoogleServiceAuthError& b) const {
+  return !(*this == b);
+}
+
 GoogleServiceAuthError::GoogleServiceAuthError(State s)
     : state_(s),
       network_error_(0) {
@@ -166,6 +171,7 @@ base::DictionaryValue* GoogleServiceAuthError::ToValue() const {
     STATE_CASE(HOSTED_NOT_ALLOWED);
     STATE_CASE(UNEXPECTED_SERVICE_RESPONSE);
     STATE_CASE(SERVICE_ERROR);
+    STATE_CASE(WEB_LOGIN_REQUIRED);
 #undef STATE_CASE
     default:
       NOTREACHED();
@@ -229,9 +235,28 @@ std::string GoogleServiceAuthError::ToString() const {
     case SERVICE_ERROR:
       return base::StringPrintf("Service responded with error: '%s'",
                                 error_message_.c_str());
+    case WEB_LOGIN_REQUIRED:
+      return "Less secure apps may not authenticate with this account. "
+             "Please visit: "
+             "https://www.google.com/settings/security/lesssecureapps";
     default:
       NOTREACHED();
       return std::string();
+  }
+}
+
+bool GoogleServiceAuthError::IsPersistentError() const {
+  if (state_ == GoogleServiceAuthError::NONE) return false;
+  return !IsTransientError();
+}
+
+bool GoogleServiceAuthError::IsTransientError() const {
+  switch (state_) {
+  case GoogleServiceAuthError::CONNECTION_FAILED:
+  case GoogleServiceAuthError::SERVICE_UNAVAILABLE:
+    return true;
+  default:
+    return false;
   }
 }
 

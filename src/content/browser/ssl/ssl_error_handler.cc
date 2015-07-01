@@ -19,13 +19,11 @@ using net::SSLInfo;
 namespace content {
 
 SSLErrorHandler::SSLErrorHandler(const base::WeakPtr<Delegate>& delegate,
-                                 const GlobalRequestID& id,
                                  ResourceType resource_type,
                                  const GURL& url,
                                  int render_process_id,
                                  int render_frame_id)
     : manager_(NULL),
-      request_id_(id),
       delegate_(delegate),
       render_process_id_(render_process_id),
       render_frame_id_(render_frame_id),
@@ -58,7 +56,7 @@ SSLCertErrorHandler* SSLErrorHandler::AsSSLCertErrorHandler() {
 }
 
 void SSLErrorHandler::Dispatch() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   WebContents* web_contents = NULL;
   RenderFrameHost* render_frame_host =
@@ -80,7 +78,7 @@ void SSLErrorHandler::Dispatch() {
 }
 
 void SSLErrorHandler::CancelRequest() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // We need to complete this task on the IO thread.
   BrowserThread::PostTask(
@@ -90,7 +88,7 @@ void SSLErrorHandler::CancelRequest() {
 }
 
 void SSLErrorHandler::DenyRequest() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // We need to complete this task on the IO thread.
   BrowserThread::PostTask(
@@ -101,7 +99,7 @@ void SSLErrorHandler::DenyRequest() {
 }
 
 void SSLErrorHandler::ContinueRequest() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // We need to complete this task on the IO thread.
   BrowserThread::PostTask(
@@ -110,7 +108,7 @@ void SSLErrorHandler::ContinueRequest() {
 }
 
 void SSLErrorHandler::TakeNoAction() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // We need to complete this task on the IO thread.
   BrowserThread::PostTask(
@@ -119,7 +117,7 @@ void SSLErrorHandler::TakeNoAction() {
 }
 
 void SSLErrorHandler::CompleteCancelRequest(int error) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // It is important that we notify the net::URLRequest only once.  If we try
   // to notify the request twice, it may no longer exist and |this| might have
@@ -133,7 +131,7 @@ void SSLErrorHandler::CompleteCancelRequest(int error) {
   if (cert_error)
     ssl_info = &cert_error->ssl_info();
   if (delegate_.get())
-    delegate_->CancelSSLRequest(request_id_, error, ssl_info);
+    delegate_->CancelSSLRequest(error, ssl_info);
   request_has_been_notified_ = true;
 
   // We're done with this object on the IO thread.
@@ -141,7 +139,7 @@ void SSLErrorHandler::CompleteCancelRequest(int error) {
 }
 
 void SSLErrorHandler::CompleteContinueRequest() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // It is important that we notify the net::URLRequest only once. If we try to
   // notify the request twice, it may no longer exist and |this| might have
@@ -151,7 +149,7 @@ void SSLErrorHandler::CompleteContinueRequest() {
     return;
 
   if (delegate_.get())
-    delegate_->ContinueSSLRequest(request_id_);
+    delegate_->ContinueSSLRequest();
   request_has_been_notified_ = true;
 
   // We're done with this object on the IO thread.
@@ -159,7 +157,7 @@ void SSLErrorHandler::CompleteContinueRequest() {
 }
 
 void SSLErrorHandler::CompleteTakeNoAction() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // It is important that we notify the net::URLRequest only once. If we try to
   // notify the request twice, it may no longer exist and |this| might have

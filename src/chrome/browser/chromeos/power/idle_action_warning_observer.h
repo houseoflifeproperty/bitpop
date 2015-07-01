@@ -18,12 +18,12 @@ class IdleActionWarningDialogView;
 class IdleActionWarningObserver : public PowerManagerClient::Observer {
  public:
   IdleActionWarningObserver();
-  virtual ~IdleActionWarningObserver();
+  ~IdleActionWarningObserver() override;
 
   // PowerManagerClient::Observer:
-  virtual void IdleActionImminent(
-      const base::TimeDelta& time_until_idle_action) OVERRIDE;
-  virtual void IdleActionDeferred() OVERRIDE;
+  void IdleActionImminent(
+      const base::TimeDelta& time_until_idle_action) override;
+  void IdleActionDeferred() override;
 
  private:
   IdleActionWarningDialogView* warning_dialog_;  // Not owned.

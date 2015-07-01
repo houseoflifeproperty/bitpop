@@ -26,6 +26,8 @@
 #ifndef CanvasRenderingContext_h
 #define CanvasRenderingContext_h
 
+#include "core/CoreExport.h"
+#include "core/dom/ActiveDOMObject.h"
 #include "core/html/HTMLCanvasElement.h"
 #include "platform/heap/Handle.h"
 #include "wtf/HashSet.h"
@@ -38,12 +40,11 @@ namespace blink {
 
 class CanvasImageSource;
 class HTMLCanvasElement;
-class KURL;
-class WebGLObject;
 
-class CanvasRenderingContext : public NoBaseWillBeGarbageCollectedFinalized<CanvasRenderingContext> {
+class CORE_EXPORT CanvasRenderingContext : public NoBaseWillBeGarbageCollectedFinalized<CanvasRenderingContext>, public ActiveDOMObject {
     WTF_MAKE_NONCOPYABLE(CanvasRenderingContext);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(CanvasRenderingContext);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(CanvasRenderingContext);
 public:
     virtual ~CanvasRenderingContext() { }
 
@@ -60,16 +61,21 @@ public:
     virtual bool hasAlpha() const { return true; }
     virtual void setIsHidden(bool) = 0;
 
-    virtual void paintRenderingResultsToCanvas() {}
+    // Return true if the content is updated.
+    virtual bool paintRenderingResultsToCanvas(SourceDrawingBuffer) { return false; }
 
-    virtual blink::WebLayer* platformLayer() const { return 0; }
-
-    virtual void trace(Visitor* visitor) { visitor->trace(m_canvas); }
+    virtual WebLayer* platformLayer() const { return nullptr; }
 
     bool wouldTaintOrigin(CanvasImageSource*);
+    void didMoveToNewDocument(Document*);
 
 protected:
     CanvasRenderingContext(HTMLCanvasElement*);
+    DECLARE_VIRTUAL_TRACE();
+
+    // ActiveDOMObject notifications
+    bool hasPendingActivity() const override final;
+    void stop() override = 0;
 
 private:
     RawPtrWillBeMember<HTMLCanvasElement> m_canvas;

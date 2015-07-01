@@ -146,7 +146,7 @@ public class MultiFieldTimePickerDialog
             if (minMinute == maxMinute) {
                 // Set this otherwise the box is empty until you stroke it.
                 mMinuteSpinner.setDisplayedValues(
-                    new String[] { twoDigitPaddingFormatter.format(minMinute) });
+                        new String[] { twoDigitPaddingFormatter.format(minMinute) });
                 mMinuteSpinner.setEnabled(false);
                 minute = minMinute;
             }
@@ -155,11 +155,14 @@ public class MultiFieldTimePickerDialog
             mMinuteSpinner.setMaxValue(59);
         }
 
-        if (step >= HOUR_IN_MILLIS) {
+        mMinuteSpinner.setValue(minute);
+        if (step % HOUR_IN_MILLIS == 0) {
             mMinuteSpinner.setEnabled(false);
+            // TODO(tkent): We should set minutes value of
+            // WebDateTimeChooserParams::stepBase.
+            mMinuteSpinner.setValue(minMinute);
         }
 
-        mMinuteSpinner.setValue(minute);
         mMinuteSpinner.setFormatter(twoDigitPaddingFormatter);
 
         if (step >= MINUTE_IN_MILLIS) {
@@ -179,7 +182,7 @@ public class MultiFieldTimePickerDialog
             if (minSecond == maxSecond) {
                 // Set this otherwise the box is empty until you stroke it.
                 mSecSpinner.setDisplayedValues(
-                    new String[] { twoDigitPaddingFormatter.format(minSecond) });
+                        new String[] { twoDigitPaddingFormatter.format(minSecond) });
                 mSecSpinner.setEnabled(false);
                 second = minSecond;
             }
@@ -200,8 +203,7 @@ public class MultiFieldTimePickerDialog
         // Round to the nearest step.
         milli = ((milli + step / 2) / step) * step;
         if (step == 1 || step == 10 || step == 100) {
-            if (minHour == maxHour && minMinute == maxMinute &&
-                minSecond == maxSecond) {
+            if (minHour == maxHour && minMinute == maxMinute && minSecond == maxSecond) {
                 mMilliSpinner.setMinValue(min / step);
                 mMilliSpinner.setMaxValue(max / step);
 
@@ -232,8 +234,7 @@ public class MultiFieldTimePickerDialog
             mMilliSpinner.setMinValue(0);
             mMilliSpinner.setMaxValue(strValue.size() - 1);
             mMilliSpinner.setValue((milli - min) / step);
-            mMilliSpinner.setDisplayedValues(
-                strValue.toArray(new String[strValue.size()]));
+            mMilliSpinner.setDisplayedValues(strValue.toArray(new String[strValue.size()]));
             mBaseMilli = min;
         } else {
             mBaseMilli = 0;
@@ -246,18 +247,27 @@ public class MultiFieldTimePickerDialog
     }
 
     private void notifyDateSet() {
-        int hour = mHourSpinner.getValue();
-        int minute = mMinuteSpinner.getValue();
-        int sec = mSecSpinner.getValue();
-        int milli = mMilliSpinner.getValue() * mStep + mBaseMilli;
+        int hour = getPickerValue(mHourSpinner);
+        int minute = getPickerValue(mMinuteSpinner);
+        int sec = getPickerValue(mSecSpinner);
+        int milli = getPickerValue(mMilliSpinner) * mStep + mBaseMilli;
         if (!mIs24hourFormat) {
-            int ampm = mAmPmSpinner.getValue();
+            int ampm = getPickerValue(mAmPmSpinner);
             if (hour == 12) {
                 hour = 0;
             }
             hour += ampm * 12;
         }
         mListener.onTimeSet(hour, minute, sec, milli);
+    }
+
+    /**
+     * Clear focus before retrieving so that values inserted with
+     * keyboard are taken into account.
+    */
+    private int getPickerValue(NumberPicker picker) {
+        picker.clearFocus();
+        return picker.getValue();
     }
 
     private static class NumberFormatter implements NumberPicker.Formatter {

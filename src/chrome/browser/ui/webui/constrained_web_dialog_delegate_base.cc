@@ -9,8 +9,10 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/ui/webui/chrome_web_contents_handler.h"
+#include "components/ui/zoom/zoom_controller.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/renderer_preferences.h"
 #include "ipc/ipc_message.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
 #include "ui/web_dialogs/web_dialog_ui.h"
@@ -32,15 +34,18 @@ ConstrainedWebDialogDelegateBase::ConstrainedWebDialogDelegateBase(
   CHECK(delegate);
   web_contents_.reset(
       WebContents::Create(WebContents::CreateParams(browser_context)));
+  ui_zoom::ZoomController::CreateForWebContents(web_contents_.get());
   if (tab_delegate) {
     override_tab_delegate_.reset(tab_delegate);
     web_contents_->SetDelegate(tab_delegate);
   } else {
     web_contents_->SetDelegate(this);
   }
+  content::RendererPreferences* prefs =
+      web_contents_->GetMutableRendererPrefs();
   renderer_preferences_util::UpdateFromSystemSettings(
-      web_contents_->GetMutableRendererPrefs(),
-      Profile::FromBrowserContext(browser_context));
+      prefs, Profile::FromBrowserContext(browser_context), web_contents_.get());
+
   web_contents_->GetRenderViewHost()->SyncRendererPrefs();
 
   // Set |this| as a delegate so the ConstrainedWebDialogUI can retrieve it.
@@ -80,8 +85,7 @@ void ConstrainedWebDialogDelegateBase::ReleaseWebContentsOnDialogClose() {
   release_contents_on_close_ = true;
 }
 
-web_modal::NativeWebContentsModalDialog
-    ConstrainedWebDialogDelegateBase::GetNativeDialog() {
+gfx::NativeWindow ConstrainedWebDialogDelegateBase::GetNativeDialog() {
   NOTREACHED();
   return NULL;
 }
@@ -93,4 +97,19 @@ WebContents* ConstrainedWebDialogDelegateBase::GetWebContents() {
 void ConstrainedWebDialogDelegateBase::HandleKeyboardEvent(
     content::WebContents* source,
     const NativeWebKeyboardEvent& event) {
+}
+
+gfx::Size ConstrainedWebDialogDelegateBase::GetMinimumSize() const {
+  NOTREACHED();
+  return gfx::Size();
+}
+
+gfx::Size ConstrainedWebDialogDelegateBase::GetMaximumSize() const {
+  NOTREACHED();
+  return gfx::Size();
+}
+
+gfx::Size ConstrainedWebDialogDelegateBase::GetPreferredSize() const {
+  NOTREACHED();
+  return gfx::Size();
 }

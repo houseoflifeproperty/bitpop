@@ -37,9 +37,9 @@ class PolicyHeaderServiceTest : public testing::Test {
   PolicyHeaderServiceTest() {
     task_runner_ = make_scoped_refptr(new base::TestSimpleTaskRunner());
   }
-  virtual ~PolicyHeaderServiceTest() {}
+  ~PolicyHeaderServiceTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     service_.reset(new PolicyHeaderService(kDMServerURL,
                                            kPolicyVerificationKeyHash,
                                            &user_store_,
@@ -47,7 +47,7 @@ class PolicyHeaderServiceTest : public testing::Test {
     helper_ = service_->CreatePolicyHeaderIOHelper(task_runner_).Pass();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     task_runner_->RunUntilIdle();
     // Helper should outlive the service.
     service_.reset();
@@ -109,7 +109,7 @@ TEST_F(PolicyHeaderServiceTest, TestWithAndWithoutPolicyHeader) {
 
   net::TestURLRequestContext context;
   scoped_ptr<net::URLRequest> request(context.CreateRequest(
-      GURL(kDMServerURL), net::DEFAULT_PRIORITY, NULL, NULL));
+      GURL(kDMServerURL), net::DEFAULT_PRIORITY, NULL));
   helper_->AddPolicyHeaders(request->url(), request.get());
   ValidateHeader(request->extra_request_headers(), expected_dmtoken,
                  expected_policy_token);
@@ -119,7 +119,7 @@ TEST_F(PolicyHeaderServiceTest, TestWithAndWithoutPolicyHeader) {
   task_runner_->RunUntilIdle();
 
   scoped_ptr<net::URLRequest> request2(context.CreateRequest(
-      GURL(kDMServerURL), net::DEFAULT_PRIORITY, NULL, NULL));
+      GURL(kDMServerURL), net::DEFAULT_PRIORITY, NULL));
   helper_->AddPolicyHeaders(request2->url(), request2.get());
   ValidateHeader(request2->extra_request_headers(), "", "");
 }

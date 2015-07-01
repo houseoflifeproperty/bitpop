@@ -24,19 +24,19 @@ class UnownedStringWriter : public net::URLFetcherResponseWriter {
   UnownedStringWriter(std::string* data) : data_(data) {}
   virtual ~UnownedStringWriter() {}
 
-  virtual int Initialize(const net::CompletionCallback& callback) OVERRIDE {
+  virtual int Initialize(const net::CompletionCallback& callback) override {
     data_->clear();
     return net::OK;
   }
 
   virtual int Write(net::IOBuffer* buffer,
                     int num_bytes,
-                    const net::CompletionCallback& callback) OVERRIDE {
+                    const net::CompletionCallback& callback) override {
     data_->append(buffer->data(), num_bytes);
     return num_bytes;
   }
 
-  virtual int Finish(const net::CompletionCallback& callback) OVERRIDE {
+  virtual int Finish(const net::CompletionCallback& callback) override {
     return net::OK;
   }
 
@@ -88,13 +88,13 @@ ChromeMetadataSource::Request::Request(const std::string& key,
 void ChromeMetadataSource::Download(const std::string& key,
                                     const Callback& downloaded) {
   GURL resource(validation_data_url_ + key);
-  if (!resource.SchemeIsSecure()) {
+  if (!resource.SchemeIsCryptographic()) {
     downloaded(false, key, NULL);
     return;
   }
 
-  scoped_ptr<net::URLFetcher> fetcher(
-      net::URLFetcher::Create(resource, net::URLFetcher::GET, this));
+  scoped_ptr<net::URLFetcher> fetcher =
+      net::URLFetcher::Create(resource, net::URLFetcher::GET, this);
   fetcher->SetLoadFlags(
       net::LOAD_DO_NOT_SEND_COOKIES | net::LOAD_DO_NOT_SAVE_COOKIES);
   fetcher->SetRequestContext(getter_);

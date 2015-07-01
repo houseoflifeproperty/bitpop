@@ -28,6 +28,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/renderer_preferences.h"
 #include "grit/browser_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -56,16 +57,16 @@ class PDFEnableAdobeReaderPromptClient
     : public pdf::OpenPDFInReaderPromptClient {
  public:
   explicit PDFEnableAdobeReaderPromptClient(Profile* profile);
-  virtual ~PDFEnableAdobeReaderPromptClient();
+  ~PDFEnableAdobeReaderPromptClient() override;
 
   // pdf::OpenPDFInReaderPromptClient
-  virtual base::string16 GetMessageText() const OVERRIDE;
-  virtual base::string16 GetAcceptButtonText() const OVERRIDE;
-  virtual base::string16 GetCancelButtonText() const OVERRIDE;
-  virtual bool ShouldExpire(
-      const content::LoadCommittedDetails& details) const OVERRIDE;
-  virtual void Accept() OVERRIDE;
-  virtual void Cancel() OVERRIDE;
+  base::string16 GetMessageText() const override;
+  base::string16 GetAcceptButtonText() const override;
+  base::string16 GetCancelButtonText() const override;
+  bool ShouldExpire(
+      const content::LoadCommittedDetails& details) const override;
+  void Accept() override;
+  void Cancel() override;
 
  private:
   void OnYes();
@@ -162,7 +163,7 @@ class PDFUnsupportedFeatureInterstitial
 
  protected:
   // InterstitialPageDelegate implementation.
-  virtual std::string GetHTMLContents() OVERRIDE {
+  std::string GetHTMLContents() override {
     base::DictionaryValue strings;
     strings.SetString(
         "title",
@@ -190,7 +191,7 @@ class PDFUnsupportedFeatureInterstitial
     return webui::GetI18nTemplateHtml(html, &strings);
   }
 
-  virtual void CommandReceived(const std::string& command) OVERRIDE {
+  void CommandReceived(const std::string& command) override {
     if (command == "0") {
       content::RecordAction(
           UserMetricsAction("PDF_ReaderInterstitialCancel"));
@@ -205,7 +206,7 @@ class PDFUnsupportedFeatureInterstitial
     } else if (command == "2") {
       content::RecordAction(
           UserMetricsAction("PDF_ReaderInterstitialIgnore"));
-      // Pretend that the plug-in is up-to-date so that we don't block it.
+      // Pretend that the plugin is up-to-date so that we don't block it.
       reader_webplugininfo_.version = base::ASCIIToUTF16("11.0.0.0");
       OpenUsingReader(web_contents_, reader_webplugininfo_, NULL);
     } else {
@@ -214,11 +215,11 @@ class PDFUnsupportedFeatureInterstitial
     interstitial_page_->Proceed();
   }
 
-  virtual void OverrideRendererPrefs(
-      content::RendererPreferences* prefs) OVERRIDE {
+  void OverrideRendererPrefs(content::RendererPreferences* prefs) override {
     Profile* profile =
         Profile::FromBrowserContext(web_contents_->GetBrowserContext());
-    renderer_preferences_util::UpdateFromSystemSettings(prefs, profile);
+    renderer_preferences_util::UpdateFromSystemSettings(
+        prefs, profile, web_contents_);
   }
 
  private:
@@ -236,16 +237,16 @@ class PDFUnsupportedFeaturePromptClient
  public:
   PDFUnsupportedFeaturePromptClient(WebContents* web_contents,
                                     const AdobeReaderPluginInfo& reader_info);
-  virtual ~PDFUnsupportedFeaturePromptClient();
+  ~PDFUnsupportedFeaturePromptClient() override;
 
   // pdf::OpenPDFInReaderPromptClient:
-  virtual base::string16 GetMessageText() const OVERRIDE;
-  virtual base::string16 GetAcceptButtonText() const OVERRIDE;
-  virtual base::string16 GetCancelButtonText() const OVERRIDE;
-  virtual bool ShouldExpire(
-      const content::LoadCommittedDetails& details) const OVERRIDE;
-  virtual void Accept() OVERRIDE;
-  virtual void Cancel() OVERRIDE;
+  base::string16 GetMessageText() const override;
+  base::string16 GetAcceptButtonText() const override;
+  base::string16 GetCancelButtonText() const override;
+  bool ShouldExpire(
+      const content::LoadCommittedDetails& details) const override;
+  void Accept() override;
+  void Cancel() override;
 
  private:
   WebContents* web_contents_;
@@ -290,7 +291,7 @@ bool PDFUnsupportedFeaturePromptClient::ShouldExpire(
 
 void PDFUnsupportedFeaturePromptClient::Accept() {
   if (base::win::IsMetroProcess()) {
-    chrome::AttemptRestartWithModeSwitch();
+    chrome::AttemptRestartToDesktopMode();
     return;
   }
 

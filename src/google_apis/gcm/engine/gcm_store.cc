@@ -23,9 +23,12 @@ void GCMStore::LoadResult::Reset() {
   gservices_settings.clear();
   gservices_digest.clear();
   last_checkin_time = base::Time::FromInternalValue(0LL);
+  last_token_fetch_time = base::Time::FromInternalValue(0LL);
   last_checkin_accounts.clear();
   account_mappings.clear();
+  heartbeat_intervals.clear();
   success = false;
+  instance_id_data.clear();
 }
 
 GCMStore::GCMStore() {}

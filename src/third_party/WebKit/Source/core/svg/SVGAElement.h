@@ -28,39 +28,42 @@
 
 namespace blink {
 
-class SVGAElement FINAL : public SVGGraphicsElement,
+class SVGAElement final : public SVGGraphicsElement,
                           public SVGURIReference {
     DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SVGAElement);
 public:
     DECLARE_NODE_FACTORY(SVGAElement);
     SVGAnimatedString* svgTarget() { return m_svgTarget.get(); }
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
     explicit SVGAElement(Document&);
 
-    virtual String title() const OVERRIDE;
+    virtual String title() const override;
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
-    virtual void defaultEventHandler(Event*) OVERRIDE;
+    virtual void defaultEventHandler(Event*) override;
 
-    virtual bool isLiveLink() const OVERRIDE { return isLink(); }
+    virtual bool isLiveLink() const override { return isLink(); }
 
-    virtual bool supportsFocus() const OVERRIDE;
-    virtual bool shouldHaveFocusAppearance() const OVERRIDE FINAL;
-    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusType) OVERRIDE;
-    virtual bool isMouseFocusable() const OVERRIDE;
-    virtual bool isKeyboardFocusable() const OVERRIDE;
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual bool canStartSelection() const OVERRIDE;
-    virtual short tabIndex() const OVERRIDE;
+    virtual bool supportsFocus() const override;
+    virtual bool shouldHaveFocusAppearance() const override final;
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType) override;
+    virtual void dispatchBlurEvent(Element* newFocusedElement, WebFocusType) override;
+    virtual bool isMouseFocusable() const override;
+    virtual bool isKeyboardFocusable() const override;
+    virtual bool isURLAttribute(const Attribute&) const override;
+    virtual bool canStartSelection() const override;
+    virtual short tabIndex() const override;
 
-    virtual bool willRespondToMouseClickEvents() OVERRIDE;
+    virtual bool willRespondToMouseClickEvents() override;
 
-    RefPtr<SVGAnimatedString> m_svgTarget;
+    RefPtrWillBeMember<SVGAnimatedString> m_svgTarget;
     bool m_wasFocusedByMouse;
 };
 

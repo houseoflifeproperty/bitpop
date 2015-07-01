@@ -19,11 +19,11 @@
 namespace {
 class MasterPreferencesTest : public testing::Test {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(base::CreateTemporaryFile(&prefs_file_));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     EXPECT_TRUE(base::DeleteFile(prefs_file_, false));
   }
 
@@ -76,11 +76,12 @@ TEST_F(MasterPreferencesTest, ParseDistroParams) {
     "  }\n"
     "} \n";
 
-  EXPECT_TRUE(base::WriteFile(prefs_file(), text, strlen(text)));
+  EXPECT_TRUE(base::WriteFile(prefs_file(), text,
+                              static_cast<int>(strlen(text))));
   installer::MasterPreferences prefs(prefs_file());
   EXPECT_TRUE(prefs.read_from_file());
 
-  const char* expected_true[] = {
+  const char* const expected_true[] = {
     installer::master_preferences::kDistroImportSearchPref,
     installer::master_preferences::kDistroImportHistoryPref,
     installer::master_preferences::kDistroImportBookmarksPref,
@@ -135,7 +136,8 @@ TEST_F(MasterPreferencesTest, ParseMissingDistroParams) {
     "  }\n"
     "} \n";
 
-  EXPECT_TRUE(base::WriteFile(prefs_file(), text, strlen(text)));
+  EXPECT_TRUE(base::WriteFile(prefs_file(), text,
+                              static_cast<int>(strlen(text))));
   installer::MasterPreferences prefs(prefs_file());
   EXPECT_TRUE(prefs.read_from_file());
 
@@ -153,7 +155,7 @@ TEST_F(MasterPreferencesTest, ParseMissingDistroParams) {
     EXPECT_EQ(value, expected_bool[i].expected_value) << expected_bool[i].name;
   }
 
-  const char* missing_bools[] = {
+  const char* const missing_bools[] = {
     installer::master_preferences::kDistroImportHomePagePref,
     installer::master_preferences::kDoNotRegisterForUpdateLaunch,
     installer::master_preferences::kMakeChromeDefault,
@@ -194,7 +196,8 @@ TEST_F(MasterPreferencesTest, FirstRunTabs) {
     "  ]\n"
     "} \n";
 
-  EXPECT_TRUE(base::WriteFile(prefs_file(), text, strlen(text)));
+  EXPECT_TRUE(base::WriteFile(prefs_file(), text,
+                              static_cast<int>(strlen(text))));
   installer::MasterPreferences prefs(prefs_file());
   typedef std::vector<std::string> TabsVector;
   TabsVector tabs = prefs.GetFirstRunTabs();
@@ -252,13 +255,14 @@ TEST_F(MasterPreferencesTest, GetInstallPreferencesTest) {
     "     \"verbose_logging\": false\n"
     "  }\n"
     "} \n";
-  EXPECT_TRUE(base::WriteFile(prefs_file, text, strlen(text)));
+  EXPECT_TRUE(base::WriteFile(prefs_file, text,
+                              static_cast<int>(strlen(text))));
 
   // Make sure command line values override the values in master preferences.
   std::wstring cmd_str(
       L"setup.exe --installerdata=\"" + prefs_file.value() + L"\"");
   cmd_str.append(L" --do-not-launch-chrome");
-  CommandLine cmd_line = CommandLine::FromString(cmd_str);
+  base::CommandLine cmd_line = base::CommandLine::FromString(cmd_str);
   installer::MasterPreferences prefs(cmd_line);
 
   // Check prefs that do not have any equivalent command line option.
@@ -303,7 +307,8 @@ TEST_F(MasterPreferencesTest, TestDefaultInstallConfig) {
   std::wstringstream chrome_cmd;
   chrome_cmd << "setup.exe";
 
-  CommandLine chrome_install(CommandLine::FromString(chrome_cmd.str()));
+  base::CommandLine chrome_install(
+      base::CommandLine::FromString(chrome_cmd.str()));
 
   installer::MasterPreferences pref_chrome(chrome_install);
 
@@ -318,7 +323,8 @@ TEST_F(MasterPreferencesTest, TestMultiInstallConfig) {
   std::wstringstream chrome_cmd, cf_cmd, chrome_cf_cmd;
   chrome_cmd << "setup.exe --" << kMultiInstall << " --" << kChrome;
 
-  CommandLine chrome_install(CommandLine::FromString(chrome_cmd.str()));
+  base::CommandLine chrome_install(
+      base::CommandLine::FromString(chrome_cmd.str()));
 
   installer::MasterPreferences pref_chrome(chrome_install);
 

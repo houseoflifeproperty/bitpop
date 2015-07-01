@@ -11,12 +11,12 @@
 #include "base/memory/singleton.h"
 #include "base/message_loop/message_loop.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/customization_document.h"
+#include "chrome/browser/chromeos/customization/customization_document.h"
 #include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/ui/webui/chromeos/login/l10n_util_test_util.h"
-#include "chromeos/ime/component_extension_ime_manager.h"
 #include "chromeos/system/statistics_provider.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/ime/chromeos/component_extension_ime_manager.h"
 
 namespace chromeos {
 
@@ -72,11 +72,11 @@ void VerifyLanguageCode(const base::ListValue& list,
 class L10nUtilTest : public testing::Test {
  public:
   L10nUtilTest();
-  virtual ~L10nUtilTest();
+  ~L10nUtilTest() override;
 
   // testing::Test:
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   void SetInputMethods1();
   void SetInputMethods2();

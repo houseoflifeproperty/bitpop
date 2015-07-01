@@ -6,9 +6,9 @@
 #define EXTENSIONS_BROWSER_GUEST_VIEW_APP_VIEW_APP_VIEW_GUEST_H_
 
 #include "base/id_map.h"
+#include "components/guest_view/browser/guest_view.h"
 #include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/browser/guest_view/app_view/app_view_guest_delegate.h"
-#include "extensions/browser/guest_view/guest_view.h"
 
 namespace extensions {
 class Extension;
@@ -18,7 +18,7 @@ class ExtensionHost;
 // AppViewGuest is created on attachment. That is, when a guest WebContents is
 // associated with a particular embedder WebContents. This happens on calls to
 // the connect API.
-class AppViewGuest : public GuestView<AppViewGuest>,
+class AppViewGuest : public guest_view::GuestView<AppViewGuest>,
                      public ExtensionFunctionDispatcher::Delegate {
  public:
   static const char Type[];
@@ -31,36 +31,40 @@ class AppViewGuest : public GuestView<AppViewGuest>,
       int guest_instance_id,
       const std::string& guest_extension_id);
 
-  static GuestViewBase* Create(content::BrowserContext* browser_context,
-                               int guest_instance_id);
+  static GuestViewBase* Create(content::WebContents* owner_web_contents);
 
   // ExtensionFunctionDispatcher::Delegate implementation.
-  virtual WindowController* GetExtensionWindowController() const OVERRIDE;
-  virtual content::WebContents* GetAssociatedWebContents() const OVERRIDE;
+  WindowController* GetExtensionWindowController() const override;
+  content::WebContents* GetAssociatedWebContents() const override;
 
   // content::WebContentsObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // content::WebContentsDelegate implementation.
-  virtual bool HandleContextMenu(
-      const content::ContextMenuParams& params) OVERRIDE;
+  bool HandleContextMenu(const content::ContextMenuParams& params) override;
+  void RequestMediaAccessPermission(
+      content::WebContents* web_contents,
+      const content::MediaStreamRequest& request,
+      const content::MediaResponseCallback& callback) override;
+  bool CheckMediaAccessPermission(content::WebContents* web_contents,
+                                  const GURL& security_origin,
+                                  content::MediaStreamType type) override;
 
   // GuestViewBase implementation.
-  virtual const char* GetAPINamespace() const OVERRIDE;
-  virtual int GetTaskPrefix() const OVERRIDE;
-  virtual void CreateWebContents(
-      const std::string& embedder_extension_id,
-      int embedder_render_process_id,
-      const GURL& embedder_site_url,
-      const base::DictionaryValue& create_params,
-      const WebContentsCreatedCallback& callback) OVERRIDE;
-  virtual void DidAttachToEmbedder() OVERRIDE;
-  virtual void DidInitialize() OVERRIDE;
+  bool CanRunInDetachedState() const override;
+  void CreateWebContents(const base::DictionaryValue& create_params,
+                         const WebContentsCreatedCallback& callback) override;
+  void DidInitialize(const base::DictionaryValue& create_params) override;
+  const char* GetAPINamespace() const override;
+  int GetTaskPrefix() const override;
+
+  // Sets the AppDelegate for this guest.
+  void SetAppDelegateForTest(AppDelegate* delegate);
 
  private:
-  AppViewGuest(content::BrowserContext* browser_context, int guest_instance_id);
+  explicit AppViewGuest(content::WebContents* owner_web_contents);
 
-  virtual ~AppViewGuest();
+  ~AppViewGuest() override;
 
   void OnRequest(const ExtensionHostMsg_Request_Params& params);
 
@@ -76,6 +80,7 @@ class AppViewGuest : public GuestView<AppViewGuest>,
   std::string guest_extension_id_;
   scoped_ptr<ExtensionFunctionDispatcher> extension_function_dispatcher_;
   scoped_ptr<AppViewGuestDelegate> app_view_guest_delegate_;
+  scoped_ptr<AppDelegate> app_delegate_;
 
   // This is used to ensure pending tasks will not fire after this object is
   // destroyed.

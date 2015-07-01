@@ -29,7 +29,6 @@
  */
 
 [
-    RuntimeEnabled=EncodingAPI,
     Exposed=(Window,Worker),
     Constructor(optional DOMString utfLabel = "utf-8"),
     RaisesException=Constructor,
@@ -37,5 +36,5 @@
     MeasureAs=TextEncoderConstructor
 ] interface TextEncoder {
     readonly attribute DOMString encoding;
-    [MeasureAs=TextEncoderEncode] Uint8Array encode(optional ScalarValueString input = "");
+    [MeasureAs=TextEncoderEncode] Uint8Array encode(optional USVString input = "");
 };

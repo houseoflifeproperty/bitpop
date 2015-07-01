@@ -26,6 +26,7 @@
 #ifndef CustomEvent_h
 #define CustomEvent_h
 
+#include "core/CoreExport.h"
 #include "core/events/Event.h"
 
 namespace blink {
@@ -34,7 +35,7 @@ class SerializedScriptValue;
 
 typedef EventInit CustomEventInit;
 
-class CustomEvent FINAL : public Event {
+class CORE_EXPORT CustomEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~CustomEvent();
@@ -51,7 +52,7 @@ public:
 
     void initCustomEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue>);
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
     SerializedScriptValue* serializedDetail() { return m_serializedDetail.get(); }
 
@@ -61,7 +62,7 @@ public:
         m_serializedDetail = detail;
     }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     CustomEvent();

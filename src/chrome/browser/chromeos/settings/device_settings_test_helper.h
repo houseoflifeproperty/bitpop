@@ -15,11 +15,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
-#include "chrome/browser/chromeos/login/users/fake_user_manager.h"
+#include "chrome/browser/chromeos/login/users/fake_chrome_user_manager.h"
 #include "chrome/browser/chromeos/login/users/scoped_user_manager_enabler.h"
 #include "chrome/browser/chromeos/policy/device_policy_builder.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
-#include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "components/ownership/mock_owner_key_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -40,7 +39,7 @@ class DeviceSettingsTestHelper : public SessionManagerClient {
  public:
   // Wraps a device settings service instance for testing.
   DeviceSettingsTestHelper();
-  virtual ~DeviceSettingsTestHelper();
+  ~DeviceSettingsTestHelper() override;
 
   // Runs all pending store callbacks.
   void FlushStore();
@@ -82,46 +81,43 @@ class DeviceSettingsTestHelper : public SessionManagerClient {
   }
 
   // SessionManagerClient:
-  virtual void Init(dbus::Bus* bus) OVERRIDE;
-  virtual void SetStubDelegate(SessionManagerClient::StubDelegate* delegate)
-      OVERRIDE;
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual bool HasObserver(Observer* observer) OVERRIDE;
-  virtual void EmitLoginPromptVisible() OVERRIDE;
-  virtual void RestartJob(int pid, const std::string& command_line) OVERRIDE;
-  virtual void StartSession(const std::string& user_email) OVERRIDE;
-  virtual void StopSession() OVERRIDE;
-  virtual void StartDeviceWipe() OVERRIDE;
-  virtual void RequestLockScreen() OVERRIDE;
-  virtual void NotifyLockScreenShown() OVERRIDE;
-  virtual void NotifyLockScreenDismissed() OVERRIDE;
-  virtual void RetrieveActiveSessions(
-      const ActiveSessionsCallback& callback) OVERRIDE;
-  virtual void RetrieveDevicePolicy(
-      const RetrievePolicyCallback& callback) OVERRIDE;
-  virtual void RetrievePolicyForUser(
-      const std::string& username,
-      const RetrievePolicyCallback& callback) OVERRIDE;
-  virtual std::string BlockingRetrievePolicyForUser(
-      const std::string& username) OVERRIDE;
-  virtual void RetrieveDeviceLocalAccountPolicy(
+  void Init(dbus::Bus* bus) override;
+  void SetStubDelegate(SessionManagerClient::StubDelegate* delegate) override;
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
+  bool HasObserver(const Observer* observer) const override;
+  bool IsScreenLocked() const override;
+  void EmitLoginPromptVisible() override;
+  void RestartJob(int pid, const std::string& command_line) override;
+  void StartSession(const std::string& user_email) override;
+  void StopSession() override;
+  void NotifySupervisedUserCreationStarted() override;
+  void NotifySupervisedUserCreationFinished() override;
+  void StartDeviceWipe() override;
+  void RequestLockScreen() override;
+  void NotifyLockScreenShown() override;
+  void NotifyLockScreenDismissed() override;
+  void RetrieveActiveSessions(const ActiveSessionsCallback& callback) override;
+  void RetrieveDevicePolicy(const RetrievePolicyCallback& callback) override;
+  void RetrievePolicyForUser(const std::string& username,
+                             const RetrievePolicyCallback& callback) override;
+  std::string BlockingRetrievePolicyForUser(
+      const std::string& username) override;
+  void RetrieveDeviceLocalAccountPolicy(
       const std::string& account_id,
-      const RetrievePolicyCallback& callback) OVERRIDE;
-  virtual void StoreDevicePolicy(const std::string& policy_blob,
-                                 const StorePolicyCallback& callback) OVERRIDE;
-  virtual void StorePolicyForUser(const std::string& username,
-                                  const std::string& policy_blob,
-                                  const StorePolicyCallback& callback) OVERRIDE;
-  virtual void StoreDeviceLocalAccountPolicy(
+      const RetrievePolicyCallback& callback) override;
+  void StoreDevicePolicy(const std::string& policy_blob,
+                         const StorePolicyCallback& callback) override;
+  void StorePolicyForUser(const std::string& username,
+                          const std::string& policy_blob,
+                          const StorePolicyCallback& callback) override;
+  void StoreDeviceLocalAccountPolicy(
       const std::string& account_id,
       const std::string& policy_blob,
-      const StorePolicyCallback& callback) OVERRIDE;
-  virtual void SetFlagsForUser(
-      const std::string& account_id,
-      const std::vector<std::string>& flags) OVERRIDE;
-  virtual void GetServerBackedStateKeys(
-      const StateKeysCallback& callback) OVERRIDE;
+      const StorePolicyCallback& callback) override;
+  void SetFlagsForUser(const std::string& account_id,
+                       const std::vector<std::string>& flags) override;
+  void GetServerBackedStateKeys(const StateKeysCallback& callback) override;
 
  private:
   struct PolicyState {
@@ -149,7 +145,7 @@ class DeviceSettingsTestHelper : public SessionManagerClient {
 class ScopedDeviceSettingsTestHelper : public DeviceSettingsTestHelper {
  public:
   ScopedDeviceSettingsTestHelper();
-  virtual ~ScopedDeviceSettingsTestHelper();
+  ~ScopedDeviceSettingsTestHelper() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ScopedDeviceSettingsTestHelper);
@@ -162,10 +158,10 @@ class ScopedDeviceSettingsTestHelper : public DeviceSettingsTestHelper {
 class DeviceSettingsTestBase : public testing::Test {
  protected:
   DeviceSettingsTestBase();
-  virtual ~DeviceSettingsTestBase();
+  ~DeviceSettingsTestBase() override;
 
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   // Flushes any pending device settings operations.
   void FlushDeviceSettings();
@@ -183,13 +179,13 @@ class DeviceSettingsTestBase : public testing::Test {
   DeviceSettingsTestHelper device_settings_test_helper_;
   // Note that FakeUserManager is used by ProfileHelper, which some of the
   // tested classes depend on implicitly.
-  FakeUserManager* user_manager_;
+  FakeChromeUserManager* user_manager_;
   ScopedUserManagerEnabler user_manager_enabler_;
-  scoped_ptr<TestingProfile> profile_;
   scoped_refptr<ownership::MockOwnerKeyUtil> owner_key_util_;
   // Local DeviceSettingsService instance for tests. Avoid using in combination
   // with the global instance (DeviceSettingsService::Get()).
   DeviceSettingsService device_settings_service_;
+  scoped_ptr<TestingProfile> profile_;
 
   scoped_ptr<DBusThreadManagerSetter> dbus_setter_;
 

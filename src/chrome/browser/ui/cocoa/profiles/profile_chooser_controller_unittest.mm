@@ -13,6 +13,8 @@
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/avatar_menu.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
+#include "chrome/browser/services/gcm/fake_gcm_profile_service.h"
+#include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
 #include "chrome/browser/signin/account_tracker_service_factory.h"
 #include "chrome/browser/signin/fake_account_tracker_service.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
@@ -23,10 +25,12 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/pref_names.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/common/profile_management_switches.h"
 
+const std::string kGaiaId = "gaiaid-user@gmail.com";
 const std::string kEmail = "user@gmail.com";
 const std::string kSecondaryEmail = "user2@gmail.com";
 const std::string kLoginToken = "oauth2_login_token";
@@ -34,15 +38,6 @@ const std::string kLoginToken = "oauth2_login_token";
 class ProfileChooserControllerTest : public CocoaProfileTest {
  public:
   ProfileChooserControllerTest() {
-  }
-
-  virtual void SetUp() OVERRIDE {
-    CocoaProfileTest::SetUp();
-    ASSERT_TRUE(browser()->profile());
-
-    AccountTrackerServiceFactory::GetInstance()->SetTestingFactory(
-        browser()->profile(), FakeAccountTrackerService::Build);
-
     TestingProfile::TestingFactories factories;
     factories.push_back(
         std::make_pair(ProfileOAuth2TokenServiceFactory::GetInstance(),
@@ -50,10 +45,21 @@ class ProfileChooserControllerTest : public CocoaProfileTest {
     factories.push_back(
         std::make_pair(AccountTrackerServiceFactory::GetInstance(),
                        FakeAccountTrackerService::Build));
+    AddTestingFactories(factories);
+  }
+
+  void SetUp() override {
+    CocoaProfileTest::SetUp();
+
+    ASSERT_TRUE(browser()->profile());
+
+    gcm::GCMProfileServiceFactory::GetInstance()->SetTestingFactory(
+        browser()->profile(), gcm::FakeGCMProfileService::Build);
+
     testing_profile_manager()->
         CreateTestingProfile("test1", scoped_ptr<PrefServiceSyncable>(),
                              base::ASCIIToUTF16("Test 1"), 0, std::string(),
-                             factories);
+                             testing_factories());
     testing_profile_manager()->
         CreateTestingProfile("test2", scoped_ptr<PrefServiceSyncable>(),
                              base::ASCIIToUTF16("Test 2"), 1, std::string(),
@@ -67,27 +73,66 @@ class ProfileChooserControllerTest : public CocoaProfileTest {
     EXPECT_EQ(3U, menu_->GetNumberOfItems());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     [controller() close];
     controller_.reset();
     CocoaProfileTest::TearDown();
   }
 
   void StartProfileChooserController() {
+    StartProfileChooserControllerWithTutorialMode(profiles::TUTORIAL_MODE_NONE);
+  }
+
+  void StartProfileChooserControllerWithTutorialMode(
+      profiles::TutorialMode mode) {
     NSRect frame = [test_window() frame];
     NSPoint point = NSMakePoint(NSMidX(frame), NSMidY(frame));
     controller_.reset([[ProfileChooserController alloc]
         initWithBrowser:browser()
              anchoredAt:point
                viewMode:profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER
-           tutorialMode:profiles::TUTORIAL_MODE_NONE
+           tutorialMode:mode
             serviceType:signin::GAIA_SERVICE_TYPE_NONE]);
     [controller_ showWindow:nil];
   }
 
-  void EnableFastUserSwitching() {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kFastUserSwitching);
+  void AssertRightClickTutorialShown() {
+    NSArray* subviews = [[[controller() window] contentView] subviews];
+    ASSERT_EQ(2U, [subviews count]);
+    subviews = [[subviews objectAtIndex:0] subviews];
+
+    // There should be 4 views: the tutorial, the active profile card, a
+    // separator and the options view.
+    ASSERT_EQ(4U, [subviews count]);
+
+    // The tutorial is the topmost view, so the last in the array. It should
+    // contain 3 views: the title, the content text and the OK button.
+    NSArray* tutorialSubviews = [[subviews objectAtIndex:3] subviews];
+    ASSERT_EQ(3U, [tutorialSubviews count]);
+
+    NSTextField* tutorialTitle = base::mac::ObjCCastStrict<NSTextField>(
+        [tutorialSubviews objectAtIndex:2]);
+    EXPECT_GT([[tutorialTitle stringValue] length], 0U);
+
+    NSTextField* tutorialContent = base::mac::ObjCCastStrict<NSTextField>(
+        [tutorialSubviews objectAtIndex:1]);
+    EXPECT_GT([[tutorialContent stringValue] length], 0U);
+
+    NSButton* tutorialOKButton = base::mac::ObjCCastStrict<NSButton>(
+        [tutorialSubviews objectAtIndex:0]);
+    EXPECT_GT([[tutorialOKButton title] length], 0U);
+  }
+
+  void StartFastUserSwitcher() {
+    NSRect frame = [test_window() frame];
+    NSPoint point = NSMakePoint(NSMidX(frame), NSMidY(frame));
+    controller_.reset([[ProfileChooserController alloc]
+        initWithBrowser:browser()
+             anchoredAt:point
+               viewMode:profiles::BUBBLE_VIEW_MODE_FAST_PROFILE_CHOOSER
+           tutorialMode:profiles::TUTORIAL_MODE_NONE
+            serviceType:signin::GAIA_SERVICE_TYPE_NONE]);
+    [controller_ showWindow:nil];
   }
 
   ProfileChooserController* controller() { return controller_; }
@@ -103,7 +148,8 @@ class ProfileChooserControllerTest : public CocoaProfileTest {
 };
 
 TEST_F(ProfileChooserControllerTest, InitialLayoutWithNewMenu) {
-  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
+  switches::EnableNewAvatarMenuForTesting(
+      base::CommandLine::ForCurrentProcess());
   StartProfileChooserController();
 
   NSArray* subviews = [[[controller() window] contentView] subviews];
@@ -168,72 +214,72 @@ TEST_F(ProfileChooserControllerTest, InitialLayoutWithNewMenu) {
   EXPECT_GT([[promo stringValue] length], 0U);
 }
 
-TEST_F(ProfileChooserControllerTest, InitialLayoutWithFastUserSwitcher) {
-  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
-  EnableFastUserSwitching();
+TEST_F(ProfileChooserControllerTest, RightClickTutorialShownAfterWelcome) {
+  switches::EnableNewAvatarMenuForTesting(
+      base::CommandLine::ForCurrentProcess());
+  // The welcome upgrade tutorial takes precedence so show it then dismiss it.
+  // The right click tutorial should be shown right away.
+  StartProfileChooserControllerWithTutorialMode(
+      profiles::TUTORIAL_MODE_WELCOME_UPGRADE);
+
+  [controller() dismissTutorial:nil];
+  AssertRightClickTutorialShown();
+}
+
+TEST_F(ProfileChooserControllerTest, RightClickTutorialShownAfterReopen) {
+  switches::EnableNewAvatarMenuForTesting(
+      base::CommandLine::ForCurrentProcess());
+  // The welcome upgrade tutorial takes precedence so show it then close the
+  // menu. Reopening the menu should show the tutorial.
   StartProfileChooserController();
 
+  [controller() close];
+  StartProfileChooserController();
+  AssertRightClickTutorialShown();
+
+  // The tutorial must be manually dismissed so it should still be shown after
+  // closing and reopening the menu,
+  [controller() close];
+  StartProfileChooserController();
+  AssertRightClickTutorialShown();
+}
+
+TEST_F(ProfileChooserControllerTest, RightClickTutorialNotShownAfterDismiss) {
+  switches::EnableNewAvatarMenuForTesting(
+      base::CommandLine::ForCurrentProcess());
+  // The welcome upgrade tutorial takes precedence so show it then close the
+  // menu. Reopening the menu should show the tutorial.
+  StartProfileChooserController();
+
+  [controller() close];
+  StartProfileChooserControllerWithTutorialMode(
+      profiles::TUTORIAL_MODE_RIGHT_CLICK_SWITCHING);
+  AssertRightClickTutorialShown();
+
+  // Dismissing the tutorial should prevent it from being shown forever.
+  [controller() dismissTutorial:nil];
   NSArray* subviews = [[[controller() window] contentView] subviews];
   ASSERT_EQ(2U, [subviews count]);
   subviews = [[subviews objectAtIndex:0] subviews];
 
-  // Three profiles means we should have one active card and a
-  // fast user switcher which has two "other" profiles and 2 separators, and
-  // an option buttons view with its separator. We also have a promo for
-  // the new avatar menu.
-  // TODO(noms): Enforcing 8U fails on the waterfall debug bots, but it's not
-  // reproducible anywhere else.
-  ASSERT_GE([subviews count], 7U);
+  // There should be 3 views since there's no tutorial
+  ASSERT_EQ(3U, [subviews count]);
 
-  // There should be two buttons and a separator in the option buttons view.
-  // These buttons are tested in InitialLayoutWithNewMenu.
-  NSArray* buttonSubviews = [[subviews objectAtIndex:0] subviews];
-  ASSERT_EQ(3U, [buttonSubviews count]);
+  // Closing and reopening the menu shouldn't show the tutorial.
+  [controller() close];
+  StartProfileChooserControllerWithTutorialMode(
+      profiles::TUTORIAL_MODE_RIGHT_CLICK_SWITCHING);
+  subviews = [[[controller() window] contentView] subviews];
+  ASSERT_EQ(2U, [subviews count]);
+  subviews = [[subviews objectAtIndex:0] subviews];
 
-  // There should be a separator.
-  EXPECT_TRUE([[subviews objectAtIndex:1] isKindOfClass:[NSBox class]]);
-
-  // There should be two "other profiles" items. The items are drawn from the
-  // bottom up, so in the opposite order of those in the AvatarMenu.
-  int profileIndex = 1;
-  for (int i = 5; i >= 2; i -= 2) {
-    // Each profile button has a separator.
-    EXPECT_TRUE([[subviews objectAtIndex:i] isKindOfClass:[NSBox class]]);
-
-    NSButton* button = base::mac::ObjCCast<NSButton>(
-        [subviews objectAtIndex:i-1]);
-    EXPECT_EQ(menu()->GetItemAt(profileIndex).name,
-              base::SysNSStringToUTF16([button title]));
-    EXPECT_EQ(profileIndex, [button tag]);
-    EXPECT_EQ(@selector(switchToProfile:), [button action]);
-    EXPECT_EQ(controller(), [button target]);
-    profileIndex++;
-  }
-
-  // There should be the profile avatar, name and links container in the active
-  // card view. The links displayed in the container are checked separately.
-  NSArray* activeCardSubviews = [[subviews objectAtIndex:6] subviews];
-  ASSERT_EQ(3U, [activeCardSubviews count]);
-
-  // Profile icon.
-  NSView* activeProfileImage = [activeCardSubviews objectAtIndex:2];
-  EXPECT_TRUE([activeProfileImage isKindOfClass:[NSButton class]]);
-
-  // Profile name.
-  NSView* activeProfileName = [activeCardSubviews objectAtIndex:1];
-  EXPECT_TRUE([activeProfileName isKindOfClass:[NSButton class]]);
-  EXPECT_EQ(menu()->GetItemAt(0).name, base::SysNSStringToUTF16(
-      [base::mac::ObjCCast<NSButton>(activeProfileName) title]));
-
-  // Profile links. This is a local profile, so there should be a signin button
-  // and a signin promo. These are also tested in InitialLayoutWithNewMenu.
-  NSArray* linksSubviews = [[activeCardSubviews objectAtIndex:0] subviews];
-  EXPECT_EQ(2U, [linksSubviews count]);
+  // There should be 3 views since there's no tutorial
+  ASSERT_EQ(3U, [subviews count]);
 }
 
 TEST_F(ProfileChooserControllerTest, OtherProfilesSortedAlphabetically) {
-  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
-  EnableFastUserSwitching();
+  switches::EnableNewAvatarMenuForTesting(
+      base::CommandLine::ForCurrentProcess());
 
   // Add two extra profiles, to make sure sorting is alphabetical and not
   // by order of creation.
@@ -245,7 +291,7 @@ TEST_F(ProfileChooserControllerTest, OtherProfilesSortedAlphabetically) {
       CreateTestingProfile("test4", scoped_ptr<PrefServiceSyncable>(),
                            base::ASCIIToUTF16("Another Test"), 1, std::string(),
                            TestingProfile::TestingFactories());
-  StartProfileChooserController();
+  StartFastUserSwitcher();
 
   NSArray* subviews = [[[controller() window] contentView] subviews];
   ASSERT_EQ(2U, [subviews count]);
@@ -254,19 +300,15 @@ TEST_F(ProfileChooserControllerTest, OtherProfilesSortedAlphabetically) {
                               @"New Profile",
                               @"Test 1",
                               @"Test 2" };
-  // There are four "other" profiles, each with a button and a separator, an
-  // active profile card, and an option buttons view with a separator. We
-  // also have an update promo for the new avatar menu.
-  // TODO(noms): Enforcing 12U fails on the waterfall debug bots, but it's not
-  // reproducible anywhere else.
-  ASSERT_GE([subviews count], 11U);
+  // There are four "other" profiles, each with a button and a separator.
+  ASSERT_EQ([subviews count], 8U);
   // There should be four "other profiles" items, sorted alphabetically. The
   // "other profiles" start at index 2 (after the option buttons view and its
   // separator), and each have a separator. We need to iterate through the
   // profiles in the order displayed in the bubble, which is opposite from the
   // drawn order.
   int sortedNameIndex = 0;
-  for (int i = 9; i >= 2; i -= 2) {
+  for (int i = 7; i > 0; i -= 2) {
     // The item at index i is the separator.
     NSButton* button = base::mac::ObjCCast<NSButton>(
         [subviews objectAtIndex:i-1]);
@@ -277,7 +319,8 @@ TEST_F(ProfileChooserControllerTest, OtherProfilesSortedAlphabetically) {
 
 TEST_F(ProfileChooserControllerTest,
     LocalProfileActiveCardLinksWithNewMenu) {
-  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
+  switches::EnableNewAvatarMenuForTesting(
+      base::CommandLine::ForCurrentProcess());
   StartProfileChooserController();
   NSArray* subviews = [[[controller() window] contentView] subviews];
   ASSERT_EQ(2U, [subviews count]);
@@ -302,10 +345,10 @@ TEST_F(ProfileChooserControllerTest,
 TEST_F(ProfileChooserControllerTest,
        SignedInProfileActiveCardLinksWithAccountConsistency) {
   switches::EnableAccountConsistencyForTesting(
-      CommandLine::ForCurrentProcess());
+      base::CommandLine::ForCurrentProcess());
   // Sign in the first profile.
   ProfileInfoCache* cache = testing_profile_manager()->profile_info_cache();
-  cache->SetUserNameOfProfileAtIndex(0, base::ASCIIToUTF16(kEmail));
+  cache->SetAuthInfoOfProfileAtIndex(0, kGaiaId, base::ASCIIToUTF16(kEmail));
 
   StartProfileChooserController();
   NSArray* subviews = [[[controller() window] contentView] subviews];
@@ -324,10 +367,11 @@ TEST_F(ProfileChooserControllerTest,
 
 TEST_F(ProfileChooserControllerTest,
     SignedInProfileActiveCardLinksWithNewMenu) {
-  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
+  switches::EnableNewAvatarMenuForTesting(
+      base::CommandLine::ForCurrentProcess());
   // Sign in the first profile.
   ProfileInfoCache* cache = testing_profile_manager()->profile_info_cache();
-  cache->SetUserNameOfProfileAtIndex(0, base::ASCIIToUTF16(kEmail));
+  cache->SetAuthInfoOfProfileAtIndex(0, kGaiaId, base::ASCIIToUTF16(kEmail));
 
   StartProfileChooserController();
   NSArray* subviews = [[[controller() window] contentView] subviews];
@@ -347,10 +391,10 @@ TEST_F(ProfileChooserControllerTest,
 
 TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
   switches::EnableAccountConsistencyForTesting(
-      CommandLine::ForCurrentProcess());
+      base::CommandLine::ForCurrentProcess());
   // Sign in the first profile.
   ProfileInfoCache* cache = testing_profile_manager()->profile_info_cache();
-  cache->SetUserNameOfProfileAtIndex(0, base::ASCIIToUTF16(kEmail));
+  cache->SetAuthInfoOfProfileAtIndex(0, kGaiaId, base::ASCIIToUTF16(kEmail));
 
   // Mark that we are using the profile name on purpose, so that we don't
   // fallback to testing the algorithm that chooses which default name
@@ -360,7 +404,7 @@ TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
   // Set up the signin manager and the OAuth2Tokens.
   Profile* profile = browser()->profile();
   SigninManagerFactory::GetForProfile(profile)->
-      SetAuthenticatedUsername(kEmail);
+      SetAuthenticatedAccountInfo(kEmail, kEmail);
   ProfileOAuth2TokenServiceFactory::GetForProfile(profile)->
       UpdateCredentials(kEmail, kLoginToken);
   ProfileOAuth2TokenServiceFactory::GetForProfile(profile)->
@@ -381,20 +425,14 @@ TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
   // There should be three buttons and two separators in the option
   // buttons view.
   NSArray* buttonSubviews = [[subviews objectAtIndex:0] subviews];
-  ASSERT_EQ(5U, [buttonSubviews count]);
-
-  // There should be a lock button.
-  NSButton* lockButton =
-      base::mac::ObjCCast<NSButton>([buttonSubviews objectAtIndex:0]);
-  EXPECT_EQ(@selector(lockProfile:), [lockButton action]);
-  EXPECT_EQ(controller(), [lockButton target]);
+  ASSERT_EQ(3U, [buttonSubviews count]);
 
   // There should be a separator.
   EXPECT_TRUE([[buttonSubviews objectAtIndex:1] isKindOfClass:[NSBox class]]);
 
   // There should be an incognito button.
   NSButton* incognitoButton =
-      base::mac::ObjCCast<NSButton>([buttonSubviews objectAtIndex:2]);
+      base::mac::ObjCCast<NSButton>([buttonSubviews objectAtIndex:0]);
   EXPECT_EQ(@selector(goIncognito:), [incognitoButton action]);
   EXPECT_EQ(controller(), [incognitoButton target]);
 
@@ -403,7 +441,7 @@ TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
 
   // There should be a user switcher button.
   NSButton* userSwitcherButton =
-      base::mac::ObjCCast<NSButton>([buttonSubviews objectAtIndex:4]);
+      base::mac::ObjCCast<NSButton>([buttonSubviews objectAtIndex:2]);
   EXPECT_EQ(@selector(showUserManager:), [userSwitcherButton action]);
   EXPECT_EQ(controller(), [userSwitcherButton target]);
 
@@ -463,4 +501,60 @@ TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
       [linksSubviews objectAtIndex:0]);
   EXPECT_EQ(@selector(hideAccountManagement:), [link action]);
   EXPECT_EQ(controller(), [link target]);
+}
+
+TEST_F(ProfileChooserControllerTest, SignedInProfileLockDisabled) {
+  switches::EnableNewProfileManagementForTesting(
+      base::CommandLine::ForCurrentProcess());
+  // Sign in the first profile.
+  ProfileInfoCache* cache = testing_profile_manager()->profile_info_cache();
+  cache->SetAuthInfoOfProfileAtIndex(0, kGaiaId, base::ASCIIToUTF16(kEmail));
+  // The preference, not the email, determines whether the profile can lock.
+  browser()->profile()->GetPrefs()->SetString(
+      prefs::kGoogleServicesHostedDomain, "chromium.org");
+
+  StartProfileChooserController();
+  NSArray* subviews = [[[controller() window] contentView] subviews];
+  ASSERT_EQ(2U, [subviews count]);
+  subviews = [[subviews objectAtIndex:0] subviews];
+
+  // There will be two buttons and one separators in the option buttons view.
+  NSArray* buttonSubviews = [[subviews objectAtIndex:0] subviews];
+  ASSERT_EQ(3U, [buttonSubviews count]);
+
+  // The last button should not be the lock button.
+  NSButton* lastButton =
+      base::mac::ObjCCast<NSButton>([buttonSubviews objectAtIndex:0]);
+  ASSERT_TRUE(lastButton);
+  EXPECT_NE(@selector(lockProfile:), [lastButton action]);
+}
+
+TEST_F(ProfileChooserControllerTest, SignedInProfileLockEnabled) {
+  switches::EnableNewProfileManagementForTesting(
+      base::CommandLine::ForCurrentProcess());
+  // Sign in the first profile.
+  ProfileInfoCache* cache = testing_profile_manager()->profile_info_cache();
+  cache->SetAuthInfoOfProfileAtIndex(0, kGaiaId, base::ASCIIToUTF16(kEmail));
+  // The preference, not the email, determines whether the profile can lock.
+  browser()->profile()->GetPrefs()->SetString(
+      prefs::kGoogleServicesHostedDomain, "google.com");
+  // Lock is only available where a supervised user is present.
+  cache->SetSupervisedUserIdOfProfileAtIndex(1, kEmail);
+
+  StartProfileChooserController();
+  NSArray* subviews = [[[controller() window] contentView] subviews];
+  ASSERT_EQ(2U, [subviews count]);
+  subviews = [[subviews objectAtIndex:0] subviews];
+
+  // There will be three buttons and two separators in the option buttons view.
+  NSArray* buttonSubviews = [[subviews objectAtIndex:0] subviews];
+  ASSERT_EQ(5U, [buttonSubviews count]);
+
+  // There should be a lock button.
+  NSButton* lockButton =
+      base::mac::ObjCCast<NSButton>([buttonSubviews objectAtIndex:0]);
+  ASSERT_TRUE(lockButton);
+  EXPECT_EQ(@selector(lockProfile:), [lockButton action]);
+  EXPECT_EQ(controller(), [lockButton target]);
+  EXPECT_TRUE([lockButton isEnabled]);
 }

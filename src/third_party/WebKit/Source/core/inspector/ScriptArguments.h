@@ -41,19 +41,20 @@ namespace blink {
 
 class ScriptValue;
 
-class ScriptArguments : public RefCountedWillBeGarbageCollectedFinalized<ScriptArguments> {
-    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ScriptArguments);
+class ScriptArguments final : public RefCountedWillBeGarbageCollectedFinalized<ScriptArguments> {
 public:
     static PassRefPtrWillBeRawPtr<ScriptArguments> create(ScriptState*, Vector<ScriptValue>& arguments);
+
+    ~ScriptArguments();
 
     const ScriptValue& argumentAt(size_t) const;
     size_t argumentCount() const { return m_arguments.size(); }
 
     ScriptState* scriptState() const { return m_scriptState.get(); }
 
-    bool getFirstArgumentAsString(WTF::String& result, bool checkForNullOrUndefined = false);
+    bool getFirstArgumentAsString(String&) const;
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     ScriptArguments(ScriptState*, Vector<ScriptValue>& arguments);

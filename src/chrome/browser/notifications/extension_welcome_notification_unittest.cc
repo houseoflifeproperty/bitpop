@@ -14,6 +14,7 @@
 #include "base/thread_task_runner_handle.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/pref_registry/pref_registry_syncable.h"
@@ -38,15 +39,15 @@ class MockMessageCenter : public message_center::FakeMessageCenter {
   }
 
   // message_center::FakeMessageCenter Overrides
-  virtual message_center::Notification* FindVisibleNotificationById(
-      const std::string& id) OVERRIDE {
+  message_center::Notification* FindVisibleNotificationById(
+      const std::string& id) override {
     if (last_notification.get() && last_notification->id() == id)
       return last_notification.get();
     return NULL;
   }
 
-  virtual void AddNotification(
-      scoped_ptr<message_center::Notification> notification) OVERRIDE {
+  void AddNotification(
+      scoped_ptr<message_center::Notification> notification) override {
     EXPECT_FALSE(last_notification.get());
     last_notification.swap(notification);
     add_notification_calls_++;
@@ -54,8 +55,7 @@ class MockMessageCenter : public message_center::FakeMessageCenter {
       notifications_with_shown_as_popup_++;
   }
 
-  virtual void RemoveNotification(const std::string& id,
-                                  bool by_user) OVERRIDE {
+  void RemoveNotification(const std::string& id, bool by_user) override {
     EXPECT_TRUE(last_notification.get());
     last_notification.reset();
     remove_notification_calls_++;
@@ -85,17 +85,14 @@ public:
   }
 
   // ExtensionWelcomeNotification::Delegate
-  virtual message_center::MessageCenter* GetMessageCenter() OVERRIDE {
+  message_center::MessageCenter* GetMessageCenter() override {
     return message_center_.get();
   }
 
-  virtual base::Time GetCurrentTime() OVERRIDE {
-    return start_time_ + elapsed_time_;
-  }
+  base::Time GetCurrentTime() override { return start_time_ + elapsed_time_; }
 
-  virtual void PostTask(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task) OVERRIDE {
+  void PostTask(const tracked_objects::Location& from_here,
+                const base::Closure& task) override {
     EXPECT_TRUE(pending_task_.is_null());
     pending_task_ = task;
   }
@@ -132,7 +129,7 @@ class ExtensionWelcomeNotificationTest : public testing::Test {
     ExtensionWelcomeNotification::RegisterProfilePrefs(pref_registry.get());
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     task_runner_ = new base::TestSimpleTaskRunner();
     thread_task_runner_handle_.reset(
         new base::ThreadTaskRunnerHandle(task_runner_));
@@ -142,10 +139,11 @@ class ExtensionWelcomeNotificationTest : public testing::Test {
         ExtensionWelcomeNotification::Create(profile_.get(), delegate_));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     delegate_ = NULL;
     welcome_notification_.reset();
     profile_.reset();
+    TestingBrowserProcess::DeleteInstance();
     thread_task_runner_handle_.reset();
     task_runner_ = NULL;
   }
@@ -209,20 +207,10 @@ class ExtensionWelcomeNotificationTest : public testing::Test {
     explicit TestNotificationDelegate(const std::string& id) : id_(id) {}
 
     // Overridden from NotificationDelegate:
-    virtual void Display() OVERRIDE {}
-    virtual void Error() OVERRIDE {}
-    virtual void Close(bool by_user) OVERRIDE {}
-    virtual void Click() OVERRIDE {}
-    virtual void ButtonClick(int index) OVERRIDE {}
-
-    virtual std::string id() const OVERRIDE { return id_; }
-
-    virtual content::WebContents* GetWebContents() const OVERRIDE {
-      return NULL;
-    }
+    std::string id() const override { return id_; }
 
    private:
-    virtual ~TestNotificationDelegate() {}
+    ~TestNotificationDelegate() override {}
 
     const std::string id_;
 
@@ -238,10 +226,9 @@ class ExtensionWelcomeNotificationTest : public testing::Test {
                               base::UTF8ToUTF16("Title"),
                               base::UTF8ToUTF16("Body"),
                               gfx::Image(),
-                              blink::WebTextDirectionDefault,
                               notifier_id,
                               base::UTF8ToUTF16("Source"),
-                              base::UTF8ToUTF16(notification_id),
+                              notification_id,
                               rich_notification_data,
                               new TestNotificationDelegate("TestNotification"));
     welcome_notification_->ShowWelcomeNotificationIfNecessary(notification);

@@ -7,6 +7,7 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
+#include "base/android/library_loader/library_loader_hooks.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/basictypes.h"
 #include "base/command_line.h"
@@ -46,7 +47,7 @@ static void LoadNative(JNIEnv* env, jclass clazz, jobject context) {
   // runtime API keys have been specified by the environment. Unfortunately, we
   // neither launch Chromium nor have a command line, so we need to prevent
   // them from DCHECKing out when they go looking.
-  base::CommandLine::Init(0, NULL);
+  base::CommandLine::Init(0, nullptr);
 
   // Create the singleton now so that the Chromoting threads will be set up.
   remoting::ChromotingJniRuntime::GetInstance();
@@ -146,6 +147,13 @@ static void SendTextEvent(JNIEnv* env,
       ConvertJavaStringToUTF8(env, text));
 }
 
+static void EnableVideoChannel(JNIEnv* env,
+                               jclass clazz,
+                               jboolean enable) {
+  remoting::ChromotingJniRuntime::GetInstance()->session()->EnableVideoChannel(
+      enable);
+}
+
 static void OnThirdPartyTokenFetched(JNIEnv* env,
                                      jclass clazz,
                                      jstring token,
@@ -175,8 +183,6 @@ ChromotingJniRuntime* ChromotingJniRuntime::GetInstance() {
 }
 
 ChromotingJniRuntime::ChromotingJniRuntime() {
-  at_exit_manager_.reset(new base::AtExitManager());
-
   // On Android, the UI thread is managed by Java, so we need to attach and
   // start a special type of message loop to allow Chromium code to run tasks.
   ui_loop_.reset(new base::MessageLoopForUI());
@@ -217,6 +223,7 @@ ChromotingJniRuntime::~ChromotingJniRuntime() {
       base::Unretained(this),
       &done_event));
   done_event.Wait();
+  base::android::LibraryLoaderExitHook();
   base::android::DetachFromVM();
 }
 
@@ -229,7 +236,7 @@ void ChromotingJniRuntime::ConnectToHost(const char* username,
                                   const char* pairing_secret,
                                   const char* capabilities) {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
-  DCHECK(!session_);
+  DCHECK(!session_.get());
   session_ = new ChromotingJniInstance(this,
                                        username,
                                        auth_token,
@@ -243,9 +250,9 @@ void ChromotingJniRuntime::ConnectToHost(const char* username,
 
 void ChromotingJniRuntime::DisconnectFromHost() {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
-  if (session_) {
+  if (session_.get()) {
     session_->Disconnect();
-    session_ = NULL;
+    session_ = nullptr;
   }
 }
 

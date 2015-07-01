@@ -60,7 +60,7 @@ class StartupAppLauncher : public base::SupportsWeakPtr<StartupAppLauncher>,
                      bool diagnostic_mode,
                      Delegate* delegate);
 
-  virtual ~StartupAppLauncher();
+  ~StartupAppLauncher() override;
 
   // Prepares the environment for an app launch.
   void Initialize();
@@ -85,9 +85,6 @@ class StartupAppLauncher : public base::SupportsWeakPtr<StartupAppLauncher>,
   void OnLaunchSuccess();
   void OnLaunchFailure(KioskAppLaunchError::Error error);
 
-  // Callbacks from ExtensionUpdater.
-  void OnUpdateCheckFinished();
-
   void BeginInstall();
   void OnReadyToLaunch();
   void UpdateAppData();
@@ -103,18 +100,16 @@ class StartupAppLauncher : public base::SupportsWeakPtr<StartupAppLauncher>,
   void OnKioskAppDataLoadStatusChanged(const std::string& app_id);
 
   // OAuth2TokenService::Observer overrides.
-  virtual void OnRefreshTokenAvailable(const std::string& account_id) OVERRIDE;
-  virtual void OnRefreshTokensLoaded() OVERRIDE;
+  void OnRefreshTokenAvailable(const std::string& account_id) override;
+  void OnRefreshTokensLoaded() override;
 
   // extensions::InstallObserver overrides.
-  virtual void OnFinishCrxInstall(const std::string& extension_id,
-                                  bool success) OVERRIDE;
+  void OnFinishCrxInstall(const std::string& extension_id,
+                          bool success) override;
 
   // KioskAppManagerObserver overrides.
-  virtual void OnKioskExtensionLoadedInCache(
-      const std::string& app_id) OVERRIDE;
-  virtual void OnKioskExtensionDownloadFailed(
-      const std::string& app_id) OVERRIDE;
+  void OnKioskExtensionLoadedInCache(const std::string& app_id) override;
+  void OnKioskExtensionDownloadFailed(const std::string& app_id) override;
 
   Profile* profile_;
   const std::string app_id_;

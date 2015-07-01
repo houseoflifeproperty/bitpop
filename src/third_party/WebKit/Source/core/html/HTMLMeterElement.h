@@ -21,15 +21,15 @@
 #ifndef HTMLMeterElement_h
 #define HTMLMeterElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/LabelableElement.h"
 
 namespace blink {
 
-class ExceptionState;
 class MeterValueElement;
-class RenderMeter;
+class LayoutMeter;
 
-class HTMLMeterElement FINAL : public LabelableElement {
+class CORE_EXPORT HTMLMeterElement final : public LabelableElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLMeterElement> create(Document&);
@@ -61,24 +61,25 @@ public:
     double valueRatio() const;
     GaugeRegion gaugeRegion() const;
 
-    virtual bool canContainRangeEndPoint() const OVERRIDE { return false; }
+    virtual bool canContainRangeEndPoint() const override { return false; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit HTMLMeterElement(Document&);
     virtual ~HTMLMeterElement();
 
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
-    RenderMeter* renderMeter() const;
+    virtual bool areAuthorShadowsAllowed() const override { return false; }
+    virtual void willAddFirstOpenShadowRoot() override;
+    LayoutMeter* layoutMeter() const;
 
-    virtual bool supportLabels() const OVERRIDE { return true; }
+    virtual bool supportLabels() const override { return true; }
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
 
     void didElementStateChange();
-    virtual void didAddUserAgentShadowRoot(ShadowRoot&) OVERRIDE;
+    virtual void didAddUserAgentShadowRoot(ShadowRoot&) override;
 
     RefPtrWillBeMember<MeterValueElement> m_value;
 };

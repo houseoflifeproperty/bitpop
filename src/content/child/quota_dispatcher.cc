@@ -7,7 +7,6 @@
 #include "base/basictypes.h"
 #include "base/lazy_instance.h"
 #include "base/threading/thread_local.h"
-#include "content/child/child_thread.h"
 #include "content/child/quota_message_filter.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/common/quota_messages.h"
@@ -35,15 +34,15 @@ class WebStorageQuotaDispatcherCallback : public QuotaDispatcher::Callback {
   explicit WebStorageQuotaDispatcherCallback(
       blink::WebStorageQuotaCallbacks callback)
       : callbacks_(callback) {}
-  virtual ~WebStorageQuotaDispatcherCallback() {}
+  ~WebStorageQuotaDispatcherCallback() override {}
 
-  virtual void DidQueryStorageUsageAndQuota(int64 usage, int64 quota) OVERRIDE {
+  void DidQueryStorageUsageAndQuota(int64 usage, int64 quota) override {
     callbacks_.didQueryStorageUsageAndQuota(usage, quota);
   }
-  virtual void DidGrantStorageQuota(int64 usage, int64 granted_quota) OVERRIDE {
+  void DidGrantStorageQuota(int64 usage, int64 granted_quota) override {
     callbacks_.didGrantStorageQuota(usage, granted_quota);
   }
-  virtual void DidFail(storage::QuotaStatusCode error) OVERRIDE {
+  void DidFail(storage::QuotaStatusCode error) override {
     callbacks_.didFail(static_cast<WebStorageQuotaError>(error));
   }
 
@@ -175,18 +174,18 @@ void QuotaDispatcher::DidFail(
   pending_quota_callbacks_.Remove(request_id);
 }
 
-COMPILE_ASSERT(int(blink::WebStorageQuotaTypeTemporary) ==
-                   int(storage::kStorageTypeTemporary),
-               mismatching_enums);
-COMPILE_ASSERT(int(blink::WebStorageQuotaTypePersistent) ==
-                   int(storage::kStorageTypePersistent),
-               mismatching_enums);
+static_assert(int(blink::WebStorageQuotaTypeTemporary) ==
+                  int(storage::kStorageTypeTemporary),
+              "mismatching enums: kStorageTypeTemporary");
+static_assert(int(blink::WebStorageQuotaTypePersistent) ==
+                  int(storage::kStorageTypePersistent),
+              "mismatching enums: kStorageTypePersistent");
 
-COMPILE_ASSERT(int(blink::WebStorageQuotaErrorNotSupported) ==
-                   int(storage::kQuotaErrorNotSupported),
-               mismatching_enums);
-COMPILE_ASSERT(int(blink::WebStorageQuotaErrorAbort) ==
-                   int(storage::kQuotaErrorAbort),
-               mismatching_enums);
+static_assert(int(blink::WebStorageQuotaErrorNotSupported) ==
+                  int(storage::kQuotaErrorNotSupported),
+              "mismatching enums: kQuotaErrorNotSupported");
+static_assert(int(blink::WebStorageQuotaErrorAbort) ==
+                  int(storage::kQuotaErrorAbort),
+              "mismatching enums: kQuotaErrorAbort");
 
 }  // namespace content

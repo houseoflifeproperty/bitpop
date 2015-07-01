@@ -22,43 +22,28 @@
 #define SVGPathTraversalStateBuilder_h
 
 #include "core/svg/SVGPathConsumer.h"
-#include "core/svg/SVGPoint.h"
+#include "platform/graphics/PathTraversalState.h"
 
 namespace blink {
 
-class PathTraversalState;
+class FloatPoint;
 
-class SVGPathTraversalStateBuilder FINAL : public SVGPathConsumer {
+class SVGPathTraversalStateBuilder final : public SVGPathConsumer {
 public:
-    SVGPathTraversalStateBuilder();
+    SVGPathTraversalStateBuilder(PathTraversalState::PathTraversalAction, float desiredLength = 0);
 
-    unsigned pathSegmentIndex();
+    unsigned pathSegmentIndex() const { return m_segmentIndex; }
     float totalLength();
     FloatPoint currentPoint();
 
-    void setCurrentTraversalState(PathTraversalState* traversalState) { m_traversalState = traversalState; }
-    void setDesiredLength(float);
-    virtual void incrementPathSegmentCount() OVERRIDE;
-    virtual bool continueConsuming() OVERRIDE;
-    virtual void cleanup() OVERRIDE { m_traversalState = 0; }
+    virtual void incrementPathSegmentCount() override;
+    virtual bool continueConsuming() override;
 
 private:
-    // Used in UnalteredParsing/NormalizedParsing modes.
-    virtual void moveTo(const FloatPoint&, bool closed, PathCoordinateMode) OVERRIDE;
-    virtual void lineTo(const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void curveToCubic(const FloatPoint&, const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void closePath() OVERRIDE;
+    virtual void emitSegment(const PathSegmentData&) override;
 
-private:
-    // Not used for PathTraversalState.
-    virtual void lineToHorizontal(float, PathCoordinateMode) OVERRIDE { ASSERT_NOT_REACHED(); }
-    virtual void lineToVertical(float, PathCoordinateMode) OVERRIDE { ASSERT_NOT_REACHED(); }
-    virtual void curveToCubicSmooth(const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE { ASSERT_NOT_REACHED(); }
-    virtual void curveToQuadratic(const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE { ASSERT_NOT_REACHED(); }
-    virtual void curveToQuadraticSmooth(const FloatPoint&, PathCoordinateMode) OVERRIDE { ASSERT_NOT_REACHED(); }
-    virtual void arcTo(float, float, float, bool, bool, const FloatPoint&, PathCoordinateMode) OVERRIDE { ASSERT_NOT_REACHED(); }
-
-    PathTraversalState* m_traversalState;
+    PathTraversalState m_traversalState;
+    unsigned m_segmentIndex;
 };
 
 } // namespace blink

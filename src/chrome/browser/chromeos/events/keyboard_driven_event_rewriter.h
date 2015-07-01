@@ -15,19 +15,19 @@ namespace chromeos {
 class KeyboardDrivenEventRewriter : public ui::EventRewriter {
  public:
   KeyboardDrivenEventRewriter();
-  virtual ~KeyboardDrivenEventRewriter();
+  ~KeyboardDrivenEventRewriter() override;
 
   // Calls Rewrite for testing.
   ui::EventRewriteStatus RewriteForTesting(const ui::Event& event,
                                            scoped_ptr<ui::Event>* new_event);
 
   // EventRewriter overrides:
-  virtual ui::EventRewriteStatus RewriteEvent(
+  ui::EventRewriteStatus RewriteEvent(
       const ui::Event& event,
-      scoped_ptr<ui::Event>* new_event) OVERRIDE;
-  virtual ui::EventRewriteStatus NextDispatchEvent(
+      scoped_ptr<ui::Event>* new_event) override;
+  ui::EventRewriteStatus NextDispatchEvent(
       const ui::Event& last_event,
-      scoped_ptr<ui::Event>* new_event) OVERRIDE;
+      scoped_ptr<ui::Event>* new_event) override;
 
  private:
   ui::EventRewriteStatus Rewrite(const ui::Event& event,

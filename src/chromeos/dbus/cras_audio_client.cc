@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/format_macros.h"
 #include "base/strings/stringprintf.h"
-#include "chromeos/dbus/cras_audio_client_stub_impl.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "dbus/object_path.h"
@@ -25,23 +24,22 @@ class CrasAudioClientImpl : public CrasAudioClient {
  public:
   CrasAudioClientImpl() : cras_proxy_(NULL), weak_ptr_factory_(this) {}
 
-  virtual ~CrasAudioClientImpl() {
-  }
+  ~CrasAudioClientImpl() override {}
 
   // CrasAudioClient overrides:
-  virtual void AddObserver(Observer* observer) OVERRIDE {
+  void AddObserver(Observer* observer) override {
     observers_.AddObserver(observer);
   }
 
-  virtual void RemoveObserver(Observer* observer) OVERRIDE {
+  void RemoveObserver(Observer* observer) override {
     observers_.RemoveObserver(observer);
   }
 
-  virtual bool HasObserver(Observer* observer) OVERRIDE {
+  bool HasObserver(const Observer* observer) const override {
     return observers_.HasObserver(observer);
   }
 
-  virtual void GetVolumeState(const GetVolumeStateCallback& callback) OVERRIDE {
+  void GetVolumeState(const GetVolumeStateCallback& callback) override {
     dbus::MethodCall method_call(cras::kCrasControlInterface,
                                  cras::kGetVolumeState);
     cras_proxy_->CallMethod(
@@ -51,8 +49,8 @@ class CrasAudioClientImpl : public CrasAudioClient {
                    weak_ptr_factory_.GetWeakPtr(), callback));
   }
 
-  virtual void GetNodes(const GetNodesCallback& callback,
-                        const ErrorCallback& error_callback) OVERRIDE {
+  void GetNodes(const GetNodesCallback& callback,
+                const ErrorCallback& error_callback) override {
     dbus::MethodCall method_call(cras::kCrasControlInterface,
                                  cras::kGetNodes);
     cras_proxy_->CallMethodWithErrorCallback(
@@ -64,7 +62,7 @@ class CrasAudioClientImpl : public CrasAudioClient {
                    weak_ptr_factory_.GetWeakPtr(), error_callback));
   }
 
-  virtual void SetOutputNodeVolume(uint64 node_id, int32 volume) OVERRIDE {
+  void SetOutputNodeVolume(uint64 node_id, int32 volume) override {
     dbus::MethodCall method_call(cras::kCrasControlInterface,
                                  cras::kSetOutputNodeVolume);
     dbus::MessageWriter writer(&method_call);
@@ -76,7 +74,7 @@ class CrasAudioClientImpl : public CrasAudioClient {
         dbus::ObjectProxy::EmptyResponseCallback());
   }
 
-  virtual void SetOutputUserMute(bool mute_on) OVERRIDE {
+  void SetOutputUserMute(bool mute_on) override {
     dbus::MethodCall method_call(cras::kCrasControlInterface,
                                  cras::kSetOutputUserMute);
     dbus::MessageWriter writer(&method_call);
@@ -87,7 +85,7 @@ class CrasAudioClientImpl : public CrasAudioClient {
         dbus::ObjectProxy::EmptyResponseCallback());
   }
 
-  virtual void SetInputNodeGain(uint64 node_id, int32 input_gain) OVERRIDE {
+  void SetInputNodeGain(uint64 node_id, int32 input_gain) override {
     dbus::MethodCall method_call(cras::kCrasControlInterface,
                                  cras::kSetInputNodeGain);
     dbus::MessageWriter writer(&method_call);
@@ -99,7 +97,7 @@ class CrasAudioClientImpl : public CrasAudioClient {
         dbus::ObjectProxy::EmptyResponseCallback());
   }
 
-  virtual void SetInputMute(bool mute_on) OVERRIDE {
+  void SetInputMute(bool mute_on) override {
     dbus::MethodCall method_call(cras::kCrasControlInterface,
                                  cras::kSetInputMute);
     dbus::MessageWriter writer(&method_call);
@@ -110,7 +108,7 @@ class CrasAudioClientImpl : public CrasAudioClient {
         dbus::ObjectProxy::EmptyResponseCallback());
   }
 
-  virtual void SetActiveOutputNode(uint64 node_id) OVERRIDE {
+  void SetActiveOutputNode(uint64 node_id) override {
     dbus::MethodCall method_call(cras::kCrasControlInterface,
                                  cras::kSetActiveOutputNode);
     dbus::MessageWriter writer(&method_call);
@@ -121,7 +119,7 @@ class CrasAudioClientImpl : public CrasAudioClient {
         dbus::ObjectProxy::EmptyResponseCallback());
   }
 
-  virtual void SetActiveInputNode(uint64 node_id) OVERRIDE {
+  void SetActiveInputNode(uint64 node_id) override {
     dbus::MethodCall method_call(cras::kCrasControlInterface,
                                  cras::kSetActiveInputNode);
     dbus::MessageWriter writer(&method_call);
@@ -132,7 +130,7 @@ class CrasAudioClientImpl : public CrasAudioClient {
         dbus::ObjectProxy::EmptyResponseCallback());
   }
 
-  virtual void AddActiveInputNode(uint64 node_id) OVERRIDE {
+  void AddActiveInputNode(uint64 node_id) override {
     dbus::MethodCall method_call(cras::kCrasControlInterface,
                                  cras::kAddActiveInputNode);
     dbus::MessageWriter writer(&method_call);
@@ -143,7 +141,7 @@ class CrasAudioClientImpl : public CrasAudioClient {
         dbus::ObjectProxy::EmptyResponseCallback());
   }
 
-  virtual void RemoveActiveInputNode(uint64 node_id) OVERRIDE {
+  void RemoveActiveInputNode(uint64 node_id) override {
     dbus::MethodCall method_call(cras::kCrasControlInterface,
                                  cras::kRemoveActiveInputNode);
     dbus::MessageWriter writer(&method_call);
@@ -154,7 +152,7 @@ class CrasAudioClientImpl : public CrasAudioClient {
         dbus::ObjectProxy::EmptyResponseCallback());
   }
 
-  virtual void AddActiveOutputNode(uint64 node_id) OVERRIDE {
+  void AddActiveOutputNode(uint64 node_id) override {
     dbus::MethodCall method_call(cras::kCrasControlInterface,
                                  cras::kAddActiveOutputNode);
     dbus::MessageWriter writer(&method_call);
@@ -164,7 +162,7 @@ class CrasAudioClientImpl : public CrasAudioClient {
                             dbus::ObjectProxy::EmptyResponseCallback());
   }
 
-  virtual void RemoveActiveOutputNode(uint64 node_id) OVERRIDE {
+  void RemoveActiveOutputNode(uint64 node_id) override {
     dbus::MethodCall method_call(cras::kCrasControlInterface,
                                  cras::kRemoveActiveOutputNode);
     dbus::MessageWriter writer(&method_call);
@@ -174,8 +172,19 @@ class CrasAudioClientImpl : public CrasAudioClient {
                             dbus::ObjectProxy::EmptyResponseCallback());
   }
 
+  void SwapLeftRight(uint64 node_id, bool swap) override {
+    dbus::MethodCall method_call(cras::kCrasControlInterface,
+                                 cras::kSwapLeftRight);
+    dbus::MessageWriter writer(&method_call);
+    writer.AppendUint64(node_id);
+    writer.AppendBool(swap);
+    cras_proxy_->CallMethod(&method_call,
+                            dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+                            dbus::ObjectProxy::EmptyResponseCallback());
+  }
+
  protected:
-  virtual void Init(dbus::Bus* bus) OVERRIDE {
+  void Init(dbus::Bus* bus) override {
     cras_proxy_ = bus->GetObjectProxy(cras::kCrasServiceName,
                                       dbus::ObjectPath(cras::kCrasServicePath));
 

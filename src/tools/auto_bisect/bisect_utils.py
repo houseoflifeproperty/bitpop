@@ -11,7 +11,6 @@ annotations for the Buildbot waterfall.
 import errno
 import imp
 import os
-import shutil
 import stat
 import subprocess
 import sys
@@ -61,27 +60,94 @@ GCLIENT_SPEC_DATA = [
     },
 ]
 GCLIENT_SPEC_ANDROID = "\ntarget_os = ['android']"
-GCLIENT_CUSTOM_DEPS_V8 = {'src/v8_bleeding_edge': 'git://github.com/v8/v8.git'}
+GCLIENT_CUSTOM_DEPS_V8 = {
+    'src/v8_bleeding_edge': 'https://chromium.googlesource.com/v8/v8.git'
+}
 FILE_DEPS_GIT = '.DEPS.git'
 FILE_DEPS = 'DEPS'
 
-REPO_SYNC_COMMAND = ('git checkout -f $(git rev-list --max-count=1 '
-                     '--before=%d remotes/m/master)')
+# Bisect working directory.
+BISECT_DIR = 'bisect'
 
-# Paths to CrOS-related files.
-# WARNING(qyearsley, 2014-08-15): These haven't been tested recently.
-CROS_SDK_PATH = os.path.join('..', 'cros', 'chromite', 'bin', 'cros_sdk')
-CROS_TEST_KEY_PATH = os.path.join(
-    '..', 'cros', 'chromite', 'ssh_keys', 'testing_rsa')
-CROS_SCRIPT_KEY_PATH = os.path.join(
-    '..', 'cros', 'src', 'scripts', 'mod_for_test_scripts', 'ssh_keys',
-    'testing_rsa')
+# The percentage at which confidence is considered high.
+HIGH_CONFIDENCE = 95
 
-REPO_PARAMS = [
-    'https://chrome-internal.googlesource.com/chromeos/manifest-internal/',
-    '--repo-url',
-    'https://git.chromium.org/external/repo.git'
-]
+# Below is the map of "depot" names to information about each depot. Each depot
+# is a repository, and in the process of bisecting, revision ranges in these
+# repositories may also be bisected.
+#
+# Each depot information dictionary may contain:
+#   src: Path to the working directory.
+#   recurse: True if this repository will get bisected.
+#   svn: URL of SVN repository. Needed for git workflow to resolve hashes to
+#       SVN revisions.
+#   from: Parent depot that must be bisected before this is bisected.
+#   deps_var: Key name in vars variable in DEPS file that has revision
+#       information.
+DEPOT_DEPS_NAME = {
+    'chromium': {
+        'src': 'src',
+        'recurse': True,
+        'from': ['android-chrome'],
+        'viewvc': 'https://chromium.googlesource.com/chromium/src/+/',
+        'deps_var': 'chromium_rev'
+    },
+    'webkit': {
+        'src': 'src/third_party/WebKit',
+        'recurse': True,
+        'from': ['chromium'],
+        'viewvc': 'https://chromium.googlesource.com/chromium/blink/+/',
+        'deps_var': 'webkit_revision'
+    },
+    'angle': {
+        'src': 'src/third_party/angle',
+        'src_old': 'src/third_party/angle_dx11',
+        'recurse': True,
+        'from': ['chromium'],
+        'platform': 'nt',
+        'viewvc': 'https://chromium.googlesource.com/angle/angle/+/',
+        'deps_var': 'angle_revision'
+    },
+    'v8': {
+        'src': 'src/v8',
+        'recurse': True,
+        'from': ['chromium'],
+        'custom_deps': GCLIENT_CUSTOM_DEPS_V8,
+        'viewvc': 'https://chromium.googlesource.com/v8/v8.git/+/',
+        'deps_var': 'v8_revision'
+    },
+    'v8_bleeding_edge': {
+        'src': 'src/v8_bleeding_edge',
+        'recurse': True,
+        'svn': 'https://v8.googlecode.com/svn/branches/bleeding_edge',
+        'from': ['v8'],
+        'viewvc': 'https://chromium.googlesource.com/v8/v8.git/+/',
+        'deps_var': 'v8_revision'
+    },
+    'skia/src': {
+        'src': 'src/third_party/skia/src',
+        'recurse': True,
+        'from': ['chromium'],
+        'viewvc': 'https://chromium.googlesource.com/skia/+/',
+        'deps_var': 'skia_revision'
+    }
+}
+
+DEPOT_NAMES = DEPOT_DEPS_NAME.keys()
+
+# The possible values of the --bisect_mode flag, which determines what to
+# use when classifying a revision as "good" or "bad".
+BISECT_MODE_MEAN = 'mean'
+BISECT_MODE_STD_DEV = 'std_dev'
+BISECT_MODE_RETURN_CODE = 'return_code'
+
+
+def AddAdditionalDepotInfo(depot_info):
+  """Adds additional depot info to the global depot variables."""
+  global DEPOT_DEPS_NAME
+  global DEPOT_NAMES
+  DEPOT_DEPS_NAME = dict(DEPOT_DEPS_NAME.items() + depot_info.items())
+  DEPOT_NAMES = DEPOT_DEPS_NAME.keys()
 
 
 def OutputAnnotationStepStart(name):
@@ -104,6 +170,32 @@ def OutputAnnotationStepClosed():
   print '@@@STEP_CLOSED@@@'
   print
   sys.stdout.flush()
+
+
+def OutputAnnotationStepText(text):
+  """Outputs appropriate annotation to print text.
+
+  Args:
+    name: The text to print.
+  """
+  print
+  print '@@@STEP_TEXT@%s@@@' % text
+  print
+  sys.stdout.flush()
+
+
+def OutputAnnotationStepWarning():
+  """Outputs appropriate annotation to signal a warning."""
+  print
+  print '@@@STEP_WARNINGS@@@'
+  print
+
+
+def OutputAnnotationStepFailure():
+  """Outputs appropriate annotation to signal a warning."""
+  print
+  print '@@@STEP_FAILURE@@@'
+  print
 
 
 def OutputAnnotationStepLink(label, url):
@@ -144,7 +236,7 @@ def LoadExtraSrc(path_to_file):
 
 def IsTelemetryCommand(command):
   """Attempts to discern whether or not a given command is running telemetry."""
-  return ('tools/perf/run_' in command or 'tools\\perf\\run_' in command)
+  return 'tools/perf/run_' in command or 'tools\\perf\\run_' in command
 
 
 def _CreateAndChangeToSourceDirectory(working_directory):
@@ -162,12 +254,12 @@ def _CreateAndChangeToSourceDirectory(working_directory):
   cwd = os.getcwd()
   os.chdir(working_directory)
   try:
-    os.mkdir('bisect')
+    os.mkdir(BISECT_DIR)
   except OSError, e:
     if e.errno != errno.EEXIST:  # EEXIST indicates that it already exists.
       os.chdir(cwd)
       return False
-  os.chdir('bisect')
+  os.chdir(BISECT_DIR)
   return True
 
 
@@ -204,58 +296,6 @@ def RunGClient(params, cwd=None):
   return _SubprocessCall(cmd, cwd=cwd)
 
 
-def SetupCrosRepo():
-  """Sets up CrOS repo for bisecting ChromeOS.
-
-  Returns:
-    True if successful, False otherwise.
-  """
-  cwd = os.getcwd()
-  try:
-    os.mkdir('cros')
-  except OSError as e:
-    if e.errno != errno.EEXIST:  # EEXIST means the directory already exists.
-      return False
-  os.chdir('cros')
-
-  cmd = ['init', '-u'] + REPO_PARAMS
-
-  passed = False
-
-  if not _RunRepo(cmd):
-    if not _RunRepo(['sync']):
-      passed = True
-  os.chdir(cwd)
-
-  return passed
-
-
-def _RunRepo(params):
-  """Runs CrOS repo command with specified parameters.
-
-  Args:
-    params: A list of parameters to pass to gclient.
-
-  Returns:
-    The return code of the call (zero indicates success).
-  """
-  cmd = ['repo'] + params
-  return _SubprocessCall(cmd)
-
-
-def RunRepoSyncAtTimestamp(timestamp):
-  """Syncs all git depots to the timestamp specified using repo forall.
-
-  Args:
-    params: Unix timestamp to sync to.
-
-  Returns:
-    The return code of the call.
-  """
-  cmd = ['forall', '-c', REPO_SYNC_COMMAND % timestamp]
-  return _RunRepo(cmd)
-
-
 def RunGClientAndCreateConfig(opts, custom_deps=None, cwd=None):
   """Runs gclient and creates a config containing both src and src-internal.
 
@@ -285,7 +325,6 @@ def RunGClientAndCreateConfig(opts, custom_deps=None, cwd=None):
   return return_code
 
 
-
 def OnAccessError(func, path, _):
   """Error handler for shutil.rmtree.
 
@@ -308,49 +347,34 @@ def OnAccessError(func, path, _):
     raise
 
 
-def RemoveThirdPartyDirectory(dir_name):
-  """Removes third_party directory from the source.
-
-  At some point, some of the third_parties were causing issues to changes in
-  the way they are synced. We remove such folder in order to avoid sync errors
-  while bisecting.
-
-  Returns:
-    True on success, otherwise False.
-  """
-  path_to_dir = os.path.join(os.getcwd(), 'third_party', dir_name)
-  try:
-    if os.path.exists(path_to_dir):
-      shutil.rmtree(path_to_dir, onerror=OnAccessError)
-  except OSError, e:
-    print 'Error #%d while running shutil.rmtree(%s): %s' % (
-        e.errno, path_to_dir, str(e))
-    if e.errno != errno.ENOENT:
-      return False
-  return True
-
-
-def _CleanupPreviousGitRuns():
+def _CleanupPreviousGitRuns(cwd=os.getcwd()):
   """Cleans up any leftover index.lock files after running git."""
   # If a previous run of git crashed, or bot was reset, etc., then we might
   # end up with leftover index.lock files.
-  for path, _, files in os.walk(os.getcwd()):
+  for path, _, files in os.walk(cwd):
     for cur_file in files:
       if cur_file.endswith('index.lock'):
         path_to_file = os.path.join(path, cur_file)
         os.remove(path_to_file)
 
 
-def RunGClientAndSync(cwd=None):
+def RunGClientAndSync(revisions=None, cwd=None):
   """Runs gclient and does a normal sync.
 
   Args:
+    revisions: List of revisions that need to be synced.
+        E.g., "src@2ae43f...", "src/third_party/webkit@asr1234" etc.
     cwd: Working directory to run from.
 
   Returns:
     The return code of the call.
   """
-  params = ['sync', '--verbose', '--nohooks', '--reset', '--force']
+  params = ['sync', '--verbose', '--nohooks', '--force',
+            '--delete_unversioned_trees']
+  if revisions is not None:
+    for revision in revisions:
+      if revision is not None:
+        params.extend(['--revision', revision])
   return RunGClient(params, cwd=cwd)
 
 
@@ -368,35 +392,19 @@ def SetupGitDepot(opts, custom_deps):
     otherwise.
   """
   name = 'Setting up Bisection Depot'
+  try:
+    if opts.output_buildbot_annotations:
+      OutputAnnotationStepStart(name)
 
-  if opts.output_buildbot_annotations:
-    OutputAnnotationStepStart(name)
+    if RunGClientAndCreateConfig(opts, custom_deps):
+      return False
 
-  passed = False
-
-  if not RunGClientAndCreateConfig(opts, custom_deps):
-    passed_deps_check = True
-    if os.path.isfile(os.path.join('src', FILE_DEPS_GIT)):
-      cwd = os.getcwd()
-      os.chdir('src')
-      if passed_deps_check:
-        passed_deps_check = RemoveThirdPartyDirectory('libjingle')
-      if passed_deps_check:
-        passed_deps_check = RemoveThirdPartyDirectory('skia')
-      os.chdir(cwd)
-
-    if passed_deps_check:
-      _CleanupPreviousGitRuns()
-
-      RunGClient(['revert'])
-      if not RunGClientAndSync():
-        passed = True
-
-  if opts.output_buildbot_annotations:
-    print
-    OutputAnnotationStepClosed()
-
-  return passed
+    _CleanupPreviousGitRuns()
+    RunGClient(['revert'])
+    return not RunGClientAndSync()
+  finally:
+    if opts.output_buildbot_annotations:
+      OutputAnnotationStepClosed()
 
 
 def CheckIfBisectDepotExists(opts):
@@ -408,7 +416,7 @@ def CheckIfBisectDepotExists(opts):
   Returns:
     Returns True if it exists.
   """
-  path_to_dir = os.path.join(opts.working_directory, 'bisect', 'src')
+  path_to_dir = os.path.join(opts.working_directory, BISECT_DIR, 'src')
   return os.path.exists(path_to_dir)
 
 
@@ -422,7 +430,7 @@ def CheckRunGit(command, cwd=None):
   Returns:
     A tuple of the output and return code.
   """
-  (output, return_code) = RunGit(command, cwd=cwd)
+  output, return_code = RunGit(command, cwd=cwd)
 
   assert not return_code, 'An error occurred while running'\
                           ' "git %s"' % ' '.join(command)
@@ -451,6 +459,15 @@ def CreateBisectDirectoryAndSetupDepot(opts, custom_deps):
     opts: The options parsed from the command line through parse_args().
     custom_deps: A dictionary of additional dependencies to add to .gclient.
   """
+  if CheckIfBisectDepotExists(opts):
+    path_to_dir = os.path.join(os.path.abspath(opts.working_directory),
+                               BISECT_DIR, 'src')
+    output, _ = RunGit(['rev-parse', '--is-inside-work-tree'], cwd=path_to_dir)
+    if output.strip() == 'true':
+      # Before checking out master, cleanup up any leftover index.lock files.
+      _CleanupPreviousGitRuns(path_to_dir)
+      # Checks out the master branch, throws an exception if git command fails.
+      CheckRunGit(['checkout', '-f', 'master'], cwd=path_to_dir)
   if not _CreateAndChangeToSourceDirectory(opts.working_directory):
     raise RuntimeError('Could not create bisect directory.')
 
@@ -496,8 +513,10 @@ def RunProcessAndRetrieveOutput(command, cwd=None):
 
   # On Windows, use shell=True to get PATH interpretation.
   shell = IsWindowsHost()
-  proc = subprocess.Popen(command, shell=shell, stdout=subprocess.PIPE)
-  (output, _) = proc.communicate()
+  proc = subprocess.Popen(
+      command, shell=shell, stdout=subprocess.PIPE,
+      stderr=subprocess.STDOUT)
+  output, _ = proc.communicate()
 
   if cwd:
     os.chdir(original_cwd)
@@ -506,14 +525,7 @@ def RunProcessAndRetrieveOutput(command, cwd=None):
 
 
 def IsStringInt(string_to_check):
-  """Checks whether or not the given string can be converted to a integer.
-
-  Args:
-    string_to_check: Input string to check if it can be converted to an int.
-
-  Returns:
-    True if the string can be converted to an int.
-  """
+  """Checks whether or not the given string can be converted to an int."""
   try:
     int(string_to_check)
     return True
@@ -522,15 +534,7 @@ def IsStringInt(string_to_check):
 
 
 def IsStringFloat(string_to_check):
-  """Checks whether or not the given string can be converted to a floating
-  point number.
-
-  Args:
-    string_to_check: Input string to check if it can be converted to a float.
-
-  Returns:
-    True if the string can be converted to a float.
-  """
+  """Checks whether or not the given string can be converted to a float."""
   try:
     float(string_to_check)
     return True
@@ -539,43 +543,21 @@ def IsStringFloat(string_to_check):
 
 
 def IsWindowsHost():
-  """Checks whether or not the script is running on Windows.
-
-  Returns:
-    True if running on Windows.
-  """
   return sys.platform == 'cygwin' or sys.platform.startswith('win')
 
 
 def Is64BitWindows():
-  """Returns whether or not Windows is a 64-bit version.
-
-  Returns:
-    True if Windows is 64-bit, False if 32-bit.
-  """
-  platform = os.environ['PROCESSOR_ARCHITECTURE']
-  try:
-    platform = os.environ['PROCESSOR_ARCHITEW6432']
-  except KeyError:
-    # Must not be running in WoW64, so PROCESSOR_ARCHITECTURE is correct
-    pass
-
-  return platform in ['AMD64', 'I64']
+  """Checks whether or not Windows is a 64-bit version."""
+  platform = os.environ.get('PROCESSOR_ARCHITEW6432')
+  if not platform:
+    # Must not be running in WoW64, so PROCESSOR_ARCHITECTURE is correct.
+    platform = os.environ.get('PROCESSOR_ARCHITECTURE')
+  return platform and platform in ['AMD64', 'I64']
 
 
 def IsLinuxHost():
-  """Checks whether or not the script is running on Linux.
-
-  Returns:
-    True if running on Linux.
-  """
   return sys.platform.startswith('linux')
 
 
 def IsMacHost():
-  """Checks whether or not the script is running on Mac.
-
-  Returns:
-    True if running on Mac.
-  """
   return sys.platform.startswith('darwin')

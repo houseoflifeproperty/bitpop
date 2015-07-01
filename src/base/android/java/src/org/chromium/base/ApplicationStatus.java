@@ -114,19 +114,19 @@ public class ApplicationStatus {
 
         application.registerWindowFocusChangedListener(
                 new BaseChromiumApplication.WindowFocusChangedListener() {
-            @Override
-            public void onWindowFocusChanged(Activity activity, boolean hasFocus) {
-                if (!hasFocus || activity == sActivity) return;
+                    @Override
+                    public void onWindowFocusChanged(Activity activity, boolean hasFocus) {
+                        if (!hasFocus || activity == sActivity) return;
 
-                int state = getStateForActivity(activity);
+                        int state = getStateForActivity(activity);
 
-                if (state != ActivityState.DESTROYED && state != ActivityState.STOPPED) {
-                    sActivity = activity;
-                }
+                        if (state != ActivityState.DESTROYED && state != ActivityState.STOPPED) {
+                            sActivity = activity;
+                        }
 
-                // TODO(dtrainor): Notify of active activity change?
-            }
-        });
+                        // TODO(dtrainor): Notify of active activity change?
+                    }
+                });
 
         application.registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
             @Override
@@ -309,9 +309,8 @@ public class ApplicationStatus {
             if (sCachedApplicationState == null) {
                 sCachedApplicationState = determineApplicationState();
             }
+            return sCachedApplicationState.intValue();
         }
-
-        return sCachedApplicationState.intValue();
     }
 
     /**
@@ -396,7 +395,7 @@ public class ApplicationStatus {
      */
     @CalledByNative
     private static void registerThreadSafeNativeApplicationStateListener() {
-        ThreadUtils.runOnUiThread(new Runnable () {
+        ThreadUtils.runOnUiThread(new Runnable() {
             @Override
             public void run() {
                 if (sNativeApplicationStateListener != null) return;

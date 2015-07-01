@@ -21,18 +21,17 @@ class CC_EXPORT PaintedScrollbarLayerImpl : public ScrollbarLayerImplBase {
       LayerTreeImpl* tree_impl,
       int id,
       ScrollbarOrientation orientation);
-  virtual ~PaintedScrollbarLayerImpl();
+  ~PaintedScrollbarLayerImpl() override;
 
   // LayerImpl implementation.
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
-  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
+  void PushPropertiesTo(LayerImpl* layer) override;
 
-  virtual bool WillDraw(DrawMode draw_mode,
-                        ResourceProvider* resource_provider) OVERRIDE;
-  virtual void AppendQuads(RenderPass* render_pass,
-                           const OcclusionTracker<LayerImpl>& occlusion_tracker,
-                           AppendQuadsData* append_quads_data) OVERRIDE;
+  bool WillDraw(DrawMode draw_mode,
+                ResourceProvider* resource_provider) override;
+  void AppendQuads(RenderPass* render_pass,
+                   AppendQuadsData* append_quads_data) override;
+  gfx::Rect GetEnclosingRectInTargetSpace() const override;
 
   void SetThumbThickness(int thumb_thickness);
   void SetThumbLength(int thumb_length);
@@ -46,34 +45,37 @@ class CC_EXPORT PaintedScrollbarLayerImpl : public ScrollbarLayerImplBase {
     thumb_ui_resource_id_ = uid;
   }
 
+  void set_internal_contents_scale_and_bounds(float content_scale,
+                                              const gfx::Size& content_bounds) {
+    internal_contents_scale_ = content_scale;
+    internal_content_bounds_ = content_bounds;
+  }
+
  protected:
   PaintedScrollbarLayerImpl(LayerTreeImpl* tree_impl,
                             int id,
                             ScrollbarOrientation orientation);
 
   // ScrollbarLayerImplBase implementation.
-  virtual int ThumbThickness() const OVERRIDE;
-  virtual int ThumbLength() const OVERRIDE;
-  virtual float TrackLength() const OVERRIDE;
-  virtual int TrackStart() const OVERRIDE;
-  virtual bool IsThumbResizable() const OVERRIDE;
+  int ThumbThickness() const override;
+  int ThumbLength() const override;
+  float TrackLength() const override;
+  int TrackStart() const override;
+  bool IsThumbResizable() const override;
 
  private:
-  virtual const char* LayerTypeAsString() const OVERRIDE;
+  const char* LayerTypeAsString() const override;
 
   UIResourceId track_ui_resource_id_;
   UIResourceId thumb_ui_resource_id_;
+
+  float internal_contents_scale_;
+  gfx::Size internal_content_bounds_;
 
   int thumb_thickness_;
   int thumb_length_;
   int track_start_;
   int track_length_;
-
-  // Difference between the clip layer's height and the visible viewport
-  // height (which may differ in the presence of top-controls hiding).
-  float vertical_adjust_;
-
-  int scroll_layer_id_;
 
   DISALLOW_COPY_AND_ASSIGN(PaintedScrollbarLayerImpl);
 };

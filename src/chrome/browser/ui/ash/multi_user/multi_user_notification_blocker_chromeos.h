@@ -19,16 +19,16 @@ class MultiUserNotificationBlockerChromeOS
   MultiUserNotificationBlockerChromeOS(
       message_center::MessageCenter* message_center,
       const std::string& initial_user_id);
-  virtual ~MultiUserNotificationBlockerChromeOS();
+  ~MultiUserNotificationBlockerChromeOS() override;
 
   // Called by MultiUserWindowManager when the active user has changed.
   void ActiveUserChanged(const std::string& user_id);
 
   // message_center::NotificationBlocker overrides:
-  virtual bool ShouldShowNotification(
-      const message_center::NotifierId& notifier_id) const OVERRIDE;
-  virtual bool ShouldShowNotificationAsPopup(
-      const message_center::NotifierId& notifier_id) const OVERRIDE;
+  bool ShouldShowNotification(
+      const message_center::NotifierId& notifier_id) const override;
+  bool ShouldShowNotificationAsPopup(
+      const message_center::NotifierId& notifier_id) const override;
 
  private:
   // Returns true if this blocker is actively working.

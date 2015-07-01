@@ -32,8 +32,6 @@
 namespace blink {
 
 class SpeechRecognition;
-class WebSpeechRecognitionResult;
-class WebString;
 
 // WebSpeechRecognitionHandle is used by WebSpeechRecognizer to identify a
 // recognition session, and by WebSpeechRecognizerClient to route
@@ -59,8 +57,7 @@ public:
     BLINK_EXPORT bool lessThan(const WebSpeechRecognitionHandle&) const;
 
 #if BLINK_IMPLEMENTATION
-    explicit WebSpeechRecognitionHandle(SpeechRecognition*);
-    WebSpeechRecognitionHandle& operator=(SpeechRecognition*);
+    WebSpeechRecognitionHandle(SpeechRecognition*);
     operator SpeechRecognition*() const;
 #endif
 

@@ -17,7 +17,7 @@ class GpuBlacklistTest : public testing::Test {
  public:
   GpuBlacklistTest() { }
 
-  virtual ~GpuBlacklistTest() { }
+  ~GpuBlacklistTest() override {}
 
   const GPUInfo& gpu_info() const {
     return gpu_info_;
@@ -55,7 +55,7 @@ class GpuBlacklistTest : public testing::Test {
   }
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     gpu_info_.gpu.vendor_id = 0x10de;
     gpu_info_.gpu.device_id = 0x0640;
     gpu_info_.driver_vendor = "NVIDIA";
@@ -65,13 +65,9 @@ class GpuBlacklistTest : public testing::Test {
     gpu_info_.machine_model_version = "7.1";
     gpu_info_.gl_vendor = "NVIDIA Corporation";
     gpu_info_.gl_renderer = "NVIDIA GeForce GT 120 OpenGL Engine";
-    gpu_info_.performance_stats.graphics = 5.0;
-    gpu_info_.performance_stats.gaming = 5.0;
-    gpu_info_.performance_stats.overall = 5.0;
   }
 
-  virtual void TearDown() {
-  }
+  void TearDown() override {}
 
  private:
   GPUInfo gpu_info_;

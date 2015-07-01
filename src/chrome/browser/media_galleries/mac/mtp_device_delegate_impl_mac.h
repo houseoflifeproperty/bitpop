@@ -32,31 +32,71 @@ class MTPDeviceDelegateImplMac : public MTPDeviceAsyncDelegate {
   // MTPDeviceAsyncDelegate implementation. These functions are called on the
   // IO thread by the async filesystem file util. They forward to
   // similarly-named methods on the UI thread.
-  virtual void GetFileInfo(
-      const base::FilePath& file_path,
-      const GetFileInfoSuccessCallback& success_callback,
-      const ErrorCallback& error_callback) OVERRIDE;
+  void GetFileInfo(const base::FilePath& file_path,
+                   const GetFileInfoSuccessCallback& success_callback,
+                   const ErrorCallback& error_callback) override;
+
+  void CreateDirectory(const base::FilePath& directory_path,
+                       const bool exclusive,
+                       const bool recursive,
+                       const CreateDirectorySuccessCallback& success_callback,
+                       const ErrorCallback& error_callback) override;
 
   // Note: passed absolute paths, but expects relative paths in reply.
-  virtual void ReadDirectory(
-      const base::FilePath& root,
-      const ReadDirectorySuccessCallback& success_callback,
-      const ErrorCallback& error_callback) OVERRIDE;
+  void ReadDirectory(const base::FilePath& root,
+                     const ReadDirectorySuccessCallback& success_callback,
+                     const ErrorCallback& error_callback) override;
 
   // Note: passed absolute paths.
-  virtual void CreateSnapshotFile(
+  void CreateSnapshotFile(
       const base::FilePath& device_file_path,
       const base::FilePath& local_path,
       const CreateSnapshotFileSuccessCallback& success_callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual bool IsStreaming() OVERRIDE;
-  virtual void ReadBytes(const base::FilePath& device_file_path,
-                         const scoped_refptr<net::IOBuffer>& buf,
-                         int64 offset,
-                         int buf_len,
-                         const ReadBytesSuccessCallback& success_callback,
-                         const ErrorCallback& error_callback) OVERRIDE;
-  virtual void CancelPendingTasksAndDeleteDelegate() OVERRIDE;
+      const ErrorCallback& error_callback) override;
+  bool IsStreaming() override;
+  void ReadBytes(const base::FilePath& device_file_path,
+                 const scoped_refptr<net::IOBuffer>& buf,
+                 int64 offset,
+                 int buf_len,
+                 const ReadBytesSuccessCallback& success_callback,
+                 const ErrorCallback& error_callback) override;
+  bool IsReadOnly() const override;
+  void CopyFileLocal(
+      const base::FilePath& source_file_path,
+      const base::FilePath& device_file_path,
+      const CreateTemporaryFileCallback& create_temporary_file_callback,
+      const CopyFileProgressCallback& progress_callback,
+      const CopyFileLocalSuccessCallback& success_callback,
+      const ErrorCallback& error_callback) override;
+  void MoveFileLocal(
+      const base::FilePath& source_file_path,
+      const base::FilePath& device_file_path,
+      const CreateTemporaryFileCallback& create_temporary_file_callback,
+      const MoveFileLocalSuccessCallback& success_callback,
+      const ErrorCallback& error_callback) override;
+  void CopyFileFromLocal(
+      const base::FilePath& source_file_path,
+      const base::FilePath& device_file_path,
+      const CopyFileFromLocalSuccessCallback& success_callback,
+      const ErrorCallback& error_callback) override;
+  void DeleteFile(const base::FilePath& file_path,
+                  const DeleteFileSuccessCallback& success_callback,
+                  const ErrorCallback& error_callback) override;
+  void DeleteDirectory(const base::FilePath& file_path,
+                       const DeleteDirectorySuccessCallback& success_callback,
+                       const ErrorCallback& error_callback) override;
+  void AddWatcher(const GURL& origin,
+                  const base::FilePath& file_path,
+                  const bool recursive,
+                  const storage::WatcherManager::StatusCallback& callback,
+                  const storage::WatcherManager::NotificationCallback&
+                      notification_callback) override;
+  void RemoveWatcher(
+      const GURL& origin,
+      const base::FilePath& file_path,
+      const bool recursive,
+      const storage::WatcherManager::StatusCallback& callback) override;
+  void CancelPendingTasksAndDeleteDelegate() override;
 
   // Forward delegates for ImageCaptureDeviceListener. These are
   // invoked in callbacks of the ImageCapture library on the UI thread.
@@ -74,7 +114,7 @@ class MTPDeviceDelegateImplMac : public MTPDeviceAsyncDelegate {
  private:
   class DeviceListener;
 
-  virtual ~MTPDeviceDelegateImplMac();
+  ~MTPDeviceDelegateImplMac() override;
 
   // Delegate for GetFileInfo, called on the UI thread.
   void GetFileInfoImpl(const base::FilePath& file_path,

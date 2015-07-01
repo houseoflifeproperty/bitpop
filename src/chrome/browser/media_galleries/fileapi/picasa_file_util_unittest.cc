@@ -13,9 +13,10 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "chrome/browser/media_galleries/fileapi/media_file_system_backend.h"
 #include "chrome/browser/media_galleries/fileapi/media_path_filter.h"
@@ -28,13 +29,13 @@
 #include "content/public/test/mock_special_storage_policy.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_file_system_options.h"
+#include "storage/browser/blob/shareable_file_reference.h"
 #include "storage/browser/fileapi/async_file_util.h"
 #include "storage/browser/fileapi/external_mount_points.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/fileapi/file_system_operation_context.h"
 #include "storage/browser/fileapi/file_system_operation_runner.h"
 #include "storage/browser/fileapi/isolated_context.h"
-#include "storage/common/blob/shareable_file_reference.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using storage::FileSystemOperationContext;
@@ -190,11 +191,10 @@ class TestPicasaFileUtil : public PicasaFileUtil {
       : PicasaFileUtil(media_path_filter),
         data_provider_(data_provider) {
   }
-  virtual ~TestPicasaFileUtil() {}
+  ~TestPicasaFileUtil() override {}
+
  private:
-  virtual PicasaDataProvider* GetDataProvider() OVERRIDE {
-    return data_provider_;
-  }
+  PicasaDataProvider* GetDataProvider() override { return data_provider_; }
 
   PicasaDataProvider* data_provider_;
 };
@@ -207,8 +207,8 @@ class TestMediaFileSystemBackend : public MediaFileSystemBackend {
                                MediaFileSystemBackend::MediaTaskRunner().get()),
         test_file_util_(picasa_file_util) {}
 
-  virtual storage::AsyncFileUtil* GetAsyncFileUtil(
-      storage::FileSystemType type) OVERRIDE {
+  storage::AsyncFileUtil* GetAsyncFileUtil(
+      storage::FileSystemType type) override {
     if (type != storage::kFileSystemTypePicasa)
       return NULL;
 
@@ -224,9 +224,8 @@ class PicasaFileUtilTest : public testing::Test {
   PicasaFileUtilTest()
       : io_thread_(content::BrowserThread::IO, &message_loop_) {
   }
-  virtual ~PicasaFileUtilTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(profile_dir_.CreateUniqueTempDir());
     ImportedMediaGalleryRegistry::GetInstance()->Initialize();
 
@@ -245,8 +244,8 @@ class PicasaFileUtilTest : public testing::Test {
                                picasa_data_provider_.get())));
 
     file_system_context_ = new storage::FileSystemContext(
-        base::MessageLoopProxy::current().get(),
-        base::MessageLoopProxy::current().get(),
+        base::ThreadTaskRunnerHandle::Get().get(),
+        base::ThreadTaskRunnerHandle::Get().get(),
         storage::ExternalMountPoints::CreateRefCounted().get(),
         storage_policy.get(),
         NULL,
@@ -256,7 +255,7 @@ class PicasaFileUtilTest : public testing::Test {
         content::CreateAllowFileAccessOptions());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     SynchronouslyRunOnMediaTaskRunner(
         base::Bind(&PicasaFileUtilTest::TearDownOnMediaTaskRunner,
                    base::Unretained(this)));

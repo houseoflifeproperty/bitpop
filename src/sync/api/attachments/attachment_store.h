@@ -10,38 +10,63 @@
 #include "base/memory/scoped_ptr.h"
 #include "sync/api/attachments/attachment.h"
 #include "sync/api/attachments/attachment_id.h"
+#include "sync/api/attachments/attachment_metadata.h"
 #include "sync/base/sync_export.h"
 
 namespace base {
-class RefCountedMemory;
+class FilePath;
+class SequencedTaskRunner;
 }  // namespace base
 
 namespace syncer {
 
-class Attachment;
-class AttachmentId;
+class AttachmentStoreBackend;
+class AttachmentStoreForSync;
+class AttachmentStoreFrontend;
 
-// A place to locally store and access Attachments.
+// AttachmentStore is a place to locally store and access Attachments.
 //
+// AttachmentStore class is an interface exposed to data type and
+// AttachmentService code.
+// It also contains factory methods for default attachment store
+// implementations.
 // Destroying this object does not necessarily cancel outstanding async
 // operations. If you need cancel like semantics, use WeakPtr in the callbacks.
-class SYNC_EXPORT AttachmentStore : public base::RefCounted<AttachmentStore> {
+class SYNC_EXPORT AttachmentStore {
  public:
-  AttachmentStore();
-
   // TODO(maniscalco): Consider udpating Read and Write methods to support
   // resumable transfers (bug 353292).
 
+  // The result status of an attachment store operation.
+  // Do not re-order or delete these entries; they are used in a UMA histogram.
   enum Result {
-    SUCCESS,            // No error, all completed successfully.
-    UNSPECIFIED_ERROR,  // An unspecified error occurred for one or more items.
+    SUCCESS = 0,            // No error, all completed successfully.
+    UNSPECIFIED_ERROR = 1,  // An unspecified error occurred for >= 1 item.
+    STORE_INITIALIZATION_FAILED = 2,  // AttachmentStore initialization failed.
+    // When adding a value here, you must increment RESULT_SIZE below.
+  };
+  static const int RESULT_SIZE =
+      10;  // Size of the Result enum; used for histograms.
+
+  // Each attachment can have references from sync or model type. Tracking these
+  // references is needed for lifetime management of attachment, it can only be
+  // deleted from the store when it doesn't have references.
+  enum Component {
+    MODEL_TYPE,
+    SYNC,
   };
 
+  typedef base::Callback<void(const Result&)> InitCallback;
   typedef base::Callback<void(const Result&,
                               scoped_ptr<AttachmentMap>,
                               scoped_ptr<AttachmentIdList>)> ReadCallback;
   typedef base::Callback<void(const Result&)> WriteCallback;
   typedef base::Callback<void(const Result&)> DropCallback;
+  typedef base::Callback<void(const Result&,
+                              scoped_ptr<AttachmentMetadataList>)>
+      ReadMetadataCallback;
+
+  ~AttachmentStore();
 
   // Asynchronously reads the attachments identified by |ids|.
   //
@@ -55,8 +80,7 @@ class SYNC_EXPORT AttachmentStore : public base::RefCounted<AttachmentStore> {
   //
   // Reads on individual attachments are treated atomically; |callback| will not
   // read only part of an attachment.
-  virtual void Read(const AttachmentIdList& ids,
-                    const ReadCallback& callback) = 0;
+  void Read(const AttachmentIdList& ids, const ReadCallback& callback);
 
   // Asynchronously writes |attachments| to the store.
   //
@@ -67,8 +91,7 @@ class SYNC_EXPORT AttachmentStore : public base::RefCounted<AttachmentStore> {
   // not be written |callback|'s Result will be UNSPECIFIED_ERROR. When this
   // happens, some or none of the attachments may have been written
   // successfully.
-  virtual void Write(const AttachmentList& attachments,
-                     const WriteCallback& callback) = 0;
+  void Write(const AttachmentList& attachments, const WriteCallback& callback);
 
   // Asynchronously drops |attchments| from this store.
   //
@@ -79,12 +102,105 @@ class SYNC_EXPORT AttachmentStore : public base::RefCounted<AttachmentStore> {
   // could not be dropped, |callback|'s Result will be UNSPECIFIED_ERROR. When
   // this happens, some or none of the attachments may have been dropped
   // successfully.
-  virtual void Drop(const AttachmentIdList& ids,
-                    const DropCallback& callback) = 0;
+  void Drop(const AttachmentIdList& ids, const DropCallback& callback);
+
+  // Asynchronously reads metadata for the attachments identified by |ids|.
+  //
+  // |callback| will be invoked when finished. AttachmentStore will attempt to
+  // read metadata for all attachments specified in ids. If any of the
+  // metadata entries do not exist or could not be read, |callback|'s Result
+  // will be UNSPECIFIED_ERROR.
+  void ReadMetadataById(const AttachmentIdList& ids,
+                        const ReadMetadataCallback& callback);
+
+  // Asynchronously reads metadata for all attachments with |component_|
+  // reference in the store.
+  //
+  // |callback| will be invoked when finished. If any of the metadata entries
+  // could not be read, |callback|'s Result will be UNSPECIFIED_ERROR.
+  void ReadMetadata(const ReadMetadataCallback& callback);
+
+  // Given current AttachmentStore (this) creates separate AttachmentStore that
+  // will be used by sync components (AttachmentService). Resulting
+  // AttachmentStore is backed by the same frontend/backend.
+  scoped_ptr<AttachmentStoreForSync> CreateAttachmentStoreForSync() const;
+
+  // Creates an AttachmentStore backed by in-memory implementation of attachment
+  // store. For now frontend lives on the same thread as backend.
+  static scoped_ptr<AttachmentStore> CreateInMemoryStore();
+
+  // Creates an AttachmentStore backed by on-disk implementation of attachment
+  // store. Opens corresponding leveldb database located at |path|. All backend
+  // operations are scheduled to |backend_task_runner|. Opening attachment store
+  // is asynchronous, once it finishes |callback| will be called on the thread
+  // that called CreateOnDiskStore. Calling Read/Write/Drop before
+  // initialization completed is allowed.  Later if initialization fails these
+  // operations will fail with STORE_INITIALIZATION_FAILED error.
+  static scoped_ptr<AttachmentStore> CreateOnDiskStore(
+      const base::FilePath& path,
+      const scoped_refptr<base::SequencedTaskRunner>& backend_task_runner,
+      const InitCallback& callback);
+
+  // Creates set of AttachmentStore/AttachmentStoreFrontend instances for tests
+  // that provide their own implementation of AttachmentstoreBackend for
+  // mocking.
+  static scoped_ptr<AttachmentStore> CreateMockStoreForTest(
+      scoped_ptr<AttachmentStoreBackend> backend);
 
  protected:
-  friend class base::RefCounted<AttachmentStore>;
-  virtual ~AttachmentStore();
+  AttachmentStore(const scoped_refptr<AttachmentStoreFrontend>& frontend,
+                  Component component);
+
+  const scoped_refptr<AttachmentStoreFrontend>& frontend() { return frontend_; }
+  Component component() const { return component_; }
+
+ private:
+  scoped_refptr<AttachmentStoreFrontend> frontend_;
+  // Modification operations with attachment store will be performed on behalf
+  // of |component_|.
+  const Component component_;
+
+  DISALLOW_COPY_AND_ASSIGN(AttachmentStore);
+};
+
+// AttachmentStoreForSync extends AttachmentStore and provides additional
+// functions necessary for AttachmentService. These are needed when
+// AttachmentService writes attachment on behalf of model type after download
+// and takes reference on attachment for the duration of upload.
+// Model type implementation shouldn't use this interface.
+class SYNC_EXPORT_PRIVATE AttachmentStoreForSync : public AttachmentStore {
+ public:
+  ~AttachmentStoreForSync();
+
+  // Asynchronously adds reference from sync to attachments.
+  void SetSyncReference(const AttachmentIdList& ids);
+
+  // Asynchronously adds reference from model type to attachments.
+  // Needed in GetOrDownloadAttachments when attachment is in local store but
+  // doesn't have model type reference.
+  void SetModelTypeReference(const AttachmentIdList& ids);
+
+  // Asynchronously drops sync reference from attachments.
+  void DropSyncReference(const AttachmentIdList& ids);
+
+  // Asynchronously reads metadata for all attachments with |sync_component_|
+  // reference in the store.
+  //
+  // |callback| will be invoked when finished. If any of the metadata entries
+  // could not be read, |callback|'s Result will be UNSPECIFIED_ERROR.
+  void ReadMetadataForSync(const ReadMetadataCallback& callback);
+
+ private:
+  friend class AttachmentStore;
+  AttachmentStoreForSync(const scoped_refptr<AttachmentStoreFrontend>& frontend,
+                         Component consumer_component,
+                         Component sync_component);
+
+  // |sync_component_| is passed to frontend when sync related operations are
+  // perfromed.
+  const Component sync_component_;
+
+  DISALLOW_COPY_AND_ASSIGN(AttachmentStoreForSync);
 };
 
 }  // namespace syncer

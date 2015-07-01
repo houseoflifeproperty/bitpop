@@ -34,7 +34,6 @@ namespace TabCapture = extensions::api::tab_capture;
 namespace GetCapturedTabs = TabCapture::GetCapturedTabs;
 
 namespace extensions {
-
 namespace {
 
 const char kCapturingSameTab[] = "Cannot capture a tab with an active stream.";
@@ -49,18 +48,20 @@ const char kMediaStreamSource[] = "chromeMediaSource";
 const char kMediaStreamSourceId[] = "chromeMediaSourceId";
 const char kMediaStreamSourceTab[] = "tab";
 
-// Whitelisted extensions that do not check for a browser action grant because
-// they provide API's.
-const char* whitelisted_extensions[] = {
-  "enhhojjnijigcajfphajepfemndkmdlo",  // Dev
-  "pkedcjkdefgpdelpbcmbmeomcjbeemfm",  // Trusted Tester
-  "fmfcbgogabcbclcofgocippekhfcmgfj",  // Staging
-  "hfaagokkkhdbgiakmmlclaapfelnkoah",  // Canary
-  "F155646B5D1CA545F7E1E4E20D573DFDD44C2540",  // Trusted Tester (public)
-  "16CA7A47AAE4BE49B1E75A6B960C3875E945B264"   // Release
-};
-
 }  // namespace
+
+// Whitelisted extensions that do not check for a browser action grant because
+// they provide API's. If there are additional extension ids that need
+// whitelisting and are *not* the Chromecast extension, add them to a new
+// kWhitelist array.
+const char* const kChromecastExtensionIds[] = {
+    "enhhojjnijigcajfphajepfemndkmdlo",  // Dev
+    "pkedcjkdefgpdelpbcmbmeomcjbeemfm",  // Dogfood
+    "fmfcbgogabcbclcofgocippekhfcmgfj",  // Staging
+    "hfaagokkkhdbgiakmmlclaapfelnkoah",  // Canary
+    "dliochdbjfkdbacpmhlcpmleaejidimm",  // Google Cast Beta
+    "boadgeojelhgndaghljhdicfkmllpafd",  // Google Cast Stable
+};
 
 bool TabCaptureCaptureFunction::RunSync() {
   scoped_ptr<api::tab_capture::Capture::Params> params =
@@ -89,13 +90,10 @@ bool TabCaptureCaptureFunction::RunSync() {
   if (!extension()->permissions_data()->HasAPIPermissionForTab(
           SessionTabHelper::IdForTab(target_contents),
           APIPermission::kTabCaptureForTab) &&
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kWhitelistedExtensionID) != extension_id &&
-      !SimpleFeature::IsIdInList(
-          extension_id,
-          std::set<std::string>(
-              whitelisted_extensions,
-              whitelisted_extensions + arraysize(whitelisted_extensions)))) {
+      !SimpleFeature::IsIdInArray(extension_id, kChromecastExtensionIds,
+                                  arraysize(kChromecastExtensionIds))) {
     error_ = kGrantError;
     return false;
   }
@@ -141,8 +139,7 @@ bool TabCaptureCaptureFunction::RunSync() {
     constraint->SetString(kMediaStreamSourceId, device_id);
   }
 
-  extensions::TabCaptureRegistry* registry =
-      extensions::TabCaptureRegistry::Get(GetProfile());
+  TabCaptureRegistry* registry = TabCaptureRegistry::Get(GetProfile());
   if (!registry->AddRequest(target_contents, extension_id)) {
     error_ = kCapturingSameTab;
     return false;
@@ -159,8 +156,7 @@ bool TabCaptureCaptureFunction::RunSync() {
 }
 
 bool TabCaptureGetCapturedTabsFunction::RunSync() {
-  extensions::TabCaptureRegistry* registry =
-      extensions::TabCaptureRegistry::Get(GetProfile());
+  TabCaptureRegistry* registry = TabCaptureRegistry::Get(GetProfile());
   base::ListValue* const list = new base::ListValue();
   if (registry)
     registry->GetCapturedTabs(extension()->id(), list);

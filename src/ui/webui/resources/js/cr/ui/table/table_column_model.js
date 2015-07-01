@@ -11,9 +11,10 @@ cr.define('cr.ui.table', function() {
   /**
    * A table column model that wraps table columns array
    * This implementation supports widths in percents.
-   * @param {!Array<cr.ui.table.TableColumn>} columnIds Array of table columns.
+   * @param {!Array<cr.ui.table.TableColumn>} tableColumns Array of table
+   *     columns.
    * @constructor
-   * @extends {EventTarget}
+   * @extends {cr.EventTarget}
    */
   function TableColumnModel(tableColumns) {
     this.columns_ = [];
@@ -96,18 +97,22 @@ cr.define('cr.ui.table', function() {
       if (index < 0 || index >= this.columns_.size - 1)
         return;
 
+      var column = this.columns_[index];
       width = Math.max(width, MIMIMAL_WIDTH);
-      if (width == this.columns_[index].width)
+      if (width == column.absoluteWidth)
         return;
 
-      this.columns_[index].width = width;
-      cr.dispatchSimpleEvent(this, 'resize');
+      column.width = width;
+
+      // Dispatch an event if a visible column was resized.
+      if (column.visible)
+        cr.dispatchSimpleEvent(this, 'resize');
     },
 
     /**
      * Returns render function for the column at the given index.
      * @param {number} index The index of the column.
-     * @return {Function(*, string, cr.ui.Table): HTMLElement} Render function.
+     * @return {function(*, string, cr.ui.Table): HTMLElement} Render function.
      */
     getRenderFunction: function(index) {
       return this.columns_[index].renderFunction;
@@ -116,7 +121,8 @@ cr.define('cr.ui.table', function() {
     /**
      * Sets render function for the column at the given index.
      * @param {number} index The index of the column.
-     * @param {Function(*, string, cr.ui.Table): HTMLElement} Render function.
+     * @param {function(*, string, cr.ui.Table): HTMLElement} renderFunction
+     *     Render function.
      */
     setRenderFunction: function(index, renderFunction) {
       if (index < 0 || index >= this.columns_.size - 1)
@@ -181,6 +187,35 @@ cr.define('cr.ui.table', function() {
       }
       return -1;
     },
+
+    /**
+     * Show/hide a column.
+     * @param {number} index The column index.
+     * @param {boolean} visible The column visibility.
+     */
+    setVisible: function(index, visible) {
+      if (index < 0 || index > this.columns_.size - 1)
+        return;
+
+      var column = this.columns_[index];
+      if (column.visible == visible)
+        return;
+
+      // Changing column visibility alters the width.  Save the total width out
+      // first, then change the column visibility, then relayout the table.
+      var contentWidth = this.totalWidth;
+      column.visible = visible;
+      this.normalizeWidths(contentWidth);
+    },
+
+    /**
+     * Returns a column's visibility.
+     * @param {number} index The column index.
+     * @return {boolean} Whether the column is visible.
+     */
+    isVisible: function(index) {
+      return this.columns_[index].visible;
+    }
   };
 
   return {

@@ -5,8 +5,8 @@
 #ifndef HitRegion_h
 #define HitRegion_h
 
-#include "bindings/core/v8/Dictionary.h"
 #include "core/dom/Element.h"
+#include "core/html/canvas/HitRegionOptions.h"
 #include "platform/graphics/Path.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Noncopyable.h"
@@ -17,23 +17,11 @@
 
 namespace blink {
 
-// FIXME: We already have IDL dictionary support; this should be removed.
-// http://crbug.com/403150
-struct HitRegionOptionsInternal {
-    STACK_ALLOCATED();
-
+class HitRegion final : public RefCountedWillBeGarbageCollectedFinalized<HitRegion> {
 public:
-    String id;
-    RefPtrWillBeMember<Element> control;
-    Path path;
-    WindRule fillRule;
-};
-
-class HitRegion FINAL : public RefCountedWillBeGarbageCollectedFinalized<HitRegion> {
-public:
-    static PassRefPtrWillBeRawPtr<HitRegion> create(const HitRegionOptionsInternal& options)
+    static PassRefPtrWillBeRawPtr<HitRegion> create(const Path& path, const HitRegionOptions& options)
     {
-        return adoptRefWillBeNoop(new HitRegion(options));
+        return adoptRefWillBeNoop(new HitRegion(path, options));
     }
 
     virtual ~HitRegion() { }
@@ -42,16 +30,17 @@ public:
     void updateAccessibility(Element* canvas);
 
     bool contains(const LayoutPoint&) const;
+    bool contains(const FloatPoint&) const;
 
     const String& id() const { return m_id; }
     const Path& path() const { return m_path; }
     Element* control() const { return m_control.get(); }
     WindRule fillRule() const { return m_fillRule; }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
-    explicit HitRegion(const HitRegionOptionsInternal&);
+    HitRegion(const Path&, const HitRegionOptions&);
 
     String m_id;
     RefPtrWillBeMember<Element> m_control;
@@ -59,7 +48,7 @@ private:
     WindRule m_fillRule;
 };
 
-class HitRegionManager FINAL : public NoBaseWillBeGarbageCollected<HitRegionManager> {
+class HitRegionManager final : public NoBaseWillBeGarbageCollected<HitRegionManager> {
     WTF_MAKE_NONCOPYABLE(HitRegionManager);
     DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(HitRegionManager)
 public:
@@ -79,15 +68,15 @@ public:
 
     unsigned getHitRegionsCount() const;
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     HitRegionManager() { }
 
-    typedef WillBeHeapListHashSet<RefPtrWillBeMember<HitRegion> > HitRegionList;
+    typedef WillBeHeapListHashSet<RefPtrWillBeMember<HitRegion>> HitRegionList;
     typedef HitRegionList::const_reverse_iterator HitRegionIterator;
-    typedef WillBeHeapHashMap<String, RefPtrWillBeMember<HitRegion> > HitRegionIdMap;
-    typedef WillBeHeapHashMap<RefPtrWillBeMember<Element>, RefPtrWillBeMember<HitRegion> > HitRegionControlMap;
+    typedef WillBeHeapHashMap<String, RefPtrWillBeMember<HitRegion>> HitRegionIdMap;
+    typedef WillBeHeapHashMap<RefPtrWillBeMember<Element>, RefPtrWillBeMember<HitRegion>> HitRegionControlMap;
 
     HitRegionList m_hitRegionList;
     HitRegionIdMap m_hitRegionIdMap;

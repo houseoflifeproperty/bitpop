@@ -33,16 +33,16 @@ class TwoPhaseUploaderImpl : public net::URLFetcherDelegate,
                        const base::FilePath& file_path,
                        const ProgressCallback& progress_callback,
                        const FinishCallback& finish_callback);
-  virtual ~TwoPhaseUploaderImpl();
+  ~TwoPhaseUploaderImpl() override;
 
   // Begins the upload process.
-  virtual void Start() OVERRIDE;
+  void Start() override;
 
   // net::URLFetcherDelegate implementation:
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
-  virtual void OnURLFetchUploadProgress(const net::URLFetcher* source,
-                                        int64 current,
-                                        int64 total) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
+  void OnURLFetchUploadProgress(const net::URLFetcher* source,
+                                int64 current,
+                                int64 total) override;
 
  private:
   void UploadMetadata();
@@ -160,8 +160,8 @@ void TwoPhaseUploaderImpl::OnURLFetchUploadProgress(
 void TwoPhaseUploaderImpl::UploadMetadata() {
   DCHECK(CalledOnValidThread());
   state_ = UPLOAD_METADATA;
-  url_fetcher_.reset(net::URLFetcher::Create(base_url_, net::URLFetcher::POST,
-                                             this));
+  url_fetcher_ =
+      net::URLFetcher::Create(base_url_, net::URLFetcher::POST, this);
   url_fetcher_->SetRequestContext(url_request_context_getter_.get());
   url_fetcher_->SetExtraRequestHeaders(kStartHeader);
   url_fetcher_->SetUploadData(kUploadContentType, metadata_);
@@ -172,8 +172,8 @@ void TwoPhaseUploaderImpl::UploadFile() {
   DCHECK(CalledOnValidThread());
   state_ = UPLOAD_FILE;
 
-  url_fetcher_.reset(net::URLFetcher::Create(upload_url_, net::URLFetcher::PUT,
-                                             this));
+  url_fetcher_ =
+      net::URLFetcher::Create(upload_url_, net::URLFetcher::PUT, this);
   url_fetcher_->SetRequestContext(url_request_context_getter_.get());
   url_fetcher_->SetUploadFilePath(
       kUploadContentType, file_path_, 0, kuint64max, file_task_runner_);

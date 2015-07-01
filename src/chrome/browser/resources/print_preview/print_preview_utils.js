@@ -23,8 +23,8 @@ function isPositiveInteger(value) {
 
 /**
  * Returns true if the contents of the two arrays are equal.
- * @param {Array.<{from: number, to: number}>} array1 The first array.
- * @param {Array.<{from: number, to: number}>} array2 The second array.
+ * @param {Array<{from: number, to: number}>} array1 The first array.
+ * @param {Array<{from: number, to: number}>} array2 The second array.
  * @return {boolean} true if the arrays are equal.
  */
 function areArraysEqual(array1, array2) {
@@ -56,8 +56,8 @@ function areRangesEqual(array1, array2) {
 /**
  * Removes duplicate elements from |inArray| and returns a new array.
  * |inArray| is not affected. It assumes that |inArray| is already sorted.
- * @param {Array.<number>} inArray The array to be processed.
- * @return {Array.<number>} The array after processing.
+ * @param {!Array<number>} inArray The array to be processed.
+ * @return {!Array<number>} The array after processing.
  */
 function removeDuplicates(inArray) {
   var out = [];
@@ -93,16 +93,17 @@ function removeDuplicates(inArray) {
  * Example: "-" is valid, assuming |totalPageCount| >= 1.
  * Example: "1-4dsf, 11" is invalid regardless of |totalPageCount|.
  * @param {string} pageRangeText The text to be checked.
- * @param {number} totalPageCount The total number of pages.
- * @return {Array.<{from: number, to: number}>} An array of page range objects.
+ * @param {number=} opt_totalPageCount The total number of pages.
+ * @return {Array<{from: number, to: number}>} An array of page range objects.
  */
-function pageRangeTextToPageRanges(pageRangeText, totalPageCount) {
+function pageRangeTextToPageRanges(pageRangeText, opt_totalPageCount) {
   if (pageRangeText == '') {
     return [];
   }
 
   var MAX_PAGE_NUMBER = 1000000000;
-  totalPageCount = totalPageCount ? totalPageCount : MAX_PAGE_NUMBER;
+  var totalPageCount = opt_totalPageCount ? opt_totalPageCount :
+                                            MAX_PAGE_NUMBER;
 
   var regex = /^\s*([0-9]*)\s*-\s*([0-9]*)\s*$/;
   var parts = pageRangeText.split(/,/);
@@ -140,11 +141,11 @@ function pageRangeTextToPageRanges(pageRangeText, totalPageCount) {
  * See pageRangeTextToPageRanges for details.
  * @param {string} pageRangeText The text to be checked.
  * @param {number} totalPageCount The total number of pages.
- * @return {Array.<number>} A list of all pages.
+ * @return {Array<number>} A list of all pages.
  */
 function pageRangeTextToPageList(pageRangeText, totalPageCount) {
   var pageRanges = pageRangeTextToPageRanges(pageRangeText, totalPageCount);
-  pageList = [];
+  var pageList = [];
   if (pageRanges) {
     for (var i = 0; i < pageRanges.length; ++i) {
       for (var j = pageRanges[i].from; j <= Math.min(pageRanges[i].to,
@@ -161,8 +162,8 @@ function pageRangeTextToPageList(pageRangeText, totalPageCount) {
 }
 
 /**
- * @param {Array.<number>} pageList The list to be processed.
- * @return {Array.<number>} The contents of |pageList| in ascending order and
+ * @param {!Array<number>} pageList The list to be processed.
+ * @return {!Array<number>} The contents of |pageList| in ascending order and
  *     without any duplicates. |pageList| is not affected.
  */
 function pageListToPageSet(pageList) {
@@ -171,7 +172,7 @@ function pageListToPageSet(pageList) {
     return pageSet;
   pageSet = pageList.slice(0);
   pageSet.sort(function(a, b) {
-    return (/** @type {number} */ a) - (/** @type {number} */ b);
+    return /** @type {number} */(a) - /** @type {number} */(b);
   });
   pageSet = removeDuplicates(pageSet);
   return pageSet;
@@ -201,4 +202,33 @@ function setIsVisible(element, isVisible) {
  */
 function arrayContains(array, item) {
   return array.indexOf(item) != -1;
+}
+
+/**
+ * @param {!goog.array.ArrayLike<!{locale: string, value: string}>}
+ *     localizedStrings An array of strings with corresponding locales.
+ * @param {string} locale Locale to look the string up for.
+ * @return {string} A string for the requested {@code locale}. An empty string
+ *     if there's no string for the specified locale found.
+ */
+function getStringForLocale(localizedStrings, locale) {
+  locale = locale.toLowerCase();
+  for (var i = 0; i < localizedStrings.length; i++) {
+    if (localizedStrings[i].locale.toLowerCase() == locale)
+      return localizedStrings[i].value;
+  }
+  return '';
+}
+
+/**
+ * @param {!goog.array.ArrayLike<!{locale: string, value: string}>}
+ *     localizedStrings An array of strings with corresponding locales.
+ * @return {string} A string for the current locale. An empty string if there's
+ *     no string for the current locale found.
+ */
+function getStringForCurrentLocale(localizedStrings) {
+  // First try to find an exact match and then look for the language only.
+  return getStringForLocale(localizedStrings, navigator.language) ||
+         getStringForLocale(localizedStrings,
+                            navigator.language.split('-')[0]);
 }

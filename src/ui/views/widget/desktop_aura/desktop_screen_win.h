@@ -13,15 +13,13 @@ namespace views {
 class VIEWS_EXPORT DesktopScreenWin : public gfx::ScreenWin {
 public:
   DesktopScreenWin();
-  virtual ~DesktopScreenWin();
+  ~DesktopScreenWin() override;
 
  private:
   // Overridden from gfx::ScreenWin:
-  virtual bool IsDIPEnabled() OVERRIDE;
-  virtual gfx::Display GetDisplayMatching(
-      const gfx::Rect& match_rect) const OVERRIDE;
-  virtual HWND GetHWNDFromNativeView(gfx::NativeView window) const OVERRIDE;
-  virtual gfx::NativeWindow GetNativeWindowFromHWND(HWND hwnd) const OVERRIDE;
+  gfx::Display GetDisplayMatching(const gfx::Rect& match_rect) const override;
+  HWND GetHWNDFromNativeView(gfx::NativeView window) const override;
+  gfx::NativeWindow GetNativeWindowFromHWND(HWND hwnd) const override;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopScreenWin);
 };

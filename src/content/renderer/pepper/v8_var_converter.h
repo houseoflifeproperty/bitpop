@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_RENDERER_PEPPER_V8_VAR_CONVERTER_H
-#define CONTENT_RENDERER_PEPPER_V8_VAR_CONVERTER_H
+#ifndef CONTENT_RENDERER_PEPPER_V8_VAR_CONVERTER_H_
+#define CONTENT_RENDERER_PEPPER_V8_VAR_CONVERTER_H_
 
 #include "base/basictypes.h"
 #include "base/callback.h"
@@ -27,7 +27,6 @@ class CONTENT_EXPORT V8VarConverter {
     kDisallowObjectVars,
     kAllowObjectVars
   };
-  explicit V8VarConverter(PP_Instance instance);
   V8VarConverter(PP_Instance instance, AllowObjectVars object_vars_allowed);
 
   // Constructor for testing.
@@ -37,8 +36,8 @@ class CONTENT_EXPORT V8VarConverter {
 
   // Converts the given PP_Var to a v8::Value. True is returned upon success.
   bool ToV8Value(const PP_Var& var,
-                 v8::Handle<v8::Context> context,
-                 v8::Handle<v8::Value>* result);
+                 v8::Local<v8::Context> context,
+                 v8::Local<v8::Value>* result);
 
   struct VarResult {
    public:
@@ -67,25 +66,22 @@ class CONTENT_EXPORT V8VarConverter {
   // the conversion can occur synchronously, |callback| will not be run,
   // otherwise it will be run.
   VarResult FromV8Value(
-      v8::Handle<v8::Value> val,
-      v8::Handle<v8::Context> context,
+      v8::Local<v8::Value> val,
+      v8::Local<v8::Context> context,
       const base::Callback<void(const ppapi::ScopedPPVar&, bool)>& callback);
-  bool FromV8ValueSync(v8::Handle<v8::Value> val,
-                       v8::Handle<v8::Context> context,
+  bool FromV8ValueSync(v8::Local<v8::Value> val,
+                       v8::Local<v8::Context> context,
                        ppapi::ScopedPPVar* result_var);
  private:
   // Returns true on success, false on failure.
-  bool FromV8ValueInternal(v8::Handle<v8::Value> val,
-                           v8::Handle<v8::Context> context,
+  bool FromV8ValueInternal(v8::Local<v8::Value> val,
+                           v8::Local<v8::Context> context,
                            ppapi::ScopedPPVar* result_var);
 
   PP_Instance instance_;
 
   // Whether or not to support conversion to PP_VARTYPE_OBJECT.
   AllowObjectVars object_vars_allowed_;
-
-  // The message loop to run the callback to |FromV8Value| from.
-  scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
 
   // The converter to use for converting V8 vars to resources.
   scoped_ptr<ResourceConverter> resource_converter_;
@@ -95,4 +91,4 @@ class CONTENT_EXPORT V8VarConverter {
 
 }  // namespace content
 
-#endif  // CONTENT_RENDERER_PEPPER_V8_VAR_CONVERTER_H
+#endif  // CONTENT_RENDERER_PEPPER_V8_VAR_CONVERTER_H_

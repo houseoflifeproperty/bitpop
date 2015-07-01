@@ -5,7 +5,7 @@
 #include "sandbox/linux/seccomp-bpf/errorcode.h"
 
 #include "sandbox/linux/seccomp-bpf/die.h"
-#include "sandbox/linux/seccomp-bpf/linux_seccomp.h"
+#include "sandbox/linux/system_headers/linux_seccomp.h"
 
 namespace sandbox {
 
@@ -32,12 +32,15 @@ ErrorCode::ErrorCode(int err) {
   }
 }
 
-ErrorCode::ErrorCode(Trap::TrapFnc fnc, const void* aux, bool safe)
+ErrorCode::ErrorCode(uint16_t trap_id,
+                     Trap::TrapFnc fnc,
+                     const void* aux,
+                     bool safe)
     : error_type_(ET_TRAP),
       fnc_(fnc),
       aux_(const_cast<void*>(aux)),
       safe_(safe),
-      err_(SECCOMP_RET_TRAP + Trap::MakeTrap(fnc, aux, safe)) {
+      err_(SECCOMP_RET_TRAP + trap_id) {
 }
 
 ErrorCode::ErrorCode(int argno,

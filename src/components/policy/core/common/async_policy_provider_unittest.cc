@@ -41,13 +41,13 @@ class MockPolicyLoader : public AsyncPolicyLoader {
  public:
   explicit MockPolicyLoader(
       scoped_refptr<base::SequencedTaskRunner> task_runner);
-  virtual ~MockPolicyLoader();
+  ~MockPolicyLoader() override;
 
   // Load() returns a scoped_ptr<PolicyBundle> but it can't be mocked because
   // scoped_ptr is moveable but not copyable. This override forwards the
   // call to MockLoad() which returns a PolicyBundle*, and returns a copy
   // wrapped in a passed scoped_ptr.
-  virtual scoped_ptr<PolicyBundle> Load() OVERRIDE;
+  scoped_ptr<PolicyBundle> Load() override;
 
   MOCK_METHOD0(MockLoad, const PolicyBundle*());
   MOCK_METHOD0(InitOnBackgroundThread, void());
@@ -78,10 +78,10 @@ scoped_ptr<PolicyBundle> MockPolicyLoader::Load() {
 class AsyncPolicyProviderTest : public testing::Test {
  protected:
   AsyncPolicyProviderTest();
-  virtual ~AsyncPolicyProviderTest();
+  ~AsyncPolicyProviderTest() override;
 
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   base::MessageLoop loop_;
   SchemaRegistry schema_registry_;

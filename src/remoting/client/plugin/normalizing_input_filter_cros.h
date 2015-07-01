@@ -23,11 +23,11 @@ namespace remoting {
 class NormalizingInputFilterCros : public protocol::InputFilter {
  public:
   explicit NormalizingInputFilterCros(protocol::InputStub* input_stub);
-  virtual ~NormalizingInputFilterCros();
+  ~NormalizingInputFilterCros() override;
 
   // InputFilter overrides.
-  virtual void InjectKeyEvent(const protocol::KeyEvent& event) OVERRIDE;
-  virtual void InjectMouseEvent(const protocol::MouseEvent& event) OVERRIDE;
+  void InjectKeyEvent(const protocol::KeyEvent& event) override;
+  void InjectMouseEvent(const protocol::MouseEvent& event) override;
 
  private:
   void ProcessKeyDown(const protocol::KeyEvent& event);
@@ -50,6 +50,10 @@ class NormalizingInputFilterCros : public protocol::InputFilter {
 
   // True if the left Alt key is pressed.
   bool left_alt_is_pressed_;
+
+  // Previous mouse coordinates.
+  int previous_mouse_x_;
+  int previous_mouse_y_;
 
   DISALLOW_COPY_AND_ASSIGN(NormalizingInputFilterCros);
 };

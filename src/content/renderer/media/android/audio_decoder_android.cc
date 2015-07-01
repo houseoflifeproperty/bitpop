@@ -15,6 +15,7 @@
 #include "base/logging.h"
 #include "base/memory/shared_memory.h"
 #include "base/posix/eintr_wrapper.h"
+#include "base/process/process_handle.h"
 #include "content/common/view_messages.h"
 #include "media/base/android/webaudio_media_codec_info.h"
 #include "media/base/audio_bus.h"
@@ -89,9 +90,8 @@ bool AudioDecoderIO::IsValid() const {
 }
 
 bool AudioDecoderIO::ShareEncodedToProcess(base::SharedMemoryHandle* handle) {
-  return encoded_shared_memory_.ShareToProcess(
-      base::Process::Current().handle(),
-      handle);
+  return encoded_shared_memory_.ShareToProcess(base::GetCurrentProcessHandle(),
+                                               handle);
 }
 
 static float ConvertSampleToFloat(int16_t sample) {
@@ -309,10 +309,10 @@ bool WAVEDecoder::CopyDataChunkToBus(blink::WebAudioBus* destination_bus) {
     return false;
   }
 
-  VLOG(0) << "Decoding WAVE file: " << number_of_channels_ << " channels, "
-          << sample_rate_ << " kHz, "
-          << chunk_size_ / bytes_per_sample_ / number_of_channels_
-          << " frames, " << 8 * bytes_per_sample_ << " bits/sample";
+  DVLOG(0) << "Decoding WAVE file: " << number_of_channels_ << " channels, "
+           << sample_rate_ << " kHz, "
+           << chunk_size_ / bytes_per_sample_ / number_of_channels_
+           << " frames, " << 8 * bytes_per_sample_ << " bits/sample";
 
   // Create the destination bus of the appropriate size and then decode
   // the data into the bus.

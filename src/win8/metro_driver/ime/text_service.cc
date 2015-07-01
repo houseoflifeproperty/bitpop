@@ -92,7 +92,7 @@ namespace {
 // TF_SENTENCEMODE_PHRASEPREDICT to emulate IMM32 behavior. This value is
 // managed per thread, thus setting this value at once is sufficient. This
 // value never affects non-Japanese IMEs.
-bool InitializeSentenceMode(ITfThreadMgr2* thread_manager,
+bool InitializeSentenceMode(ITfThreadMgr* thread_manager,
                             TfClientId client_id) {
   base::win::ScopedComPtr<ITfCompartmentMgr> thread_compartment_manager;
   HRESULT hr = thread_compartment_manager.QueryFrom(thread_manager);
@@ -111,7 +111,7 @@ bool InitializeSentenceMode(ITfThreadMgr2* thread_manager,
 
   base::win::ScopedVariant sentence_variant;
   sentence_variant.Set(TF_SENTENCEMODE_PHRASEPREDICT);
-  hr = sentence_compartment->SetValue(client_id, &sentence_variant);
+  hr = sentence_compartment->SetValue(client_id, sentence_variant.ptr());
   if (FAILED(hr)) {
     LOG(ERROR) << "ITfCompartment::SetValue failed. hr = " << hr;
     return false;
@@ -138,7 +138,7 @@ bool InitializeDisabledContext(ITfContext* context, TfClientId client_id) {
 
   base::win::ScopedVariant variant;
   variant.Set(1);
-  hr = disabled_compartment->SetValue(client_id, &variant);
+  hr = disabled_compartment->SetValue(client_id, variant.ptr());
   if (FAILED(hr)) {
     LOG(ERROR) << "ITfCompartment::SetValue failed. hr = " << hr;
     return false;
@@ -154,7 +154,7 @@ bool InitializeDisabledContext(ITfContext* context, TfClientId client_id) {
 
   base::win::ScopedVariant empty_context_variant;
   empty_context_variant.Set(static_cast<int32>(1));
-  hr = empty_context->SetValue(client_id, &empty_context_variant);
+  hr = empty_context->SetValue(client_id, empty_context_variant.ptr());
   if (FAILED(hr)) {
     LOG(ERROR) << "ITfCompartment::SetValue failed. hr = " << hr;
     return false;
@@ -176,7 +176,7 @@ class EventSink {
       : cookie_(cookie),
         source_(source) {}
   ~EventSink() {
-    if (!source_ || cookie_ != TF_INVALID_COOKIE)
+    if (!source_.get() || cookie_ != TF_INVALID_COOKIE)
       return;
     source_->UnadviseSink(cookie_);
     cookie_ = TF_INVALID_COOKIE;
@@ -218,13 +218,13 @@ scoped_ptr<EventSink> CreateTextEditSink(ITfContext* context,
 class DocumentBinding {
  public:
   ~DocumentBinding() {
-    if (!document_manager_)
+    if (!document_manager_.get())
       return;
     document_manager_->Pop(TF_POPF_ALL);
   }
 
   static scoped_ptr<DocumentBinding> Create(
-      ITfThreadMgr2* thread_manager,
+      ITfThreadMgr* thread_manager,
       TfClientId client_id,
       const std::vector<InputScope>& input_scopes,
       HWND window_handle,
@@ -232,7 +232,7 @@ class DocumentBinding {
     base::win::ScopedComPtr<ITfDocumentMgr> document_manager;
     HRESULT hr = thread_manager->CreateDocumentMgr(document_manager.Receive());
     if (FAILED(hr)) {
-      LOG(ERROR) << "ITfThreadMgr2::CreateDocumentMgr failed. hr = " << hr;
+      LOG(ERROR) << "ITfThreadMgr::CreateDocumentMgr failed. hr = " << hr;
       return scoped_ptr<DocumentBinding>();
     }
 
@@ -244,7 +244,7 @@ class DocumentBinding {
     scoped_refptr<TextStore> text_store;
     if (!use_null_text_store) {
       text_store = TextStore::Create(window_handle, input_scopes, delegate);
-      if (!text_store) {
+      if (!text_store.get()) {
         LOG(ERROR) << "Failed to create TextStore.";
         return scoped_ptr<DocumentBinding>();
       }
@@ -266,20 +266,20 @@ class DocumentBinding {
     // If null-TextStore is used or |input_scopes| looks like a password field,
     // set special properties to tell IMEs to be disabled.
     if ((use_null_text_store || IsPasswordField(input_scopes)) &&
-        !InitializeDisabledContext(context, client_id)) {
+        !InitializeDisabledContext(context.get(), client_id)) {
       LOG(ERROR) << "InitializeDisabledContext failed.";
       return scoped_ptr<DocumentBinding>();
     }
 
     scoped_ptr<EventSink> text_edit_sink;
     if (!use_null_text_store) {
-      text_edit_sink = CreateTextEditSink(context, text_store);
+      text_edit_sink = CreateTextEditSink(context.get(), text_store.get());
       if (!text_edit_sink) {
         LOG(ERROR) << "CreateTextEditSink failed.";
         return scoped_ptr<DocumentBinding>();
       }
     }
-    hr = document_manager->Push(context);
+    hr = document_manager->Push(context.get());
     if (FAILED(hr)) {
       LOG(ERROR) << "ITfDocumentMgr::Push failed. hr = " << hr;
       return scoped_ptr<DocumentBinding>();
@@ -290,9 +290,7 @@ class DocumentBinding {
                             text_edit_sink.Pass()));
   }
 
-  ITfDocumentMgr* document_manager() const {
-    return document_manager_;
-  }
+  ITfDocumentMgr* document_manager() const { return document_manager_.get(); }
 
   scoped_refptr<TextStore> text_store() const {
     return text_store_;
@@ -316,7 +314,7 @@ class DocumentBinding {
 class TextServiceImpl : public TextService,
                         public TextStoreDelegate {
  public:
-  TextServiceImpl(ITfThreadMgr2* thread_manager,
+  TextServiceImpl(ITfThreadMgr* thread_manager,
                   TfClientId client_id,
                   HWND window_handle,
                   TextServiceDelegate* delegate)
@@ -326,29 +324,29 @@ class TextServiceImpl : public TextService,
         thread_manager_(thread_manager) {
     DCHECK_NE(TF_CLIENTID_NULL, client_id);
     DCHECK(window_handle != NULL);
-    DCHECK(thread_manager_);
+    DCHECK(thread_manager_.get());
   }
-  virtual ~TextServiceImpl() {
+  ~TextServiceImpl() override {
     thread_manager_->Deactivate();
   }
 
  private:
   // TextService overrides:
-  virtual void CancelComposition() OVERRIDE {
+  void CancelComposition() override {
     if (!current_document_) {
       VLOG(0) << "|current_document_| is NULL due to the previous error.";
       return;
     }
-    TextStore* text_store = current_document_->text_store();
-    if (!text_store)
+    scoped_refptr<TextStore> text_store = current_document_->text_store();
+    if (!text_store.get())
       return;
     text_store->CancelComposition();
   }
 
-  virtual void OnDocumentChanged(
+  void OnDocumentChanged(
       const std::vector<int32>& input_scopes,
       const std::vector<metro_viewer::CharacterBounds>& character_bounds)
-      OVERRIDE {
+      override {
     bool document_type_changed = input_scopes_ != input_scopes;
     input_scopes_ = input_scopes;
     composition_character_bounds_ = character_bounds;
@@ -356,7 +354,7 @@ class TextServiceImpl : public TextService,
       OnDocumentTypeChanged(input_scopes);
   }
 
-  virtual void OnWindowActivated() OVERRIDE {
+  void OnWindowActivated() override {
     if (!current_document_) {
       VLOG(0) << "|current_document_| is NULL due to the previous error.";
       return;
@@ -368,16 +366,16 @@ class TextServiceImpl : public TextService,
     }
     HRESULT hr = thread_manager_->SetFocus(document_manager);
     if (FAILED(hr)) {
-      LOG(ERROR) << "ITfThreadMgr2::SetFocus failed. hr = " << hr;
+      LOG(ERROR) << "ITfThreadMgr::SetFocus failed. hr = " << hr;
       return;
     }
   }
 
-  virtual void OnCompositionChanged(
+  void OnCompositionChanged(
       const base::string16& text,
       int32 selection_start,
       int32 selection_end,
-      const std::vector<metro_viewer::UnderlineInfo>& underlines) OVERRIDE {
+      const std::vector<metro_viewer::UnderlineInfo>& underlines) override {
     if (!delegate_)
       return;
     delegate_->OnCompositionChanged(text,
@@ -386,13 +384,13 @@ class TextServiceImpl : public TextService,
                                     underlines);
   }
 
-  virtual void OnTextCommitted(const base::string16& text) OVERRIDE {
+  void OnTextCommitted(const base::string16& text) override {
     if (!delegate_)
       return;
     delegate_->OnTextCommitted(text);
   }
 
-  virtual RECT GetCaretBounds() {
+  RECT GetCaretBounds() override {
     if (composition_character_bounds_.empty()) {
       const RECT rect = {};
       return rect;
@@ -412,8 +410,7 @@ class TextServiceImpl : public TextService,
     return rect;
   }
 
-  virtual bool GetCompositionCharacterBounds(uint32 index,
-                                             RECT* rect) OVERRIDE {
+  bool GetCompositionCharacterBounds(uint32 index, RECT* rect) override {
     if (index >= composition_character_bounds_.size()) {
       return false;
     }
@@ -446,7 +443,7 @@ class TextServiceImpl : public TextService,
   HWND window_handle_;
   TextServiceDelegate* delegate_;
   scoped_ptr<DocumentBinding> current_document_;
-  base::win::ScopedComPtr<ITfThreadMgr2> thread_manager_;
+  base::win::ScopedComPtr<ITfThreadMgr> thread_manager_;
 
   // A vector of InputScope enumeration, which represents the document type of
   // the focused text field. Note that in our IPC message protocol, an empty
@@ -466,7 +463,7 @@ scoped_ptr<TextService>
 CreateTextService(TextServiceDelegate* delegate, HWND window_handle) {
   if (!delegate)
     return scoped_ptr<TextService>();
-  base::win::ScopedComPtr<ITfThreadMgr2> thread_manager;
+  base::win::ScopedComPtr<ITfThreadMgr> thread_manager;
   HRESULT hr = thread_manager.CreateInstance(CLSID_TF_ThreadMgr);
   if (FAILED(hr)) {
     LOG(ERROR) << "Failed to create instance of CLSID_TF_ThreadMgr. hr = "
@@ -474,20 +471,18 @@ CreateTextService(TextServiceDelegate* delegate, HWND window_handle) {
     return scoped_ptr<TextService>();
   }
   TfClientId client_id = TF_CLIENTID_NULL;
-  hr = thread_manager->ActivateEx(&client_id, 0);
+  hr = thread_manager->Activate(&client_id);
   if (FAILED(hr)) {
-    LOG(ERROR) << "ITfThreadMgr2::ActivateEx failed. hr = " << hr;
+    LOG(ERROR) << "ITfThreadMgr::Activate failed. hr = " << hr;
     return scoped_ptr<TextService>();
   }
-  if (!InitializeSentenceMode(thread_manager, client_id)) {
+  if (!InitializeSentenceMode(thread_manager.get(), client_id)) {
     LOG(ERROR) << "InitializeSentenceMode failed.";
     thread_manager->Deactivate();
     return scoped_ptr<TextService>();
   }
-  return scoped_ptr<TextService>(new TextServiceImpl(thread_manager,
-                                                     client_id,
-                                                     window_handle,
-                                                     delegate));
+  return scoped_ptr<TextService>(new TextServiceImpl(
+      thread_manager.get(), client_id, window_handle, delegate));
 }
 
 }  // namespace metro_driver

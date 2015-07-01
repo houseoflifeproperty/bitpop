@@ -20,13 +20,13 @@
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/common/url_constants.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/pref_registry/testing_pref_service_syncable.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/common/url_constants.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_file_system_options.h"
 #include "google_apis/drive/test_util.h"
@@ -52,26 +52,39 @@ class TestURLRequestJobFactory : public net::URLRequestJobFactory {
   explicit TestURLRequestJobFactory(void* profile_id)
       : profile_id_(profile_id) {}
 
-  virtual ~TestURLRequestJobFactory() {}
+  ~TestURLRequestJobFactory() override {}
 
   // net::URLRequestJobFactory override:
-  virtual net::URLRequestJob* MaybeCreateJobWithProtocolHandler(
+  net::URLRequestJob* MaybeCreateJobWithProtocolHandler(
       const std::string& scheme,
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
+      net::NetworkDelegate* network_delegate) const override {
     return new ExternalFileURLRequestJob(
         profile_id_, request, network_delegate);
   }
 
-  virtual bool IsHandledProtocol(const std::string& scheme) const OVERRIDE {
-    return scheme == chrome::kExternalFileScheme;
+  net::URLRequestJob* MaybeInterceptRedirect(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate,
+      const GURL& location) const override {
+    return nullptr;
   }
 
-  virtual bool IsHandledURL(const GURL& url) const OVERRIDE {
+  net::URLRequestJob* MaybeInterceptResponse(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const override {
+    return nullptr;
+  }
+
+  bool IsHandledProtocol(const std::string& scheme) const override {
+    return scheme == content::kExternalFileScheme;
+  }
+
+  bool IsHandledURL(const GURL& url) const override {
     return url.is_valid() && IsHandledProtocol(url.scheme());
   }
 
-  virtual bool IsSafeRedirectTarget(const GURL& location) const OVERRIDE {
+  bool IsSafeRedirectTarget(const GURL& location) const override {
     return true;
   }
 
@@ -87,9 +100,9 @@ class TestDelegate : public net::TestDelegate {
   const GURL& redirect_url() const { return redirect_url_; }
 
   // net::TestDelegate override.
-  virtual void OnReceivedRedirect(net::URLRequest* request,
-                                  const net::RedirectInfo& redirect_info,
-                                  bool* defer_redirect) OVERRIDE {
+  void OnReceivedRedirect(net::URLRequest* request,
+                          const net::RedirectInfo& redirect_info,
+                          bool* defer_redirect) override {
     redirect_url_ = redirect_info.new_url;
     net::TestDelegate::OnReceivedRedirect(
         request, redirect_info, defer_redirect);
@@ -112,9 +125,9 @@ class ExternalFileURLRequestJobTest : public testing::Test {
             base::Unretained(this))),
         fake_file_system_(NULL) {}
 
-  virtual ~ExternalFileURLRequestJobTest() {}
+  ~ExternalFileURLRequestJobTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // Create a testing profile.
     profile_manager_.reset(
         new TestingProfileManager(TestingBrowserProcess::GetGlobal()));
@@ -137,7 +150,7 @@ class ExternalFileURLRequestJobTest : public testing::Test {
     test_delegate_.reset(new TestDelegate);
   }
 
-  virtual void TearDown() { profile_manager_.reset(); }
+  void TearDown() override { profile_manager_.reset(); }
 
   bool ReadDriveFileSync(const base::FilePath& file_path,
                          std::string* out_content) {
@@ -229,9 +242,7 @@ class ExternalFileURLRequestJobTest : public testing::Test {
 TEST_F(ExternalFileURLRequestJobTest, NonGetMethod) {
   scoped_ptr<net::URLRequest> request(url_request_context_->CreateRequest(
       GURL("externalfile:drive-test-user-hash/root/File 1.txt"),
-      net::DEFAULT_PRIORITY,
-      test_delegate_.get(),
-      NULL));
+      net::DEFAULT_PRIORITY, test_delegate_.get()));
   request->set_method("POST");  // Set non "GET" method.
   request->Start();
 
@@ -248,7 +259,7 @@ TEST_F(ExternalFileURLRequestJobTest, RegularFile) {
   // For the first time, the file should be fetched from the server.
   {
     scoped_ptr<net::URLRequest> request(url_request_context_->CreateRequest(
-        kTestUrl, net::DEFAULT_PRIORITY, test_delegate_.get(), NULL));
+        kTestUrl, net::DEFAULT_PRIORITY, test_delegate_.get()));
     request->Start();
 
     base::RunLoop().Run();
@@ -273,9 +284,7 @@ TEST_F(ExternalFileURLRequestJobTest, RegularFile) {
     test_delegate_.reset(new TestDelegate);
     scoped_ptr<net::URLRequest> request(url_request_context_->CreateRequest(
         GURL("externalfile:drive-test-user-hash/root/File 1.txt"),
-        net::DEFAULT_PRIORITY,
-        test_delegate_.get(),
-        NULL));
+        net::DEFAULT_PRIORITY, test_delegate_.get()));
     request->Start();
 
     base::RunLoop().Run();
@@ -298,9 +307,7 @@ TEST_F(ExternalFileURLRequestJobTest, HostedDocument) {
       GURL(
           "externalfile:drive-test-user-hash/root/Document 1 "
           "excludeDir-test.gdoc"),
-      net::DEFAULT_PRIORITY,
-      test_delegate_.get(),
-      NULL));
+      net::DEFAULT_PRIORITY, test_delegate_.get()));
   request->Start();
 
   base::RunLoop().Run();
@@ -313,10 +320,8 @@ TEST_F(ExternalFileURLRequestJobTest, HostedDocument) {
 
 TEST_F(ExternalFileURLRequestJobTest, RootDirectory) {
   scoped_ptr<net::URLRequest> request(url_request_context_->CreateRequest(
-      GURL("externalfile:drive-test-user-hash/root"),
-      net::DEFAULT_PRIORITY,
-      test_delegate_.get(),
-      NULL));
+      GURL("externalfile:drive-test-user-hash/root"), net::DEFAULT_PRIORITY,
+      test_delegate_.get()));
   request->Start();
 
   base::RunLoop().Run();
@@ -328,9 +333,7 @@ TEST_F(ExternalFileURLRequestJobTest, RootDirectory) {
 TEST_F(ExternalFileURLRequestJobTest, Directory) {
   scoped_ptr<net::URLRequest> request(url_request_context_->CreateRequest(
       GURL("externalfile:drive-test-user-hash/root/Directory 1"),
-      net::DEFAULT_PRIORITY,
-      test_delegate_.get(),
-      NULL));
+      net::DEFAULT_PRIORITY, test_delegate_.get()));
   request->Start();
 
   base::RunLoop().Run();
@@ -342,9 +345,7 @@ TEST_F(ExternalFileURLRequestJobTest, Directory) {
 TEST_F(ExternalFileURLRequestJobTest, NonExistingFile) {
   scoped_ptr<net::URLRequest> request(url_request_context_->CreateRequest(
       GURL("externalfile:drive-test-user-hash/root/non-existing-file.txt"),
-      net::DEFAULT_PRIORITY,
-      test_delegate_.get(),
-      NULL));
+      net::DEFAULT_PRIORITY, test_delegate_.get()));
   request->Start();
 
   base::RunLoop().Run();
@@ -354,11 +355,8 @@ TEST_F(ExternalFileURLRequestJobTest, NonExistingFile) {
 }
 
 TEST_F(ExternalFileURLRequestJobTest, WrongFormat) {
-  scoped_ptr<net::URLRequest> request(
-      url_request_context_->CreateRequest(GURL("externalfile:"),
-                                          net::DEFAULT_PRIORITY,
-                                          test_delegate_.get(),
-                                          NULL));
+  scoped_ptr<net::URLRequest> request(url_request_context_->CreateRequest(
+      GURL("externalfile:"), net::DEFAULT_PRIORITY, test_delegate_.get()));
   request->Start();
 
   base::RunLoop().Run();
@@ -370,9 +368,7 @@ TEST_F(ExternalFileURLRequestJobTest, WrongFormat) {
 TEST_F(ExternalFileURLRequestJobTest, Cancel) {
   scoped_ptr<net::URLRequest> request(url_request_context_->CreateRequest(
       GURL("externalfile:drive-test-user-hash/root/File 1.txt"),
-      net::DEFAULT_PRIORITY,
-      test_delegate_.get(),
-      NULL));
+      net::DEFAULT_PRIORITY, test_delegate_.get()));
 
   // Start the request, and cancel it immediately after it.
   request->Start();
@@ -388,7 +384,7 @@ TEST_F(ExternalFileURLRequestJobTest, RangeHeader) {
   const base::FilePath kTestFilePath("drive/root/File 1.txt");
 
   scoped_ptr<net::URLRequest> request(url_request_context_->CreateRequest(
-      kTestUrl, net::DEFAULT_PRIORITY, test_delegate_.get(), NULL));
+      kTestUrl, net::DEFAULT_PRIORITY, test_delegate_.get()));
 
   // Set range header.
   request->SetExtraRequestHeaderByName(
@@ -410,7 +406,7 @@ TEST_F(ExternalFileURLRequestJobTest, WrongRangeHeader) {
   const GURL kTestUrl("externalfile:drive-test-user-hash/root/File 1.txt");
 
   scoped_ptr<net::URLRequest> request(url_request_context_->CreateRequest(
-      kTestUrl, net::DEFAULT_PRIORITY, test_delegate_.get(), NULL));
+      kTestUrl, net::DEFAULT_PRIORITY, test_delegate_.get()));
 
   // Set range header.
   request->SetExtraRequestHeaderByName(

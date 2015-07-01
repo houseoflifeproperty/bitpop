@@ -11,6 +11,7 @@
 #include "base/debug/crash_logging.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
+#include "base/memory/discardable_memory_allocator.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/rand_util.h"
@@ -19,12 +20,13 @@
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "content/child/browser_font_resource_trusted.h"
+#include "content/child/child_discardable_shared_memory_manager.h"
 #include "content/child/child_process.h"
 #include "content/common/child_process_messages.h"
 #include "content/common/sandbox_util.h"
 #include "content/ppapi_plugin/broker_process_dispatcher.h"
 #include "content/ppapi_plugin/plugin_process_dispatcher.h"
-#include "content/ppapi_plugin/ppapi_webkitplatformsupport_impl.h"
+#include "content/ppapi_plugin/ppapi_blink_platform_impl.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/pepper_plugin_info.h"
@@ -91,8 +93,7 @@ static void WarmupWindowsLocales(const ppapi::PpapiPermissions& permissions) {
     }
   }
 }
-#else
-extern void* g_target_services;
+
 #endif
 
 namespace content {
@@ -100,24 +101,32 @@ namespace content {
 typedef int32_t (*InitializeBrokerFunc)
     (PP_ConnectInstance_Func* connect_instance_func);
 
-PpapiThread::PpapiThread(const CommandLine& command_line, bool is_broker)
+PpapiThread::PpapiThread(const base::CommandLine& command_line, bool is_broker)
     : is_broker_(is_broker),
+      plugin_globals_(GetIOTaskRunner()),
       connect_instance_func_(NULL),
-      local_pp_module_(
-          base::RandInt(0, std::numeric_limits<PP_Module>::max())),
+      local_pp_module_(base::RandInt(0, std::numeric_limits<PP_Module>::max())),
       next_plugin_dispatcher_id_(1) {
-  ppapi::proxy::PluginGlobals* globals = ppapi::proxy::PluginGlobals::Get();
-  globals->SetPluginProxyDelegate(this);
-  globals->set_command_line(
+  plugin_globals_.SetPluginProxyDelegate(this);
+  plugin_globals_.set_command_line(
       command_line.GetSwitchValueASCII(switches::kPpapiFlashArgs));
 
-  webkit_platform_support_.reset(new PpapiWebKitPlatformSupportImpl);
-  blink::initialize(webkit_platform_support_.get());
+  blink_platform_impl_.reset(new PpapiBlinkPlatformImpl);
+  blink::initialize(blink_platform_impl_.get());
 
   if (!is_broker_) {
-    channel()->AddFilter(
+    scoped_refptr<ppapi::proxy::PluginMessageFilter> plugin_filter(
         new ppapi::proxy::PluginMessageFilter(
-            NULL, globals->resource_reply_thread_registrar()));
+            NULL, plugin_globals_.resource_reply_thread_registrar()));
+    channel()->AddFilter(plugin_filter.get());
+    plugin_globals_.RegisterResourceMessageFilters(plugin_filter.get());
+  }
+
+  // In single process, browser main loop set up the discardable memory
+  // allocator.
+  if (!command_line.HasSwitch(switches::kSingleProcess)) {
+    base::DiscardableMemoryAllocator::SetInstance(
+        ChildThreadImpl::discardable_shared_memory_manager());
   }
 }
 
@@ -125,19 +134,19 @@ PpapiThread::~PpapiThread() {
 }
 
 void PpapiThread::Shutdown() {
-  ChildThread::Shutdown();
+  ChildThreadImpl::Shutdown();
 
   ppapi::proxy::PluginGlobals::Get()->ResetPluginProxyDelegate();
   if (plugin_entry_points_.shutdown_module)
     plugin_entry_points_.shutdown_module();
-  webkit_platform_support_->Shutdown();
+  blink_platform_impl_->Shutdown();
   blink::shutdown();
 }
 
 bool PpapiThread::Send(IPC::Message* msg) {
   // Allow access from multiple threads.
   if (base::MessageLoop::current() == message_loop())
-    return ChildThread::Send(msg);
+    return ChildThreadImpl::Send(msg);
 
   return sync_message_filter()->Send(msg);
 }
@@ -159,7 +168,7 @@ bool PpapiThread::OnControlMessageReceived(const IPC::Message& msg) {
 }
 
 void PpapiThread::OnChannelConnected(int32 peer_pid) {
-  ChildThread::OnChannelConnected(peer_pid);
+  ChildThreadImpl::OnChannelConnected(peer_pid);
 #if defined(OS_WIN)
   if (is_broker_)
     peer_handle_.Set(::OpenProcess(PROCESS_DUP_HANDLE, FALSE, peer_pid));
@@ -199,14 +208,13 @@ IPC::Sender* PpapiThread::GetBrowserSender() {
 }
 
 std::string PpapiThread::GetUILanguage() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   return command_line->GetSwitchValueASCII(switches::kLang);
 }
 
 void PpapiThread::PreCacheFont(const void* logfontw) {
 #if defined(OS_WIN)
-  Send(new ChildProcessHostMsg_PreCacheFont(
-      *static_cast<const LOGFONTW*>(logfontw)));
+  ChildThreadImpl::PreCacheFont(*static_cast<const LOGFONTW*>(logfontw));
 #endif
 }
 
@@ -360,6 +368,12 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
 
     WarmupWindowsLocales(permissions);
 
+#if defined(ADDRESS_SANITIZER)
+    // Bind and leak dbghelp.dll before the token is lowered, otherwise
+    // AddressSanitizer will crash when trying to symbolize a report.
+    LoadLibraryA("dbghelp.dll");
+#endif
+
     g_target_services->LowerToken();
   }
 #endif
@@ -492,7 +506,7 @@ bool PpapiThread::SetupRendererChannel(base::ProcessId renderer_pid,
   // On POSIX, transfer ownership of the renderer-side (client) FD.
   // This ensures this process will be notified when it is closed even if a
   // connection is not established.
-  handle->socket = base::FileDescriptor(dispatcher->TakeRendererFD(), true);
+  handle->socket = base::FileDescriptor(dispatcher->TakeRendererFD());
   if (handle->socket.fd == -1)
     return false;
 #endif

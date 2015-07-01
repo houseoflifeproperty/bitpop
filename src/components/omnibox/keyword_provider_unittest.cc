@@ -21,8 +21,8 @@ namespace {
 
 class TestingSchemeClassifier : public AutocompleteSchemeClassifier {
  public:
-  virtual metrics::OmniboxInputType::Type GetInputTypeForScheme(
-      const std::string& scheme) const OVERRIDE {
+  metrics::OmniboxInputType::Type GetInputTypeForScheme(
+      const std::string& scheme) const override {
     if (net::URLRequest::IsHandledProtocol(scheme))
       return metrics::OmniboxInputType::URL;
     return metrics::OmniboxInputType::INVALID;
@@ -47,10 +47,10 @@ class KeywordProviderTest : public testing::Test {
   };
 
   KeywordProviderTest() : kw_provider_(NULL) { }
-  virtual ~KeywordProviderTest() { }
+  ~KeywordProviderTest() override {}
 
-  virtual void SetUp();
-  virtual void TearDown();
+  void SetUp() override;
+  void TearDown() override;
 
   template<class ResultType>
   void RunTest(TestData<ResultType>* keyword_cases,
@@ -94,10 +94,10 @@ void KeywordProviderTest::RunTest(TestData<ResultType>* keyword_cases,
   for (int i = 0; i < num_cases; ++i) {
     SCOPED_TRACE(keyword_cases[i].input);
     AutocompleteInput input(keyword_cases[i].input, base::string16::npos,
-                            base::string16(), GURL(),
+                            std::string(), GURL(),
                             metrics::OmniboxEventProto::INVALID_SPEC, true,
                             false, true, true, TestingSchemeClassifier());
-    kw_provider_->Start(input, false);
+    kw_provider_->Start(input, false, false);
     EXPECT_TRUE(kw_provider_->done());
     matches = kw_provider_->matches();
     ASSERT_EQ(keyword_cases[i].num_results, matches.size());
@@ -269,7 +269,7 @@ TEST_F(KeywordProviderTest, Contents) {
 
 TEST_F(KeywordProviderTest, AddKeyword) {
   TemplateURLData data;
-  data.short_name = ASCIIToUTF16("Test");
+  data.SetShortName(ASCIIToUTF16("Test"));
   base::string16 keyword(ASCIIToUTF16("foo"));
   data.SetKeyword(keyword);
   data.SetURL("http://www.google.com/foo?q={searchTerms}");
@@ -334,9 +334,9 @@ TEST_F(KeywordProviderTest, GetSubstitutingTemplateURLForInput) {
     { "aa foo", base::string16::npos, false, "", "aa foo",
       base::string16::npos },
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
+  for (size_t i = 0; i < arraysize(cases); i++) {
     AutocompleteInput input(
-        ASCIIToUTF16(cases[i].text), cases[i].cursor_position, base::string16(),
+        ASCIIToUTF16(cases[i].text), cases[i].cursor_position, std::string(),
         GURL(), metrics::OmniboxEventProto::INVALID_SPEC, false, false,
         cases[i].allow_exact_keyword_match, true, TestingSchemeClassifier());
     const TemplateURL* url =
@@ -354,7 +354,7 @@ TEST_F(KeywordProviderTest, GetSubstitutingTemplateURLForInput) {
 // If extra query params are specified on the command line, they should be
 // reflected (only) in the default search provider's destination URL.
 TEST_F(KeywordProviderTest, ExtraQueryParams) {
-  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+  base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
       switches::kExtraSearchQueryParams, "a=b");
 
   TestData<GURL> url_cases[] = {
@@ -366,4 +366,13 @@ TEST_F(KeywordProviderTest, ExtraQueryParams) {
 
   RunTest<GURL>(url_cases, arraysize(url_cases),
                 &AutocompleteMatch::destination_url);
+}
+
+TEST_F(KeywordProviderTest, DoesNotProvideMatchesOnFocus) {
+  AutocompleteInput input(ASCIIToUTF16("aaa"), base::string16::npos,
+                          std::string(), GURL(),
+                          metrics::OmniboxEventProto::INVALID_SPEC, true,
+                          false, true, true, TestingSchemeClassifier());
+  kw_provider_->Start(input, false, true);
+  ASSERT_TRUE(kw_provider_->matches().empty());
 }

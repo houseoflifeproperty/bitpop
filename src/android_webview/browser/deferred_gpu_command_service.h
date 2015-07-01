@@ -36,11 +36,11 @@ class DeferredGpuCommandService
   static void SetInstance();
   static DeferredGpuCommandService* GetInstance();
 
-  virtual void ScheduleTask(const base::Closure& task) OVERRIDE;
-  virtual void ScheduleIdleWork(const base::Closure& task) OVERRIDE;
-  virtual bool UseVirtualizedGLContexts() OVERRIDE;
-  virtual scoped_refptr<gpu::gles2::ShaderTranslatorCache>
-      shader_translator_cache() OVERRIDE;
+  void ScheduleTask(const base::Closure& task) override;
+  void ScheduleIdleWork(const base::Closure& task) override;
+  bool UseVirtualizedGLContexts() override;
+  scoped_refptr<gpu::gles2::ShaderTranslatorCache> shader_translator_cache()
+      override;
 
   void RunTasks();
   // If |is_idle| is false, this will only run older idle tasks.
@@ -50,11 +50,11 @@ class DeferredGpuCommandService
   // idle tasks during the idle run.
   void PerformAllIdleWork();
 
-  virtual void AddRef() const OVERRIDE;
-  virtual void Release() const OVERRIDE;
+  void AddRef() const override;
+  void Release() const override;
 
  protected:
-  virtual ~DeferredGpuCommandService();
+  ~DeferredGpuCommandService() override;
   friend class base::RefCountedThreadSafe<DeferredGpuCommandService>;
 
  private:

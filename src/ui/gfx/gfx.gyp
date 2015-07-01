@@ -19,8 +19,10 @@
       'sources': [
         'geometry/box_f.cc',
         'geometry/box_f.h',
-        'geometry/cubic_bezier.h',
         'geometry/cubic_bezier.cc',
+        'geometry/cubic_bezier.h',
+        'geometry/dip_util.cc',
+        'geometry/dip_util.h',
         'geometry/insets.cc',
         'geometry/insets.h',
         'geometry/insets_base.h',
@@ -32,7 +34,6 @@
         'geometry/point.h',
         'geometry/point3_f.cc',
         'geometry/point3_f.h',
-        'geometry/point_base.h',
         'geometry/point_conversions.cc',
         'geometry/point_conversions.h',
         'geometry/point_f.cc',
@@ -41,19 +42,15 @@
         'geometry/quad_f.h',
         'geometry/rect.cc',
         'geometry/rect.h',
-        'geometry/rect_base.h',
-        'geometry/rect_base_impl.h',
         'geometry/rect_conversions.cc',
         'geometry/rect_conversions.h',
         'geometry/rect_f.cc',
         'geometry/rect_f.h',
-        'geometry/r_tree.h',
-        'geometry/r_tree_base.cc',
-        'geometry/r_tree_base.h',
         'geometry/safe_integer_conversions.h',
+        'geometry/scroll_offset.cc',
+        'geometry/scroll_offset.h',
         'geometry/size.cc',
         'geometry/size.h',
-        'geometry/size_base.h',
         'geometry/size_conversions.cc',
         'geometry/size_conversions.h',
         'geometry/size_f.cc',
@@ -66,6 +63,9 @@
         'geometry/vector2d_f.h',
         'geometry/vector3d_f.cc',
         'geometry/vector3d_f.h',
+      ],
+      'includes': [
+        '../../build/android/increase_size_for_speed.gypi',
       ],
     },
     {
@@ -103,8 +103,6 @@
         'android/gfx_jni_registrar.h',
         'android/java_bitmap.cc',
         'android/java_bitmap.h',
-        'android/scroller.cc',
-        'android/scroller.h',
         'android/shared_device_display_info.cc',
         'android/shared_device_display_info.h',
         'android/view_configuration.cc',
@@ -134,8 +132,6 @@
         'canvas_notimplemented.cc',
         'canvas_paint_mac.h',
         'canvas_paint_mac.mm',
-        'canvas_paint_win.cc',
-        'canvas_paint_win.h',
         'canvas_skia.cc',
         'canvas_skia_paint.h',
         'codec/jpeg_codec.cc',
@@ -162,7 +158,7 @@
         'font.h',
         'font_fallback.h',
         'font_fallback_linux.cc',
-        'font_fallback_mac.cc',
+        'font_fallback_mac.mm',
         'font_fallback_win.cc',
         'font_fallback_win.h',
         'font_list.cc',
@@ -181,6 +177,10 @@
         'gfx_paths.h',
         'gpu_memory_buffer.cc',
         'gpu_memory_buffer.h',
+        'harfbuzz_font_skia.cc',
+        'harfbuzz_font_skia.h',
+        'hud_font.cc',
+        'hud_font.h',
         'image/canvas_image_source.cc',
         'image/canvas_image_source.h',
         'image/image.cc',
@@ -207,17 +207,23 @@
         'image/image_util_ios.mm',
         'interpolated_transform.cc',
         'interpolated_transform.h',
+        'ios/NSString+CrStringDrawing.h',
+        'ios/NSString+CrStringDrawing.mm',
+        'ios/uikit_util.h',
+        'ios/uikit_util.mm',
         'linux_font_delegate.cc',
         'linux_font_delegate.h',
         'mac/coordinate_conversion.h',
         'mac/coordinate_conversion.mm',
+        'mac/nswindow_frame_controls.h',
+        'mac/nswindow_frame_controls.mm',
         'mac/scoped_ns_disable_screen_updates.h',
         'native_widget_types.h',
         'nine_image_painter.cc',
         'nine_image_painter.h',
         'overlay_transform.h',
-        'pango_util.cc',
-        'pango_util.h',
+        'paint_throbber.cc',
+        'paint_throbber.h',
         'path.cc',
         'path.h',
         'path_aura.cc',
@@ -229,15 +235,16 @@
         'platform_font_android.cc',
         'platform_font_ios.h',
         'platform_font_ios.mm',
+        'platform_font_linux.cc',
+        'platform_font_linux.h',
         'platform_font_mac.h',
         'platform_font_mac.mm',
-        'platform_font_ozone.cc',
-        'platform_font_pango.cc',
-        'platform_font_pango.h',
         'platform_font_win.cc',
         'platform_font_win.h',
         'range/range.cc',
         'range/range.h',
+        'range/range_f.cc',
+        'range/range_f.h',
         'range/range_mac.mm',
         'range/range_win.cc',
         'render_text.cc',
@@ -246,11 +253,6 @@
         'render_text_harfbuzz.h',
         'render_text_mac.cc',
         'render_text_mac.h',
-        'render_text_ozone.cc',
-        'render_text_pango.cc',
-        'render_text_pango.h',
-        'render_text_win.cc',
-        'render_text_win.h',
         'scoped_canvas.h',
         'scoped_cg_context_save_gstate_mac.h',
         'scoped_ns_graphics_context_save_gstate_mac.h',
@@ -297,6 +299,8 @@
         'utf16_indexing.cc',
         'utf16_indexing.h',
         'vsync_provider.h',
+        'win/direct_write.cc',
+        'win/direct_write.h',
         'win/dpi.cc',
         'win/dpi.h',
         'win/hwnd_util.cc',
@@ -304,17 +308,23 @@
         'win/scoped_set_map_mode.h',
         'win/singleton_hwnd.cc',
         'win/singleton_hwnd.h',
+        'win/singleton_hwnd_observer.cc',
+        'win/singleton_hwnd_observer.h',
         'win/window_impl.cc',
         'win/window_impl.h',
       ],
+      'includes': [
+        '../../build/android/increase_size_for_speed.gypi',
+      ],
       'conditions': [
         ['OS=="ios"', {
-          'dependencies': [
-            '<(DEPTH)/ui/ios/ui_ios.gyp:ui_ios',
-          ],
-          # iOS only uses a subset of UI.
-          'sources/': [
-            ['exclude', '^codec/jpeg_codec\\.cc$'],
+          # Linkable dependents need to set the linker flag '-ObjC' in order to
+          # use the categories in this target (e.g. NSString+CrStringDrawing.h).
+          'link_settings': {
+            'xcode_settings': {'OTHER_LDFLAGS': ['-ObjC']},
+          },
+          'sources!': [
+            'codec/jpeg_codec.cc',
           ],
         }, {
           'dependencies': [
@@ -347,11 +357,11 @@
         ['OS=="android"', {
           'sources!': [
             'animation/throb_animation.cc',
-            'display_observer.cc',
             'selection_model.cc',
           ],
           'dependencies': [
             'gfx_jni_headers',
+            '<(DEPTH)/base/base.gyp:base_java',
           ],
           'link_settings': {
             'libraries': [
@@ -359,6 +369,16 @@
               '-ljnigraphics',
             ],
           },
+        }],
+        ['chromeos==1', {
+          # Chrome OS requires robust JPEG decoding for the login screen.
+          'sources': [
+            'chromeos/codec/jpeg_codec_robust_slow.cc',
+            'chromeos/codec/jpeg_codec_robust_slow.h',
+          ],
+          'dependencies': [
+            '<(libjpeg_ijg_gyp_path):libjpeg',
+          ],
         }],
         ['use_aura==0 and toolkit_views==0', {
           'sources!': [
@@ -376,13 +396,10 @@
             'screen_android.cc',
           ],
         }],
-        ['OS=="android" and android_webview_build==0', {
-          'dependencies': [
-            '<(DEPTH)/base/base.gyp:base_java',
-          ],
-        }],
         ['OS=="android" or OS=="ios"', {
           'sources!': [
+            'harfbuzz_font_skia.cc',
+            'harfbuzz_font_skia.h',
             'render_text.cc',
             'render_text.h',
             'render_text_harfbuzz.cc',
@@ -396,13 +413,9 @@
             'x/gfx_x11.gyp:gfx_x11',
           ],
         }],
-        ['use_pango==1', {
+        ['use_cairo==1', {
           'dependencies': [
             '<(DEPTH)/build/linux/system.gyp:pangocairo',
-          ],
-          'sources!': [
-            'platform_font_ozone.cc',
-            'render_text_ozone.cc',
           ],
         }],
         ['desktop_linux==1 or chromeos==1', {

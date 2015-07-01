@@ -20,7 +20,7 @@ class PopupBlockedInfoBarDelegate : public ConfirmInfoBarDelegate {
   // |infobar_service|.
   static void Create(content::WebContents* web_contents, int num_popups);
 
-  virtual ~PopupBlockedInfoBarDelegate();
+  ~PopupBlockedInfoBarDelegate() override;
 
  private:
   PopupBlockedInfoBarDelegate(int num_popups,
@@ -28,12 +28,12 @@ class PopupBlockedInfoBarDelegate : public ConfirmInfoBarDelegate {
                               HostContentSettingsMap* map);
 
   // ConfirmInfoBarDelegate:
-  virtual int GetIconID() const OVERRIDE;
-  virtual PopupBlockedInfoBarDelegate* AsPopupBlockedInfoBarDelegate() OVERRIDE;
-  virtual base::string16 GetMessageText() const OVERRIDE;
-  virtual int GetButtons() const OVERRIDE;
-  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
-  virtual bool Accept() OVERRIDE;
+  int GetIconID() const override;
+  PopupBlockedInfoBarDelegate* AsPopupBlockedInfoBarDelegate() override;
+  base::string16 GetMessageText() const override;
+  int GetButtons() const override;
+  base::string16 GetButtonLabel(InfoBarButton button) const override;
+  bool Accept() override;
 
   int num_popups_;
   GURL url_;

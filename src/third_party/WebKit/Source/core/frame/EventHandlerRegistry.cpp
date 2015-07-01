@@ -196,9 +196,9 @@ void EventHandlerRegistry::notifyDidAddOrRemoveEventHandlerTarget(EventHandlerCl
         scrollingCoordinator->touchEventTargetRectsDidChange();
 }
 
-void EventHandlerRegistry::trace(Visitor* visitor)
+DEFINE_TRACE(EventHandlerRegistry)
 {
-    visitor->registerWeakMembers<EventHandlerRegistry, &EventHandlerRegistry::clearWeakMembers>(this);
+    visitor->template registerWeakMembers<EventHandlerRegistry, &EventHandlerRegistry::clearWeakMembers>(this);
 }
 
 void EventHandlerRegistry::clearWeakMembers(Visitor* visitor)
@@ -207,12 +207,12 @@ void EventHandlerRegistry::clearWeakMembers(Visitor* visitor)
     for (size_t i = 0; i < EventHandlerClassCount; ++i) {
         EventHandlerClass handlerClass = static_cast<EventHandlerClass>(i);
         const EventTargetSet* targets = &m_targets[handlerClass];
-        for (EventTargetSet::const_iterator it = targets->begin(); it != targets->end(); ++it) {
-            Node* node = it->key->toNode();
-            LocalDOMWindow* window = it->key->toDOMWindow();
-            if (node && !visitor->isAlive(node)) {
+        for (const auto& eventTarget : *targets) {
+            Node* node = eventTarget.key->toNode();
+            LocalDOMWindow* window = eventTarget.key->toDOMWindow();
+            if (node && !visitor->isHeapObjectAlive(node)) {
                 deadTargets.append(node);
-            } else if (window && !visitor->isAlive(window)) {
+            } else if (window && !visitor->isHeapObjectAlive(window)) {
                 deadTargets.append(window);
             }
         }
@@ -228,15 +228,15 @@ void EventHandlerRegistry::documentDetached(Document& document)
         EventHandlerClass handlerClass = static_cast<EventHandlerClass>(handlerClassIndex);
         Vector<EventTarget*> targetsToRemove;
         const EventTargetSet* targets = &m_targets[handlerClass];
-        for (EventTargetSet::const_iterator iter = targets->begin(); iter != targets->end(); ++iter) {
-            if (Node* node = iter->key->toNode()) {
+        for (const auto& eventTarget : *targets) {
+            if (Node* node = eventTarget.key->toNode()) {
                 for (Document* doc = &node->document(); doc; doc = doc->ownerElement() ? &doc->ownerElement()->document() : 0) {
                     if (doc == &document) {
-                        targetsToRemove.append(iter->key);
+                        targetsToRemove.append(eventTarget.key);
                         break;
                     }
                 }
-            } else if (iter->key->toDOMWindow()) {
+            } else if (eventTarget.key->toDOMWindow()) {
                 // DOMWindows may outlive their documents, so we shouldn't remove their handlers
                 // here.
             } else {
@@ -254,12 +254,12 @@ void EventHandlerRegistry::checkConsistency() const
     for (size_t i = 0; i < EventHandlerClassCount; ++i) {
         EventHandlerClass handlerClass = static_cast<EventHandlerClass>(i);
         const EventTargetSet* targets = &m_targets[handlerClass];
-        for (EventTargetSet::const_iterator iter = targets->begin(); iter != targets->end(); ++iter) {
-            if (Node* node = iter->key->toNode()) {
+        for (const auto& eventTarget : *targets) {
+            if (Node* node = eventTarget.key->toNode()) {
                 // See the comment for |documentDetached| if either of these assertions fails.
                 ASSERT(node->document().frameHost());
                 ASSERT(node->document().frameHost() == &m_frameHost);
-            } else if (LocalDOMWindow* window = iter->key->toDOMWindow()) {
+            } else if (LocalDOMWindow* window = eventTarget.key->toDOMWindow()) {
                 // If any of these assertions fail, LocalDOMWindow failed to unregister its handlers
                 // properly.
                 ASSERT(window->frame());

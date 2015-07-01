@@ -102,18 +102,14 @@ class TranslateScriptBrowserTest : public ChromeRenderViewTest {
   }
 
  private:
-  virtual void SetUp() OVERRIDE {
-    ChromeRenderViewTest::SetUp();
-  }
+  void SetUp() override { ChromeRenderViewTest::SetUp(); }
 
-  virtual void TearDown() OVERRIDE {
-    ChromeRenderViewTest::TearDown();
-  }
+  void TearDown() override { ChromeRenderViewTest::TearDown(); }
 
   double ExecuteScriptAndGetNumberResult(const std::string& script) {
     WebScriptSource source = WebScriptSource(base::ASCIIToUTF16(script));
     v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
-    v8::Handle<v8::Value> result =
+    v8::Local<v8::Value> result =
         GetMainFrame()->executeScriptAndReturnValue(source);
     if (result.IsEmpty() || !result->IsNumber()) {
       NOTREACHED();
@@ -127,7 +123,7 @@ class TranslateScriptBrowserTest : public ChromeRenderViewTest {
   bool ExecuteScriptAndGetBoolResult(const std::string& script) {
     WebScriptSource source = WebScriptSource(base::ASCIIToUTF16(script));
     v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
-    v8::Handle<v8::Value> result =
+    v8::Local<v8::Value> result =
         GetMainFrame()->executeScriptAndReturnValue(source);
     if (result.IsEmpty() || !result->IsBoolean()) {
       NOTREACHED();

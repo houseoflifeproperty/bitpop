@@ -112,7 +112,9 @@ void KillPluginOnIOThread(int child_id) {
           base::Bind(&DumpAndTerminatePluginInBlockingPool,
                      base::Owned(new base::win::ScopedHandle(handle))));
 #else
-      base::KillProcess(data.handle, content::RESULT_CODE_HUNG, false);
+      base::Process process =
+          base::Process::DeprecatedGetProcessFromHandle(data.handle);
+      process.Terminate(content::RESULT_CODE_HUNG, false);
 #endif
       break;
     }
@@ -140,14 +142,14 @@ class HungPluginInfoBarDelegate : public ConfirmInfoBarDelegate {
   HungPluginInfoBarDelegate(HungPluginTabHelper* helper,
                             int plugin_child_id,
                             const base::string16& plugin_name);
-  virtual ~HungPluginInfoBarDelegate();
+  ~HungPluginInfoBarDelegate() override;
 
   // ConfirmInfoBarDelegate:
-  virtual int GetIconID() const OVERRIDE;
-  virtual base::string16 GetMessageText() const OVERRIDE;
-  virtual int GetButtons() const OVERRIDE;
-  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
-  virtual bool Accept() OVERRIDE;
+  int GetIconID() const override;
+  base::string16 GetMessageText() const override;
+  int GetButtons() const override;
+  base::string16 GetButtonLabel(InfoBarButton button) const override;
+  bool Accept() override;
 
   HungPluginTabHelper* helper_;
   int plugin_child_id_;
@@ -162,7 +164,7 @@ infobars::InfoBar* HungPluginInfoBarDelegate::Create(
     HungPluginTabHelper* helper,
     int plugin_child_id,
     const base::string16& plugin_name) {
-  return infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+  return infobar_service->AddInfoBar(infobar_service->CreateConfirmInfoBar(
       scoped_ptr<ConfirmInfoBarDelegate>(new HungPluginInfoBarDelegate(
           helper, plugin_child_id, plugin_name))));
 }

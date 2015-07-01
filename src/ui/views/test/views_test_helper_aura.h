@@ -11,6 +11,9 @@
 #include "ui/views/test/views_test_helper.h"
 
 namespace aura {
+namespace client {
+class ScreenPositionClient;
+}
 namespace test {
 class AuraTestHelper;
 }
@@ -30,17 +33,18 @@ class ViewsTestHelperAura : public ViewsTestHelper {
  public:
   ViewsTestHelperAura(base::MessageLoopForUI* message_loop,
                       ui::ContextFactory* context_factory);
-  virtual ~ViewsTestHelperAura();
+  ~ViewsTestHelperAura() override;
 
   // Overridden from ViewsTestHelper:
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
-  virtual gfx::NativeWindow GetContext() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
+  gfx::NativeWindow GetContext() override;
 
  private:
   ui::ContextFactory* context_factory_;
   scoped_ptr<aura::test::AuraTestHelper> aura_test_helper_;
   scoped_ptr<wm::WMState> wm_state_;
+  scoped_ptr<aura::client::ScreenPositionClient> screen_position_client_;
 
   DISALLOW_COPY_AND_ASSIGN(ViewsTestHelperAura);
 };

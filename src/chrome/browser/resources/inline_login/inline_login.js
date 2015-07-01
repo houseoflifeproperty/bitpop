@@ -6,14 +6,12 @@
  * @fileoverview Inline login UI.
  */
 
-<include src="../gaia_auth_host/gaia_auth_host.js">
-
 cr.define('inline.login', function() {
   'use strict';
 
   /**
    * The auth extension host instance.
-   * @type {Object}
+   * @type {cr.login.GaiaAuthHost}
    */
   var authExtHost;
 
@@ -22,19 +20,30 @@ cr.define('inline.login', function() {
    */
   var authReadyFired;
 
-  /**
-   * Handler of auth host 'ready' event.
-   */
-  function onAuthReady() {
+  function onResize(e) {
+    chrome.send('switchToFullTab', [e.detail]);
+  }
+
+  function onAuthReady(e) {
     $('contents').classList.toggle('loading', false);
     authReadyFired = true;
   }
 
-  /**
-   * Handler of auth host 'completed' event.
-   * @param {!Object} credentials Credentials of the completed authentication.
-   */
-  function onAuthCompleted(credentials) {
+  function onDropLink(e) {
+    // Navigate to the dropped link.
+    window.location.href = e.detail;
+  }
+
+  function onNewWindow(e) {
+    window.open(e.detail.targetUrl, '_blank');
+    e.detail.window.discard();
+  }
+
+  function onAuthCompleted(e) {
+    completeLogin(e.detail);
+  }
+
+  function completeLogin(credentials) {
     chrome.send('completeLogin', [credentials]);
     $('contents').classList.toggle('loading', true);
   }
@@ -44,8 +53,11 @@ cr.define('inline.login', function() {
    */
   function initialize() {
     authExtHost = new cr.login.GaiaAuthHost('signin-frame');
+    authExtHost.addEventListener('dropLink', onDropLink);
     authExtHost.addEventListener('ready', onAuthReady);
-
+    authExtHost.addEventListener('newWindow', onNewWindow);
+    authExtHost.addEventListener('resize', onResize);
+    authExtHost.addEventListener('authCompleted', onAuthCompleted);
     chrome.send('initialize');
   }
 
@@ -54,7 +66,9 @@ cr.define('inline.login', function() {
    * @param {Object} data Parameters for auth extension.
    */
   function loadAuthExtension(data) {
-    authExtHost.load(data.authMode, data, onAuthCompleted);
+    // TODO(rogerta): in when using webview, the |completeLogin| argument
+    // is ignored.  See addEventListener() call above.
+    authExtHost.load(data.authMode, data, completeLogin);
     $('contents').classList.toggle('loading',
         data.authMode != cr.login.GaiaAuthHost.AuthMode.DESKTOP ||
         data.constrained == '1');

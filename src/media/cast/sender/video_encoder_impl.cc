@@ -12,16 +12,13 @@
 #include "media/base/video_frame.h"
 #include "media/cast/cast_defines.h"
 #include "media/cast/sender/fake_software_video_encoder.h"
-#if !defined(MEDIA_DISABLE_LIBVPX)
 #include "media/cast/sender/vp8_encoder.h"
-#endif  // !defined(MEDIA_DISABLE_LIBVPX)
 
 namespace media {
 namespace cast {
 
 namespace {
 
-#if !defined(MEDIA_DISABLE_LIBVPX)
 typedef base::Callback<void(Vp8Encoder*)> PassEncoderCallback;
 
 void InitializeEncoderOnEncoderThread(
@@ -30,13 +27,12 @@ void InitializeEncoderOnEncoderThread(
   DCHECK(environment->CurrentlyOn(CastEnvironment::VIDEO));
   encoder->Initialize();
 }
-#endif  // !defined(MEDIA_DISABLE_LIBVPX)
 
 void EncodeVideoFrameOnEncoderThread(
     scoped_refptr<CastEnvironment> environment,
     SoftwareVideoEncoder* encoder,
     const scoped_refptr<media::VideoFrame>& video_frame,
-    const base::TimeTicks& capture_time,
+    const base::TimeTicks& reference_time,
     const VideoEncoderImpl::CodecDynamicConfig& dynamic_config,
     const VideoEncoderImpl::FrameEncodedCallback& frame_encoded_callback) {
   DCHECK(environment->CurrentlyOn(CastEnvironment::VIDEO));
@@ -47,41 +43,39 @@ void EncodeVideoFrameOnEncoderThread(
       dynamic_config.latest_frame_id_to_reference);
   encoder->UpdateRates(dynamic_config.bit_rate);
 
-  scoped_ptr<EncodedFrame> encoded_frame(
-      new EncodedFrame());
-  if (!encoder->Encode(video_frame, encoded_frame.get())) {
-    VLOG(1) << "Encoding failed";
-    return;
-  }
-  if (encoded_frame->data.empty()) {
-    VLOG(1) << "Encoding resulted in an empty frame";
-    return;
-  }
-  encoded_frame->rtp_timestamp = GetVideoRtpTimestamp(capture_time);
-  encoded_frame->reference_time = capture_time;
-
+  scoped_ptr<EncodedFrame> encoded_frame(new EncodedFrame());
+  encoder->Encode(video_frame, reference_time, encoded_frame.get());
   environment->PostTask(
       CastEnvironment::MAIN,
       FROM_HERE,
-      base::Bind(
-          frame_encoded_callback, base::Passed(&encoded_frame)));
+      base::Bind(frame_encoded_callback, base::Passed(&encoded_frame)));
 }
 }  // namespace
+
+// static
+bool VideoEncoderImpl::IsSupported(const VideoSenderConfig& video_config) {
+#ifndef OFFICIAL_BUILD
+  if (video_config.codec == CODEC_VIDEO_FAKE)
+    return true;
+#endif
+  return video_config.codec == CODEC_VIDEO_VP8;
+}
 
 VideoEncoderImpl::VideoEncoderImpl(
     scoped_refptr<CastEnvironment> cast_environment,
     const VideoSenderConfig& video_config,
-    int max_unacked_frames)
+    const StatusChangeCallback& status_change_cb)
     : cast_environment_(cast_environment) {
+  CHECK(cast_environment_->HasVideoThread());
+  DCHECK(!status_change_cb.is_null());
+
   if (video_config.codec == CODEC_VIDEO_VP8) {
-#if !defined(MEDIA_DISABLE_LIBVPX)
-    encoder_.reset(new Vp8Encoder(video_config, max_unacked_frames));
+    encoder_.reset(new Vp8Encoder(video_config));
     cast_environment_->PostTask(CastEnvironment::VIDEO,
                                 FROM_HERE,
                                 base::Bind(&InitializeEncoderOnEncoderThread,
                                            cast_environment,
                                            encoder_.get()));
-#endif  // !defined(MEDIA_DISABLE_LIBVPX)
 #ifndef OFFICIAL_BUILD
   } else if (video_config.codec == CODEC_VIDEO_FAKE) {
     encoder_.reset(new FakeSoftwareVideoEncoder(video_config));
@@ -93,6 +87,13 @@ VideoEncoderImpl::VideoEncoderImpl(
   dynamic_config_.key_frame_requested = false;
   dynamic_config_.latest_frame_id_to_reference = kStartFrameId;
   dynamic_config_.bit_rate = video_config.start_bitrate;
+
+  cast_environment_->PostTask(
+      CastEnvironment::MAIN,
+      FROM_HERE,
+      base::Bind(status_change_cb,
+                 encoder_.get() ? STATUS_INITIALIZED :
+                                  STATUS_UNSUPPORTED_CODEC));
 }
 
 VideoEncoderImpl::~VideoEncoderImpl() {
@@ -108,16 +109,19 @@ VideoEncoderImpl::~VideoEncoderImpl() {
 
 bool VideoEncoderImpl::EncodeVideoFrame(
     const scoped_refptr<media::VideoFrame>& video_frame,
-    const base::TimeTicks& capture_time,
+    const base::TimeTicks& reference_time,
     const FrameEncodedCallback& frame_encoded_callback) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
+  DCHECK(!video_frame->visible_rect().IsEmpty());
+  DCHECK(!frame_encoded_callback.is_null());
+
   cast_environment_->PostTask(CastEnvironment::VIDEO,
                               FROM_HERE,
                               base::Bind(&EncodeVideoFrameOnEncoderThread,
                                          cast_environment_,
                                          encoder_.get(),
                                          video_frame,
-                                         capture_time,
+                                         reference_time,
                                          dynamic_config_,
                                          frame_encoded_callback));
 

@@ -34,6 +34,8 @@
 
 #include "platform/PopupMenuStyle.h"
 #include "platform/geometry/FloatQuad.h"
+#include "platform/graphics/paint/DisplayItemClient.h"
+#include "platform/heap/Handle.h"
 #include "web/PopupListBox.h"
 
 namespace blink {
@@ -47,20 +49,17 @@ struct WebPopupMenuInfo;
 // This class wraps a PopupListBox. It positions the popup, paints the border
 // around it, and forwards input events.
 // FIXME(skobes): This class can probably be combined with PopupListBox.
-class PopupContainer FINAL : public Widget {
+class PopupContainer final : public Widget {
 public:
-    static PassRefPtr<PopupContainer> create(PopupMenuClient*, bool deviceSupportsTouch);
-
-    // Whether a key event should be sent to this popup.
-    bool isInterestedInEventForKey(int keyCode);
+    static PassRefPtrWillBeRawPtr<PopupContainer> create(PopupMenuClient*, bool deviceSupportsTouch);
 
     // Widget
-    virtual void paint(GraphicsContext*, const IntRect&) OVERRIDE;
-    virtual void hide() OVERRIDE;
-    virtual HostWindow* hostWindow() const OVERRIDE;
-    virtual void invalidateRect(const IntRect&) OVERRIDE;
-    virtual IntPoint convertChildToSelf(const Widget* child, const IntPoint&) const OVERRIDE;
-    virtual IntPoint convertSelfToChild(const Widget* child, const IntPoint&) const OVERRIDE;
+    virtual void paint(GraphicsContext*, const IntRect&) override;
+    virtual void hide() override;
+    virtual HostWindow* hostWindow() const override;
+    virtual void invalidateRect(const IntRect&) override;
+    virtual IntPoint convertChildToSelf(const Widget* child, const IntPoint&) const override;
+    virtual IntPoint convertSelfToChild(const Widget* child, const IntPoint&) const override;
 
     // PopupContainer methods
 
@@ -99,12 +98,6 @@ public:
     // has selected with the keyboard up/down arrows.
     int selectedIndex() const;
 
-    // Refresh the popup values from the PopupMenuClient.
-    IntRect refresh(const IntRect& targetControlRect);
-
-    // The menu per-item data.
-    const Vector<PopupItem*>& popupData() const;
-
     // The height of a row in the menu.
     int menuItemHeight() const;
 
@@ -118,11 +111,16 @@ public:
     String getSelectedItemToolTip();
 
     // This is public for testing.
-    static IntRect layoutAndCalculateWidgetRectInternal(IntRect widgetRectInScreen, int targetControlHeight, const FloatRect& windowRect, const FloatRect& screen, bool isRTL, const int rtlOffset, const int verticalOffset, const IntSize& transformOffset, PopupContent*, bool& needToResizeView);
+    static IntRect layoutAndCalculateWidgetRectInternal(IntRect widgetRectInScreen, int targetControlHeight, const IntRect& windowRect, const IntRect& screen, bool isRTL, const int rtlOffset, const int verticalOffset, const IntSize& transformOffset, PopupContent*, bool& needToResizeView);
 
     void disconnectClient() { m_listBox->disconnectClient(); }
 
     void updateFromElement() { m_listBox->updateFromElement(); }
+
+    DECLARE_VIRTUAL_TRACE();
+
+    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
+    String debugName() const { return "PopupContainer"; }
 
 private:
     friend class WTF::RefCounted<PopupContainer>;
@@ -139,13 +137,12 @@ private:
     void fitToListBox();
 
     void popupOpened(const IntRect& bounds);
-    void getPopupMenuInfo(WebPopupMenuInfo*);
 
     // Returns the ChromeClient of the page this popup is associated with.
     ChromeClient& chromeClient();
 
-    RefPtr<PopupListBox> m_listBox;
-    RefPtr<FrameView> m_frameView;
+    RefPtrWillBeMember<PopupListBox> m_listBox;
+    RefPtrWillBeMember<FrameView> m_frameView;
 
     // m_controlPosition contains the transformed position of the
     // <select>/<input> associated with this popup. m_controlSize is the size

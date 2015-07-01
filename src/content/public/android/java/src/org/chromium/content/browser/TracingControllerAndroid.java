@@ -151,8 +151,7 @@ public class TracingControllerAndroid {
 
         String filePath = generateTracingFilePath();
         if (filePath == null) {
-          logAndToastError(
-              mContext.getString(R.string.profiler_no_storage_toast));
+            logAndToastError(mContext.getString(R.string.profiler_no_storage_toast));
         }
         return startTracing(filePath, showToasts, categories, traceOptions);
     }
@@ -178,7 +177,7 @@ public class TracingControllerAndroid {
      * (in content/public/browser/trace_controller.h) for the format.
      * @param traceOptions Which trace options to use. See
      * TraceOptions::TraceOptions(const std::string& options_string)
-     * (in base/debug/trace_event_impl.h) for the format.
+     * (in base/trace_event/trace_event_impl.h) for the format.
      */
     public boolean startTracing(String filename, boolean showToasts, String categories,
             String traceOptions) {
@@ -240,12 +239,6 @@ public class TracingControllerAndroid {
         }
     }
 
-    @Override
-    protected void finalize() {
-        // Ensure that destroy() was called.
-        assert mNativeTracingControllerAndroid == 0;
-    }
-
     /**
      * Clean up the C++ side of this class.
      * After the call, this class instance shouldn't be used.
@@ -290,9 +283,8 @@ public class TracingControllerAndroid {
                     categories = categories.replaceFirst(
                             DEFAULT_CHROME_CATEGORIES_PLACE_HOLDER, nativeGetDefaultCategories());
                 }
-                String traceOptions =
-                        intent.getStringExtra(RECORD_CONTINUOUSLY_EXTRA) == null ?
-                        "record-until-full" : "record-continuously";
+                String traceOptions = intent.getStringExtra(RECORD_CONTINUOUSLY_EXTRA) == null
+                        ? "record-until-full" : "record-continuously";
                 String filename = intent.getStringExtra(FILE_EXTRA);
                 if (filename != null) {
                     startTracing(filename, true, categories, traceOptions);

@@ -34,17 +34,12 @@
 #include "bindings/core/v8/ScriptHeapSnapshot.h"
 #include "core/inspector/ScriptProfile.h"
 
-#include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/text/WTFString.h"
 
 namespace blink {
 
-class ExternalStringVisitor;
 class WrappedNodeVisitor;
-class Page;
 class ScriptValue;
-class WorkerGlobalScope;
 
 class ScriptProfiler {
     WTF_MAKE_NONCOPYABLE(ScriptProfiler);
@@ -71,7 +66,7 @@ public:
     static void setSamplingInterval(int intervalUs);
     static void start(const String& title);
     static PassRefPtrWillBeRawPtr<ScriptProfile> stop(const String& title);
-    static PassRefPtr<ScriptHeapSnapshot> takeHeapSnapshot(const String& title, HeapSnapshotProgress*);
+    static PassRefPtr<ScriptHeapSnapshot> takeHeapSnapshot(HeapSnapshotProgress*);
     static void startTrackingHeapObjects(bool trackAllocations);
     static void stopTrackingHeapObjects();
     static unsigned requestHeapStatsUpdate(OutputStream*);

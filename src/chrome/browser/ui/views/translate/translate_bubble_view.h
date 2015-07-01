@@ -12,9 +12,9 @@
 #include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/translate/language_combobox_model.h"
 #include "chrome/browser/ui/translate/translate_bubble_model.h"
+#include "chrome/browser/ui/views/managed_full_screen_bubble_delegate_view.h"
 #include "components/translate/core/common/translate_errors.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/combobox/combobox_listener.h"
 #include "ui/views/controls/link_listener.h"
@@ -33,13 +33,13 @@ namespace ui {
 class SimpleComboboxModel;
 }
 
-class TranslateBubbleView : public views::BubbleDelegateView,
+class TranslateBubbleView : public ManagedFullScreenBubbleDelegateView,
                             public views::ButtonListener,
                             public views::ComboboxListener,
                             public views::LinkListener,
                             public content::WebContentsObserver {
  public:
-  virtual ~TranslateBubbleView();
+  ~TranslateBubbleView() override;
 
   // Shows the Translate bubble.
   //
@@ -54,34 +54,30 @@ class TranslateBubbleView : public views::BubbleDelegateView,
   // Closes the current bubble if existing.
   static void CloseBubble();
 
-  // If true, the Translate bubble is being shown.
-  static bool IsShowing();
-
   // Returns the bubble view currently shown. This may return NULL.
   static TranslateBubbleView* GetCurrentBubble();
 
   TranslateBubbleModel* model() { return model_.get(); }
 
   // views::BubbleDelegateView methods.
-  virtual void Init() OVERRIDE;
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  void Init() override;
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   // views::WidgetDelegate method.
-  virtual void WindowClosing() OVERRIDE;
+  void WindowClosing() override;
 
   // views::View methods.
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
+  gfx::Size GetPreferredSize() const override;
 
   // views::CombboxListener methods.
-  virtual void OnPerformAction(views::Combobox* combobox) OVERRIDE;
+  void OnPerformAction(views::Combobox* combobox) override;
 
   // views::LinkListener method.
-  virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
+  void LinkClicked(views::Link* source, int event_flags) override;
 
   // content::WebContentsObserver method.
-  virtual void WebContentsDestroyed() OVERRIDE;
+  void WebContentsDestroyed() override;
 
   // Returns the current view state.
   TranslateBubbleModel::ViewState GetViewState() const;

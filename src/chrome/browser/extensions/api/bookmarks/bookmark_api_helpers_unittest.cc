@@ -19,6 +19,9 @@
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using bookmarks::BookmarkModel;
+using bookmarks::BookmarkNode;
+
 namespace extensions {
 
 namespace keys = bookmark_api_constants;
@@ -31,11 +34,11 @@ class ExtensionBookmarksTest : public testing::Test {
   ExtensionBookmarksTest()
       : client_(NULL), model_(NULL), node_(NULL), node2_(NULL), folder_(NULL) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     profile_.CreateBookmarkModel(false);
     model_ = BookmarkModelFactory::GetForProfile(&profile_);
     client_ = ChromeBookmarkClientFactory::GetForProfile(&profile_);
-    test::WaitForBookmarkModelToLoad(model_);
+    bookmarks::test::WaitForBookmarkModelToLoad(model_);
 
     node_ = model_->AddURL(model_->other_node(), 0, base::ASCIIToUTF16("Digg"),
                            GURL("http://www.reddit.com"));
@@ -115,7 +118,8 @@ TEST_F(ExtensionBookmarksTest, GetModifiableNode) {
   EXPECT_EQ("Digg", tree->title);
   ASSERT_TRUE(tree->url);
   EXPECT_EQ("http://www.reddit.com/", *tree->url);
-  EXPECT_EQ(BookmarkTreeNode::UNMODIFIABLE_NONE, tree->unmodifiable);
+  EXPECT_EQ(api::bookmarks::BOOKMARK_TREE_NODE_UNMODIFIABLE_NONE,
+            tree->unmodifiable);
 }
 
 TEST_F(ExtensionBookmarksTest, GetManagedNode) {
@@ -131,7 +135,8 @@ TEST_F(ExtensionBookmarksTest, GetManagedNode) {
                           false));  // Only folders.
   EXPECT_EQ("Chromium", tree->title);
   EXPECT_EQ("http://www.chromium.org/", *tree->url);
-  EXPECT_EQ(BookmarkTreeNode::UNMODIFIABLE_MANAGED, tree->unmodifiable);
+  EXPECT_EQ(api::bookmarks::BOOKMARK_TREE_NODE_UNMODIFIABLE_MANAGED,
+            tree->unmodifiable);
 }
 
 TEST_F(ExtensionBookmarksTest, RemoveNodeInvalidId) {

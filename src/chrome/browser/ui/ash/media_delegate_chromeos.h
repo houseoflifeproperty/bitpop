@@ -13,20 +13,20 @@ class MediaDelegateChromeOS : public ash::MediaDelegate,
                               MediaCaptureDevicesDispatcher::Observer {
  public:
   MediaDelegateChromeOS();
-  virtual ~MediaDelegateChromeOS();
+  ~MediaDelegateChromeOS() override;
 
   // ash::MediaDelegate:
-  virtual void HandleMediaNextTrack() OVERRIDE;
-  virtual void HandleMediaPlayPause() OVERRIDE;
-  virtual void HandleMediaPrevTrack() OVERRIDE;
-  virtual ash::MediaCaptureState GetMediaCaptureState(
-      content::BrowserContext* context) OVERRIDE;
+  void HandleMediaNextTrack() override;
+  void HandleMediaPlayPause() override;
+  void HandleMediaPrevTrack() override;
+  ash::MediaCaptureState GetMediaCaptureState(
+      content::BrowserContext* context) override;
 
   // MediaCaptureDevicesDispatcher::Observer:
-  virtual void OnRequestUpdate(int render_process_id,
-                               int render_frame_id,
-                               content::MediaStreamType stream_type,
-                               const content::MediaRequestState state) OVERRIDE;
+  void OnRequestUpdate(int render_process_id,
+                       int render_frame_id,
+                       content::MediaStreamType stream_type,
+                       const content::MediaRequestState state) override;
 
  private:
   void NotifyMediaCaptureChange();

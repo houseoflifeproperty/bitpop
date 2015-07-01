@@ -13,7 +13,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/tab_helper.h"
-#include "chrome/browser/favicon/favicon_tab_helper.h"
+#include "chrome/browser/favicon/favicon_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/browser.h"
@@ -28,7 +28,9 @@
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/favicon/content/content_favicon_driver.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/mime_util/mime_util.h"
 #include "components/omnibox/autocomplete_match.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -101,7 +103,7 @@ class BrowserTabStripController::TabContextMenuContents
         views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU));
   }
 
-  virtual ~TabContextMenuContents() {
+  ~TabContextMenuContents() override {
     if (controller_)
       controller_->tabstrip_->StopAllHighlighting();
   }
@@ -122,17 +124,14 @@ class BrowserTabStripController::TabContextMenuContents
   }
 
   // Overridden from ui::SimpleMenuModel::Delegate:
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE {
-    return false;
-  }
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE {
+  bool IsCommandIdChecked(int command_id) const override { return false; }
+  bool IsCommandIdEnabled(int command_id) const override {
     return controller_->IsCommandEnabledForTab(
         static_cast<TabStripModel::ContextMenuCommand>(command_id),
         tab_);
   }
-  virtual bool GetAcceleratorForCommandId(
-      int command_id,
-      ui::Accelerator* accelerator) OVERRIDE {
+  bool GetAcceleratorForCommandId(int command_id,
+                                  ui::Accelerator* accelerator) override {
     int browser_cmd;
     return TabStripModel::ContextMenuCommandToBrowserCommand(command_id,
                                                              &browser_cmd) ?
@@ -140,12 +139,12 @@ class BrowserTabStripController::TabContextMenuContents
                                                             accelerator) :
         false;
   }
-  virtual void CommandIdHighlighted(int command_id) OVERRIDE {
+  void CommandIdHighlighted(int command_id) override {
     controller_->StopHighlightTabsForCommand(last_command_, tab_);
     last_command_ = static_cast<TabStripModel::ContextMenuCommand>(command_id);
     controller_->StartHighlightTabsForCommand(last_command_, tab_);
   }
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {
+  void ExecuteCommand(int command_id, int event_flags) override {
     // Executing the command destroys |this|, and can also end up destroying
     // |controller_|. So stop the highlights before executing the command.
     controller_->tabstrip_->StopAllHighlighting();
@@ -154,7 +153,7 @@ class BrowserTabStripController::TabContextMenuContents
         tab_);
   }
 
-  virtual void MenuClosed(ui::SimpleMenuModel* /*source*/) OVERRIDE {
+  void MenuClosed(ui::SimpleMenuModel* /*source*/) override {
     if (controller_)
       controller_->tabstrip_->StopAllHighlighting();
   }
@@ -302,7 +301,8 @@ void BrowserTabStripController::CloseTab(int model_index,
 
 void BrowserTabStripController::ToggleTabAudioMute(int model_index) {
   content::WebContents* const contents = model_->GetWebContentsAt(model_index);
-  chrome::SetTabAudioMuted(contents, !chrome::IsTabAudioMuted(contents));
+  chrome::SetTabAudioMuted(contents, !chrome::IsTabAudioMuted(contents),
+                           chrome::kMutedToggleCauseUser);
 }
 
 void BrowserTabStripController::ShowContextMenuForTab(
@@ -500,10 +500,10 @@ void BrowserTabStripController::SetTabRendererDataFromModel(
     int model_index,
     TabRendererData* data,
     TabStatus tab_status) {
-  FaviconTabHelper* favicon_tab_helper =
-      FaviconTabHelper::FromWebContents(contents);
+  favicon::FaviconDriver* favicon_driver =
+      favicon::ContentFaviconDriver::FromWebContents(contents);
 
-  data->favicon = favicon_tab_helper->GetFavicon().AsImageSkia();
+  data->favicon = favicon_driver->GetFavicon().AsImageSkia();
   data->network_state = TabContentsNetworkState(contents);
   data->title = contents->GetTitle();
   data->url = contents->GetURL();
@@ -511,7 +511,7 @@ void BrowserTabStripController::SetTabRendererDataFromModel(
   data->crashed_status = contents->GetCrashedStatus();
   data->incognito = contents->GetBrowserContext()->IsOffTheRecord();
   data->mini = model_->IsMiniTab(model_index);
-  data->show_icon = data->mini || favicon_tab_helper->ShouldDisplayFavicon();
+  data->show_icon = data->mini || favicon::ShouldDisplayFavicon(contents);
   data->blocked = model_->IsTabBlocked(model_index);
   data->app = extensions::TabHelper::FromWebContents(contents)->is_app();
   data->media_state = chrome::GetTabMediaStateForContents(contents);
@@ -582,12 +582,10 @@ void BrowserTabStripController::OnFindURLMimeTypeCompleted(
   content::WebPluginInfo plugin;
   tabstrip_->FileSupported(
       url,
-      mime_type.empty() ||
-      net::IsSupportedMimeType(mime_type) ||
-      content::PluginService::GetInstance()->GetPluginInfo(
-          -1,                // process ID
-          MSG_ROUTING_NONE,  // routing ID
-          model_->profile()->GetResourceContext(),
-          url, GURL(), mime_type, false,
-          NULL, &plugin, NULL));
+      mime_type.empty() || mime_util::IsSupportedMimeType(mime_type) ||
+          content::PluginService::GetInstance()->GetPluginInfo(
+              -1,                // process ID
+              MSG_ROUTING_NONE,  // routing ID
+              model_->profile()->GetResourceContext(), url, GURL(), mime_type,
+              false, NULL, &plugin, NULL));
 }

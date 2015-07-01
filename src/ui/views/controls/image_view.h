@@ -28,6 +28,9 @@ class Painter;
 /////////////////////////////////////////////////////////////////////////////
 class VIEWS_EXPORT ImageView : public View {
  public:
+  // Internal class name.
+  static const char kViewClassName[];
+
   enum Alignment {
     LEADING = 0,
     CENTER,
@@ -35,7 +38,7 @@ class VIEWS_EXPORT ImageView : public View {
   };
 
   ImageView();
-  virtual ~ImageView();
+  ~ImageView() override;
 
   // Set the image that should be displayed.
   void SetImage(const gfx::ImageSkia& img);
@@ -80,14 +83,15 @@ class VIEWS_EXPORT ImageView : public View {
   void SetFocusPainter(scoped_ptr<Painter> focus_painter);
 
   // Overriden from View:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void OnFocus() OVERRIDE;
-  virtual void OnBlur() OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
-  virtual bool GetTooltipText(const gfx::Point& p,
-                              base::string16* tooltip) const OVERRIDE;
-  virtual bool CanProcessEventsWithinSubtree() const OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  void OnFocus() override;
+  void OnBlur() override;
+  void OnPaint(gfx::Canvas* canvas) override;
+  void GetAccessibleState(ui::AXViewState* state) override;
+  const char* GetClassName() const override;
+  bool GetTooltipText(const gfx::Point& p,
+                      base::string16* tooltip) const override;
+  bool CanProcessEventsWithinSubtree() const override;
 
  private:
   void OnPaintImage(gfx::Canvas* canvas);

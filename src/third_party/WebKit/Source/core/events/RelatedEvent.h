@@ -6,15 +6,11 @@
 #define RelatedEvent_h
 
 #include "core/events/Event.h"
+#include "core/events/RelatedEventInit.h"
 
 namespace blink {
 
-struct RelatedEventInit : public EventInit {
-    RelatedEventInit();
-    RefPtrWillBeMember<EventTarget> relatedTarget;
-};
-
-class RelatedEvent FINAL : public Event {
+class RelatedEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<RelatedEvent> create();
@@ -25,10 +21,10 @@ public:
 
     EventTarget* relatedTarget() const { return m_relatedTarget.get(); }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::RelatedEvent; }
-    virtual bool isRelatedEvent() const OVERRIDE { return true; }
+    virtual const AtomicString& interfaceName() const override { return EventNames::RelatedEvent; }
+    virtual bool isRelatedEvent() const override { return true; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     RelatedEvent();

@@ -3,8 +3,6 @@
 You must have a <code>"manifest_version"</code> of at least <code>2</code> to use this API.
 </p>
 
-{{?is_apps +partials.warning_dev /}}
-
 <h2 id="usage">Usage</h2>
 <p>The commands API allows you to define specific commands, and bind them to a
 default key combination. Each command your extension accepts must be listed in
@@ -13,8 +11,8 @@ have many commands but only 4 suggested keys can be specified. The user can
 manually add more shortcuts from the chrome://extensions/configureCommands
 dialog.</p>
 
-<p>Supported keys: A-Z, 0-9, Comma, Period, Home, End, PageUp, PageDown, Insert,
-Delete, Arrow keys (Up, Down, Left, Right) and the Media Keys
+<p>Supported keys: A-Z, 0-9, Comma, Period, Home, End, PageUp, PageDown,
+Space, Insert, Delete, Arrow keys (Up, Down, Left, Right) and the Media Keys
 (MediaNextTrack, MediaPlayPause, MediaPrevTrack, MediaStop).</p>
 
 <p>Note: All key combinations must include either Ctrl* or Alt. Combinations
@@ -85,7 +83,7 @@ code.
 the browser does not have focus, the shortcut will be inactive. On desktop
 Chrome, Commands can instead have global scope, as of version 35, and will then
 also work while Chrome does *not* have focus. NOTE: The exception here is
-ChromeOS, where global commands are not allowed at the moment.</p>
+Chrome OS, where global commands are not allowed at the moment.</p>
 
 <p>The user is free to designate any shortcut as global using the UI in
 chrome://extensions \ Keyboard Shortcuts, but the extension developer is limited

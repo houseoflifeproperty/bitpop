@@ -32,7 +32,7 @@ class BookmarkContextMenuControllerDelegate {
   // Sent before any command from the menu is executed.
   virtual void WillExecuteCommand(
       int command_id,
-      const std::vector<const BookmarkNode*>& bookmarks) {}
+      const std::vector<const bookmarks::BookmarkNode*>& bookmarks) {}
 
   // Sent after any command from the menu is executed.
   virtual void DidExecuteCommand(int command_id) {}
@@ -40,8 +40,9 @@ class BookmarkContextMenuControllerDelegate {
 
 // BookmarkContextMenuController creates and manages state for the context menu
 // shown for any bookmark item.
-class BookmarkContextMenuController : public BaseBookmarkModelObserver,
-                                      public ui::SimpleMenuModel::Delegate {
+class BookmarkContextMenuController
+    : public bookmarks::BaseBookmarkModelObserver,
+      public ui::SimpleMenuModel::Delegate {
  public:
   // Creates the bookmark context menu.
   // |browser| is used to open the bookmark manager and is NULL in tests.
@@ -55,22 +56,21 @@ class BookmarkContextMenuController : public BaseBookmarkModelObserver,
       Browser* browser,
       Profile* profile,
       content::PageNavigator* navigator,
-      const BookmarkNode* parent,
-      const std::vector<const BookmarkNode*>& selection);
-  virtual ~BookmarkContextMenuController();
+      const bookmarks::BookmarkNode* parent,
+      const std::vector<const bookmarks::BookmarkNode*>& selection);
+  ~BookmarkContextMenuController() override;
 
   ui::SimpleMenuModel* menu_model() { return menu_model_.get(); }
 
   // ui::SimpleMenuModel::Delegate implementation:
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
-  virtual bool IsCommandIdVisible(int command_id) const OVERRIDE;
-  virtual bool GetAcceleratorForCommandId(
-      int command_id,
-      ui::Accelerator* accelerator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
-  virtual bool IsItemForCommandIdDynamic(int command_id) const OVERRIDE;
-  virtual base::string16 GetLabelForCommandId(int command_id) const OVERRIDE;
+  bool IsCommandIdChecked(int command_id) const override;
+  bool IsCommandIdEnabled(int command_id) const override;
+  bool IsCommandIdVisible(int command_id) const override;
+  bool GetAcceleratorForCommandId(int command_id,
+                                  ui::Accelerator* accelerator) override;
+  void ExecuteCommand(int command_id, int event_flags) override;
+  bool IsItemForCommandIdDynamic(int command_id) const override;
+  base::string16 GetLabelForCommandId(int command_id) const override;
 
   void set_navigator(content::PageNavigator* navigator) {
     navigator_ = navigator;
@@ -86,18 +86,18 @@ class BookmarkContextMenuController : public BaseBookmarkModelObserver,
   // Adds a checkable item to the menu.
   void AddCheckboxItem(int id, int localization_id);
 
-  // Overridden from BaseBookmarkModelObserver:
+  // Overridden from bookmarks::BaseBookmarkModelObserver:
   // Any change to the model results in closing the menu.
-  virtual void BookmarkModelChanged() OVERRIDE;
+  void BookmarkModelChanged() override;
 
   gfx::NativeWindow parent_window_;
   BookmarkContextMenuControllerDelegate* delegate_;
   Browser* browser_;
   Profile* profile_;
   content::PageNavigator* navigator_;
-  const BookmarkNode* parent_;
-  std::vector<const BookmarkNode*> selection_;
-  BookmarkModel* model_;
+  const bookmarks::BookmarkNode* parent_;
+  std::vector<const bookmarks::BookmarkNode*> selection_;
+  bookmarks::BookmarkModel* model_;
   scoped_ptr<ui::SimpleMenuModel> menu_model_;
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkContextMenuController);

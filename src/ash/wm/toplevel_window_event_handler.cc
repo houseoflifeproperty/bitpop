@@ -92,7 +92,7 @@ class ToplevelWindowEventHandler::ScopedWindowResizer
  public:
   ScopedWindowResizer(ToplevelWindowEventHandler* handler,
                       WindowResizer* resizer);
-  virtual ~ScopedWindowResizer();
+  ~ScopedWindowResizer() override;
 
   // Returns true if the drag moves the window and does not resize.
   bool IsMove() const;
@@ -100,15 +100,18 @@ class ToplevelWindowEventHandler::ScopedWindowResizer
   WindowResizer* resizer() { return resizer_.get(); }
 
   // WindowObserver overrides:
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
+  void OnWindowDestroying(aura::Window* window) override;
 
   // WindowStateObserver overrides:
-  virtual void OnPreWindowStateTypeChange(wm::WindowState* window_state,
-                                          wm::WindowStateType type) OVERRIDE;
+  void OnPreWindowStateTypeChange(wm::WindowState* window_state,
+                                  wm::WindowStateType type) override;
 
  private:
   ToplevelWindowEventHandler* handler_;
   scoped_ptr<WindowResizer> resizer_;
+
+  // Whether ScopedWindowResizer grabbed capture.
+  bool grabbed_capture_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedWindowResizer);
 };
@@ -117,14 +120,24 @@ ToplevelWindowEventHandler::ScopedWindowResizer::ScopedWindowResizer(
     ToplevelWindowEventHandler* handler,
     WindowResizer* resizer)
     : handler_(handler),
-      resizer_(resizer) {
-  resizer_->GetTarget()->AddObserver(this);
-  wm::GetWindowState(resizer_->GetTarget())->AddObserver(this);
+      resizer_(resizer),
+      grabbed_capture_(false) {
+  aura::Window* target = resizer_->GetTarget();
+  target->AddObserver(this);
+  wm::GetWindowState(target)->AddObserver(this);
+
+  if (!target->HasCapture()) {
+    grabbed_capture_ = true;
+    target->SetCapture();
+  }
 }
 
 ToplevelWindowEventHandler::ScopedWindowResizer::~ScopedWindowResizer() {
-  resizer_->GetTarget()->RemoveObserver(this);
-  wm::GetWindowState(resizer_->GetTarget())->RemoveObserver(this);
+  aura::Window* target = resizer_->GetTarget();
+  target->RemoveObserver(this);
+  wm::GetWindowState(target)->RemoveObserver(this);
+  if (grabbed_capture_)
+    target->ReleaseCapture();
 }
 
 bool ToplevelWindowEventHandler::ScopedWindowResizer::IsMove() const {

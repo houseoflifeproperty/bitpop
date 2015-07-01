@@ -7,7 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/macros.h"
-#include "content/public/renderer/v8_value_converter.h"
+#include "content/public/child/v8_value_converter.h"
 #include "v8/include/v8.h"
 
 namespace extensions {
@@ -24,20 +24,20 @@ class ActivityLogConverterStrategy
       FromV8ValueCallback;
 
   ActivityLogConverterStrategy();
-  virtual ~ActivityLogConverterStrategy();
+  ~ActivityLogConverterStrategy() override;
 
   // content::V8ValueConverter::Strategy implementation.
-  virtual bool FromV8Object(v8::Handle<v8::Object> value,
-                            base::Value** out,
-                            v8::Isolate* isolate,
-                            const FromV8ValueCallback& callback) const OVERRIDE;
-  virtual bool FromV8Array(v8::Handle<v8::Array> value,
-                           base::Value** out,
-                           v8::Isolate* isolate,
-                           const FromV8ValueCallback& callback) const OVERRIDE;
+  bool FromV8Object(v8::Local<v8::Object> value,
+                    base::Value** out,
+                    v8::Isolate* isolate,
+                    const FromV8ValueCallback& callback) const override;
+  bool FromV8Array(v8::Local<v8::Array> value,
+                   base::Value** out,
+                   v8::Isolate* isolate,
+                   const FromV8ValueCallback& callback) const override;
 
  private:
-  bool FromV8Internal(v8::Handle<v8::Object> value,
+  bool FromV8Internal(v8::Local<v8::Object> value,
                       base::Value** out,
                       v8::Isolate* isolate,
                       const FromV8ValueCallback& callback) const;

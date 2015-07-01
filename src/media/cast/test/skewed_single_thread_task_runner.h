@@ -29,20 +29,19 @@ class SkewedSingleThreadTaskRunner : public base::SingleThreadTaskRunner {
   void SetSkew(double skew);
 
   // base::SingleThreadTaskRunner implementation.
-  virtual bool PostDelayedTask(const tracked_objects::Location& from_here,
-                               const base::Closure& task,
-                               base::TimeDelta delay) OVERRIDE;
+  bool PostDelayedTask(const tracked_objects::Location& from_here,
+                       const base::Closure& task,
+                       base::TimeDelta delay) final;
 
-  virtual bool RunsTasksOnCurrentThread() const OVERRIDE;
+  bool RunsTasksOnCurrentThread() const final;
 
   // This function is currently not used, and will return false.
-  virtual bool PostNonNestableDelayedTask(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task,
-      base::TimeDelta delay) OVERRIDE;
+  bool PostNonNestableDelayedTask(const tracked_objects::Location& from_here,
+                                  const base::Closure& task,
+                                  base::TimeDelta delay) final;
 
  protected:
-  virtual ~SkewedSingleThreadTaskRunner();
+  ~SkewedSingleThreadTaskRunner() final;
 
  private:
   double skew_;

@@ -13,12 +13,9 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/extensions/webstore_data_fetcher_delegate.h"
 #include "ui/gfx/image/image_skia.h"
+#include "url/gurl.h"
 
 class Profile;
-
-namespace base {
-class RefCountedString;
-}
 
 namespace extensions {
 class Extension;
@@ -51,8 +48,9 @@ class KioskAppData : public base::SupportsWeakPtr<KioskAppData>,
 
   KioskAppData(KioskAppDataDelegate* delegate,
                const std::string& app_id,
-               const std::string& user_id);
-  virtual ~KioskAppData();
+               const std::string& user_id,
+               const GURL& update_url);
+  ~KioskAppData() override;
 
   // Loads app data from cache. If there is no cached data, fetches it
   // from web store.
@@ -64,19 +62,25 @@ class KioskAppData : public base::SupportsWeakPtr<KioskAppData>,
   // Loads app data from the app installed in the given profile.
   void LoadFromInstalledApp(Profile* profile, const extensions::Extension* app);
 
+  // Sets full path of the cache crx. The crx would be used to extract meta
+  // data for private apps.
+  void SetCachedCrx(const base::FilePath& crx_file);
+
   // Returns true if web store data fetching is in progress.
   bool IsLoading() const;
+
+  // Returns true if the update url points to Webstore.
+  bool IsFromWebStore() const;
 
   const std::string& app_id() const { return app_id_; }
   const std::string& user_id() const { return user_id_; }
   const std::string& name() const { return name_; }
+  const GURL& update_url() const { return update_url_; }
   const gfx::ImageSkia& icon() const { return icon_; }
-  const base::RefCountedString* raw_icon() const {
-    return raw_icon_.get();
-  }
   Status status() const { return status_; }
 
  private:
+  class CrxLoader;
   class IconLoader;
   class WebstoreDataParser;
 
@@ -98,8 +102,7 @@ class KioskAppData : public base::SupportsWeakPtr<KioskAppData>,
   void OnExtensionIconLoaded(const gfx::Image& icon);
 
   // Callbacks for IconLoader.
-  void OnIconLoadSuccess(const scoped_refptr<base::RefCountedString>& raw_icon,
-                         const gfx::ImageSkia& icon);
+  void OnIconLoadSuccess(const gfx::ImageSkia& icon);
   void OnIconLoadFailure();
 
   // Callbacks for WebstoreDataParser
@@ -110,11 +113,10 @@ class KioskAppData : public base::SupportsWeakPtr<KioskAppData>,
   void StartFetch();
 
   // extensions::WebstoreDataFetcherDelegate overrides:
-  virtual void OnWebstoreRequestFailure() OVERRIDE;
-  virtual void OnWebstoreResponseParseSuccess(
-      scoped_ptr<base::DictionaryValue> webstore_data) OVERRIDE;
-  virtual void OnWebstoreResponseParseFailure(
-      const std::string& error) OVERRIDE;
+  void OnWebstoreRequestFailure() override;
+  void OnWebstoreResponseParseSuccess(
+      scoped_ptr<base::DictionaryValue> webstore_data) override;
+  void OnWebstoreResponseParseFailure(const std::string& error) override;
 
   // Helper function for testing for the existence of |key| in
   // |response|. Passes |key|'s content via |value| and returns
@@ -123,17 +125,25 @@ class KioskAppData : public base::SupportsWeakPtr<KioskAppData>,
                              const char* key,
                              std::string* value);
 
+  // Extracts meta data from crx file when loading from Webstore and local
+  // cache fails.
+  void MaybeLoadFromCrx();
+
+  void OnCrxLoadFinished(const CrxLoader* crx_loader);
+
   KioskAppDataDelegate* delegate_;  // not owned.
   Status status_;
 
   std::string app_id_;
   std::string user_id_;
   std::string name_;
+  GURL update_url_;
   gfx::ImageSkia icon_;
-  scoped_refptr<base::RefCountedString> raw_icon_;
 
   scoped_ptr<extensions::WebstoreDataFetcher> webstore_fetcher_;
   base::FilePath icon_path_;
+
+  base::FilePath crx_file_;
 
   DISALLOW_COPY_AND_ASSIGN(KioskAppData);
 };

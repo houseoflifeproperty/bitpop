@@ -142,10 +142,12 @@ TEST(ValidationSuite, TestWindows) {
   TestRunner runner;
   wchar_t command[1024] = {0};
 
-  wsprintf(command, L"ValidWindow %d", ::GetDesktopWindow());
+  wsprintf(command, L"ValidWindow %Id",
+           reinterpret_cast<size_t>(::GetDesktopWindow()));
   EXPECT_EQ(SBOX_TEST_DENIED, runner.RunTest(command));
 
-  wsprintf(command, L"ValidWindow %d", ::FindWindow(NULL, NULL));
+  wsprintf(command, L"ValidWindow %Id",
+           reinterpret_cast<size_t>(::FindWindow(NULL, NULL)));
   EXPECT_EQ(SBOX_TEST_DENIED, runner.RunTest(command));
 }
 
@@ -153,7 +155,6 @@ TEST(ValidationSuite, TestWindows) {
 TEST(ValidationSuite, TestProcessDenyLockdown) {
   TestRunner runner;
   TestRunner target;
-  wchar_t command[1024] = {0};
 
   target.SetAsynchronous(true);
 
@@ -171,7 +172,6 @@ TEST(ValidationSuite, TestProcessDenyLowIntegrity) {
 
   TestRunner runner;
   TestRunner target;
-  wchar_t command[1024] = {0};
 
   target.SetAsynchronous(true);
   target.GetPolicy()->SetDelayedIntegrityLevel(INTEGRITY_LEVEL_LOW);
@@ -193,7 +193,6 @@ TEST(ValidationSuite, TestProcessDenyBelowLowIntegrity) {
 
   TestRunner runner;
   TestRunner target;
-  wchar_t command[1024] = {0};
 
   target.SetAsynchronous(true);
   target.GetPolicy()->SetIntegrityLevel(INTEGRITY_LEVEL_LOW);

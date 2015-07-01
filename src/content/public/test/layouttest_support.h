@@ -58,15 +58,15 @@ void FetchManifest(blink::WebView* view, const GURL& url,
 void SetMockGamepadProvider(scoped_ptr<RendererGamepadProvider> provider);
 
 // Sets a double that should be used when registering
-// a listener through WebKitPlatformSupport::setDeviceLightListener().
+// a listener through BlinkPlatformImpl::setDeviceLightListener().
 void SetMockDeviceLightData(const double data);
 
 // Sets WebDeviceMotionData that should be used when registering
-// a listener through WebKitPlatformSupport::setDeviceMotionListener().
+// a listener through BlinkPlatformImpl::setDeviceMotionListener().
 void SetMockDeviceMotionData(const blink::WebDeviceMotionData& data);
 
 // Sets WebDeviceOrientationData that should be used when registering
-// a listener through WebKitPlatformSupport::setDeviceOrientationListener().
+// a listener through BlinkPlatformImpl::setDeviceOrientationListener().
 void SetMockDeviceOrientationData(const blink::WebDeviceOrientationData& data);
 
 // Notifies blink that battery status has changed.
@@ -92,6 +92,20 @@ void SetDeviceScaleFactor(RenderView* render_view, float factor);
 
 // Set the device color profile associated with the profile |name|.
 void SetDeviceColorProfile(RenderView* render_view, const std::string& name);
+
+// Change the bluetooth test data while running a layout test.
+void SetBluetoothMockDataSetForTesting(const std::string& name);
+
+// Enables mock geofencing service while running a layout test.
+// |service_available| indicates if the mock service should mock geofencing
+// being available or not.
+void SetGeofencingMockProvider(bool service_available);
+
+// Disables mock geofencing service while running a layout test.
+void ClearGeofencingMockProvider();
+
+// Set the mock geofencing position while running a layout test.
+void SetGeofencingMockPosition(double latitude, double longitude);
 
 // Enables or disables synchronous resize mode. When enabled, all window-sizing
 // machinery is short-circuited inside the renderer. This mode is necessary for

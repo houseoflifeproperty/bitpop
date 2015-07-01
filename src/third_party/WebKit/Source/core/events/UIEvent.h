@@ -24,22 +24,18 @@
 #ifndef UIEvent_h
 #define UIEvent_h
 
+#include "core/CoreExport.h"
 #include "core/events/Event.h"
 #include "core/events/EventDispatchMediator.h"
-#include "core/frame/LocalDOMWindow.h"
+#include "core/events/UIEventInit.h"
+#include "core/frame/DOMWindow.h"
 
 namespace blink {
 
-typedef LocalDOMWindow AbstractView;
+// FIXME: Get rid of this typedef.
+typedef DOMWindow AbstractView;
 
-struct UIEventInit : public EventInit {
-    UIEventInit();
-
-    RefPtrWillBeMember<AbstractView> view;
-    int detail;
-};
-
-class UIEvent : public Event {
+class CORE_EXPORT UIEvent : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<UIEvent> create()
@@ -61,8 +57,8 @@ public:
     AbstractView* view() const { return m_view.get(); }
     int detail() const { return m_detail; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual bool isUIEvent() const OVERRIDE FINAL;
+    virtual const AtomicString& interfaceName() const override;
+    virtual bool isUIEvent() const override final;
 
     virtual int keyCode() const;
     virtual int charCode() const;
@@ -75,7 +71,7 @@ public:
 
     virtual int which() const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     UIEvent();

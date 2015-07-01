@@ -16,7 +16,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
-#include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/page_type.h"
@@ -30,11 +29,11 @@ using content::WebContents;
 class SupervisedUserResourceThrottleTest : public InProcessBrowserTest {
  protected:
   SupervisedUserResourceThrottleTest() : supervised_user_service_(NULL) {}
-  virtual ~SupervisedUserResourceThrottleTest() {}
+  ~SupervisedUserResourceThrottleTest() override {}
 
  private:
-  virtual void SetUpOnMainThread() OVERRIDE;
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  void SetUpOnMainThread() override;
+  void SetUpCommandLine(base::CommandLine* command_line) override;
 
   SupervisedUserService* supervised_user_service_;
 };
@@ -45,7 +44,7 @@ void SupervisedUserResourceThrottleTest::SetUpOnMainThread() {
 }
 
 void SupervisedUserResourceThrottleTest::SetUpCommandLine(
-    CommandLine* command_line) {
+    base::CommandLine* command_line) {
   command_line->AppendSwitchASCII(switches::kSupervisedUserId, "asdf");
 }
 
@@ -56,7 +55,7 @@ IN_PROC_BROWSER_TEST_F(SupervisedUserResourceThrottleTest,
   Profile* profile = browser()->profile();
   SupervisedUserSettingsService* supervised_user_settings_service =
       SupervisedUserSettingsServiceFactory::GetForProfile(profile);
-  supervised_user_settings_service->SetLocalSettingForTesting(
+  supervised_user_settings_service->SetLocalSetting(
       supervised_users::kContentPackDefaultFilteringBehavior,
       scoped_ptr<base::Value>(
           new base::FundamentalValue(SupervisedUserURLFilter::BLOCK)));

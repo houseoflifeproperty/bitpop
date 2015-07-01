@@ -13,6 +13,11 @@ enum {
   kCrashDumpSignal = kIPCDescriptorMax,
   kSandboxIPCChannel,  // http://code.google.com/p/chromium/LinuxSandboxIPC
 
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
+  kV8NativesDataDescriptor,
+  kV8SnapshotDataDescriptor,
+#endif
+
 #if defined(OS_ANDROID)
   kAndroidPropertyDescriptor,
   kAndroidICUDataDescriptor,

@@ -78,6 +78,9 @@
     // An array to hold cached password values.
     passwordValues_: null,
 
+    // A MutationObserver to watch for dynamic password field creation.
+    passwordFieldsObserver: null,
+
     /**
      * Initialize the scraper with given channel and docRoot. Note that the
      * scanning for password fields happens inside the function and does not
@@ -91,15 +94,59 @@
       this.pageURL_ = pageURL;
       this.channel_ = channel;
 
-      this.passwordFields_ = docRoot.querySelectorAll('input[type=password]');
+      this.passwordFields_ = [];
       this.passwordValues_ = [];
 
-      for (var i = 0; i < this.passwordFields_.length; ++i) {
-        this.passwordFields_[i].addEventListener(
-            'input', this.onPasswordChanged_.bind(this, i));
+      this.findAndTrackChildren(docRoot);
 
-        this.passwordValues_[i] = this.passwordFields_[i].value;
-      }
+      this.passwordFieldsObserver = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+          Array.prototype.forEach.call(
+            mutation.addedNodes,
+            function(addedNode) {
+              if (addedNode.nodeType != Node.ELEMENT_NODE)
+                return;
+
+              if (addedNode.matches('input[type=password]')) {
+                this.trackPasswordField(addedNode);
+              } else {
+                this.findAndTrackChildren(addedNode);
+              }
+            }.bind(this));
+        }.bind(this));
+      }.bind(this));
+      this.passwordFieldsObserver.observe(docRoot,
+                                          {subtree: true, childList: true});
+    },
+
+    /**
+     * Find and track password fields that are descendants of the given element.
+     * @param {!HTMLElement} element The parent element to search from.
+     */
+    findAndTrackChildren: function(element) {
+      Array.prototype.forEach.call(
+          element.querySelectorAll('input[type=password]'), function(field) {
+            this.trackPasswordField(field);
+          }.bind(this));
+    },
+
+    /**
+     * Start tracking value changes of the given password field if it is
+     * not being tracked yet.
+     * @param {!HTMLInputElement} passworField The password field to track.
+     */
+    trackPasswordField: function(passwordField) {
+      var existing = this.passwordFields_.filter(function(element) {
+        return element === passwordField;
+      });
+      if (existing.length != 0)
+        return;
+
+      var index = this.passwordFields_.length;
+      passwordField.addEventListener(
+          'input', this.onPasswordChanged_.bind(this, index));
+      this.passwordFields_.push(passwordField);
+      this.passwordValues_.push(passwordField.value);
     },
 
     /**
@@ -115,7 +162,7 @@
 
       // Use an invalid char for URL as delimiter to concatenate page url and
       // password field index to construct a unique ID for the password field.
-      var passwordId = this.pageURL_ + '|' + index;
+      var passwordId = this.pageURL_.split('#')[0].split('?')[0] + '|' + index;
       this.channel_.send({
         name: 'updatePassword',
         id: passwordId,
@@ -133,31 +180,35 @@
     }
   };
 
-  /**
-   * Heuristic test whether the current page is a relevant SAML page.
-   * Current implementation checks if it is a http or https page and has
-   * some content in it.
-   * @return {boolean} Whether the current page looks like a SAML page.
-   */
-  function isSAMLPage() {
-    var url = window.location.href;
-    if (!url.match(/^(http|https):\/\//))
-      return false;
-
-    return document.body.scrollWidth > 50 && document.body.scrollHeight > 50;
-  }
-
-  if (isSAMLPage()) {
+  function onGetSAMLFlag(channel, isSAMLPage) {
+    if (!isSAMLPage)
+      return;
     var pageURL = window.location.href;
 
-    var channel = new Channel();
-    channel.connect('injected');
     channel.send({name: 'pageLoaded', url: pageURL});
 
-    var apiCallForwarder = new APICallForwarder();
-    apiCallForwarder.init(channel);
+    var initPasswordScraper = function() {
+      var passwordScraper = new PasswordInputScraper();
+      passwordScraper.init(channel, pageURL, document.documentElement);
+    };
 
-    var passwordScraper = new PasswordInputScraper();
-    passwordScraper.init(channel, pageURL, document.documentElement);
+    if (document.readyState == 'loading') {
+      window.addEventListener('readystatechange', function listener(event) {
+        if (document.readyState == 'loading')
+          return;
+        initPasswordScraper();
+        window.removeEventListener(event.type, listener, true);
+      }, true);
+    } else {
+      initPasswordScraper();
+    }
   }
+
+  var channel = Channel.create();
+  channel.connect('injected');
+  channel.sendWithCallback({name: 'getSAMLFlag'},
+                           onGetSAMLFlag.bind(undefined, channel));
+
+  var apiCallForwarder = new APICallForwarder();
+  apiCallForwarder.init(channel);
 })();

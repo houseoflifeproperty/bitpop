@@ -189,7 +189,6 @@ void SyncManagerImpl::ConfigureSyncer(
     const base::Closure& retry_task) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(!ready_task.is_null());
-  DCHECK(!retry_task.is_null());
   DCHECK(initialized_);
 
   DVLOG(1) << "Configuring -"
@@ -219,7 +218,7 @@ void SyncManagerImpl::ConfigureSyncer(
                              ready_task,
                              retry_task);
 
-  scheduler_->Start(SyncScheduler::CONFIGURATION_MODE);
+  scheduler_->Start(SyncScheduler::CONFIGURATION_MODE, base::Time());
   scheduler_->ScheduleConfiguration(params);
 }
 
@@ -292,8 +291,7 @@ void SyncManagerImpl::Init(InitArgs* args) {
   connection_manager_.reset(new SyncAPIServerConnectionManager(
       args->service_url.host() + args->service_url.path(),
       args->service_url.EffectiveIntPort(),
-      args->service_url.SchemeIsSecure(),
-      args->post_factory.release(),
+      args->service_url.SchemeIsCryptographic(), args->post_factory.release(),
       args->cancelation_signal));
   connection_manager_->set_client_id(directory()->cache_guid());
   connection_manager_->AddListener(this);
@@ -336,7 +334,7 @@ void SyncManagerImpl::Init(InitArgs* args) {
   scheduler_ = args->internal_components_factory->BuildScheduler(
       name_, session_context_.get(), args->cancelation_signal).Pass();
 
-  scheduler_->Start(SyncScheduler::CONFIGURATION_MODE);
+  scheduler_->Start(SyncScheduler::CONFIGURATION_MODE, base::Time());
 
   initialized_ = true;
 
@@ -408,7 +406,8 @@ void SyncManagerImpl::OnPassphraseTypeChanged(
 }
 
 void SyncManagerImpl::StartSyncingNormally(
-    const ModelSafeRoutingInfo& routing_info) {
+    const ModelSafeRoutingInfo& routing_info,
+    base::Time last_poll_time) {
   // Start the sync scheduler.
   // TODO(sync): We always want the newest set of routes when we switch back
   // to normal mode. Figure out how to enforce set_routing_info is always
@@ -416,7 +415,8 @@ void SyncManagerImpl::StartSyncingNormally(
   // mode.
   DCHECK(thread_checker_.CalledOnValidThread());
   session_context_->SetRoutingInfo(routing_info);
-  scheduler_->Start(SyncScheduler::NORMAL_MODE);
+  scheduler_->Start(SyncScheduler::NORMAL_MODE,
+                    last_poll_time);
 }
 
 syncable::Directory* SyncManagerImpl::directory() {
@@ -902,6 +902,7 @@ void SyncManagerImpl::OnIncomingInvalidation(
     scoped_ptr<InvalidationInterface> invalidation) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
+  allstatus_.IncrementNotificationsReceived();
   scheduler_->ScheduleInvalidationNudge(
       type,
       invalidation.Pass(),
@@ -971,34 +972,6 @@ bool SyncManagerImpl::ReceivedExperiment(Experiments* experiments) {
     // know about this.
   }
 
-  ReadNode gcm_channel_node(&trans);
-  if (gcm_channel_node.InitByClientTagLookup(
-          syncer::EXPERIMENTS,
-          syncer::kGCMChannelTag) == BaseNode::INIT_OK &&
-      gcm_channel_node.GetExperimentsSpecifics().gcm_channel().has_enabled()) {
-    experiments->gcm_channel_state =
-        (gcm_channel_node.GetExperimentsSpecifics().gcm_channel().enabled() ?
-         syncer::Experiments::ENABLED : syncer::Experiments::SUPPRESSED);
-    found_experiment = true;
-  }
-
-  ReadNode enhanced_bookmarks_node(&trans);
-  if (enhanced_bookmarks_node.InitByClientTagLookup(
-          syncer::EXPERIMENTS, syncer::kEnhancedBookmarksTag) ==
-          BaseNode::INIT_OK &&
-      enhanced_bookmarks_node.GetExperimentsSpecifics()
-          .has_enhanced_bookmarks()) {
-    const sync_pb::EnhancedBookmarksFlags& enhanced_bookmarks =
-        enhanced_bookmarks_node.GetExperimentsSpecifics().enhanced_bookmarks();
-    if (enhanced_bookmarks.has_enabled())
-      experiments->enhanced_bookmarks_enabled = enhanced_bookmarks.enabled();
-    if (enhanced_bookmarks.has_extension_id()) {
-      experiments->enhanced_bookmarks_ext_id =
-          enhanced_bookmarks.extension_id();
-    }
-    found_experiment = true;
-  }
-
   ReadNode gcm_invalidations_node(&trans);
   if (gcm_invalidations_node.InitByClientTagLookup(
           syncer::EXPERIMENTS, syncer::kGCMInvalidationsTag) ==
@@ -1007,6 +980,17 @@ bool SyncManagerImpl::ReceivedExperiment(Experiments* experiments) {
         gcm_invalidations_node.GetExperimentsSpecifics().gcm_invalidations();
     if (gcm_invalidations.has_enabled()) {
       experiments->gcm_invalidations_enabled = gcm_invalidations.enabled();
+      found_experiment = true;
+    }
+  }
+
+  ReadNode wallet_sync_node(&trans);
+  if (wallet_sync_node.InitByClientTagLookup(
+          syncer::EXPERIMENTS, syncer::kWalletSyncTag) == BaseNode::INIT_OK) {
+    const sync_pb::WalletSyncFlags& wallet_sync =
+        wallet_sync_node.GetExperimentsSpecifics().wallet_sync();
+    if (wallet_sync.has_enabled()) {
+      experiments->wallet_sync_enabled = wallet_sync.enabled();
       found_experiment = true;
     }
   }

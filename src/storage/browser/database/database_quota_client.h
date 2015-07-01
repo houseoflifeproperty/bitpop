@@ -9,7 +9,7 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
 #include "storage/browser/quota/quota_client.h"
 #include "storage/browser/storage_browser_export.h"
 #include "storage/common/quota/quota_types.h"
@@ -25,28 +25,28 @@ class STORAGE_EXPORT_PRIVATE DatabaseQuotaClient
     : public storage::QuotaClient {
  public:
   DatabaseQuotaClient(
-      base::MessageLoopProxy* tracker_thread,
+      base::SingleThreadTaskRunner* tracker_thread,
       DatabaseTracker* tracker);
-  virtual ~DatabaseQuotaClient();
+  ~DatabaseQuotaClient() override;
 
   // QuotaClient method overrides
-  virtual ID id() const OVERRIDE;
-  virtual void OnQuotaManagerDestroyed() OVERRIDE;
-  virtual void GetOriginUsage(const GURL& origin_url,
-                              storage::StorageType type,
-                              const GetUsageCallback& callback) OVERRIDE;
-  virtual void GetOriginsForType(storage::StorageType type,
-                                 const GetOriginsCallback& callback) OVERRIDE;
-  virtual void GetOriginsForHost(storage::StorageType type,
-                                 const std::string& host,
-                                 const GetOriginsCallback& callback) OVERRIDE;
-  virtual void DeleteOriginData(const GURL& origin,
-                                storage::StorageType type,
-                                const DeletionCallback& callback) OVERRIDE;
-  virtual bool DoesSupport(storage::StorageType type) const OVERRIDE;
+  ID id() const override;
+  void OnQuotaManagerDestroyed() override;
+  void GetOriginUsage(const GURL& origin_url,
+                      storage::StorageType type,
+                      const GetUsageCallback& callback) override;
+  void GetOriginsForType(storage::StorageType type,
+                         const GetOriginsCallback& callback) override;
+  void GetOriginsForHost(storage::StorageType type,
+                         const std::string& host,
+                         const GetOriginsCallback& callback) override;
+  void DeleteOriginData(const GURL& origin,
+                        storage::StorageType type,
+                        const DeletionCallback& callback) override;
+  bool DoesSupport(storage::StorageType type) const override;
 
  private:
-  scoped_refptr<base::MessageLoopProxy> db_tracker_thread_;
+  scoped_refptr<base::SingleThreadTaskRunner> db_tracker_thread_;
   scoped_refptr<DatabaseTracker> db_tracker_;  // only used on its thread
 
   DISALLOW_COPY_AND_ASSIGN(DatabaseQuotaClient);

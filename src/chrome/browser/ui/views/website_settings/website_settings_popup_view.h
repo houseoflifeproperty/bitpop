@@ -46,7 +46,7 @@ class WebsiteSettingsPopupView
       public views::TabbedPaneListener,
       public WebsiteSettingsUI {
  public:
-  virtual ~WebsiteSettingsPopupView();
+  ~WebsiteSettingsPopupView() override;
 
   static void ShowPopup(views::View* anchor_view,
                         Profile* profile,
@@ -66,32 +66,31 @@ class WebsiteSettingsPopupView
                            Browser* browser);
 
   // PermissionSelectorViewObserver implementation.
-  virtual void OnPermissionChanged(
-      const WebsiteSettingsUI::PermissionInfo& permission) OVERRIDE;
+  void OnPermissionChanged(
+      const WebsiteSettingsUI::PermissionInfo& permission) override;
 
   // views::BubbleDelegateView implementation.
-  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
+  void OnWidgetDestroying(views::Widget* widget) override;
 
   // views::ButtonListener implementation.
-  virtual void ButtonPressed(views::Button* button,
-                             const ui::Event& event) OVERRIDE;
+  void ButtonPressed(views::Button* button, const ui::Event& event) override;
 
   // views::LinkListener implementation.
-  virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
+  void LinkClicked(views::Link* source, int event_flags) override;
 
   // views::TabbedPaneListener implementations.
-  virtual void TabSelectedAt(int index) OVERRIDE;
+  void TabSelectedAt(int index) override;
 
   // views::View implementation.
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
 
   // WebsiteSettingsUI implementations.
-  virtual void SetCookieInfo(const CookieInfoList& cookie_info_list) OVERRIDE;
-  virtual void SetPermissionInfo(
-      const PermissionInfoList& permission_info_list) OVERRIDE;
-  virtual void SetIdentityInfo(const IdentityInfo& identity_info) OVERRIDE;
-  virtual void SetFirstVisit(const base::string16& first_visit) OVERRIDE;
-  virtual void SetSelectedTab(TabId tab_id) OVERRIDE;
+  void SetCookieInfo(const CookieInfoList& cookie_info_list) override;
+  void SetPermissionInfo(
+      const PermissionInfoList& permission_info_list) override;
+  void SetIdentityInfo(const IdentityInfo& identity_info) override;
+  void SetFirstVisit(const base::string16& first_visit) override;
+  void SetSelectedTab(TabId tab_id) override;
 
   // Creates the contents of the "Permissions" tab. The ownership of the
   // returned view is transferred to the caller.
@@ -110,11 +109,11 @@ class WebsiteSettingsPopupView
                              views::Link* link) WARN_UNUSED_RESULT;
 
   // Resets the content of a section. All children of the |section_container|
-  // are cleared and destroyed first. Then the |icon|, |headline|, |text| and
-  // |link| are layout out properly. If the |headline| is an empty string then
-  // no headline will be displayed. The ownership of the passed |link| is
-  // transfered to the ResetConnectionSection method and the |link| is added to
-  // the views hierarchy. If the |link| is NULL then no link is be displayed.
+  // are cleared and destroyed first. Then the |icon|, |headline|, |text|,
+  // |link|, and |secondary_link| are laid out properly. If the |headline| is an
+  // empty string then no headline will be displayed. Ownership of |link| and
+  // |secondary_link| is transfered to the ResetConnectionSection method and the
+  // links are added to the views hierarchy. NULL links are not displayed.
   void ResetConnectionSection(views::View* section_container,
                               const gfx::Image& icon,
                               const base::string16& headline,
@@ -123,6 +122,11 @@ class WebsiteSettingsPopupView
                               views::Link* secondary_link,
                               views::LabelButton* reset_decisions_button);
 
+  // Used to asynchronously handle clicks since these calls may cause the
+  // destruction of the settings view and the base class window still needs to
+  // be alive to finish handling the mouse or keyboard click.
+  void HandleLinkClickedAsync(views::Link* source);
+
   // The web contents of the current tab. The popup can't live longer than a
   // tab.
   content::WebContents* web_contents_;
@@ -130,7 +134,7 @@ class WebsiteSettingsPopupView
   // The Browser is used to load the help center page.
   Browser* browser_;
 
-  // The presenter that controlls the Website Settings UI.
+  // The presenter that controls the Website Settings UI.
   scoped_ptr<WebsiteSettings> presenter_;
 
   PopupHeaderView* header_;  // Owned by views hierarchy.
@@ -138,10 +142,12 @@ class WebsiteSettingsPopupView
   // The |TabbedPane| that contains the tabs of the Website Settings UI.
   views::TabbedPane* tabbed_pane_;
 
+  // The view that contains the permissions tab contents.
+  views::View* permissions_tab_;
   // The view that contains the contents of the "Cookies and Site data" section
   // from the "Permissions" tab.
   views::View* site_data_content_;
-  // The link that opend the "Cookies" dialog.
+  // The link that opens the "Cookies" dialog.
   views::Link* cookie_dialog_link_;
   // The view that contains the contents of the "Permissions" section from the
   // "Permissions" tab.
@@ -149,7 +155,7 @@ class WebsiteSettingsPopupView
 
   // The view that contains the connection tab contents.
   views::View* connection_tab_;
-  // The view that contains the ui elements for displaying information about
+  // The view that contains the UI elements for displaying information about
   // the site's identity.
   views::View* identity_info_content_;
   // The link to open the certificate viewer for displaying the certificate
@@ -164,10 +170,10 @@ class WebsiteSettingsPopupView
   // current host.
   views::LabelButton* reset_decisions_button_;
 
-  // The id of the certificate provided by the site. If the site does not
+  // The ID of the certificate provided by the site. If the site does not
   // provide a certificate then |cert_id_| is 0.
   int cert_id_;
-  // The IDs and validation status of Signed Certificate TImestamps provided
+  // The IDs and validation status of Signed Certificate Timestamps provided
   // by the site. Empty if no SCTs accompany the certificate.
   content::SignedCertificateTimestampIDStatusList
       signed_certificate_timestamp_ids_;
@@ -175,6 +181,10 @@ class WebsiteSettingsPopupView
   // The link to open the help center page that contains more information about
   // the connection status icons.
   views::Link* help_center_link_;
+
+  // The link to open the site settings page that provides full control over
+  // the origin's permissions.
+  views::Link* site_settings_link_;
 
   views::View* connection_info_content_;
   views::View* page_info_content_;

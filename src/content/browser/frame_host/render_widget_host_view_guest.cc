@@ -46,7 +46,7 @@ blink::WebGestureEvent CreateFlingCancelEvent(double time_stamp) {
 RenderWidgetHostViewGuest::RenderWidgetHostViewGuest(
     RenderWidgetHost* widget_host,
     BrowserPluginGuest* guest,
-    RenderWidgetHostViewBase* platform_view)
+    base::WeakPtr<RenderWidgetHostViewBase> platform_view)
     : RenderWidgetHostViewChildFrame(widget_host),
       // |guest| is NULL during test.
       guest_(guest ? guest->AsWeakPtr() : base::WeakPtr<BrowserPluginGuest>()),
@@ -76,7 +76,7 @@ bool RenderWidgetHostViewGuest::OnMessageReceivedFromEmbedder(
   return handled;
 }
 
-void RenderWidgetHostViewGuest::WasShown() {
+void RenderWidgetHostViewGuest::Show() {
   // If the WebContents associated with us showed an interstitial page in the
   // beginning, the teardown path might call WasShown() while |host_| is in
   // the process of destruction. Avoid calling WasShown below in this case.
@@ -95,7 +95,7 @@ void RenderWidgetHostViewGuest::WasShown() {
   host_->WasShown(ui::LatencyInfo());
 }
 
-void RenderWidgetHostViewGuest::WasHidden() {
+void RenderWidgetHostViewGuest::Hide() {
   // |guest_| is NULL during test.
   if ((guest_ && guest_->is_in_destruction()) || host_->is_hidden())
     return;
@@ -116,7 +116,7 @@ void RenderWidgetHostViewGuest::Focus() {
   // InterstitialPages are not WebContents, and so BrowserPluginGuest does not
   // have direct access to the interstitial page's RenderWidgetHost.
   if (guest_)
-    guest_->SetFocus(host_, true);
+    guest_->SetFocus(host_, true, blink::WebFocusTypeNone);
 }
 
 bool RenderWidgetHostViewGuest::HasFocus() const {
@@ -141,12 +141,12 @@ void RenderWidgetHostViewGuest::ProcessAckedTouchEvent(
       INPUT_EVENT_ACK_STATE_CONSUMED) ? ui::ER_HANDLED : ui::ER_UNHANDLED;
   for (ScopedVector<ui::TouchEvent>::iterator iter = events.begin(),
       end = events.end(); iter != end; ++iter)  {
-    if (!gesture_recognizer_->ProcessTouchEventPreDispatch(*(*iter), this))
+    if (!gesture_recognizer_->ProcessTouchEventPreDispatch(*iter, this))
       continue;
 
     scoped_ptr<ui::GestureRecognizer::Gestures> gestures;
-    gestures.reset(gesture_recognizer_->ProcessTouchEventPostDispatch(
-        *(*iter), result, this));
+    gestures.reset(gesture_recognizer_->AckSyncTouchEvent(
+        (*iter)->unique_event_id(), result, this));
     ProcessGestures(gestures.get());
   }
 }
@@ -156,7 +156,7 @@ gfx::Rect RenderWidgetHostViewGuest::GetViewBounds() const {
   if (!guest_)
     return gfx::Rect();
 
-  RenderWidgetHostViewBase* rwhv = GetGuestRenderWidgetHostView();
+  RenderWidgetHostViewBase* rwhv = GetOwnerRenderWidgetHostView();
   gfx::Rect embedder_bounds;
   if (rwhv)
     embedder_bounds = rwhv->GetViewBounds();
@@ -167,7 +167,11 @@ gfx::Rect RenderWidgetHostViewGuest::GetViewBounds() const {
 void RenderWidgetHostViewGuest::RenderProcessGone(
     base::TerminationStatus status,
     int error_code) {
-  platform_view_->RenderProcessGone(status, error_code);
+  // The |platform_view_| gets destroyed before we get here if this view
+  // is for an InterstitialPage.
+  if (platform_view_)
+    platform_view_->RenderProcessGone(status, error_code);
+
   // Destroy the guest view instance only, so we don't end up calling
   // platform_view_->Destroy().
   DestroyGuestView();
@@ -177,7 +181,8 @@ void RenderWidgetHostViewGuest::Destroy() {
   // The RenderWidgetHost's destruction led here, so don't call it.
   DestroyGuestView();
 
-  platform_view_->Destroy();
+  if (platform_view_)  // The platform view might have been destroyed already.
+    platform_view_->Destroy();
 }
 
 gfx::Size RenderWidgetHostViewGuest::GetPhysicalBackingSize() const {
@@ -190,19 +195,8 @@ base::string16 RenderWidgetHostViewGuest::GetSelectedText() const {
 
 void RenderWidgetHostViewGuest::SetTooltipText(
     const base::string16& tooltip_text) {
-  platform_view_->SetTooltipText(tooltip_text);
-}
-
-void RenderWidgetHostViewGuest::AcceleratedSurfaceBuffersSwapped(
-    const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
-    int gpu_host_id) {
-  NOTREACHED();
-}
-
-void RenderWidgetHostViewGuest::AcceleratedSurfacePostSubBuffer(
-    const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params,
-    int gpu_host_id) {
-  NOTREACHED();
+  if (guest_)
+    guest_->SetTooltipText(tooltip_text);
 }
 
 void RenderWidgetHostViewGuest::OnSwapCompositorFrame(
@@ -219,6 +213,12 @@ void RenderWidgetHostViewGuest::OnSwapCompositorFrame(
 }
 
 bool RenderWidgetHostViewGuest::OnMessageReceived(const IPC::Message& msg) {
+  if (!platform_view_) {
+    // In theory, we can get here if there's a delay between DestroyGuestView()
+    // being called and when our destructor is invoked.
+    return false;
+  }
+
   return platform_view_->OnMessageReceived(msg);
 }
 
@@ -228,7 +228,7 @@ void RenderWidgetHostViewGuest::InitAsChild(
 }
 
 void RenderWidgetHostViewGuest::InitAsPopup(
-    RenderWidgetHostView* parent_host_view, const gfx::Rect& pos) {
+    RenderWidgetHostView* parent_host_view, const gfx::Rect& bounds) {
   // This should never get called.
   NOTREACHED();
 }
@@ -243,7 +243,7 @@ gfx::NativeView RenderWidgetHostViewGuest::GetNativeView() const {
   if (!guest_)
     return gfx::NativeView();
 
-  RenderWidgetHostView* rwhv = guest_->GetEmbedderRenderWidgetHostView();
+  RenderWidgetHostView* rwhv = guest_->GetOwnerRenderWidgetHostView();
   if (!rwhv)
     return gfx::NativeView();
   return rwhv->GetNativeView();
@@ -253,7 +253,7 @@ gfx::NativeViewId RenderWidgetHostViewGuest::GetNativeViewId() const {
   if (!guest_)
     return static_cast<gfx::NativeViewId>(NULL);
 
-  RenderWidgetHostView* rwhv = guest_->GetEmbedderRenderWidgetHostView();
+  RenderWidgetHostView* rwhv = guest_->GetOwnerRenderWidgetHostView();
   if (!rwhv)
     return static_cast<gfx::NativeViewId>(NULL);
   return rwhv->GetNativeViewId();
@@ -263,7 +263,7 @@ gfx::NativeViewAccessible RenderWidgetHostViewGuest::GetNativeViewAccessible() {
   if (!guest_)
     return gfx::NativeViewAccessible();
 
-  RenderWidgetHostView* rwhv = guest_->GetEmbedderRenderWidgetHostView();
+  RenderWidgetHostView* rwhv = guest_->GetOwnerRenderWidgetHostView();
   if (!rwhv)
     return gfx::NativeViewAccessible();
   return rwhv->GetNativeViewAccessible();
@@ -294,22 +294,23 @@ void RenderWidgetHostViewGuest::SetIsLoading(bool is_loading) {
 void RenderWidgetHostViewGuest::TextInputTypeChanged(
     ui::TextInputType type,
     ui::TextInputMode input_mode,
-    bool can_compose_inline) {
+    bool can_compose_inline,
+    int flags) {
   if (!guest_)
     return;
 
-  RenderWidgetHostViewBase* rwhv = GetGuestRenderWidgetHostView();
+  RenderWidgetHostViewBase* rwhv = GetOwnerRenderWidgetHostView();
   if (!rwhv)
     return;
   // Forward the information to embedding RWHV.
-  rwhv->TextInputTypeChanged(type, input_mode, can_compose_inline);
+  rwhv->TextInputTypeChanged(type, input_mode, can_compose_inline, flags);
 }
 
 void RenderWidgetHostViewGuest::ImeCancelComposition() {
   if (!guest_)
     return;
 
-  RenderWidgetHostViewBase* rwhv = GetGuestRenderWidgetHostView();
+  RenderWidgetHostViewBase* rwhv = GetOwnerRenderWidgetHostView();
   if (!rwhv)
     return;
   // Forward the information to embedding RWHV.
@@ -323,7 +324,7 @@ void RenderWidgetHostViewGuest::ImeCompositionRangeChanged(
   if (!guest_)
     return;
 
-  RenderWidgetHostViewBase* rwhv = GetGuestRenderWidgetHostView();
+  RenderWidgetHostViewBase* rwhv = GetOwnerRenderWidgetHostView();
   if (!rwhv)
     return;
   std::vector<gfx::Rect> guest_character_bounds;
@@ -348,7 +349,7 @@ void RenderWidgetHostViewGuest::SelectionBoundsChanged(
   if (!guest_)
     return;
 
-  RenderWidgetHostViewBase* rwhv = GetGuestRenderWidgetHostView();
+  RenderWidgetHostViewBase* rwhv = GetOwnerRenderWidgetHostView();
   if (!rwhv)
     return;
   ViewHostMsg_SelectionBounds_Params guest_params(params);
@@ -359,23 +360,15 @@ void RenderWidgetHostViewGuest::SelectionBoundsChanged(
   rwhv->SelectionBoundsChanged(guest_params);
 }
 
-void RenderWidgetHostViewGuest::CopyFromCompositingSurface(
-    const gfx::Rect& src_subrect,
-    const gfx::Size& dst_size,
-    CopyFromCompositingSurfaceCallback& callback,
-    const SkColorType color_type) {
-  CHECK(guest_);
-  guest_->CopyFromCompositingSurface(src_subrect, dst_size, callback);
-}
-
-void RenderWidgetHostViewGuest::SetBackgroundOpaque(bool opaque) {
+void RenderWidgetHostViewGuest::SetBackgroundColor(SkColor color) {
   // Content embedders can toggle opaque backgrounds through this API.
   // We plumb the value here so that BrowserPlugin updates its compositing
   // state in response to this change. We also want to preserve this flag
   // after recovering from a crash so we let BrowserPluginGuest store it.
   if (!guest_)
     return;
-  RenderWidgetHostViewBase::SetBackgroundOpaque(opaque);
+  RenderWidgetHostViewBase::SetBackgroundColor(color);
+  bool opaque = GetBackgroundOpaque();
   host_->SetBackgroundOpaque(opaque);
   guest_->SetContentsOpaque(opaque);
 }
@@ -391,7 +384,7 @@ void RenderWidgetHostViewGuest::UnlockMouse() {
 void RenderWidgetHostViewGuest::GetScreenInfo(blink::WebScreenInfo* results) {
   if (!guest_)
     return;
-  RenderWidgetHostViewBase* embedder_view = GetGuestRenderWidgetHostView();
+  RenderWidgetHostViewBase* embedder_view = GetOwnerRenderWidgetHostView();
   if (embedder_view)
     embedder_view->GetScreenInfo(results);
 }
@@ -399,10 +392,6 @@ void RenderWidgetHostViewGuest::GetScreenInfo(blink::WebScreenInfo* results) {
 #if defined(OS_MACOSX)
 void RenderWidgetHostViewGuest::SetActive(bool active) {
   platform_view_->SetActive(active);
-}
-
-void RenderWidgetHostViewGuest::SetTakesFocusOnlyOnMouseDown(bool flag) {
-  platform_view_->SetTakesFocusOnlyOnMouseDown(flag);
 }
 
 void RenderWidgetHostViewGuest::SetWindowVisibility(bool visible) {
@@ -419,7 +408,7 @@ void RenderWidgetHostViewGuest::ShowDefinitionForSelection() {
 
   gfx::Point origin;
   gfx::Rect guest_bounds = GetViewBounds();
-  RenderWidgetHostView* rwhv = guest_->GetEmbedderRenderWidgetHostView();
+  RenderWidgetHostView* rwhv = guest_->GetOwnerRenderWidgetHostView();
   gfx::Rect embedder_bounds;
   if (rwhv)
     embedder_bounds = rwhv->GetViewBounds();
@@ -430,7 +419,7 @@ void RenderWidgetHostViewGuest::ShowDefinitionForSelection() {
       // Vertical offset from guest's top to embedder's bottom edge.
       embedder_bounds.bottom() - guest_bounds.y());
 
-  RenderWidgetHostViewMacDictionaryHelper helper(platform_view_);
+  RenderWidgetHostViewMacDictionaryHelper helper(platform_view_.get());
   helper.SetTargetView(rwhv);
   helper.set_offset(guest_offset);
   helper.ShowDefinitionForSelection();
@@ -563,14 +552,10 @@ void RenderWidgetHostViewGuest::ProcessGestures(
   }
 }
 
-SkColorType RenderWidgetHostViewGuest::PreferredReadbackFormat() {
-  return kN32_SkColorType;
-}
-
 RenderWidgetHostViewBase*
-RenderWidgetHostViewGuest::GetGuestRenderWidgetHostView() const {
+RenderWidgetHostViewGuest::GetOwnerRenderWidgetHostView() const {
   return static_cast<RenderWidgetHostViewBase*>(
-      guest_->GetEmbedderRenderWidgetHostView());
+      guest_->GetOwnerRenderWidgetHostView());
 }
 
 void RenderWidgetHostViewGuest::OnHandleInputEvent(

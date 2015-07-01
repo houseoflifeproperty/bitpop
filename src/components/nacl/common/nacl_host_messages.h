@@ -10,6 +10,7 @@
 #include "base/process/process.h"
 #include "build/build_config.h"
 #include "components/nacl/common/nacl_types.h"
+#include "components/nacl/common/nacl_types_param_traits.h"
 #include "components/nacl/common/pnacl_types.h"
 #include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_channel_handle.h"
@@ -19,18 +20,21 @@
 
 #define IPC_MESSAGE_START NaClHostMsgStart
 
+IPC_STRUCT_TRAITS_BEGIN(nacl::NaClResourcePrefetchRequest)
+  IPC_STRUCT_TRAITS_MEMBER(file_key)
+  IPC_STRUCT_TRAITS_MEMBER(resource_url)
+IPC_STRUCT_TRAITS_END()
+
 IPC_STRUCT_TRAITS_BEGIN(nacl::NaClLaunchParams)
   IPC_STRUCT_TRAITS_MEMBER(manifest_url)
   IPC_STRUCT_TRAITS_MEMBER(nexe_file)
   IPC_STRUCT_TRAITS_MEMBER(nexe_token_lo)
   IPC_STRUCT_TRAITS_MEMBER(nexe_token_hi)
+  IPC_STRUCT_TRAITS_MEMBER(resource_prefetch_request_list)
   IPC_STRUCT_TRAITS_MEMBER(render_view_id)
   IPC_STRUCT_TRAITS_MEMBER(permission_bits)
-  IPC_STRUCT_TRAITS_MEMBER(uses_irt)
   IPC_STRUCT_TRAITS_MEMBER(uses_nonsfi_mode)
-  IPC_STRUCT_TRAITS_MEMBER(enable_dyncode_syscalls)
-  IPC_STRUCT_TRAITS_MEMBER(enable_exception_handling)
-  IPC_STRUCT_TRAITS_MEMBER(enable_crash_throttling)
+  IPC_STRUCT_TRAITS_MEMBER(process_type)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(nacl::NaClLaunchResult)
@@ -50,6 +54,7 @@ IPC_STRUCT_TRAITS_BEGIN(nacl::PnaclCacheInfo)
   IPC_STRUCT_TRAITS_MEMBER(last_modified)
   IPC_STRUCT_TRAITS_MEMBER(etag)
   IPC_STRUCT_TRAITS_MEMBER(has_no_store_header)
+  IPC_STRUCT_TRAITS_MEMBER(use_subzero)
   IPC_STRUCT_TRAITS_MEMBER(sandbox_isa)
   IPC_STRUCT_TRAITS_MEMBER(extra_flags)
 IPC_STRUCT_TRAITS_END()
@@ -105,9 +110,10 @@ IPC_MESSAGE_CONTROL1(NaClHostMsg_MissingArchError,
 
 // A renderer sends this to the browser process when it wants to
 // open a NaCl executable file from an installed application directory.
-IPC_SYNC_MESSAGE_CONTROL2_3(NaClHostMsg_OpenNaClExecutable,
+IPC_SYNC_MESSAGE_CONTROL3_3(NaClHostMsg_OpenNaClExecutable,
                             int /* render_view_id */,
                             GURL /* URL of NaCl executable file */,
+                            bool /* enable_validation_caching */,
                             IPC::PlatformFileForTransit /* output file */,
                             uint64 /* file_token_lo */,
                             uint64 /* file_token_hi */)

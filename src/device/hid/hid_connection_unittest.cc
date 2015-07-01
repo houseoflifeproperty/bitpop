@@ -9,9 +9,13 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
+#include "base/scoped_observer.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/test/test_io_thread.h"
 #include "device/hid/hid_connection.h"
 #include "device/hid/hid_service.h"
 #include "device/test/usb_test_gadget.h"
+#include "device/usb/usb_device.h"
 #include "net/base/io_buffer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -21,14 +25,86 @@ namespace {
 
 using net::IOBufferWithSize;
 
-class TestCompletionCallback {
+// Helper class that can be used to block until a HID device with a particular
+// serial number is available. Example usage:
+//
+//   DeviceCatcher device_catcher("ABC123");
+//   HidDeviceId device_id = device_catcher.WaitForDevice();
+//   /* Call HidService::Connect(device_id) to open the device. */
+//
+class DeviceCatcher : HidService::Observer {
  public:
-  TestCompletionCallback()
-      : read_callback_(base::Bind(&TestCompletionCallback::SetReadResult,
-                                  base::Unretained(this))),
-        write_callback_(base::Bind(&TestCompletionCallback::SetWriteResult,
+  DeviceCatcher(HidService* hid_service, const base::string16& serial_number)
+      : serial_number_(base::UTF16ToUTF8(serial_number)), observer_(this) {
+    observer_.Add(hid_service);
+    hid_service->GetDevices(base::Bind(&DeviceCatcher::OnEnumerationComplete,
+                                       base::Unretained(this)));
+  }
+
+  const HidDeviceId& WaitForDevice() {
+    run_loop_.Run();
+    observer_.RemoveAll();
+    return device_id_;
+  }
+
+ private:
+  void OnEnumerationComplete(
+      const std::vector<scoped_refptr<HidDeviceInfo>>& devices) {
+    for (const scoped_refptr<HidDeviceInfo>& device_info : devices) {
+      if (device_info->serial_number() == serial_number_) {
+        device_id_ = device_info->device_id();
+        run_loop_.Quit();
+        break;
+      }
+    }
+  }
+
+  void OnDeviceAdded(scoped_refptr<HidDeviceInfo> device_info) override {
+    if (device_info->serial_number() == serial_number_) {
+      device_id_ = device_info->device_id();
+      run_loop_.Quit();
+    }
+  }
+
+  std::string serial_number_;
+  ScopedObserver<device::HidService, device::HidService::Observer> observer_;
+  base::RunLoop run_loop_;
+  HidDeviceId device_id_;
+};
+
+class TestConnectCallback {
+ public:
+  TestConnectCallback()
+      : callback_(base::Bind(&TestConnectCallback::SetConnection,
+                             base::Unretained(this))) {}
+  ~TestConnectCallback() {}
+
+  void SetConnection(scoped_refptr<HidConnection> connection) {
+    connection_ = connection;
+    run_loop_.Quit();
+  }
+
+  scoped_refptr<HidConnection> WaitForConnection() {
+    run_loop_.Run();
+    return connection_;
+  }
+
+  const HidService::ConnectCallback& callback() { return callback_; }
+
+ private:
+  HidService::ConnectCallback callback_;
+  base::RunLoop run_loop_;
+  scoped_refptr<HidConnection> connection_;
+};
+
+class TestIoCallback {
+ public:
+  TestIoCallback()
+      : read_callback_(
+            base::Bind(&TestIoCallback::SetReadResult, base::Unretained(this))),
+        write_callback_(base::Bind(&TestIoCallback::SetWriteResult,
                                    base::Unretained(this))) {}
-  ~TestCompletionCallback() {}
+  ~TestIoCallback() {}
 
   void SetReadResult(bool success,
                      scoped_refptr<net::IOBuffer> buffer,
@@ -69,57 +145,27 @@ class TestCompletionCallback {
 
 class HidConnectionTest : public testing::Test {
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     if (!UsbTestGadget::IsTestEnabled()) return;
 
-    message_loop_.reset(new base::MessageLoopForIO());
-    service_ = HidService::GetInstance(
-        message_loop_->message_loop_proxy(),
-        message_loop_->message_loop_proxy());
+    message_loop_.reset(new base::MessageLoopForUI());
+    io_thread_.reset(new base::TestIOThread(base::TestIOThread::kAutoStart));
+
+    service_ = HidService::GetInstance(io_thread_->task_runner());
     ASSERT_TRUE(service_);
 
-    test_gadget_ = UsbTestGadget::Claim();
+    test_gadget_ = UsbTestGadget::Claim(io_thread_->task_runner());
     ASSERT_TRUE(test_gadget_);
     ASSERT_TRUE(test_gadget_->SetType(UsbTestGadget::HID_ECHO));
 
-    device_id_ = kInvalidHidDeviceId;
-
-    base::RunLoop run_loop;
-    message_loop_->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&HidConnectionTest::FindDevice,
-                   base::Unretained(this), run_loop.QuitClosure(), 5),
-        base::TimeDelta::FromMilliseconds(250));
-    run_loop.Run();
-
+    DeviceCatcher device_catcher(service_,
+                                 test_gadget_->GetDevice()->serial_number());
+    device_id_ = device_catcher.WaitForDevice();
     ASSERT_NE(device_id_, kInvalidHidDeviceId);
   }
 
-  void FindDevice(const base::Closure& done, int retries) {
-    std::vector<HidDeviceInfo> devices;
-    service_->GetDevices(&devices);
-
-    for (std::vector<HidDeviceInfo>::iterator it = devices.begin();
-         it != devices.end();
-         ++it) {
-      if (it->serial_number == test_gadget_->GetSerialNumber()) {
-        device_id_ = it->device_id;
-        break;
-      }
-    }
-
-    if (device_id_ == kInvalidHidDeviceId && --retries > 0) {
-      message_loop_->PostDelayedTask(
-          FROM_HERE,
-          base::Bind(&HidConnectionTest::FindDevice, base::Unretained(this),
-                     done, retries),
-          base::TimeDelta::FromMilliseconds(10));
-    } else {
-      message_loop_->PostTask(FROM_HERE, done);
-    }
-  }
-
-  scoped_ptr<base::MessageLoopForIO> message_loop_;
+  scoped_ptr<base::MessageLoopForUI> message_loop_;
+  scoped_ptr<base::TestIOThread> io_thread_;
   HidService* service_;
   scoped_ptr<UsbTestGadget> test_gadget_;
   HidDeviceId device_id_;
@@ -128,26 +174,29 @@ class HidConnectionTest : public testing::Test {
 TEST_F(HidConnectionTest, ReadWrite) {
   if (!UsbTestGadget::IsTestEnabled()) return;
 
-  scoped_refptr<HidConnection> conn = service_->Connect(device_id_);
+  TestConnectCallback connect_callback;
+  service_->Connect(device_id_, connect_callback.callback());
+  scoped_refptr<HidConnection> conn = connect_callback.WaitForConnection();
   ASSERT_TRUE(conn.get());
 
-  for (int i = 0; i < 8; ++i) {
-    scoped_refptr<IOBufferWithSize> buffer(new IOBufferWithSize(9));
+  const char kBufferSize = 9;
+  for (char i = 0; i < 8; ++i) {
+    scoped_refptr<IOBufferWithSize> buffer(new IOBufferWithSize(kBufferSize));
     buffer->data()[0] = 0;
-    for (int j = 1; j < buffer->size(); ++j) {
+    for (unsigned char j = 1; j < kBufferSize; ++j) {
       buffer->data()[j] = i + j - 1;
     }
 
-    TestCompletionCallback write_callback;
+    TestIoCallback write_callback;
     conn->Write(buffer, buffer->size(), write_callback.write_callback());
     ASSERT_TRUE(write_callback.WaitForResult());
 
-    TestCompletionCallback read_callback;
+    TestIoCallback read_callback;
     conn->Read(read_callback.read_callback());
     ASSERT_TRUE(read_callback.WaitForResult());
     ASSERT_EQ(9UL, read_callback.size());
     ASSERT_EQ(0, read_callback.buffer()->data()[0]);
-    for (int j = 1; j < buffer->size(); ++j) {
+    for (unsigned char j = 1; j < kBufferSize; ++j) {
       ASSERT_EQ(i + j - 1, read_callback.buffer()->data()[j]);
     }
   }

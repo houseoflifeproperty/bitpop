@@ -4,11 +4,14 @@
 
 #include "cc/blink/web_layer_impl.h"
 
+#include <utility>
+#include <vector>
+
 #include "base/bind.h"
-#include "base/debug/trace_event_impl.h"
 #include "base/lazy_instance.h"
 #include "base/strings/string_util.h"
 #include "base/threading/thread_checker.h"
+#include "base/trace_event/trace_event_impl.h"
 #include "cc/animation/animation.h"
 #include "cc/base/region.h"
 #include "cc/base/switches.h"
@@ -27,6 +30,8 @@
 #include "third_party/WebKit/public/platform/WebLayerScrollClient.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/skia/include/utils/SkMatrix44.h"
+#include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/vector2d_conversions.h"
 
 using cc::Animation;
 using cc::Layer;
@@ -46,19 +51,19 @@ bool g_impl_side_painting_enabled = false;
 }  // namespace
 
 WebLayerImpl::WebLayerImpl() : layer_(Layer::Create()) {
-  web_layer_client_ = NULL;
+  web_layer_client_ = nullptr;
   layer_->SetLayerClient(this);
 }
 
 WebLayerImpl::WebLayerImpl(scoped_refptr<Layer> layer) : layer_(layer) {
-  web_layer_client_ = NULL;
+  web_layer_client_ = nullptr;
   layer_->SetLayerClient(this);
 }
 
 WebLayerImpl::~WebLayerImpl() {
   layer_->ClearRenderSurface();
-  layer_->set_layer_animation_delegate(NULL);
-  web_layer_client_ = NULL;
+  layer_->set_layer_animation_delegate(nullptr);
+  web_layer_client_ = nullptr;
 }
 
 // static
@@ -75,7 +80,7 @@ int WebLayerImpl::id() const {
   return layer_->id();
 }
 
-void WebLayerImpl::invalidateRect(const blink::WebFloatRect& rect) {
+void WebLayerImpl::invalidateRect(const blink::WebRect& rect) {
   layer_->SetNeedsDisplayRect(rect);
 }
 
@@ -251,7 +256,7 @@ void WebLayerImpl::removeAnimation(int animation_id) {
 void WebLayerImpl::removeAnimation(
     int animation_id,
     blink::WebCompositorAnimation::TargetProperty target_property) {
-  layer_->layer_animation_controller()->RemoveAnimation(
+  layer_->RemoveAnimation(
       animation_id, static_cast<Animation::TargetProperty>(target_property));
 }
 
@@ -267,12 +272,19 @@ void WebLayerImpl::setForceRenderSurface(bool force_render_surface) {
   layer_->SetForceRenderSurface(force_render_surface);
 }
 
-void WebLayerImpl::setScrollPosition(blink::WebPoint position) {
-  layer_->SetScrollOffset(gfx::Point(position).OffsetFromOrigin());
+void WebLayerImpl::setScrollPositionDouble(blink::WebDoublePoint position) {
+  layer_->SetScrollOffset(gfx::ScrollOffset(position.x, position.y));
 }
 
-blink::WebPoint WebLayerImpl::scrollPosition() const {
-  return gfx::PointAtOffsetFromOrigin(layer_->scroll_offset());
+void WebLayerImpl::setScrollCompensationAdjustment(
+    blink::WebDoublePoint position) {
+  layer_->SetScrollCompensationAdjustment(
+      gfx::Vector2dF(position.x, position.y));
+}
+
+blink::WebDoublePoint WebLayerImpl::scrollPositionDouble() const {
+  return blink::WebDoublePoint(layer_->scroll_offset().x(),
+                               layer_->scroll_offset().y());
 }
 
 void WebLayerImpl::setScrollClipLayer(WebLayer* clip_layer) {
@@ -349,6 +361,31 @@ WebVector<WebRect> WebLayerImpl::nonFastScrollableRegion() const {
   return result;
 }
 
+void WebLayerImpl::setFrameTimingRequests(
+    const WebVector<std::pair<int64_t, WebRect>>& requests) {
+  std::vector<cc::FrameTimingRequest> frame_timing_requests(requests.size());
+  for (size_t i = 0; i < requests.size(); ++i) {
+    frame_timing_requests[i] = cc::FrameTimingRequest(
+        requests[i].first, gfx::Rect(requests[i].second));
+  }
+  layer_->SetFrameTimingRequests(frame_timing_requests);
+}
+
+WebVector<std::pair<int64_t, WebRect>> WebLayerImpl::frameTimingRequests()
+    const {
+  const std::vector<cc::FrameTimingRequest>& frame_timing_requests =
+      layer_->FrameTimingRequests();
+
+  size_t num_requests = frame_timing_requests.size();
+
+  WebVector<std::pair<int64_t, WebRect>> result(num_requests);
+  for (size_t i = 0; i < num_requests; ++i) {
+    result[i] = std::make_pair(frame_timing_requests[i].id(),
+                               frame_timing_requests[i].rect());
+  }
+  return result;
+}
+
 void WebLayerImpl::setTouchEventHandlerRegion(const WebVector<WebRect>& rects) {
   cc::Region region;
   for (size_t i = 0; i < rects.size(); ++i)
@@ -372,6 +409,28 @@ WebVector<WebRect> WebLayerImpl::touchEventHandlerRegion() const {
     ++i;
   }
   return result;
+}
+
+static_assert(static_cast<ScrollBlocksOn>(blink::WebScrollBlocksOnNone) ==
+                  SCROLL_BLOCKS_ON_NONE,
+              "ScrollBlocksOn and WebScrollBlocksOn enums must match");
+static_assert(static_cast<ScrollBlocksOn>(blink::WebScrollBlocksOnStartTouch) ==
+                  SCROLL_BLOCKS_ON_START_TOUCH,
+              "ScrollBlocksOn and WebScrollBlocksOn enums must match");
+static_assert(static_cast<ScrollBlocksOn>(blink::WebScrollBlocksOnWheelEvent) ==
+                  SCROLL_BLOCKS_ON_WHEEL_EVENT,
+              "ScrollBlocksOn and WebScrollBlocksOn enums must match");
+static_assert(
+    static_cast<ScrollBlocksOn>(blink::WebScrollBlocksOnScrollEvent) ==
+        SCROLL_BLOCKS_ON_SCROLL_EVENT,
+    "ScrollBlocksOn and WebScrollBlocksOn enums must match");
+
+void WebLayerImpl::setScrollBlocksOn(blink::WebScrollBlocksOn blocks) {
+  layer_->SetScrollBlocksOn(static_cast<ScrollBlocksOn>(blocks));
+}
+
+blink::WebScrollBlocksOn WebLayerImpl::scrollBlocksOn() const {
+  return static_cast<blink::WebScrollBlocksOn>(layer_->scroll_blocks_on());
 }
 
 void WebLayerImpl::setIsContainerForFixedPositionLayers(bool enable) {
@@ -427,12 +486,12 @@ void WebLayerImpl::setWebLayerClient(blink::WebLayerClient* client) {
   web_layer_client_ = client;
 }
 
-class TracedDebugInfo : public base::debug::ConvertableToTraceFormat {
+class TracedDebugInfo : public base::trace_event::ConvertableToTraceFormat {
  public:
   // This object takes ownership of the debug_info object.
   explicit TracedDebugInfo(blink::WebGraphicsLayerDebugInfo* debug_info)
       : debug_info_(debug_info) {}
-  virtual void AppendAsTraceFormat(std::string* out) const OVERRIDE {
+  void AppendAsTraceFormat(std::string* out) const override {
     DCHECK(thread_checker_.CalledOnValidThread());
     blink::WebString web_string;
     debug_info_->appendAsTraceFormat(&web_string);
@@ -440,33 +499,33 @@ class TracedDebugInfo : public base::debug::ConvertableToTraceFormat {
   }
 
  private:
-  virtual ~TracedDebugInfo() {}
+  ~TracedDebugInfo() override {}
   scoped_ptr<blink::WebGraphicsLayerDebugInfo> debug_info_;
   base::ThreadChecker thread_checker_;
 };
 
-scoped_refptr<base::debug::ConvertableToTraceFormat>
+scoped_refptr<base::trace_event::ConvertableToTraceFormat>
 WebLayerImpl::TakeDebugInfo() {
   if (!web_layer_client_)
-    return NULL;
+    return nullptr;
   blink::WebGraphicsLayerDebugInfo* debug_info =
       web_layer_client_->takeDebugInfoFor(this);
 
   if (debug_info)
     return new TracedDebugInfo(debug_info);
   else
-    return NULL;
+    return nullptr;
 }
 
 void WebLayerImpl::setScrollParent(blink::WebLayer* parent) {
-  cc::Layer* scroll_parent = NULL;
+  cc::Layer* scroll_parent = nullptr;
   if (parent)
     scroll_parent = static_cast<WebLayerImpl*>(parent)->layer();
   layer_->SetScrollParent(scroll_parent);
 }
 
 void WebLayerImpl::setClipParent(blink::WebLayer* parent) {
-  cc::Layer* clip_parent = NULL;
+  cc::Layer* clip_parent = nullptr;
   if (parent)
     clip_parent = static_cast<WebLayerImpl*>(parent)->layer();
   layer_->SetClipParent(clip_parent);

@@ -9,8 +9,8 @@ import unittest
 from telemetry import benchmark
 from telemetry.core import browser_finder
 from telemetry.core import util
-from telemetry.unittest import options_for_unittests
-from telemetry.unittest import simple_mock
+from telemetry.unittest_util import options_for_unittests
+from telemetry.unittest_util import simple_mock
 
 _ = simple_mock.DONT_CARE
 
@@ -36,7 +36,7 @@ class FormBasedCredentialsBackendUnitTestBase(unittest.TestCase):
       return
 
     options = options_for_unittests.GetCopy()
-    with browser_finder.FindBrowser(options).Create() as b:
+    with browser_finder.FindBrowser(options).Create(options) as b:
       b.credentials.credentials_path = credentials_path
       if not b.credentials.CanLogin(self._credentials_type):
         return

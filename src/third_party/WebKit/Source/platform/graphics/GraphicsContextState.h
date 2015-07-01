@@ -35,7 +35,9 @@
 #include "platform/graphics/Path.h"
 #include "platform/graphics/Pattern.h"
 #include "platform/graphics/StrokeData.h"
+#include "platform/graphics/skia/SkiaUtils.h"
 #include "third_party/skia/include/core/SkColorFilter.h"
+#include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
@@ -44,7 +46,7 @@ namespace blink {
 
 // Encapsulates the state information we store for each pushed graphics state.
 // Only GraphicsContext can use this class.
-class PLATFORM_EXPORT GraphicsContextState FINAL {
+class PLATFORM_EXPORT GraphicsContextState final {
 public:
     static PassOwnPtr<GraphicsContextState> create()
     {
@@ -73,12 +75,10 @@ public:
     void setStrokeColor(const Color&);
 
     Gradient* strokeGradient() const { return m_strokeGradient.get(); }
-    void setStrokeGradient(const PassRefPtr<Gradient>);
-    void clearStrokeGradient();
+    void setStrokeGradient(const PassRefPtr<Gradient>, float);
 
     Pattern* strokePattern() const { return m_strokePattern.get(); }
-    void setStrokePattern(const PassRefPtr<Pattern>);
-    void clearStrokePattern();
+    void setStrokePattern(const PassRefPtr<Pattern>, float);
 
     const StrokeData& strokeData() const { return m_strokeData; }
     void setStrokeStyle(StrokeStyle);
@@ -94,12 +94,10 @@ public:
     void setFillColor(const Color&);
 
     Gradient* fillGradient() const { return m_fillGradient.get(); }
-    void setFillGradient(const PassRefPtr<Gradient>);
-    void clearFillGradient();
+    void setFillGradient(const PassRefPtr<Gradient>, float);
 
     Pattern* fillPattern() const { return m_fillPattern.get(); }
-    void setFillPattern(const PassRefPtr<Pattern>);
-    void clearFillPattern();
+    void setFillPattern(const PassRefPtr<Pattern>, float);
 
     // Path fill rule
     WindRule fillRule() const { return m_fillRule; }
@@ -109,6 +107,10 @@ public:
     SkDrawLooper* drawLooper() const { return m_looper.get(); }
     void setDrawLooper(PassRefPtr<SkDrawLooper>);
     void clearDrawLooper();
+
+    SkImageFilter* dropShadowImageFilter() const { return m_dropShadowImageFilter.get(); }
+    void setDropShadowImageFilter(PassRefPtr<SkImageFilter>);
+    void clearDropShadowImageFilter();
 
     // Text. (See TextModeFill & friends.)
     TextDrawingModeFlags textDrawingMode() const { return m_textDrawingMode; }
@@ -122,9 +124,8 @@ public:
     void setColorFilter(PassRefPtr<SkColorFilter>);
 
     // Compositing control, for the CSS and Canvas compositing spec.
-    void setCompositeOperation(CompositeOperator, WebBlendMode);
-    CompositeOperator compositeOperator() const { return m_compositeOperator; }
-    WebBlendMode blendMode() const { return m_blendMode; }
+    void setCompositeOperation(SkXfermode::Mode);
+    SkXfermode::Mode compositeOperation() const { return m_compositeOperation; }
 
     // Image interpolation control.
     InterpolationQuality interpolationQuality() const { return m_interpolationQuality; }
@@ -143,10 +144,9 @@ private:
 
     // Helper function for applying the state's alpha value to the given input
     // color to produce a new output color.
-    SkColor applyAlpha(SkColor c) const
+    SkColor applyAlpha(SkColor color) const
     {
-        int a = SkAlphaMul(SkColorGetA(c), m_alpha);
-        return (c & 0x00FFFFFF) | (a << 24);
+        return scaleAlpha(color, m_alpha);
     }
 
     // These are mutbale to enable gradient updates when the paints are fetched for use.
@@ -165,14 +165,14 @@ private:
     RefPtr<Pattern> m_fillPattern;
 
     RefPtr<SkDrawLooper> m_looper;
+    RefPtr<SkImageFilter> m_dropShadowImageFilter;
 
     TextDrawingModeFlags m_textDrawingMode;
 
     int m_alpha;
     RefPtr<SkColorFilter> m_colorFilter;
 
-    CompositeOperator m_compositeOperator;
-    WebBlendMode m_blendMode;
+    SkXfermode::Mode m_compositeOperation;
 
     InterpolationQuality m_interpolationQuality;
 

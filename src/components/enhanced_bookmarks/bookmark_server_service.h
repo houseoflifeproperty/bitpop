@@ -17,7 +17,10 @@
 
 class ProfileOAuth2TokenService;
 class SigninManagerBase;
+
+namespace bookmarks {
 class BookmarkNode;
+}
 
 namespace enhanced_bookmarks {
 
@@ -45,17 +48,21 @@ class BookmarkServerService : protected net::URLFetcherDelegate,
       ProfileOAuth2TokenService* token_service,
       SigninManagerBase* signin_manager,
       EnhancedBookmarkModel* enhanced_bookmark_model);
-  virtual ~BookmarkServerService();
+  ~BookmarkServerService() override;
 
-  void AddObserver(BookmarkServerServiceObserver* observer);
+  virtual void AddObserver(BookmarkServerServiceObserver* observer);
   void RemoveObserver(BookmarkServerServiceObserver* observer);
 
  protected:
   // Retrieves a bookmark by using its remote id. Returns null if nothing
   // matches.
-  virtual const BookmarkNode* BookmarkForRemoteId(
+  virtual const bookmarks::BookmarkNode* BookmarkForRemoteId(
       const std::string& remote_id) const;
-  const std::string RemoteIDForBookmark(const BookmarkNode* bookmark) const;
+  const std::string RemoteIDForBookmark(
+      const bookmarks::BookmarkNode* bookmark) const;
+
+  // Cancels the ongoing request, if any.
+  void Cancel();
 
   // Notifies the observers that something changed.
   void Notify();
@@ -64,7 +71,7 @@ class BookmarkServerService : protected net::URLFetcherDelegate,
   void TriggerTokenRequest(bool cancel_previous);
 
   // Build the query to send to the server. Returns a newly created url_fetcher.
-  virtual net::URLFetcher* CreateFetcher() = 0;
+  virtual scoped_ptr<net::URLFetcher> CreateFetcher() = 0;
 
   // Processes the response to the query. Returns true on successful parsing,
   // false on failure. The implementation can assume that |should_notify| is set
@@ -77,30 +84,33 @@ class BookmarkServerService : protected net::URLFetcherDelegate,
   virtual void CleanAfterFailure() = 0;
 
   // EnhancedBookmarkModelObserver:
-  virtual void EnhancedBookmarkModelShuttingDown() OVERRIDE;
+  void EnhancedBookmarkModelShuttingDown() override;
 
   SigninManagerBase* GetSigninManager();
 
   // Cached pointer to the bookmarks model.
   EnhancedBookmarkModel* model_;  // weak
 
+ protected:
+  // The observers.
+  ObserverList<BookmarkServerServiceObserver> observers_;
+
  private:
   FRIEND_TEST_ALL_PREFIXES(BookmarkServerServiceTest, Cluster);
+  FRIEND_TEST_ALL_PREFIXES(BookmarkServerServiceTest, SignOut);
   FRIEND_TEST_ALL_PREFIXES(BookmarkServerServiceTest,
                            ClearClusterMapOnRemoveAllBookmarks);
 
   // net::URLFetcherDelegate methods. Called when the query is finished.
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
 
   // OAuth2TokenService::Consumer methods.
-  virtual void OnGetTokenSuccess(const OAuth2TokenService::Request* request,
-                                 const std::string& access_token,
-                                 const base::Time& expiration_time) OVERRIDE;
-  virtual void OnGetTokenFailure(const OAuth2TokenService::Request* request,
-                                 const GoogleServiceAuthError& error) OVERRIDE;
+  void OnGetTokenSuccess(const OAuth2TokenService::Request* request,
+                         const std::string& access_token,
+                         const base::Time& expiration_time) override;
+  void OnGetTokenFailure(const OAuth2TokenService::Request* request,
+                         const GoogleServiceAuthError& error) override;
 
-  // The observers.
-  ObserverList<BookmarkServerServiceObserver> observers_;
   // The Auth service is used to get a token for auth with the server.
   ProfileOAuth2TokenService* token_service_;  // Weak
   // The request to the token service.
@@ -111,11 +121,10 @@ class BookmarkServerService : protected net::URLFetcherDelegate,
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
   // The fetcher used to query the server.
   scoped_ptr<net::URLFetcher> url_fetcher_;
-  // A map from stars.id to bookmark nodes. With no null entries.
-  std::map<std::string, const BookmarkNode*> starsid_to_bookmark_;
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkServerService);
 };
 }  // namespace enhanced_bookmarks
 
 #endif  // COMPONENTS_ENHANCED_BOOKMARKS_BOOKMARK_SERVER_SERVICE_H_
+

@@ -11,14 +11,14 @@
 
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
-#include "ui/gfx/box_f.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/point3_f.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/safe_integer_conversions.h"
+#include "ui/gfx/geometry/box_f.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/point3_f.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/safe_integer_conversions.h"
+#include "ui/gfx/geometry/vector3d_f.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform_util.h"
-#include "ui/gfx/vector3d_f.h"
 
 namespace gfx {
 
@@ -38,6 +38,12 @@ inline bool ApproximatelyZero(SkMScalar x, SkMScalar tolerance) {
 
 inline bool ApproximatelyOne(SkMScalar x, SkMScalar tolerance) {
   return std::abs(x - SkDoubleToMScalar(1.0)) <= tolerance;
+}
+
+static float Round(float f) {
+  if (f == 0.f)
+    return f;
+  return (f > 0.f) ? std::floor(f + 0.5f) : std::ceil(f - 0.5f);
 }
 
 }  // namespace
@@ -153,13 +159,13 @@ void Transform::RotateAbout(const Vector3dF& axis, double degrees) {
     matrix_.setRotateDegreesAbout(SkFloatToMScalar(axis.x()),
                                   SkFloatToMScalar(axis.y()),
                                   SkFloatToMScalar(axis.z()),
-                                  degrees);
+                                  SkDoubleToMScalar(degrees));
   } else {
     SkMatrix44 rot(SkMatrix44::kUninitialized_Constructor);
     rot.setRotateDegreesAbout(SkFloatToMScalar(axis.x()),
                               SkFloatToMScalar(axis.y()),
                               SkFloatToMScalar(axis.z()),
-                              degrees);
+                              SkDoubleToMScalar(degrees));
     matrix_.preConcat(rot);
   }
 }
@@ -179,9 +185,9 @@ void Transform::Translate3d(SkMScalar x, SkMScalar y, SkMScalar z) {
 }
 
 void Transform::SkewX(double angle_x) {
-  if (matrix_.isIdentity())
+  if (matrix_.isIdentity()) {
     matrix_.set(0, 1, TanDegrees(angle_x));
-  else {
+  } else {
     SkMatrix44 skew(SkMatrix44::kIdentity_Constructor);
     skew.set(0, 1, TanDegrees(angle_x));
     matrix_.preConcat(skew);
@@ -189,9 +195,9 @@ void Transform::SkewX(double angle_x) {
 }
 
 void Transform::SkewY(double angle_y) {
-  if (matrix_.isIdentity())
+  if (matrix_.isIdentity()) {
     matrix_.set(1, 0, TanDegrees(angle_y));
-  else {
+  } else {
     SkMatrix44 skew(SkMatrix44::kIdentity_Constructor);
     skew.set(1, 0, TanDegrees(angle_y));
     matrix_.preConcat(skew);
@@ -201,11 +207,11 @@ void Transform::SkewY(double angle_y) {
 void Transform::ApplyPerspectiveDepth(SkMScalar depth) {
   if (depth == 0)
     return;
-  if (matrix_.isIdentity())
-    matrix_.set(3, 2, -1.0 / depth);
-  else {
+  if (matrix_.isIdentity()) {
+    matrix_.set(3, 2, -SK_MScalar1 / depth);
+  } else {
     SkMatrix44 m(SkMatrix44::kIdentity_Constructor);
-    m.set(3, 2, -1.0 / depth);
+    m.set(3, 2, -SK_MScalar1 / depth);
     matrix_.preConcat(m);
   }
 }
@@ -388,6 +394,13 @@ void Transform::FlattenTo2d() {
   matrix_.set(2, 3, 0.0);
 }
 
+bool Transform::IsFlat() const {
+  return matrix_.get(2, 0) == 0.0 && matrix_.get(2, 1) == 0.0 &&
+         matrix_.get(0, 2) == 0.0 && matrix_.get(1, 2) == 0.0 &&
+         matrix_.get(2, 2) == 1.0 && matrix_.get(3, 2) == 0.0 &&
+         matrix_.get(2, 3) == 0.0;
+}
+
 Vector2dF Transform::To2dTranslation() const {
   return gfx::Vector2dF(SkMScalarToFloat(matrix_.get(0, 3)),
                         SkMScalarToFloat(matrix_.get(1, 3)));
@@ -493,6 +506,11 @@ bool Transform::Blend(const Transform& from, double progress) {
   return true;
 }
 
+void Transform::RoundTranslationComponents() {
+  matrix_.set(0, 3, Round(matrix_.get(0, 3)));
+  matrix_.set(1, 3, Round(matrix_.get(1, 3)));
+}
+
 void Transform::TransformPointInternal(const SkMatrix44& xform,
                                        Point3F* point) const {
   if (xform.isIdentity())
@@ -516,7 +534,7 @@ void Transform::TransformPointInternal(const SkMatrix44& xform,
   if (xform.isIdentity())
     return;
 
-  SkMScalar p[4] = {SkFloatToMScalar(point->x()), SkFloatToMScalar(point->y()),
+  SkMScalar p[4] = {SkIntToMScalar(point->x()), SkIntToMScalar(point->y()),
                     0, 1};
 
   xform.mapMScalars(p);

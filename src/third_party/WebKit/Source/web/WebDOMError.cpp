@@ -40,7 +40,7 @@ namespace blink {
 
 WebDOMError WebDOMError::create(const WebString& name, const WebString& message)
 {
-    return WebDOMError(DOMError::create(name, message));
+    return DOMError::create(name, message);
 }
 
 void WebDOMError::reset()
@@ -67,19 +67,21 @@ WebString WebDOMError::message() const
     return m_private->message();
 }
 
-v8::Handle<v8::Value>  WebDOMError::toV8Value(v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+v8::Local<v8::Value>  WebDOMError::toV8Value(v8::Local<v8::Object> /* creationContext */, v8::Isolate* isolate)
 {
+    // We no longer use |creationContext| because it's often misused and points
+    // to a context faked by user script.
     if (!m_private.get())
-        return v8::Handle<v8::Value>();
-    return toV8(m_private.get(), creationContext, isolate);
+        return v8::Local<v8::Value>();
+    return toV8(m_private.get(), isolate->GetCurrentContext()->Global(), isolate);
 }
 
-WebDOMError::WebDOMError(const PassRefPtrWillBeRawPtr<DOMError>& error)
+WebDOMError::WebDOMError(DOMError* error)
     : m_private(error)
 {
 }
 
-WebDOMError& WebDOMError::operator=(const PassRefPtrWillBeRawPtr<DOMError>& error)
+WebDOMError& WebDOMError::operator=(DOMError* error)
 {
     m_private = error;
     return *this;

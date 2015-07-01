@@ -8,6 +8,8 @@
 #include "base/macros.h"
 #include "content/browser/service_worker/service_worker_database.h"
 
+class GURL;
+
 namespace content {
 
 class ServiceWorkerMetrics {
@@ -26,6 +28,36 @@ class ServiceWorkerMetrics {
     NUM_WRITE_RESPONSE_RESULT_TYPES,
   };
 
+  enum DeleteAndStartOverResult {
+    DELETE_OK,
+    DELETE_DATABASE_ERROR,
+    DELETE_DISK_CACHE_ERROR,
+    NUM_DELETE_AND_START_OVER_RESULT_TYPES,
+  };
+
+  enum URLRequestJobResult {
+    REQUEST_JOB_FALLBACK_RESPONSE,
+    REQUEST_JOB_FALLBACK_FOR_CORS,
+    REQUEST_JOB_HEADERS_ONLY_RESPONSE,
+    REQUEST_JOB_STREAM_RESPONSE,
+    REQUEST_JOB_BLOB_RESPONSE,
+    REQUEST_JOB_ERROR_RESPONSE_STATUS_ZERO,
+    REQUEST_JOB_ERROR_BAD_BLOB,
+    REQUEST_JOB_ERROR_NO_PROVIDER_HOST,
+    REQUEST_JOB_ERROR_NO_ACTIVE_VERSION,
+    REQUEST_JOB_ERROR_NO_REQUEST,
+    REQUEST_JOB_ERROR_FETCH_EVENT_DISPATCH,
+    REQUEST_JOB_ERROR_BLOB_READ,
+    REQUEST_JOB_ERROR_STREAM_ABORTED,
+    REQUEST_JOB_ERROR_KILLED,
+    REQUEST_JOB_ERROR_KILLED_WITH_BLOB,
+    REQUEST_JOB_ERROR_KILLED_WITH_STREAM,
+    REQUEST_JOB_ERROR_DESTROYED,
+    REQUEST_JOB_ERROR_DESTROYED_WITH_BLOB,
+    REQUEST_JOB_ERROR_DESTROYED_WITH_STREAM,
+    NUM_REQUEST_JOB_RESULT_TYPES,
+  };
+
   // Used for ServiceWorkerDiskCache.
   static void CountInitDiskCacheResult(bool result);
   static void CountReadResponseResult(ReadResponseResult result);
@@ -35,9 +67,39 @@ class ServiceWorkerMetrics {
   static void CountOpenDatabaseResult(ServiceWorkerDatabase::Status status);
   static void CountReadDatabaseResult(ServiceWorkerDatabase::Status status);
   static void CountWriteDatabaseResult(ServiceWorkerDatabase::Status status);
+  static void RecordDestroyDatabaseResult(ServiceWorkerDatabase::Status status);
+
+  // Used for ServiceWorkerStorage.
+  static void RecordDeleteAndStartOverResult(DeleteAndStartOverResult result);
 
   // Counts the number of page loads controlled by a Service Worker.
-  static void CountControlledPageLoad();
+  static void CountControlledPageLoad(const GURL& url);
+
+  // Records the result of trying to start a worker. |is_installed| indicates
+  // whether the version has been installed.
+  static void RecordStartWorkerStatus(ServiceWorkerStatusCode status,
+                                      bool is_installed);
+
+  // Records the time taken to successfully start a worker. |is_installed|
+  // indicates whether the version has been installed.
+  static void RecordStartWorkerTime(const base::TimeDelta& time,
+                                    bool is_installed);
+
+  static void RecordActivateEventStatus(ServiceWorkerStatusCode status);
+  static void RecordInstallEventStatus(ServiceWorkerStatusCode status);
+
+  // Records the ratio of unhandled events to the all events fired during
+  // the lifetime of ServiceWorker.
+  static void RecordEventStatus(size_t fired_events, size_t handled_events);
+
+  // Records result of a ServiceWorkerURLRequestJob that was forwarded to
+  // the service worker.
+  static void RecordURLRequestJobResult(bool is_main_resource,
+                                        URLRequestJobResult result);
+
+  // Records the result of dispatching a fetch event to a service worker.
+  static void RecordFetchEventStatus(bool is_main_resource,
+                                     ServiceWorkerStatusCode status);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ServiceWorkerMetrics);

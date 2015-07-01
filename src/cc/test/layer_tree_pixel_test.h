@@ -30,21 +30,27 @@ class TextureLayer;
 class TextureMailbox;
 
 class LayerTreePixelTest : public LayerTreeTest {
+ public:
+  enum PixelTestType {
+    PIXEL_TEST_GL,
+    PIXEL_TEST_SOFTWARE,
+  };
+
  protected:
   LayerTreePixelTest();
-  virtual ~LayerTreePixelTest();
+  ~LayerTreePixelTest() override;
 
-  virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback) OVERRIDE;
-  virtual void CommitCompleteOnThread(LayerTreeHostImpl* impl) OVERRIDE;
+  scoped_ptr<OutputSurface> CreateOutputSurface() override;
+  void WillActivateTreeOnThread(LayerTreeHostImpl* impl) override;
 
   virtual scoped_ptr<CopyOutputRequest> CreateCopyOutputRequest();
 
   void ReadbackResult(scoped_ptr<CopyOutputResult> result);
 
-  virtual void BeginTest() OVERRIDE;
-  virtual void SetupTree() OVERRIDE;
-  virtual void AfterTest() OVERRIDE;
-  virtual void EndTest() OVERRIDE;
+  void BeginTest() override;
+  void SetupTree() override;
+  void AfterTest() override;
+  void EndTest() override;
 
   void TryEndTest();
 
@@ -58,16 +64,13 @@ class LayerTreePixelTest : public LayerTreeTest {
   scoped_refptr<TextureLayer> CreateTextureLayer(const gfx::Rect& rect,
                                                  const SkBitmap& bitmap);
 
-  enum PixelTestType {
-    GL_WITH_DEFAULT,
-    GL_WITH_BITMAP,
-    SOFTWARE_WITH_DEFAULT,
-    SOFTWARE_WITH_BITMAP
-  };
-
   void RunPixelTest(PixelTestType type,
                     scoped_refptr<Layer> content_root,
                     base::FilePath file_name);
+
+  void RunSingleThreadedPixelTest(PixelTestType test_type,
+                                  scoped_refptr<Layer> content_root,
+                                  base::FilePath file_name);
 
   void RunPixelTestWithReadbackTarget(PixelTestType type,
                                       scoped_refptr<Layer> content_root,
@@ -88,6 +91,10 @@ class LayerTreePixelTest : public LayerTreeTest {
                              uint32 sync_point,
                              bool lost_resource);
 
+  void set_enlarge_texture_amount(const gfx::Vector2d& enlarge_texture_amount) {
+    enlarge_texture_amount_ = enlarge_texture_amount;
+  }
+
   // Common CSS colors defined for tests to use.
   static const SkColor kCSSOrange = 0xffffa500;
   static const SkColor kCSSBrown = 0xffa52a2a;
@@ -100,9 +107,10 @@ class LayerTreePixelTest : public LayerTreeTest {
   Layer* readback_target_;
   base::FilePath ref_file_;
   scoped_ptr<SkBitmap> result_bitmap_;
-  std::vector<scoped_refptr<TextureLayer> > texture_layers_;
+  std::vector<scoped_refptr<TextureLayer>> texture_layers_;
   int pending_texture_mailbox_callbacks_;
   bool impl_side_painting_;
+  gfx::Vector2d enlarge_texture_amount_;
 };
 
 }  // namespace cc

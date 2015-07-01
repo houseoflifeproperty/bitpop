@@ -17,9 +17,14 @@
 
 using aura::Window;
 
+DECLARE_WINDOW_PROPERTY_TYPE(wm::TransientWindowManager*);
+
 namespace wm {
+namespace {
 
 DEFINE_OWNED_WINDOW_PROPERTY_KEY(TransientWindowManager, kPropertyKey, NULL);
+
+}  // namespace
 
 TransientWindowManager::~TransientWindowManager() {
 }
@@ -97,7 +102,10 @@ bool TransientWindowManager::IsStackingTransient(
 TransientWindowManager::TransientWindowManager(Window* window)
     : window_(window),
       transient_parent_(NULL),
-      stacking_target_(NULL) {
+      stacking_target_(NULL),
+      parent_controls_visibility_(false),
+      show_on_parent_visible_(false),
+      ignore_visibility_changed_event_(false) {
   window_->AddObserver(this);
 }
 
@@ -134,18 +142,50 @@ void TransientWindowManager::OnWindowParentChanged(aura::Window* window,
   }
 }
 
-void TransientWindowManager::OnWindowVisibilityChanging(Window* window,
-                                                        bool visible) {
-  // TODO(sky): move handling of becoming visible here.
-  if (!visible) {
-    std::for_each(transient_children_.begin(), transient_children_.end(),
-                  std::mem_fun(&Window::Hide));
+void TransientWindowManager::UpdateTransientChildVisibility(
+    bool parent_visible) {
+  base::AutoReset<bool> reset(&ignore_visibility_changed_event_, true);
+  if (!parent_visible) {
+    show_on_parent_visible_ = window_->TargetVisibility();
+    window_->Hide();
+  } else {
+    if (show_on_parent_visible_ && parent_controls_visibility_)
+      window_->Show();
+    show_on_parent_visible_ = false;
+  }
+}
+
+void TransientWindowManager::OnWindowVisibilityChanged(Window* window,
+                                                       bool visible) {
+  if (window_ != window)
+    return;
+
+  // If the window has transient children, updates the transient children's
+  // visiblity as well.
+  for (Window* child : transient_children_)
+    Get(child)->UpdateTransientChildVisibility(visible);
+
+  // Remember the show request in |show_on_parent_visible_| and hide it again
+  // if the following conditions are met
+  // - |parent_controls_visibility| is set to true.
+  // - the window is hidden while the transient parent is not visible.
+  // - Show/Hide was NOT called from TransientWindowManager.
+  if (ignore_visibility_changed_event_ ||
+      !transient_parent_ || !parent_controls_visibility_) {
+    return;
+  }
+
+  if (!transient_parent_->TargetVisibility() && visible) {
+    base::AutoReset<bool> reset(&ignore_visibility_changed_event_, true);
+    show_on_parent_visible_ = true;
+    window_->Hide();
+  } else if (!visible) {
+    DCHECK(!show_on_parent_visible_);
   }
 }
 
 void TransientWindowManager::OnWindowStackingChanged(Window* window) {
   DCHECK_EQ(window_, window);
-
   // Do nothing if we initiated the stacking change.
   const TransientWindowManager* transient_manager =
       Get(static_cast<const Window*>(window));

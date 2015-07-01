@@ -5,8 +5,8 @@
 #include "cc/layers/tiled_layer_impl.h"
 
 #include "base/basictypes.h"
-#include "base/debug/trace_event_argument.h"
 #include "base/strings/stringprintf.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "cc/base/math_util.h"
 #include "cc/base/simple_enclosed_region.h"
 #include "cc/debug/debug_colors.h"
@@ -15,11 +15,11 @@
 #include "cc/quads/debug_border_draw_quad.h"
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
-#include "cc/resources/layer_tiling_data.h"
-#include "cc/trees/occlusion_tracker.h"
-#include "third_party/khronos/GLES2/gl2.h"
+#include "cc/tiles/layer_tiling_data.h"
+#include "cc/trees/layer_tree_impl.h"
+#include "cc/trees/occlusion.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/gfx/quad_f.h"
+#include "ui/gfx/geometry/quad_f.h"
 
 namespace cc {
 
@@ -48,26 +48,38 @@ class DrawableTile : public LayerTilingData::Tile {
 };
 
 TiledLayerImpl::TiledLayerImpl(LayerTreeImpl* tree_impl, int id)
-    : LayerImpl(tree_impl, id), skips_draw_(true) {}
+    : TiledLayerImpl(tree_impl, id, new LayerImpl::SyncedScrollOffset) {
+}
+
+TiledLayerImpl::TiledLayerImpl(
+    LayerTreeImpl* tree_impl,
+    int id,
+    scoped_refptr<LayerImpl::SyncedScrollOffset> synced_scroll_offset)
+    : LayerImpl(tree_impl, id, synced_scroll_offset), skips_draw_(true) {
+}
 
 TiledLayerImpl::~TiledLayerImpl() {
 }
 
-ResourceProvider::ResourceId TiledLayerImpl::ContentsResourceId() const {
+void TiledLayerImpl::GetContentsResourceId(
+    ResourceProvider::ResourceId* resource_id,
+    gfx::Size* resource_size) const {
   // This function is only valid for single texture layers, e.g. masks.
   DCHECK(tiler_);
   // It's possible the mask layer is created but has no size or otherwise
   // can't draw.
-  if (tiler_->num_tiles_x() == 0 || tiler_->num_tiles_y() == 0)
-    return 0;
+  if (tiler_->num_tiles_x() == 0 || tiler_->num_tiles_y() == 0) {
+    *resource_id = 0;
+    return;
+  }
 
   // Any other number of tiles other than 0 or 1 is incorrect for masks.
   DCHECK_EQ(tiler_->num_tiles_x(), 1);
   DCHECK_EQ(tiler_->num_tiles_y(), 1);
 
   DrawableTile* tile = TileAt(0, 0);
-  ResourceProvider::ResourceId resource_id = tile ? tile->resource_id() : 0;
-  return resource_id;
+  *resource_id = tile ? tile->resource_id() : 0;
+  *resource_size = tiler_->tile_size();
 }
 
 bool TiledLayerImpl::HasTileAt(int i, int j) const {
@@ -85,7 +97,7 @@ DrawableTile* TiledLayerImpl::TileAt(int i, int j) const {
 DrawableTile* TiledLayerImpl::CreateTile(int i, int j) {
   scoped_ptr<DrawableTile> tile(DrawableTile::Create());
   DrawableTile* added_tile = tile.get();
-  tiler_->AddTile(tile.PassAs<LayerTilingData::Tile>(), i, j);
+  tiler_->AddTile(tile.Pass(), i, j);
 
   return added_tile;
 }
@@ -98,14 +110,12 @@ void TiledLayerImpl::GetDebugBorderProperties(SkColor* color,
 
 scoped_ptr<LayerImpl> TiledLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return TiledLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return TiledLayerImpl::Create(tree_impl, id(), synced_scroll_offset());
 }
 
-void TiledLayerImpl::AsValueInto(base::debug::TracedValue* state) const {
+void TiledLayerImpl::AsValueInto(base::trace_event::TracedValue* state) const {
   LayerImpl::AsValueInto(state);
-  state->BeginArray("invalidation");
-  MathUtil::AddToTracedValue(update_rect(), state);
-  state->EndArray();
+  MathUtil::AddToTracedValue("invalidation", update_rect(), state);
 }
 
 size_t TiledLayerImpl::GPUMemoryUsageInBytes() const {
@@ -155,10 +165,8 @@ bool TiledLayerImpl::WillDraw(DrawMode draw_mode,
   return LayerImpl::WillDraw(draw_mode, resource_provider);
 }
 
-void TiledLayerImpl::AppendQuads(
-    RenderPass* render_pass,
-    const OcclusionTracker<LayerImpl>& occlusion_tracker,
-    AppendQuadsData* append_quads_data) {
+void TiledLayerImpl::AppendQuads(RenderPass* render_pass,
+                                 AppendQuadsData* append_quads_data) {
   DCHECK(tiler_);
   DCHECK(!tiler_->has_empty_bounds());
   DCHECK(!visible_content_rect().IsEmpty());
@@ -204,8 +212,6 @@ void TiledLayerImpl::AppendQuads(
   if (skips_draw_)
     return;
 
-  Occlusion occlusion =
-      occlusion_tracker.GetCurrentOcclusionForLayer(draw_transform());
   for (int j = top; j <= bottom; ++j) {
     for (int i = left; i <= right; ++i) {
       DrawableTile* tile = TileAt(i, j);
@@ -218,7 +224,8 @@ void TiledLayerImpl::AppendQuads(
         continue;
 
       gfx::Rect visible_tile_rect =
-          occlusion.GetUnoccludedContentRect(tile_rect);
+          draw_properties().occlusion_in_content_space.GetUnoccludedContentRect(
+              tile_rect);
       if (visible_tile_rect.IsEmpty())
         continue;
 
@@ -234,8 +241,8 @@ void TiledLayerImpl::AppendQuads(
 
         CheckerboardDrawQuad* checkerboard_quad =
             render_pass->CreateAndAppendDrawQuad<CheckerboardDrawQuad>();
-        checkerboard_quad->SetNew(
-            shared_quad_state, tile_rect, visible_tile_rect, checker_color);
+        checkerboard_quad->SetNew(shared_quad_state, tile_rect,
+                                  visible_tile_rect, checker_color, 1.f);
         append_quads_data->num_missing_tiles++;
         continue;
       }
@@ -261,7 +268,9 @@ void TiledLayerImpl::AppendQuads(
                    tile->resource_id(),
                    tex_coord_rect,
                    texture_size,
-                   tile->contents_swizzled());
+                   tile->contents_swizzled(),
+                   false);
+      ValidateQuadResources(quad);
     }
   }
 }

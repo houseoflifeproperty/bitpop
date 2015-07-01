@@ -6,11 +6,11 @@
 
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/content_settings/content_settings_utils.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
+#include "components/content_settings/core/browser/content_settings_utils.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/keyed_service/core/keyed_service.h"
@@ -74,10 +74,12 @@ void CookieSettings::Factory::RegisterProfilePrefs(
 
 content::BrowserContext* CookieSettings::Factory::GetBrowserContextToUse(
     content::BrowserContext* context) const {
-  return chrome::GetBrowserContextRedirectedInIncognito(context);
+  // The incognito profile has its own content settings map. Therefore, it
+  // should get its own CookieSettings.
+  return chrome::GetBrowserContextOwnInstanceInIncognito(context);
 }
 
-scoped_refptr<RefcountedBrowserContextKeyedService>
+scoped_refptr<RefcountedKeyedService>
 CookieSettings::Factory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);

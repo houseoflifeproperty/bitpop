@@ -8,13 +8,11 @@
 #include <cstring>
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
+#include "base/trace_event/trace_event.h"
 #include "media/cast/cast_defines.h"
 #include "media/cast/net/cast_transport_config.h"
-#include "media/cast/sender/external_video_encoder.h"
-#include "media/cast/sender/video_encoder_impl.h"
+#include "media/cast/sender/video_encoder.h"
 
 namespace media {
 namespace cast {
@@ -32,6 +30,30 @@ const int kRoundTripsNeeded = 4;
 // time).
 const int kConstantTimeMs = 75;
 
+// Extract capture begin/end timestamps from |video_frame|'s metadata and log
+// it.
+void LogVideoCaptureTimestamps(const CastEnvironment& cast_environment,
+                               const media::VideoFrame& video_frame,
+                               RtpTimestamp rtp_timestamp) {
+  base::TimeTicks capture_begin_time;
+  base::TimeTicks capture_end_time;
+  if (!video_frame.metadata()->GetTimeTicks(
+          media::VideoFrameMetadata::CAPTURE_BEGIN_TIME, &capture_begin_time) ||
+      !video_frame.metadata()->GetTimeTicks(
+          media::VideoFrameMetadata::CAPTURE_END_TIME, &capture_end_time)) {
+    // The frame capture timestamps were not provided by the video capture
+    // source.  Simply log the events as happening right now.
+    capture_begin_time = capture_end_time =
+        cast_environment.Clock()->NowTicks();
+  }
+  cast_environment.Logging()->InsertFrameEvent(
+      capture_begin_time, FRAME_CAPTURE_BEGIN, VIDEO_EVENT, rtp_timestamp,
+      kFrameIdUnknown);
+  cast_environment.Logging()->InsertFrameEvent(
+      capture_end_time, FRAME_CAPTURE_END, VIDEO_EVENT, rtp_timestamp,
+      kFrameIdUnknown);
+}
+
 }  // namespace
 
 // Note, we use a fixed bitrate value when external video encoder is used.
@@ -41,64 +63,47 @@ const int kConstantTimeMs = 75;
 VideoSender::VideoSender(
     scoped_refptr<CastEnvironment> cast_environment,
     const VideoSenderConfig& video_config,
-    const CastInitializationCallback& initialization_cb,
+    const StatusChangeCallback& status_change_cb,
     const CreateVideoEncodeAcceleratorCallback& create_vea_cb,
     const CreateVideoEncodeMemoryCallback& create_video_encode_mem_cb,
     CastTransportSender* const transport_sender,
     const PlayoutDelayChangeCB& playout_delay_change_cb)
     : FrameSender(
-        cast_environment,
-        false,
-        transport_sender,
-        base::TimeDelta::FromMilliseconds(video_config.rtcp_interval),
-        kVideoFrequency,
-        video_config.ssrc,
-        video_config.max_frame_rate,
-        video_config.min_playout_delay,
-        video_config.max_playout_delay,
-        NewFixedCongestionControl(
-            (video_config.min_bitrate + video_config.max_bitrate) / 2)),
+          cast_environment,
+          false,
+          transport_sender,
+          kVideoFrequency,
+          video_config.ssrc,
+          video_config.max_frame_rate,
+          video_config.min_playout_delay,
+          video_config.max_playout_delay,
+          video_config.use_external_encoder
+              ? NewFixedCongestionControl(
+                    (video_config.min_bitrate + video_config.max_bitrate) / 2)
+              : NewAdaptiveCongestionControl(cast_environment->Clock(),
+                                             video_config.max_bitrate,
+                                             video_config.min_bitrate,
+                                             video_config.max_frame_rate)),
       frames_in_encoder_(0),
       last_bitrate_(0),
       playout_delay_change_cb_(playout_delay_change_cb),
       weak_factory_(this) {
-  cast_initialization_status_ = STATUS_VIDEO_UNINITIALIZED;
-  VLOG(1) << "max_unacked_frames is " << max_unacked_frames_
-          << " for target_playout_delay="
-          << target_playout_delay_.InMilliseconds() << " ms"
-          << " and max_frame_rate=" << video_config.max_frame_rate;
-  DCHECK_GT(max_unacked_frames_, 0);
-
-  if (video_config.use_external_encoder) {
-    video_encoder_.reset(new ExternalVideoEncoder(
-        cast_environment,
-        video_config,
-        base::Bind(&VideoSender::OnEncoderInitialized,
-                   weak_factory_.GetWeakPtr(), initialization_cb),
-        create_vea_cb,
-        create_video_encode_mem_cb));
-  } else {
-    // Software encoder is initialized immediately.
-    congestion_control_.reset(
-        NewAdaptiveCongestionControl(cast_environment->Clock(),
-                                     video_config.max_bitrate,
-                                     video_config.min_bitrate,
-                                     max_unacked_frames_));
-    video_encoder_.reset(new VideoEncoderImpl(
-        cast_environment, video_config, max_unacked_frames_));
-    cast_initialization_status_ = STATUS_VIDEO_INITIALIZED;
-  }
-
-  if (cast_initialization_status_ == STATUS_VIDEO_INITIALIZED) {
-    cast_environment->PostTask(
+  video_encoder_ = VideoEncoder::Create(
+      cast_environment_,
+      video_config,
+      status_change_cb,
+      create_vea_cb,
+      create_video_encode_mem_cb);
+  if (!video_encoder_) {
+    cast_environment_->PostTask(
         CastEnvironment::MAIN,
         FROM_HERE,
-        base::Bind(initialization_cb, cast_initialization_status_));
+        base::Bind(status_change_cb, STATUS_UNSUPPORTED_CODEC));
   }
 
   media::cast::CastTransportRtpConfig transport_config;
   transport_config.ssrc = video_config.ssrc;
-  transport_config.feedback_ssrc = video_config.incoming_feedback_ssrc;
+  transport_config.feedback_ssrc = video_config.receiver_ssrc;
   transport_config.rtp_payload_type = video_config.rtp_payload_type;
   transport_config.aes_key = video_config.aes_key;
   transport_config.aes_iv_mask = video_config.aes_iv_mask;
@@ -116,38 +121,35 @@ VideoSender::~VideoSender() {
 
 void VideoSender::InsertRawVideoFrame(
     const scoped_refptr<media::VideoFrame>& video_frame,
-    const base::TimeTicks& capture_time) {
+    const base::TimeTicks& reference_time) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  if (cast_initialization_status_ != STATUS_VIDEO_INITIALIZED) {
+
+  if (!video_encoder_) {
     NOTREACHED();
     return;
   }
-  DCHECK(video_encoder_.get()) << "Invalid state";
 
-  RtpTimestamp rtp_timestamp = GetVideoRtpTimestamp(capture_time);
-  cast_environment_->Logging()->InsertFrameEvent(
-      capture_time, FRAME_CAPTURE_BEGIN, VIDEO_EVENT,
-      rtp_timestamp, kFrameIdUnknown);
-  cast_environment_->Logging()->InsertFrameEvent(
-      cast_environment_->Clock()->NowTicks(),
-      FRAME_CAPTURE_END, VIDEO_EVENT,
-      rtp_timestamp,
-      kFrameIdUnknown);
+  const RtpTimestamp rtp_timestamp =
+      TimeDeltaToRtpDelta(video_frame->timestamp(), kVideoFrequency);
+  LogVideoCaptureTimestamps(*cast_environment_, *video_frame, rtp_timestamp);
 
   // Used by chrome/browser/extension/api/cast_streaming/performance_test.cc
   TRACE_EVENT_INSTANT2(
       "cast_perf_test", "InsertRawVideoFrame",
       TRACE_EVENT_SCOPE_THREAD,
-      "timestamp", capture_time.ToInternalValue(),
+      "timestamp", reference_time.ToInternalValue(),
       "rtp_timestamp", rtp_timestamp);
 
-  // Drop the frame if its reference timestamp is not an increase over the last
-  // frame's.  This protects: 1) the duration calculations that assume
-  // timestamps are monotonically non-decreasing, and 2) assumptions made deeper
-  // in the implementation where each frame's RTP timestamp needs to be unique.
+  // Drop the frame if either its RTP or reference timestamp is not an increase
+  // over the last frame's.  This protects: 1) the duration calculations that
+  // assume timestamps are monotonically non-decreasing, and 2) assumptions made
+  // deeper in the implementation where each frame's RTP timestamp needs to be
+  // unique.
   if (!last_enqueued_frame_reference_time_.is_null() &&
-      capture_time <= last_enqueued_frame_reference_time_) {
-    VLOG(1) << "Dropping video frame: Reference time did not increase.";
+      (!IsNewerRtpTimestamp(rtp_timestamp,
+                            last_enqueued_frame_rtp_timestamp_) ||
+       reference_time <= last_enqueued_frame_reference_time_)) {
+    VLOG(1) << "Dropping video frame: RTP or reference time did not increase.";
     return;
   }
 
@@ -157,7 +159,7 @@ void VideoSender::InsertRawVideoFrame(
   // guess will be eliminated when |duration_in_encoder_| is updated in
   // OnEncodedVideoFrame().
   const base::TimeDelta duration_added_by_next_frame = frames_in_encoder_ > 0 ?
-      capture_time - last_enqueued_frame_reference_time_ :
+      reference_time - last_enqueued_frame_reference_time_ :
       base::TimeDelta::FromSecondsD(1.0 / max_frame_rate_);
 
   if (ShouldDropNextFrame(duration_added_by_next_frame)) {
@@ -169,28 +171,46 @@ void VideoSender::InsertRawVideoFrame(
       VLOG(1) << "New target delay: " << new_target_delay.InMilliseconds();
       playout_delay_change_cb_.Run(new_target_delay);
     }
+
+    // Some encoder implementations have a frame window for analysis. Since we
+    // are dropping this frame, unless we instruct the encoder to flush all the
+    // frames that have been enqueued for encoding, frames_in_encoder_ and
+    // last_enqueued_frame_reference_time_ will never be updated and we will
+    // drop every subsequent frame for the rest of the session.
+    video_encoder_->EmitFrames();
+
     return;
   }
 
   uint32 bitrate = congestion_control_->GetBitrate(
-        capture_time + target_playout_delay_, target_playout_delay_);
+        reference_time + target_playout_delay_, target_playout_delay_);
   if (bitrate != last_bitrate_) {
     video_encoder_->SetBitRate(bitrate);
     last_bitrate_ = bitrate;
   }
 
+  if (video_frame->visible_rect().IsEmpty()) {
+    VLOG(1) << "Rejecting empty video frame.";
+    return;
+  }
+
   if (video_encoder_->EncodeVideoFrame(
           video_frame,
-          capture_time,
+          reference_time,
           base::Bind(&VideoSender::OnEncodedVideoFrame,
                      weak_factory_.GetWeakPtr(),
                      bitrate))) {
     frames_in_encoder_++;
     duration_in_encoder_ += duration_added_by_next_frame;
-    last_enqueued_frame_reference_time_ = capture_time;
+    last_enqueued_frame_rtp_timestamp_ = rtp_timestamp;
+    last_enqueued_frame_reference_time_ = reference_time;
   } else {
     VLOG(1) << "Encoder rejected a frame.  Skipping...";
   }
+}
+
+scoped_ptr<VideoFrameFactory> VideoSender::CreateVideoFrameFactory() {
+  return video_encoder_ ? video_encoder_->CreateVideoFrameFactory() : nullptr;
 }
 
 int VideoSender::GetNumberOfFramesInEncoder() const {
@@ -209,13 +229,6 @@ base::TimeDelta VideoSender::GetInFlightMediaDuration() const {
 
 void VideoSender::OnAck(uint32 frame_id) {
   video_encoder_->LatestFrameIdToReference(frame_id);
-}
-
-void VideoSender::OnEncoderInitialized(
-    const CastInitializationCallback& initialization_cb,
-    CastInitializationStatus status) {
-  cast_initialization_status_ = status;
-  initialization_cb.Run(status);
 }
 
 void VideoSender::OnEncodedVideoFrame(

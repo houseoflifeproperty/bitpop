@@ -5,7 +5,16 @@
   "version": "0.1",
   "manifest_version": 2,
   "description": "Test for chrome.fileSystemProvider.getAll().",
-  "permissions": ["fileSystemProvider", "fileManagerPrivate"],
+  "permissions": [
+    "fileSystemProvider",
+    {
+      "fileSystem": ["requestFileSystem", "write"]
+    },
+    "fileManagerPrivate"
+  ],
+  "file_system_provider_capabilities": {
+    "source": "device"
+  },
   "app": {
     "background": {
       "scripts": [

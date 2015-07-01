@@ -185,6 +185,60 @@ int MapFreeContextBufferStatusToError(SECURITY_STATUS status) {
 
 }  // anonymous namespace
 
+SECURITY_STATUS SSPILibraryDefault::AcquireCredentialsHandle(
+    LPWSTR pszPrincipal,
+    LPWSTR pszPackage,
+    unsigned long fCredentialUse,
+    void* pvLogonId,
+    void* pvAuthData,
+    SEC_GET_KEY_FN pGetKeyFn,
+    void* pvGetKeyArgument,
+    PCredHandle phCredential,
+    PTimeStamp ptsExpiry) {
+  return ::AcquireCredentialsHandle(pszPrincipal, pszPackage, fCredentialUse,
+                                    pvLogonId, pvAuthData, pGetKeyFn,
+                                    pvGetKeyArgument, phCredential, ptsExpiry);
+}
+
+SECURITY_STATUS SSPILibraryDefault::InitializeSecurityContext(
+    PCredHandle phCredential,
+    PCtxtHandle phContext,
+    SEC_WCHAR* pszTargetName,
+    unsigned long fContextReq,
+    unsigned long Reserved1,
+    unsigned long TargetDataRep,
+    PSecBufferDesc pInput,
+    unsigned long Reserved2,
+    PCtxtHandle phNewContext,
+    PSecBufferDesc pOutput,
+    unsigned long* contextAttr,
+    PTimeStamp ptsExpiry) {
+  return ::InitializeSecurityContext(phCredential, phContext, pszTargetName,
+                                     fContextReq, Reserved1, TargetDataRep,
+                                     pInput, Reserved2, phNewContext, pOutput,
+                                     contextAttr, ptsExpiry);
+}
+
+SECURITY_STATUS SSPILibraryDefault::QuerySecurityPackageInfo(
+    LPWSTR pszPackageName,
+    PSecPkgInfoW* pkgInfo) {
+  return ::QuerySecurityPackageInfo(pszPackageName, pkgInfo);
+}
+
+SECURITY_STATUS SSPILibraryDefault::FreeCredentialsHandle(
+    PCredHandle phCredential) {
+  return ::FreeCredentialsHandle(phCredential);
+}
+
+SECURITY_STATUS SSPILibraryDefault::DeleteSecurityContext(
+    PCtxtHandle phContext) {
+  return ::DeleteSecurityContext(phContext);
+}
+
+SECURITY_STATUS SSPILibraryDefault::FreeContextBuffer(PVOID pvContextBuffer) {
+  return ::FreeContextBuffer(pvContextBuffer);
+}
+
 HttpAuthSSPI::HttpAuthSSPI(SSPILibrary* library,
                            const std::string& scheme,
                            const SEC_WCHAR* security_package,
@@ -360,11 +414,11 @@ int HttpAuthSSPI::GetNextSecurityToken(
 
   // This returns a token that is passed to the remote server.
   DWORD context_attribute;
-  std::wstring spn_wide = base::ASCIIToWide(spn);
+  base::string16 spn16 = base::ASCIIToUTF16(spn);
   SECURITY_STATUS status = library_->InitializeSecurityContext(
       &cred_,  // phCredential
       ctxt_ptr,  // phContext
-      const_cast<wchar_t *>(spn_wide.c_str()),  // pszTargetName
+      const_cast<base::char16*>(spn16.c_str()),  // pszTargetName
       context_flags,  // fContextReq
       0,  // Reserved1 (must be 0)
       SECURITY_NATIVE_DREP,  // TargetDataRep

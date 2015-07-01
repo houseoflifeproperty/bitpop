@@ -37,6 +37,7 @@
 
 #if MAC_OS_X_VERSION_MIN_REQUIRED > MAC_OS_X_VERSION_10_4
 
+#include <CoreServices/CoreServices.h>
 #include <paths.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -52,6 +53,18 @@ typedef struct {
   launch_data_t dict;
   CFErrorRef *error;
 } GTMCFToLDictContext;
+
+static bool IsOsYosemiteOrGreater() {
+  SInt32 version_major;
+  SInt32 version_minor;
+  require_noerr(Gestalt(gestaltSystemVersionMajor, &version_major),
+      failedGestalt);
+  require_noerr(Gestalt(gestaltSystemVersionMinor, &version_minor),
+      failedGestalt);
+  return version_major > 10 || (version_major == 10 && version_minor >= 10);
+  failedGestalt:
+    return false;
+}
 
 static CFErrorRef GTMCFLaunchCreateUnlocalizedError(CFIndex code,
                                                     CFStringRef format, ...) CF_FORMAT_FUNCTION(2, 3);
@@ -193,8 +206,8 @@ launch_data_t GTMLaunchDataCreateFromCFType(CFTypeRef cf_type_ref,
       free(buffer);
     } else {
       local_error = GTMCFLaunchCreateUnlocalizedError(ENOMEM,
-                                                      CFSTR("calloc of %zu failed"),
-                                                      buffer_size);
+                                                      CFSTR("calloc of %lu failed"),
+                                                      (unsigned long)buffer_size);
     }
   } else if (cf_type == CFBooleanGetTypeID()) {
     result = launch_data_alloc(LAUNCH_DATA_BOOL);
@@ -278,7 +291,7 @@ launch_data_t GTMLaunchDataCreateFromCFType(CFTypeRef cf_type_ref,
     local_error
       = GTMCFLaunchCreateUnlocalizedError(EINVAL,
                                           CFSTR("Unknown CFTypeID %lu"),
-                                          cf_type);
+                                          (unsigned long)cf_type);
   }
 
 exit:
@@ -649,6 +662,14 @@ Boolean GTMSMJobRemove(CFStringRef jobLabel, CFErrorRef *error) {
     switch (resp_type) {
       case LAUNCH_DATA_ERRNO: {
         int e = launch_data_get_errno(resp);
+
+        // In OSX 10.10+, launch_msg(LAUNCH_KEY_REMOVEJOB, ...) returns the
+        // error EINPROGRESS if the job was running at the time it was removed.
+        // This should be considered a success as it was on earlier OS versions.
+        if (e == EINPROGRESS && IsOsYosemiteOrGreater()) {
+          break;
+        }
+
         if (e) {
           local_error = GTMCFLaunchCreateUnlocalizedError(e, CFSTR(""));
         }

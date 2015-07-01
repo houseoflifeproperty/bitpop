@@ -11,7 +11,7 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 #ifdef __OBJC__
 @class WebMenuRunner;
@@ -50,9 +50,9 @@ class PopupMenuHelper : public NotificationObserver {
   virtual RenderWidgetHostViewMac* GetRenderWidgetHostView() const;
 
   // NotificationObserver implementation:
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const NotificationSource& source,
+               const NotificationDetails& details) override;
 
   NotificationRegistrar notification_registrar_;
   RenderFrameHostImpl* render_frame_host_;

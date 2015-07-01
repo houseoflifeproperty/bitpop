@@ -254,12 +254,10 @@ Error HttpFs::FindOrCreateDir(const Path& path, ScopedNode* out_node) {
   }
 
   // If the node does not exist, create it.
-  node.reset(new DirNode(this));
+  node.reset(new DirNode(this, S_IRALL | S_IXALL));
   Error error = node->Init(0);
   if (error)
     return error;
-  // Directorys in http filesystems are never writable.
-  node->SetMode(node->GetMode() & ~S_IWALL);
 
   // If not the root node, find the parent node and add it to the parent
   if (!path.IsRoot()) {
@@ -407,8 +405,7 @@ Error HttpFs::LoadManifest(const std::string& manifest_name,
 }
 
 std::string HttpFs::MakeUrl(const Path& path) {
-  return url_root_ +
-         (path.IsAbsolute() ? path.Range(1, path.Size()) : path.Join());
+  return url_root_ + Path(path).MakeRelative().Join();
 }
 
 }  // namespace nacl_io

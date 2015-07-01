@@ -15,8 +15,7 @@ var MAX_AUDIO_OUTPUT_ENERGY = 32768;
 function ensureAudioPlaying(peerConnection, beLenient) {
   addExpectedEvent();
 
-  // Gather 50 samples per second for 2 seconds.
-  gatherAudioLevelSamples(peerConnection, 100, 50, function(samples) {
+  gatherAudioLevelSamples(peerConnection, 3 * 1000, function(samples) {
     identifyFakeDeviceSignal_(samples, beLenient);
     eventOccured();
   });
@@ -27,38 +26,59 @@ function ensureAudioPlaying(peerConnection, beLenient) {
 function ensureSilence(peerConnection) {
   addExpectedEvent();
   setTimeout(function() {
-    gatherAudioLevelSamples(peerConnection, 100, 50, function(samples) {
+    gatherAudioLevelSamples(peerConnection, 1 * 1000, function(samples) {
       identifySilence_(samples);
       eventOccured();
     });
   }, 500);
 }
 
-// Gathers |numSamples| samples at |frequency| number of times per second and
-// calls back |callback| with an array with numbers in the [0, 32768] range.
-function gatherAudioLevelSamples(peerConnection, numSamples, frequency,
-                                 callback) {
-  console.log('Gathering ' + numSamples + ' audio samples...');
+// Not sure if this is a bug, but sometimes we get several audio ssrc's where
+// just reports audio level zero. Think of the nonzero level as the more
+// credible one here. http://crbug.com/479147.
+function workAroundSeveralReportsIssue(audioOutputLevels) {
+  if (audioOutputLevels.length == 1) {
+    return audioOutputLevels[0];
+  }
+
+  console.log("Hit issue where one report batch returns two or more reports " +
+              "with audioReportLevel; got " + audioOutputLevels);
+
+  return Math.max(audioOutputLevels[0], audioOutputLevels[1]);
+}
+
+// Gathers samples from WebRTC stats as fast as possible for |durationMs|
+// milliseconds and calls back |callback| with an array with numbers in the
+// [0, 32768] range. There are no guarantees for how often we will be able to
+// collect values, but this function deliberately avoids setTimeout calls in
+// order be as insensitive as possible to starvation (particularly when this
+// code runs in parallel with other tests on a heavily loaded bot).
+function gatherAudioLevelSamples(peerConnection, durationMs, callback) {
+  console.log('Gathering audio samples for ' + durationMs + ' milliseconds...');
   var audioLevelSamples = []
-  var gatherSamples = setInterval(function() {
-    peerConnection.getStats(function(response) {
-      audioOutputLevels = getAudioLevelFromStats_(response);
-      if (audioOutputLevels.length == 0) {
-        // The call probably isn't up yet.
-        return;
-      }
 
-      // If more than one audio level is reported we get confused.
-      assertEquals(1, audioOutputLevels.length);
-      audioLevelSamples.push(audioOutputLevels[0]);
+  // If this times out and never found any audio output levels, the call
+  // probably doesn't have an audio stream.
+  var startTime = new Date();
+  var gotStats = function(response) {
+    audioOutputLevels = getAudioLevelFromStats_(response);
+    if (audioOutputLevels.length == 0) {
+      // The call probably isn't up yet.
+      peerConnection.getStats(gotStats);
+      return;
+    }
+    var outputLevel = workAroundSeveralReportsIssue(audioOutputLevels);
+    audioLevelSamples.push(outputLevel);
 
-      if (audioLevelSamples.length == numSamples) {
-        console.log('Gathered all samples.');
-        clearInterval(gatherSamples);
-        callback(audioLevelSamples);
-      }
-    });
-  }, 1000 / frequency);
+    var elapsed = new Date() - startTime;
+    if (elapsed > durationMs) {
+      console.log('Gathered all samples.');
+      callback(audioLevelSamples);
+      return;
+    }
+    peerConnection.getStats(gotStats);
+  }
+  peerConnection.getStats(gotStats);
 }
 
 /**
@@ -81,7 +101,7 @@ function identifyFakeDeviceSignal_(samples, beLenient) {
   var currentlyOverThreshold = false;
 
   // Detect when we have been been over the threshold and is going back again
-  // (i.e. count peaks). We should see about one peak per second.
+  // (i.e. count peaks). We should see about two peaks per second.
   for (var i = 0; i < samples.length; ++i) {
     if (currentlyOverThreshold && samples[i] < threshold)
       numPeaks++;

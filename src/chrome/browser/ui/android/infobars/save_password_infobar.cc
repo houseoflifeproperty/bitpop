@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,71 +6,40 @@
 
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
-#include "base/logging.h"
-#include "chrome/browser/android/resource_mapper.h"
-#include "jni/SavePasswordInfoBarDelegate_jni.h"
-
-// SavePasswordInfoBarDelegate-------------------------------------------------
-
-// static
-scoped_ptr<infobars::InfoBar> SavePasswordInfoBarDelegate::CreateInfoBar(
-    scoped_ptr<SavePasswordInfoBarDelegate> delegate) {
-  return scoped_ptr<infobars::InfoBar>(
-      new SavePasswordInfoBar(delegate.Pass()));
-}
-
-// SavePasswordInfoBar --------------------------------------------------------
+#include "jni/SavePasswordInfoBar_jni.h"
 
 SavePasswordInfoBar::SavePasswordInfoBar(
     scoped_ptr<SavePasswordInfoBarDelegate> delegate)
-    : ConfirmInfoBar(delegate.PassAs<ConfirmInfoBarDelegate>()),
-      java_save_password_delegate_() {
+    : ConfirmInfoBar(delegate.Pass()) {
 }
 
 SavePasswordInfoBar::~SavePasswordInfoBar() {
 }
 
-void SavePasswordInfoBar::SetUseAdditionalAuthentication(
-    JNIEnv* env,
-    jobject obj,
-    bool use_additional_authentication) {
-  GetDelegate()->SetUseAdditionalPasswordAuthentication(
-      use_additional_authentication);
-}
-
 base::android::ScopedJavaLocalRef<jobject>
-    SavePasswordInfoBar::CreateRenderInfoBar(JNIEnv* env) {
-  java_save_password_delegate_.Reset(
-      Java_SavePasswordInfoBarDelegate_create(env));
-  base::android::ScopedJavaLocalRef<jstring> ok_button_text =
-      base::android::ConvertUTF16ToJavaString(
-          env, GetTextFor(ConfirmInfoBarDelegate::BUTTON_OK));
-  base::android::ScopedJavaLocalRef<jstring> cancel_button_text =
-      base::android::ConvertUTF16ToJavaString(
-          env, GetTextFor(ConfirmInfoBarDelegate::BUTTON_CANCEL));
-  SavePasswordInfoBarDelegate* delegate = GetDelegate();
-  base::android::ScopedJavaLocalRef<jstring> message_text =
-      base::android::ConvertUTF16ToJavaString(
-          env, reinterpret_cast<ConfirmInfoBarDelegate*>(
-              delegate)->GetMessageText());
+SavePasswordInfoBar::CreateRenderInfoBar(JNIEnv* env) {
+  using base::android::ConvertUTF16ToJavaString;
+  using base::android::ScopedJavaLocalRef;
+  SavePasswordInfoBarDelegate* save_password_delegate =
+      static_cast<SavePasswordInfoBarDelegate*>(delegate());
+  ScopedJavaLocalRef<jstring> ok_button_text = ConvertUTF16ToJavaString(
+      env, GetTextFor(ConfirmInfoBarDelegate::BUTTON_OK));
+  ScopedJavaLocalRef<jstring> cancel_button_text = ConvertUTF16ToJavaString(
+      env, GetTextFor(ConfirmInfoBarDelegate::BUTTON_CANCEL));
+  ScopedJavaLocalRef<jstring> message_text = ConvertUTF16ToJavaString(
+      env, save_password_delegate->GetMessageText());
 
-  return Java_SavePasswordInfoBarDelegate_showSavePasswordInfoBar(
-      env,
-      java_save_password_delegate_.obj(),
-      reinterpret_cast<intptr_t>(this),
-      GetEnumeratedIconId(),
-      message_text.obj(),
-      ok_button_text.obj(),
-      cancel_button_text.obj());
+  return Java_SavePasswordInfoBar_show(
+      env, GetEnumeratedIconId(), message_text.obj(),
+      save_password_delegate->title_link_range().start(),
+      save_password_delegate->title_link_range().end(), ok_button_text.obj(),
+      cancel_button_text.obj(), save_password_delegate->ShouldShowMoreButton());
 }
 
-SavePasswordInfoBarDelegate* SavePasswordInfoBar::GetDelegate() {
-  return static_cast<SavePasswordInfoBarDelegate*>(delegate());
+void SavePasswordInfoBar::OnLinkClicked(JNIEnv* env, jobject obj) {
+  GetDelegate()->LinkClicked(NEW_FOREGROUND_TAB);
 }
 
-
-// Native JNI methods ---------------------------------------------------------
-
-bool RegisterSavePasswordInfoBar(JNIEnv* env) {
+bool SavePasswordInfoBar::Register(JNIEnv* env) {
   return RegisterNativesImpl(env);
 }

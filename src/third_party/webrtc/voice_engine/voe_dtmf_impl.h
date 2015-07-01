@@ -14,46 +14,38 @@
 #include "webrtc/voice_engine/include/voe_dtmf.h"
 #include "webrtc/voice_engine/shared_data.h"
 
-namespace webrtc
-{
+namespace webrtc {
 
-class VoEDtmfImpl : public VoEDtmf
-{
-public:
-    virtual int SendTelephoneEvent(
-        int channel,
-        int eventCode,
-        bool outOfBand = true,
-        int lengthMs = 160,
-        int attenuationDb = 10);
+class VoEDtmfImpl : public VoEDtmf {
+ public:
+  int SendTelephoneEvent(int channel,
+                         int eventCode,
+                         bool outOfBand = true,
+                         int lengthMs = 160,
+                         int attenuationDb = 10) override;
 
-    virtual int SetSendTelephoneEventPayloadType(int channel,
-                                                 unsigned char type);
+  int SetSendTelephoneEventPayloadType(int channel,
+                                       unsigned char type) override;
 
-    virtual int GetSendTelephoneEventPayloadType(int channel,
-                                                 unsigned char& type);
+  int GetSendTelephoneEventPayloadType(int channel,
+                                       unsigned char& type) override;
 
-    virtual int SetDtmfFeedbackStatus(bool enable,
-        bool directFeedback = false);
+  int SetDtmfFeedbackStatus(bool enable, bool directFeedback = false) override;
 
-    virtual int GetDtmfFeedbackStatus(bool& enabled, bool& directFeedback);
+  int GetDtmfFeedbackStatus(bool& enabled, bool& directFeedback) override;
 
-    virtual int PlayDtmfTone(int eventCode,
-                             int lengthMs = 200,
-                             int attenuationDb = 10);
+  int PlayDtmfTone(int eventCode,
+                   int lengthMs = 200,
+                   int attenuationDb = 10) override;
 
-    virtual int SetDtmfPlayoutStatus(int channel, bool enable);
+ protected:
+  VoEDtmfImpl(voe::SharedData* shared);
+  ~VoEDtmfImpl() override;
 
-    virtual int GetDtmfPlayoutStatus(int channel, bool& enabled);
-
-protected:
-    VoEDtmfImpl(voe::SharedData* shared);
-    virtual ~VoEDtmfImpl();
-
-private:
-    bool _dtmfFeedback;
-    bool _dtmfDirectFeedback;
-    voe::SharedData* _shared;
+ private:
+  bool _dtmfFeedback;
+  bool _dtmfDirectFeedback;
+  voe::SharedData* _shared;
 };
 
 }  // namespace webrtc

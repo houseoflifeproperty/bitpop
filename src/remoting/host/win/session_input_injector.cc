@@ -43,6 +43,7 @@ using protocol::ClipboardEvent;
 using protocol::KeyEvent;
 using protocol::MouseEvent;
 using protocol::TextEvent;
+using protocol::TouchEvent;
 
 class SessionInputInjectorWin::Core
     : public base::RefCountedThreadSafe<SessionInputInjectorWin::Core>,
@@ -55,21 +56,20 @@ class SessionInputInjectorWin::Core
       const base::Closure& inject_sas);
 
   // InputInjector implementation.
-  virtual void Start(
-      scoped_ptr<protocol::ClipboardStub> client_clipboard) OVERRIDE;
+  void Start(scoped_ptr<ClipboardStub> client_clipboard) override;
 
   // protocol::ClipboardStub implementation.
-  virtual void InjectClipboardEvent(
-      const protocol::ClipboardEvent& event) OVERRIDE;
+  void InjectClipboardEvent(const ClipboardEvent& event) override;
 
   // protocol::InputStub implementation.
-  virtual void InjectKeyEvent(const protocol::KeyEvent& event) OVERRIDE;
-  virtual void InjectTextEvent(const protocol::TextEvent& event) OVERRIDE;
-  virtual void InjectMouseEvent(const protocol::MouseEvent& event) OVERRIDE;
+  void InjectKeyEvent(const KeyEvent& event) override;
+  void InjectTextEvent(const TextEvent& event) override;
+  void InjectMouseEvent(const MouseEvent& event) override;
+  void InjectTouchEvent(const TouchEvent& event) override;
 
  private:
   friend class base::RefCountedThreadSafe<Core>;
-  virtual ~Core();
+  ~Core() override;
 
   // Switches to the desktop receiving a user input if different from
   // the current one.
@@ -189,6 +189,17 @@ void SessionInputInjectorWin::Core::InjectMouseEvent(const MouseEvent& event) {
   nested_executor_->InjectMouseEvent(event);
 }
 
+void SessionInputInjectorWin::Core::InjectTouchEvent(const TouchEvent& event) {
+  if (!input_task_runner_->BelongsToCurrentThread()) {
+    input_task_runner_->PostTask(
+        FROM_HERE, base::Bind(&Core::InjectTouchEvent, this, event));
+    return;
+  }
+
+  SwitchToInputDesktop();
+  nested_executor_->InjectTouchEvent(event);
+}
+
 SessionInputInjectorWin::Core::~Core() {
 }
 
@@ -197,7 +208,7 @@ void SessionInputInjectorWin::Core::SwitchToInputDesktop() {
   // one.
   scoped_ptr<webrtc::Desktop> input_desktop(
       webrtc::Desktop::GetInputDesktop());
-  if (input_desktop.get() != NULL && !desktop_.IsSame(*input_desktop)) {
+  if (input_desktop.get() != nullptr && !desktop_.IsSame(*input_desktop)) {
     // If SetThreadDesktop() fails, the thread is still assigned a desktop.
     // So we can continue capture screen bits, just from a diffected desktop.
     desktop_.SetThreadDesktop(input_desktop.release());
@@ -238,6 +249,11 @@ void SessionInputInjectorWin::InjectTextEvent(
 void SessionInputInjectorWin::InjectMouseEvent(
     const protocol::MouseEvent& event) {
   core_->InjectMouseEvent(event);
+}
+
+void SessionInputInjectorWin::InjectTouchEvent(
+    const protocol::TouchEvent& event) {
+  core_->InjectTouchEvent(event);
 }
 
 }  // namespace remoting

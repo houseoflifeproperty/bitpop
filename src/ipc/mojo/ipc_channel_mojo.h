@@ -10,27 +10,17 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
+#include "base/synchronization/lock.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_channel_factory.h"
 #include "ipc/ipc_export.h"
 #include "ipc/mojo/ipc_message_pipe_reader.h"
 #include "ipc/mojo/ipc_mojo_bootstrap.h"
-#include "mojo/public/cpp/system/core.h"
-
-namespace mojo {
-namespace embedder {
-struct ChannelInfo;
-}
-}
+#include "ipc/mojo/scoped_ipc_support.h"
+#include "third_party/mojo/src/mojo/edk/embedder/channel_info_forward.h"
+#include "third_party/mojo/src/mojo/public/cpp/system/core.h"
 
 namespace IPC {
-
-namespace internal {
-class ControlReader;
-class ServerControlReader;
-class ClientControlReader;
-class MessageReader;
-}
 
 // Mojo-based IPC::Channel implementation over a platform handle.
 //
@@ -56,81 +46,106 @@ class MessageReader;
 // TODO(morrita): Add APIs to create extra MessagePipes to let
 //                Mojo-based objects talk over this Channel.
 //
-class IPC_MOJO_EXPORT ChannelMojo : public Channel,
-                                    public MojoBootstrap::Delegate {
+class IPC_MOJO_EXPORT ChannelMojo
+    : public Channel,
+      public MojoBootstrap::Delegate,
+      public NON_EXPORTED_BASE(internal::MessagePipeReader::Delegate) {
  public:
+  using CreateMessagingPipeCallback =
+      base::Callback<void(mojo::ScopedMessagePipeHandle)>;
+  using CreateMessagingPipeOnIOThreadCallback =
+      base::Callback<void(mojo::ScopedMessagePipeHandle,
+                          mojo::embedder::ChannelInfo*)>;
+
   class Delegate {
    public:
     virtual ~Delegate() {}
     virtual base::WeakPtr<Delegate> ToWeakPtr() = 0;
-    virtual scoped_refptr<base::TaskRunner> GetIOTaskRunner() = 0;
     virtual void OnChannelCreated(base::WeakPtr<ChannelMojo> channel) = 0;
   };
 
+  // True if ChannelMojo should be used regardless of the flag.
+  static bool ShouldBeUsed();
+
   // Create ChannelMojo. A bootstrap channel is created as well.
   // |host| must not be null for server channels.
-  static scoped_ptr<ChannelMojo> Create(Delegate* delegate,
-                                        const ChannelHandle& channel_handle,
-                                        Mode mode,
-                                        Listener* listener);
+  static scoped_ptr<ChannelMojo> Create(
+      Delegate* delegate,
+      scoped_refptr<base::TaskRunner> io_runner,
+      const ChannelHandle& channel_handle,
+      Mode mode,
+      Listener* listener);
 
   // Create a factory object for ChannelMojo.
   // The factory is used to create Mojo-based ChannelProxy family.
   // |host| must not be null.
   static scoped_ptr<ChannelFactory> CreateServerFactory(
       Delegate* delegate,
+      scoped_refptr<base::TaskRunner> io_runner,
       const ChannelHandle& channel_handle);
 
   static scoped_ptr<ChannelFactory> CreateClientFactory(
+      Delegate* delegate,
+      scoped_refptr<base::TaskRunner> io_runner,
       const ChannelHandle& channel_handle);
 
-  virtual ~ChannelMojo();
+  ~ChannelMojo() override;
 
   // ChannelMojoHost tells the client handle using this API.
   void OnClientLaunched(base::ProcessHandle handle);
 
   // Channel implementation
-  virtual bool Connect() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual bool Send(Message* message) OVERRIDE;
-  virtual base::ProcessId GetPeerPID() const OVERRIDE;
-  virtual base::ProcessId GetSelfPID() const OVERRIDE;
+  bool Connect() override;
+  void Close() override;
+  bool Send(Message* message) override;
+  bool IsSendThreadSafe() const override;
+  base::ProcessId GetPeerPID() const override;
+  base::ProcessId GetSelfPID() const override;
 
 #if defined(OS_POSIX) && !defined(OS_NACL)
-  virtual int GetClientFileDescriptor() const OVERRIDE;
-  virtual int TakeClientFileDescriptor() OVERRIDE;
+  int GetClientFileDescriptor() const override;
+  base::ScopedFD TakeClientFileDescriptor() override;
+#endif  // defined(OS_POSIX) && !defined(OS_NACL)
 
   // These access protected API of IPC::Message, which has ChannelMojo
   // as a friend class.
-  static MojoResult WriteToFileDescriptorSet(
+  static MojoResult WriteToMessageAttachmentSet(
       const std::vector<MojoHandle>& handle_buffer,
       Message* message);
-  static MojoResult ReadFromFileDescriptorSet(Message* message,
-                                              std::vector<MojoHandle>* handles);
-
-#endif  // defined(OS_POSIX) && !defined(OS_NACL)
+  static MojoResult ReadFromMessageAttachmentSet(
+      Message* message,
+      std::vector<MojoHandle>* handles);
 
   // MojoBootstrapDelegate implementation
-  virtual void OnPipeAvailable(
-      mojo::embedder::ScopedPlatformHandle handle) OVERRIDE;
-  virtual void OnBootstrapError() OVERRIDE;
+  void OnBootstrapError() override;
 
-  // Called from MessagePipeReader implementations
-  void OnMessageReceived(Message& message);
-  void OnConnected(mojo::ScopedMessagePipeHandle pipe);
-  void OnPipeClosed(internal::MessagePipeReader* reader);
-  void OnPipeError(internal::MessagePipeReader* reader);
-  void set_peer_pid(base::ProcessId pid) { peer_pid_ = pid; }
+  // MessagePipeReader::Delegate
+  void OnMessageReceived(Message& message) override;
+  void OnPipeClosed(internal::MessagePipeReader* reader) override;
+  void OnPipeError(internal::MessagePipeReader* reader) override;
 
  protected:
   ChannelMojo(Delegate* delegate,
+              scoped_refptr<base::TaskRunner> io_runner,
               const ChannelHandle& channel_handle,
               Mode mode,
               Listener* listener);
 
+  void CreateMessagingPipe(mojo::embedder::ScopedPlatformHandle handle,
+                           const CreateMessagingPipeCallback& callback);
+  void InitMessageReader(mojo::ScopedMessagePipeHandle pipe, int32_t peer_pid);
+
+  Listener* listener() const { return listener_; }
+  void set_peer_pid(base::ProcessId pid) { peer_pid_ = pid; }
+
  private:
   struct ChannelInfoDeleter {
+    explicit ChannelInfoDeleter(scoped_refptr<base::TaskRunner> io_runner);
+    ~ChannelInfoDeleter();
+
     void operator()(mojo::embedder::ChannelInfo* ptr) const;
+
+    scoped_refptr<base::TaskRunner> io_runner;
   };
 
   // ChannelMojo needs to kill its MessagePipeReader in delayed manner
@@ -138,20 +153,35 @@ class IPC_MOJO_EXPORT ChannelMojo : public Channel,
   // notifications invoked by them.
   typedef internal::MessagePipeReader::DelayedDeleter ReaderDeleter;
 
-  void InitDelegate(ChannelMojo::Delegate* delegate);
-  void InitControlReader(mojo::embedder::ScopedPlatformHandle handle);
+  void InitOnIOThread(ChannelMojo::Delegate* delegate);
+
+  static void CreateMessagingPipeOnIOThread(
+      mojo::embedder::ScopedPlatformHandle handle,
+      scoped_refptr<base::TaskRunner> callback_runner,
+      const CreateMessagingPipeOnIOThreadCallback& callback);
+  void OnMessagingPipeCreated(const CreateMessagingPipeCallback& callback,
+                              mojo::ScopedMessagePipeHandle handle,
+                              mojo::embedder::ChannelInfo* channel_info);
 
   scoped_ptr<MojoBootstrap> bootstrap_;
   base::WeakPtr<Delegate> delegate_;
   Mode mode_;
   Listener* listener_;
   base::ProcessId peer_pid_;
+  scoped_refptr<base::TaskRunner> io_runner_;
   scoped_ptr<mojo::embedder::ChannelInfo,
              ChannelInfoDeleter> channel_info_;
 
-  scoped_ptr<internal::ControlReader, ReaderDeleter> control_reader_;
-  scoped_ptr<internal::MessageReader, ReaderDeleter> message_reader_;
+  // Guards |message_reader_| and |pending_messages_|
+  //
+  // * The contents of |pending_messages_| can be modified from any thread.
+  // * |message_reader_| is modified only from the IO thread,
+  //   but they can be referenced from other threads.
+  base::Lock lock_;
+  scoped_ptr<internal::MessagePipeReader, ReaderDeleter> message_reader_;
   ScopedVector<Message> pending_messages_;
+
+  scoped_ptr<ScopedIPCSupport> ipc_support_;
 
   base::WeakPtrFactory<ChannelMojo> weak_factory_;
 

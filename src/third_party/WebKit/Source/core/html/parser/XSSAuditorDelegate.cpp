@@ -74,7 +74,7 @@ XSSAuditorDelegate::XSSAuditorDelegate(Document* document)
     ASSERT(m_document);
 }
 
-void XSSAuditorDelegate::trace(Visitor* visitor)
+DEFINE_TRACE(XSSAuditorDelegate)
 {
     visitor->trace(m_document);
 }
@@ -122,7 +122,7 @@ void XSSAuditorDelegate::didBlockScript(const XSSInfo& xssInfo)
     }
 
     if (xssInfo.m_didBlockEntirePage)
-        m_document->frame()->navigationScheduler().schedulePageBlock(m_document, Referrer());
+        m_document->frame()->navigationScheduler().schedulePageBlock(m_document);
 }
 
 } // namespace blink

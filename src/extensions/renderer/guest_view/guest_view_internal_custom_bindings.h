@@ -19,7 +19,7 @@ class GuestViewInternalCustomBindings : public ObjectBackedNativeHandler {
   // AttachGuest attaches a GuestView to a provided container element. Once
   // attached, the GuestView will participate in layout of the container page
   // and become visible on screen.
-  // AttachGuest takes three parameters:
+  // AttachGuest takes four parameters:
   // |element_instance_id| uniquely identifies a container within the content
   // module is able to host GuestViews.
   // |guest_instance_id| uniquely identifies an unattached GuestView.
@@ -27,7 +27,44 @@ class GuestViewInternalCustomBindings : public ObjectBackedNativeHandler {
   // container element at the time of attachment. These parameters are passed
   // down to the GuestView. The GuestView may use these parameters to update the
   // state of the guest hosted in another process.
+  // |callback| is an optional callback that is called once attachment is
+  // complete. The callback takes in a parameter for the WindowProxy of the
+  // guest identified by |guest_instance_id|.
   void AttachGuest(const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  // DetachGuest detaches the container container specified from the associated
+  // GuestViewBase. DetachGuest takes two parameters:
+  // |element_instance_id| uniquely identifies a container within the content
+  // module is able to host GuestViews.
+  // |callback| is an optional callback that is called once the container has
+  // been detached.
+  void DetachGuest(const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  // GetContentWindow takes in a RenderView routing ID and returns the
+  // Window JavaScript object for that RenderView.
+  void GetContentWindow(const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  // RegisterDestructionCallback registers a JavaScript callback function to be
+  // called when the guestview's container is destroyed.
+  // RegisterDestructionCallback takes in a single paramater, |callback|.
+  void RegisterDestructionCallback(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  // RegisterElementResizeCallback registers a JavaScript callback function to
+  // be called when the element is resized. RegisterElementResizeCallback takes
+  // a single parameter, |callback|.
+  void RegisterElementResizeCallback(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  // Runs a JavaScript function with user gesture.
+  //
+  // This is used to request webview element to enter fullscreen (from the
+  // embedder).
+  // Note that the guest requesting fullscreen means it has already been
+  // triggered by a user gesture and we get to this point if embedder allows
+  // the fullscreen request to proceed.
+  void RunWithGesture(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 };
 
 }  // namespace extensions

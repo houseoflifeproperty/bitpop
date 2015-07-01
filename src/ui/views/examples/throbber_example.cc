@@ -13,28 +13,22 @@ namespace examples {
 
 namespace {
 
-// Time in ms per throbber frame.
-const int kThrobberFrameMs = 60;
-
 class ThrobberView : public View {
  public:
-  ThrobberView() {
-    throbber_ = new Throbber(kThrobberFrameMs, false);
+  ThrobberView() : throbber_(new Throbber()) {
     AddChildView(throbber_);
-    throbber_->SetVisible(true);
     throbber_->Start();
   }
 
-  virtual gfx::Size GetPreferredSize() const OVERRIDE {
+  gfx::Size GetPreferredSize() const override {
     return gfx::Size(width(), height());
   }
 
-  virtual void Layout() OVERRIDE {
-    View* child = child_at(0);
-    gfx::Size ps = child->GetPreferredSize();
-    child->SetBounds((width() - ps.width()) / 2,
-                     (height() - ps.height()) / 2,
-                     ps.width(), ps.height());
+  void Layout() override {
+    int diameter = 64;
+    throbber_->SetBounds((width() - diameter) / 2,
+                         (height() - diameter) / 2,
+                         diameter, diameter);
     SizeToPreferredSize();
   }
 

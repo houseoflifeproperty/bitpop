@@ -457,7 +457,7 @@
                        void (T::*func)(P*, TA)) {                             \
     Schema::Param p;                                                          \
     if (Read(msg, &p)) {                                                      \
-      (obj->*func)(parameter, p.a);                                           \
+      (obj->*func)(parameter, get<0>(p));                                     \
       return true;                                                            \
     }                                                                         \
     return false;                                                             \
@@ -469,7 +469,7 @@
                        void (T::*func)(P*, TA, TB)) {                         \
     Schema::Param p;                                                          \
     if (Read(msg, &p)) {                                                      \
-      (obj->*func)(parameter, p.a, p.b);                                      \
+      (obj->*func)(parameter, get<0>(p), get<1>(p));                          \
       return true;                                                            \
     }                                                                         \
     return false;                                                             \
@@ -481,7 +481,7 @@
                        void (T::*func)(P*, TA, TB, TC)) {                     \
     Schema::Param p;                                                          \
     if (Read(msg, &p)) {                                                      \
-      (obj->*func)(parameter, p.a, p.b, p.c);                                 \
+      (obj->*func)(parameter, get<0>(p), get<1>(p), get<2>(p));               \
       return true;                                                            \
     }                                                                         \
     return false;                                                             \
@@ -494,7 +494,7 @@
                        void (T::*func)(P*, TA, TB, TC, TD)) {                 \
     Schema::Param p;                                                          \
     if (Read(msg, &p)) {                                                      \
-      (obj->*func)(parameter, p.a, p.b, p.c, p.d);                            \
+      (obj->*func)(parameter, get<0>(p), get<1>(p), get<2>(p), get<3>(p));    \
       return true;                                                            \
     }                                                                         \
     return false;                                                             \
@@ -507,7 +507,8 @@
                        void (T::*func)(P*, TA, TB, TC, TD, TE)) {             \
     Schema::Param p;                                                          \
     if (Read(msg, &p)) {                                                      \
-      (obj->*func)(parameter, p.a, p.b, p.c, p.d, p.e);                       \
+      (obj->*func)(parameter, get<0>(p), get<1>(p), get<2>(p), get<3>(p),     \
+                   get<4>(p));                                                \
       return true;                                                            \
     }                                                                         \
     return false;                                                             \
@@ -600,7 +601,7 @@
     typedef Schema::Param Param;                                              \
     enum { ID = IPC_MESSAGE_ID() };                                           \
     msg_class(IPC_TYPE_IN_##in_cnt in_list);                                  \
-    virtual ~msg_class();                                                     \
+    ~msg_class() override;                                                    \
     static bool Read(const Message* msg, Schema::Param* p);                   \
     static void Log(std::string* name, const Message* msg, std::string* l);   \
     IPC_ASYNC_MESSAGE_METHODS_##in_cnt                                        \
@@ -614,7 +615,7 @@
     enum { ID = IPC_MESSAGE_ID() };                                           \
     msg_class(int32 routing_id IPC_COMMA_##in_cnt                             \
               IPC_TYPE_IN_##in_cnt in_list);                                  \
-    virtual ~msg_class();                                                     \
+    ~msg_class() override;                                                    \
     static bool Read(const Message* msg, Schema::Param* p);                   \
     static void Log(std::string* name, const Message* msg, std::string* l);   \
     IPC_ASYNC_MESSAGE_METHODS_##in_cnt                                        \
@@ -631,7 +632,7 @@
     msg_class(IPC_TYPE_IN_##in_cnt in_list                                    \
               IPC_COMMA_AND_##in_cnt(IPC_COMMA_##out_cnt)                     \
               IPC_TYPE_OUT_##out_cnt out_list);                               \
-    virtual ~msg_class();                                                     \
+    ~msg_class() override;                                                    \
     static bool ReadSendParam(const Message* msg, Schema::SendParam* p);      \
     static bool ReadReplyParam(                                               \
         const Message* msg,                                                   \
@@ -653,7 +654,7 @@
               IPC_TYPE_IN_##in_cnt in_list                                    \
               IPC_COMMA_AND_##in_cnt(IPC_COMMA_##out_cnt)                     \
               IPC_TYPE_OUT_##out_cnt out_list);                               \
-    virtual ~msg_class();                                                     \
+    ~msg_class() override;                                                    \
     static bool ReadSendParam(const Message* msg, Schema::SendParam* p);      \
     static bool ReadReplyParam(                                               \
         const Message* msg,                                                   \
@@ -817,18 +818,18 @@
 #define IPC_TYPE_OUT_3(t1, t2, t3)          t1* arg6, t2* arg7, t3* arg8
 #define IPC_TYPE_OUT_4(t1, t2, t3, t4)      t1* arg6, t2* arg7, t3* arg8, t4* arg9
 
-#define IPC_TUPLE_IN_0()                    Tuple0
-#define IPC_TUPLE_IN_1(t1)                  Tuple1<t1>
-#define IPC_TUPLE_IN_2(t1, t2)              Tuple2<t1, t2>
-#define IPC_TUPLE_IN_3(t1, t2, t3)          Tuple3<t1, t2, t3>
-#define IPC_TUPLE_IN_4(t1, t2, t3, t4)      Tuple4<t1, t2, t3, t4>
-#define IPC_TUPLE_IN_5(t1, t2, t3, t4, t5)  Tuple5<t1, t2, t3, t4, t5>
+#define IPC_TUPLE_IN_0()                    Tuple<>
+#define IPC_TUPLE_IN_1(t1)                  Tuple<t1>
+#define IPC_TUPLE_IN_2(t1, t2)              Tuple<t1, t2>
+#define IPC_TUPLE_IN_3(t1, t2, t3)          Tuple<t1, t2, t3>
+#define IPC_TUPLE_IN_4(t1, t2, t3, t4)      Tuple<t1, t2, t3, t4>
+#define IPC_TUPLE_IN_5(t1, t2, t3, t4, t5)  Tuple<t1, t2, t3, t4, t5>
 
-#define IPC_TUPLE_OUT_0()                   Tuple0
-#define IPC_TUPLE_OUT_1(t1)                 Tuple1<t1&>
-#define IPC_TUPLE_OUT_2(t1, t2)             Tuple2<t1&, t2&>
-#define IPC_TUPLE_OUT_3(t1, t2, t3)         Tuple3<t1&, t2&, t3&>
-#define IPC_TUPLE_OUT_4(t1, t2, t3, t4)     Tuple4<t1&, t2&, t3&, t4&>
+#define IPC_TUPLE_OUT_0()                   Tuple<>
+#define IPC_TUPLE_OUT_1(t1)                 Tuple<t1&>
+#define IPC_TUPLE_OUT_2(t1, t2)             Tuple<t1&, t2&>
+#define IPC_TUPLE_OUT_3(t1, t2, t3)         Tuple<t1&, t2&, t3&>
+#define IPC_TUPLE_OUT_4(t1, t2, t3, t4)     Tuple<t1&, t2&, t3&, t4&>
 
 #define IPC_NAME_IN_0()                     MakeTuple()
 #define IPC_NAME_IN_1(t1)                   MakeRefTuple(arg1)
@@ -892,24 +893,16 @@
 
 #define IPC_BEGIN_MESSAGE_MAP(class_name, msg) \
   { \
-    typedef class_name _IpcMessageHandlerClass ALLOW_UNUSED; \
+    typedef class_name _IpcMessageHandlerClass ALLOW_UNUSED_TYPE; \
     void* param__ = NULL; \
     const IPC::Message& ipc_message__ = msg; \
     switch (ipc_message__.type()) {
 
-// gcc gives the following error now when using decltype so type typeof there:
-//   error: identifier 'decltype' will become a keyword in C++0x [-Werror=c++0x-compat]
-#if defined(OS_WIN)
-#define IPC_DECLTYPE decltype
-#else
-#define IPC_DECLTYPE typeof
-#endif
-
-#define IPC_BEGIN_MESSAGE_MAP_WITH_PARAM(class_name, msg, param) \
-  {                                                              \
-    typedef class_name _IpcMessageHandlerClass ALLOW_UNUSED;     \
-    IPC_DECLTYPE(param) param__ = param;                         \
-    const IPC::Message& ipc_message__ = msg;                     \
+#define IPC_BEGIN_MESSAGE_MAP_WITH_PARAM(class_name, msg, param)  \
+  {                                                               \
+    typedef class_name _IpcMessageHandlerClass ALLOW_UNUSED_TYPE; \
+    decltype(param) param__ = param;                              \
+    const IPC::Message& ipc_message__ = msg;                      \
     switch (ipc_message__.type()) {
 
 #define IPC_MESSAGE_FORWARD(msg_class, obj, member_func)                       \
@@ -974,14 +967,7 @@
 
 #endif  // IPC_IPC_MESSAGE_MACROS_H_
 
-// The following #ifdef cannot be removed.  Although the code is semantically
-// equivalent without the #ifdef, VS2013 contains a bug where it is
-// over-aggressive in optimizing out #includes.  Putting the #ifdef is a
-// workaround for this bug.  See http://goo.gl/eGt2Fb for more details.
-// This can be removed once VS2013 is fixed.
-#ifdef IPC_MESSAGE_START
 // Clean up IPC_MESSAGE_START in this unguarded section so that the
 // XXX_messages.h files need not do so themselves.  This makes the
 // XXX_messages.h files easier to write.
 #undef IPC_MESSAGE_START
-#endif

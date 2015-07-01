@@ -22,15 +22,40 @@
 #define SOCKET_ABSTRACT_NAMESPACE_SUPPORTED
 #endif
 
+namespace remoting {
+class GnubbyAuthHandlerPosix;
+}
+
 namespace net {
 namespace deprecated {
 
 // Unix Domain Socket Implementation. Supports abstract namespaces on Linux.
+// This class is deprecated and will be removed once crbug.com/472766 is fixed.
+// There should not be any new consumer of this class.
 class NET_EXPORT UnixDomainListenSocket : public StreamListenSocket {
  public:
   typedef UnixDomainServerSocket::AuthCallback AuthCallback;
 
-  virtual ~UnixDomainListenSocket();
+  ~UnixDomainListenSocket() override;
+
+ private:
+  // Note that friend classes are temporary until crbug.com/472766 is fixed.
+  friend class UnixDomainListenSocketTestHelper;
+  friend class remoting::GnubbyAuthHandlerPosix;
+
+  UnixDomainListenSocket(SocketDescriptor s,
+                         StreamListenSocket::Delegate* del,
+                         const AuthCallback& auth_callback);
+
+  static scoped_ptr<UnixDomainListenSocket> CreateAndListenInternal(
+      const std::string& path,
+      const std::string& fallback_path,
+      StreamListenSocket::Delegate* del,
+      const AuthCallback& auth_callback,
+      bool use_abstract_namespace);
+
+  // StreamListenSocket:
+  void Accept() override;
 
   // Note that the returned UnixDomainListenSocket instance does not take
   // ownership of |del|.
@@ -44,77 +69,16 @@ class NET_EXPORT UnixDomainListenSocket : public StreamListenSocket {
   // which is a Linux-only feature. If |fallback_path| is not empty,
   // make the second attempt with the provided fallback name.
   static scoped_ptr<UnixDomainListenSocket>
-  CreateAndListenWithAbstractNamespace(
-      const std::string& path,
-      const std::string& fallback_path,
-      StreamListenSocket::Delegate* del,
-      const AuthCallback& auth_callback);
+  CreateAndListenWithAbstractNamespace(const std::string& path,
+                                       const std::string& fallback_path,
+                                       StreamListenSocket::Delegate* del,
+                                       const AuthCallback& auth_callback);
 #endif
-
- private:
-  UnixDomainListenSocket(SocketDescriptor s,
-                         StreamListenSocket::Delegate* del,
-                         const AuthCallback& auth_callback);
-
-  static scoped_ptr<UnixDomainListenSocket> CreateAndListenInternal(
-      const std::string& path,
-      const std::string& fallback_path,
-      StreamListenSocket::Delegate* del,
-      const AuthCallback& auth_callback,
-      bool use_abstract_namespace);
-
-  // StreamListenSocket:
-  virtual void Accept() OVERRIDE;
 
   AuthCallback auth_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(UnixDomainListenSocket);
 };
-
-// Factory that can be used to instantiate UnixDomainListenSocket.
-class NET_EXPORT UnixDomainListenSocketFactory
-    : public StreamListenSocketFactory {
- public:
-  // Note that this class does not take ownership of the provided delegate.
-  UnixDomainListenSocketFactory(
-      const std::string& path,
-      const UnixDomainListenSocket::AuthCallback& auth_callback);
-  virtual ~UnixDomainListenSocketFactory();
-
-  // StreamListenSocketFactory:
-  virtual scoped_ptr<StreamListenSocket> CreateAndListen(
-      StreamListenSocket::Delegate* delegate) const OVERRIDE;
-
- protected:
-  const std::string path_;
-  const UnixDomainListenSocket::AuthCallback auth_callback_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(UnixDomainListenSocketFactory);
-};
-
-#if defined(SOCKET_ABSTRACT_NAMESPACE_SUPPORTED)
-// Use this factory to instantiate UnixDomainListenSocket using the abstract
-// namespace feature (only supported on Linux).
-class NET_EXPORT UnixDomainListenSocketWithAbstractNamespaceFactory
-    : public UnixDomainListenSocketFactory {
- public:
-  UnixDomainListenSocketWithAbstractNamespaceFactory(
-      const std::string& path,
-      const std::string& fallback_path,
-      const UnixDomainListenSocket::AuthCallback& auth_callback);
-  virtual ~UnixDomainListenSocketWithAbstractNamespaceFactory();
-
-  // UnixDomainListenSocketFactory:
-  virtual scoped_ptr<StreamListenSocket> CreateAndListen(
-      StreamListenSocket::Delegate* delegate) const OVERRIDE;
-
- private:
-  std::string fallback_path_;
-
-  DISALLOW_COPY_AND_ASSIGN(UnixDomainListenSocketWithAbstractNamespaceFactory);
-};
-#endif
 
 }  // namespace deprecated
 }  // namespace net

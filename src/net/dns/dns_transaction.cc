@@ -16,6 +16,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
 #include "base/strings/string_piece.h"
@@ -27,11 +28,11 @@
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/dns/dns_protocol.h"
 #include "net/dns/dns_query.h"
 #include "net/dns/dns_response.h"
 #include "net/dns/dns_session.h"
+#include "net/log/net_log.h"
 #include "net/socket/stream_socket.h"
 #include "net/udp/datagram_client_socket.h"
 
@@ -58,8 +59,8 @@ bool IsIPLiteral(const std::string& hostname) {
 }
 
 base::Value* NetLogStartCallback(const std::string* hostname,
-                           uint16 qtype,
-                           NetLog::LogLevel /* log_level */) {
+                                 uint16 qtype,
+                                 NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("hostname", *hostname);
   dict->SetInteger("query_type", qtype);
@@ -97,7 +98,7 @@ class DnsAttempt {
   // Returns a Value representing the received response, along with a reference
   // to the NetLog source source of the UDP socket used.  The request must have
   // completed before this is called.
-  base::Value* NetLogResponseCallback(NetLog::LogLevel log_level) const {
+  base::Value* NetLogResponseCallback(NetLogCaptureMode capture_mode) const {
     DCHECK(GetResponse()->IsValid());
 
     base::DictionaryValue* dict = new base::DictionaryValue();
@@ -141,7 +142,7 @@ class DnsUDPAttempt : public DnsAttempt {
         query_(query.Pass()) {}
 
   // DnsAttempt:
-  virtual int Start(const CompletionCallback& callback) OVERRIDE {
+  int Start(const CompletionCallback& callback) override {
     DCHECK_EQ(STATE_NONE, next_state_);
     callback_ = callback;
     start_time_ = base::TimeTicks::Now();
@@ -149,16 +150,14 @@ class DnsUDPAttempt : public DnsAttempt {
     return DoLoop(OK);
   }
 
-  virtual const DnsQuery* GetQuery() const OVERRIDE {
-    return query_.get();
-  }
+  const DnsQuery* GetQuery() const override { return query_.get(); }
 
-  virtual const DnsResponse* GetResponse() const OVERRIDE {
+  const DnsResponse* GetResponse() const override {
     const DnsResponse* resp = response_.get();
     return (resp != NULL && resp->IsValid()) ? resp : NULL;
   }
 
-  virtual const BoundNetLog& GetSocketNetLog() const OVERRIDE {
+  const BoundNetLog& GetSocketNetLog() const override {
     return socket_lease_->socket()->NetLog();
   }
 
@@ -306,7 +305,7 @@ class DnsTCPAttempt : public DnsAttempt {
         response_length_(0) {}
 
   // DnsAttempt:
-  virtual int Start(const CompletionCallback& callback) OVERRIDE {
+  int Start(const CompletionCallback& callback) override {
     DCHECK_EQ(STATE_NONE, next_state_);
     callback_ = callback;
     start_time_ = base::TimeTicks::Now();
@@ -320,16 +319,14 @@ class DnsTCPAttempt : public DnsAttempt {
     return DoLoop(rv);
   }
 
-  virtual const DnsQuery* GetQuery() const OVERRIDE {
-    return query_.get();
-  }
+  const DnsQuery* GetQuery() const override { return query_.get(); }
 
-  virtual const DnsResponse* GetResponse() const OVERRIDE {
+  const DnsResponse* GetResponse() const override {
     const DnsResponse* resp = response_.get();
     return (resp != NULL && resp->IsValid()) ? resp : NULL;
   }
 
-  virtual const BoundNetLog& GetSocketNetLog() const OVERRIDE {
+  const BoundNetLog& GetSocketNetLog() const override {
     return socket_->NetLog();
   }
 
@@ -392,12 +389,19 @@ class DnsTCPAttempt : public DnsAttempt {
   }
 
   int DoConnectComplete(int rv) {
+    // TODO(rvargas): Remove ScopedTracker below once crbug.com/462784 is fixed.
+    tracked_objects::ScopedTracker tracking_profile(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "462784 DnsTCPAttempt::DoConnectComplete"));
+
     DCHECK_NE(ERR_IO_PENDING, rv);
     if (rv < 0)
       return rv;
 
-    base::WriteBigEndian<uint16>(length_buffer_->data(),
-                                 query_->io_buffer()->size());
+    uint16 query_size = static_cast<uint16>(query_->io_buffer()->size());
+    if (static_cast<int>(query_size) != query_->io_buffer()->size())
+      return ERR_FAILED;
+    base::WriteBigEndian<uint16>(length_buffer_->data(), query_size);
     buffer_ =
         new DrainableIOBuffer(length_buffer_.get(), length_buffer_->size());
     next_state_ = STATE_SEND_LENGTH;
@@ -567,24 +571,24 @@ class DnsTransactionImpl : public DnsTransaction,
     DCHECK(!IsIPLiteral(hostname_));
   }
 
-  virtual ~DnsTransactionImpl() {
+  ~DnsTransactionImpl() override {
     if (!callback_.is_null()) {
       net_log_.EndEventWithNetErrorCode(NetLog::TYPE_DNS_TRANSACTION,
                                         ERR_ABORTED);
     }  // otherwise logged in DoCallback or Start
   }
 
-  virtual const std::string& GetHostname() const OVERRIDE {
+  const std::string& GetHostname() const override {
     DCHECK(CalledOnValidThread());
     return hostname_;
   }
 
-  virtual uint16 GetType() const OVERRIDE {
+  uint16 GetType() const override {
     DCHECK(CalledOnValidThread());
     return qtype_;
   }
 
-  virtual void Start() OVERRIDE {
+  void Start() override {
     DCHECK(!callback_.is_null());
     DCHECK(attempts_.empty());
     net_log_.BeginEvent(NetLog::TYPE_DNS_TRANSACTION,
@@ -968,11 +972,11 @@ class DnsTransactionFactoryImpl : public DnsTransactionFactory {
     session_ = session;
   }
 
-  virtual scoped_ptr<DnsTransaction> CreateTransaction(
+  scoped_ptr<DnsTransaction> CreateTransaction(
       const std::string& hostname,
       uint16 qtype,
       const CallbackType& callback,
-      const BoundNetLog& net_log) OVERRIDE {
+      const BoundNetLog& net_log) override {
     return scoped_ptr<DnsTransaction>(new DnsTransactionImpl(
         session_.get(), hostname, qtype, callback, net_log));
   }

@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2014, Google Inc.
+ * Copyright 2014 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -29,13 +29,12 @@
 #error "This file requires ARC support."
 #endif
 
-#import "RTCEAGLVideoView+Internal.h"
+#import "RTCEAGLVideoView.h"
 
 #import <GLKit/GLKit.h>
 
+#import "RTCI420Frame.h"
 #import "RTCOpenGLVideoRenderer.h"
-#import "RTCVideoRenderer.h"
-#import "RTCVideoTrack.h"
 
 // RTCDisplayLinkTimer wraps a CADisplayLink and is set to fire every two screen
 // refreshes, which should be 30fps. We wrap the display link in order to avoid
@@ -105,44 +104,59 @@
   RTCDisplayLinkTimer* _timer;
   GLKView* _glkView;
   RTCOpenGLVideoRenderer* _glRenderer;
-  RTCVideoRenderer* _videoRenderer;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
   if (self = [super initWithFrame:frame]) {
-    EAGLContext* glContext =
-        [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES2];
-    _glRenderer = [[RTCOpenGLVideoRenderer alloc] initWithContext:glContext];
+    [self configure];
+  }
+  return self;
+}
 
-    // GLKView manages a framebuffer for us.
-    _glkView = [[GLKView alloc] initWithFrame:CGRectZero
-                                      context:glContext];
-    _glkView.drawableColorFormat = GLKViewDrawableColorFormatRGBA8888;
-    _glkView.drawableDepthFormat = GLKViewDrawableDepthFormatNone;
-    _glkView.drawableStencilFormat = GLKViewDrawableStencilFormatNone;
-    _glkView.drawableMultisample = GLKViewDrawableMultisampleNone;
-    _glkView.delegate = self;
-    _glkView.layer.masksToBounds = YES;
-    [self addSubview:_glkView];
+- (instancetype)initWithCoder:(NSCoder *)aDecoder {
+  if (self = [super initWithCoder:aDecoder]) {
+    [self configure];
+  }
+  return self;
+}
 
-    // Listen to application state in order to clean up OpenGL before app goes
-    // away.
-    NSNotificationCenter* notificationCenter =
-        [NSNotificationCenter defaultCenter];
-    [notificationCenter addObserver:self
-                           selector:@selector(willResignActive)
-                               name:UIApplicationWillResignActiveNotification
-                             object:nil];
-    [notificationCenter addObserver:self
-                           selector:@selector(didBecomeActive)
-                               name:UIApplicationDidBecomeActiveNotification
-                             object:nil];
+- (void)configure {
+  EAGLContext* glContext =
+    [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3];
+  if (!glContext) {
+    glContext = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES2];
+  }
+  _glRenderer = [[RTCOpenGLVideoRenderer alloc] initWithContext:glContext];
 
-    // Frames are received on a separate thread, so we poll for current frame
-    // using a refresh rate proportional to screen refresh frequency. This
-    // occurs on the main thread.
-    __weak RTCEAGLVideoView* weakSelf = self;
-    _timer = [[RTCDisplayLinkTimer alloc] initWithTimerHandler:^{
+  // GLKView manages a framebuffer for us.
+  _glkView = [[GLKView alloc] initWithFrame:CGRectZero
+                                    context:glContext];
+  _glkView.drawableColorFormat = GLKViewDrawableColorFormatRGBA8888;
+  _glkView.drawableDepthFormat = GLKViewDrawableDepthFormatNone;
+  _glkView.drawableStencilFormat = GLKViewDrawableStencilFormatNone;
+  _glkView.drawableMultisample = GLKViewDrawableMultisampleNone;
+  _glkView.delegate = self;
+  _glkView.layer.masksToBounds = YES;
+  [self addSubview:_glkView];
+
+  // Listen to application state in order to clean up OpenGL before app goes
+  // away.
+  NSNotificationCenter* notificationCenter =
+    [NSNotificationCenter defaultCenter];
+  [notificationCenter addObserver:self
+                         selector:@selector(willResignActive)
+                             name:UIApplicationWillResignActiveNotification
+                           object:nil];
+  [notificationCenter addObserver:self
+                         selector:@selector(didBecomeActive)
+                             name:UIApplicationDidBecomeActiveNotification
+                           object:nil];
+
+  // Frames are received on a separate thread, so we poll for current frame
+  // using a refresh rate proportional to screen refresh frequency. This
+  // occurs on the main thread.
+  __weak RTCEAGLVideoView* weakSelf = self;
+  _timer = [[RTCDisplayLinkTimer alloc] initWithTimerHandler:^{
       RTCEAGLVideoView* strongSelf = weakSelf;
       // Don't render if frame hasn't changed.
       if (strongSelf.glRenderer.lastDrawnFrame == strongSelf.i420Frame) {
@@ -152,10 +166,7 @@
       // GLKViewDelegate method implemented below.
       [strongSelf.glkView setNeedsDisplay];
     }];
-    _videoRenderer = [[RTCVideoRenderer alloc] initWithDelegate:self];
-    [self setupGL];
-  }
-  return self;
+  [self setupGL];
 }
 
 - (void)dealloc {
@@ -166,18 +177,6 @@
     [self teardownGL];
   }
   [_timer invalidate];
-}
-
-- (void)setVideoTrack:(RTCVideoTrack*)videoTrack {
-  if (_videoTrack == videoTrack) {
-    return;
-  }
-  [_videoTrack removeRenderer:_videoRenderer];
-  self.i420Frame = nil;
-  _videoTrack = videoTrack;
-  [_videoTrack addRenderer:_videoRenderer];
-  // TODO(tkchin): potentially handle changes in track state - e.g. render
-  // black if track fails.
 }
 
 #pragma mark - UIView
@@ -197,14 +196,31 @@
   [_glRenderer drawFrame:self.i420Frame];
 }
 
+#pragma mark - RTCVideoRenderer
+
+// These methods may be called on non-main thread.
+- (void)setSize:(CGSize)size {
+  __weak RTCEAGLVideoView* weakSelf = self;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    RTCEAGLVideoView* strongSelf = weakSelf;
+    [strongSelf.delegate videoView:strongSelf didChangeVideoSize:size];
+  });
+}
+
+- (void)renderFrame:(RTCI420Frame*)frame {
+  self.i420Frame = frame;
+}
+
 #pragma mark - Private
 
 - (void)setupGL {
+  self.i420Frame = nil;
   [_glRenderer setupGL];
   _timer.isPaused = NO;
 }
 
 - (void)teardownGL {
+  self.i420Frame = nil;
   _timer.isPaused = YES;
   [_glkView deleteDrawable];
   [_glRenderer teardownGL];
@@ -216,28 +232,6 @@
 
 - (void)willResignActive {
   [self teardownGL];
-}
-
-@end
-
-@implementation RTCEAGLVideoView (Internal)
-
-#pragma mark - RTCVideoRendererDelegate
-
-// These methods are called when the video track has frame information to
-// provide. This occurs on non-main thread.
-- (void)renderer:(RTCVideoRenderer*)renderer
-      didSetSize:(CGSize)size {
-  __weak RTCEAGLVideoView* weakSelf = self;
-  dispatch_async(dispatch_get_main_queue(), ^{
-    RTCEAGLVideoView* strongSelf = weakSelf;
-    [strongSelf.delegate videoView:strongSelf didChangeVideoSize:size];
-  });
-}
-
-- (void)renderer:(RTCVideoRenderer*)renderer
-    didReceiveFrame:(RTCI420Frame*)frame {
-  self.i420Frame = frame;
 }
 
 @end

@@ -12,10 +12,12 @@
 #import "chrome/browser/themes/theme_properties.h"
 #import "chrome/browser/themes/theme_service.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
+#include "chrome/browser/ui/view_ids.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "skia/ext/skia_utils_mac.h"
 #include "ui/base/cocoa/animation_utils.h"
 #include "ui/gfx/geometry/rect.h"
 
@@ -43,15 +45,15 @@ class FullscreenObserver : public WebContentsObserver {
     return WebContentsObserver::web_contents();
   }
 
-  virtual void DidShowFullscreenWidget(int routing_id) OVERRIDE {
+  void DidShowFullscreenWidget(int routing_id) override {
     [controller_ toggleFullscreenWidget:YES];
   }
 
-  virtual void DidDestroyFullscreenWidget(int routing_id) OVERRIDE {
+  void DidDestroyFullscreenWidget(int routing_id) override {
     [controller_ toggleFullscreenWidget:NO];
   }
 
-  virtual void DidToggleFullscreenModeForTab(bool entered_fullscreen) OVERRIDE {
+  void DidToggleFullscreenModeForTab(bool entered_fullscreen) override {
     [controller_ toggleFullscreenWidget:YES];
   }
 
@@ -77,6 +79,7 @@ class FullscreenObserver : public WebContentsObserver {
 }
 
 - (NSColor*)computeBackgroundColor;
+- (void)updateBackgroundColor;
 @end
 
 @implementation TabContentsContainerView
@@ -86,9 +89,9 @@ class FullscreenObserver : public WebContentsObserver {
     delegate_ = delegate;
     ScopedCAActionDisabler disabler;
     base::scoped_nsobject<CALayer> layer([[CALayer alloc] init]);
-    [layer setBackgroundColor:CGColorGetConstantColor(kCGColorWhite)];
     [self setLayer:layer];
     [self setWantsLayer:YES];
+    [self updateBackgroundColor];
   }
   return self;
 }
@@ -101,36 +104,25 @@ class FullscreenObserver : public WebContentsObserver {
 
 - (NSColor*)computeBackgroundColor {
   // This view is sometimes flashed into visibility (e.g, when closing
-  // windows), so ensure that the flash be white in those cases.
-  if (![delegate_ contentsInFullscreenCaptureMode])
-    return [NSColor whiteColor];
-
-  // Fill with a dark tint of the new tab page's background color.  This is
-  // only seen when the subview is sized specially for fullscreen tab capture.
-  NSColor* bgColor = nil;
+  // windows or opening new tabs), so ensure that the flash be the theme
+  // background color in those cases.
+  NSColor* backgroundColor = nil;
   ThemeService* const theme =
       static_cast<ThemeService*>([[self window] themeProvider]);
   if (theme)
-    bgColor = theme->GetNSColor(ThemeProperties::COLOR_NTP_BACKGROUND);
-  if (!bgColor)
-    bgColor = [NSColor whiteColor];
-  const float kDarknessFraction = 0.80f;
-  return [bgColor blendedColorWithFraction:kDarknessFraction
-                                   ofColor:[NSColor blackColor]];
-}
+    backgroundColor = theme->GetNSColor(ThemeProperties::COLOR_NTP_BACKGROUND);
+  if (!backgroundColor)
+    backgroundColor = [NSColor whiteColor];
 
-// Override -drawRect to fill the view with a solid color outside of the
-// subview's frame.
-//
-// Note: This method is never called when CoreAnimation is enabled.
-- (void)drawRect:(NSRect)dirtyRect {
-  NSView* const contentsView =
-      [[self subviews] count] > 0 ? [[self subviews] objectAtIndex:0] : nil;
-  if (!contentsView || !NSContainsRect([contentsView frame], dirtyRect)) {
-    [[self computeBackgroundColor] setFill];
-    NSRectFill(dirtyRect);
+  // If the page is in fullscreen tab capture mode, change the background color
+  // to be a dark tint of the new tab page's background color.
+  if ([delegate_ contentsInFullscreenCaptureMode]) {
+    const float kDarknessFraction = 0.80f;
+    return [backgroundColor blendedColorWithFraction:kDarknessFraction
+                                             ofColor:[NSColor blackColor]];
+  } else {
+    return backgroundColor;
   }
-  [super drawRect:dirtyRect];
 }
 
 // Override auto-resizing logic to query the delegate for the exact frame to
@@ -150,7 +142,10 @@ class FullscreenObserver : public WebContentsObserver {
 // Update the background layer's color whenever the view needs to repaint.
 - (void)setNeedsDisplayInRect:(NSRect)rect {
   [super setNeedsDisplayInRect:rect];
+  [self updateBackgroundColor];
+}
 
+- (void)updateBackgroundColor {
   // Convert from an NSColor to a CGColorRef.
   NSColor* nsBackgroundColor = [self computeBackgroundColor];
   NSColorSpace* nsColorSpace = [nsBackgroundColor colorSpace];
@@ -163,6 +158,28 @@ class FullscreenObserver : public WebContentsObserver {
 
   ScopedCAActionDisabler disabler;
   [[self layer] setBackgroundColor:cgBackgroundColor];
+}
+
+- (ViewID)viewID {
+  return VIEW_ID_TAB_CONTAINER;
+}
+
+- (BOOL)acceptsFirstResponder {
+  return [[self subviews] count] > 0 &&
+      [[[self subviews] objectAtIndex:0] acceptsFirstResponder];
+}
+
+// When receiving a click-to-focus in the solid color area surrounding the
+// WebContents' native view, immediately transfer focus to WebContents' native
+// view.
+- (BOOL)becomeFirstResponder {
+  if (![self acceptsFirstResponder])
+    return NO;
+  return [[self window] makeFirstResponder:[[self subviews] objectAtIndex:0]];
+}
+
+- (BOOL)canBecomeKeyView {
+  return NO;  // Tab/Shift-Tab should focus the subview, not this view.
 }
 
 @end  // @implementation TabContentsContainerView

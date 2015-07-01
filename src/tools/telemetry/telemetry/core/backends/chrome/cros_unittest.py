@@ -3,15 +3,16 @@
 # found in the LICENSE file.
 
 import logging
+import urllib2
 
-from telemetry import benchmark
+from telemetry.core.backends.chrome import cros_test_case
 from telemetry.core import exceptions
 from telemetry.core import util
-from telemetry.core.backends.chrome import cros_test_case
+from telemetry import decorators
 
 
 class CrOSCryptohomeTest(cros_test_case.CrOSTestCase):
-  @benchmark.Enabled('chromeos')
+  @decorators.Enabled('chromeos')
   def testCryptohome(self):
     """Verifies cryptohome mount status for regular and guest user and when
     logged out"""
@@ -36,7 +37,7 @@ class CrOSCryptohomeTest(cros_test_case.CrOSTestCase):
 
 
 class CrOSLoginTest(cros_test_case.CrOSTestCase):
-  @benchmark.Enabled('chromeos')
+  @decorators.Enabled('chromeos')
   def testLoginStatus(self):
     """Tests autotestPrivate.loginStatus"""
     if self._is_guest:
@@ -50,7 +51,7 @@ class CrOSLoginTest(cros_test_case.CrOSTestCase):
       self.assertEquals(login_status['email'], self._username)
       self.assertFalse(login_status['isScreenLocked'])
 
-  @benchmark.Enabled('chromeos')
+  @decorators.Enabled('chromeos')
   def testLogout(self):
     """Tests autotestPrivate.logout"""
     if self._is_guest:
@@ -59,23 +60,24 @@ class CrOSLoginTest(cros_test_case.CrOSTestCase):
       extension = self._GetAutotestExtension(b)
       try:
         extension.ExecuteJavaScript('chrome.autotestPrivate.logout();')
-      except (exceptions.BrowserConnectionGoneException,
-              exceptions.BrowserGoneException):
+      except exceptions.Error:
         pass
       util.WaitFor(lambda: not self._IsCryptohomeMounted(), 20)
 
-  @benchmark.Enabled('chromeos')
+  @decorators.Disabled
   def testGaiaLogin(self):
     """Tests gaia login. Credentials are expected to be found in a
     credentials.txt file, with a single line of format username:password."""
     if self._is_guest:
       return
-    (username, password) = self._Credentials('credentials.txt')
-    if username and password:
-      with self._CreateBrowser(gaia_login=True,
-                               username=username,
-                               password=password):
-        self.assertTrue(util.WaitFor(self._IsCryptohomeMounted, 10))
+    username = 'powerloadtest@gmail.com'
+    password = urllib2.urlopen(
+        'https://sites.google.com/a/chromium.org/dev/chromium-os/testing/'
+        'power-testing/pltp/pltp').read().rstrip()
+    with self._CreateBrowser(gaia_login=True,
+                             username=username,
+                             password=password):
+      self.assertTrue(util.WaitFor(self._IsCryptohomeMounted, 10))
 
 
 class CrOSScreenLockerTest(cros_test_case.CrOSTestCase):
@@ -121,7 +123,7 @@ class CrOSScreenLockerTest(cros_test_case.CrOSTestCase):
     util.WaitFor(lambda: not browser.oobe_exists, 10)
     self.assertFalse(self._IsScreenLocked(browser))
 
-  @benchmark.Disabled
+  @decorators.Disabled
   def testScreenLock(self):
     """Tests autotestPrivate.screenLock"""
     if self._is_guest:

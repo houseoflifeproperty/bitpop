@@ -29,6 +29,7 @@
 #include "nacl_io/log.h"
 #include "nacl_io/memfs/mem_fs.h"
 #include "nacl_io/node.h"
+#include "nacl_io/osinttypes.h"
 #include "nacl_io/osmman.h"
 #include "nacl_io/ossocket.h"
 #include "nacl_io/osstat.h"
@@ -84,40 +85,46 @@ Error KernelProxy::Init(PepperInterface* ppapi) {
   ScopedFilesystem root_fs;
   rtn = MountInternal("", "/", "passthroughfs", 0, NULL, false, &root_fs);
   if (rtn != 0)
-    assert(false);
+    return rtn;
 
   ScopedFilesystem fs;
   rtn = MountInternal("", "/dev", "dev", 0, NULL, false, &fs);
   if (rtn != 0)
-    assert(false);
+    return rtn;
   dev_fs_ = sdk_util::static_scoped_ref_cast<DevFs>(fs);
 
   // Create the filesystem nodes for / and /dev afterward. They can't be
   // created the normal way because the dev filesystem didn't exist yet.
   rtn = CreateFsNode(root_fs);
   if (rtn != 0)
-    assert(false);
+    return rtn;
 
   rtn = CreateFsNode(dev_fs_);
   if (rtn != 0)
-    assert(false);
+    return rtn;
 
   // Open the first three in order to get STDIN, STDOUT, STDERR
   int fd;
   fd = open("/dev/stdin", O_RDONLY, 0);
+  if (fd < 0) {
+    LOG_ERROR("failed to open /dev/stdin: %s", strerror(errno));
+    return errno;
+  }
   assert(fd == 0);
-  if (fd < 0)
-    rtn = errno;
 
   fd = open("/dev/stdout", O_WRONLY, 0);
+  if (fd < 0) {
+    LOG_ERROR("failed to open /dev/stdout: %s", strerror(errno));
+    return errno;
+  }
   assert(fd == 1);
-  if (fd < 0)
-    rtn = errno;
 
   fd = open("/dev/stderr", O_WRONLY, 0);
+  if (fd < 0) {
+    LOG_ERROR("failed to open /dev/sterr: %s", strerror(errno));
+    return errno;
+  }
   assert(fd == 2);
-  if (fd < 0)
-    rtn = errno;
 
 #ifdef PROVIDES_SOCKET_API
   host_resolver_.Init(ppapi_);
@@ -129,11 +136,11 @@ Error KernelProxy::Init(PepperInterface* ppapi) {
   stream_fs_.reset(new StreamFs());
   int result = stream_fs_->Init(args);
   if (result != 0) {
-    assert(false);
-    rtn = result;
+    LOG_ERROR("initializing streamfs failed: %s", strerror(result));
+    return result;
   }
 
-  return rtn;
+  return 0;
 }
 
 bool KernelProxy::RegisterFsType(const char* fs_type,
@@ -202,8 +209,9 @@ int KernelProxy::open_resource(const char* path) {
 int KernelProxy::open(const char* path, int open_flags, mode_t mode) {
   ScopedFilesystem fs;
   ScopedNode node;
+  mode_t mask = ~GetUmask() & S_MODEBITS;
 
-  Error error = AcquireFsAndNode(path, open_flags, mode, &fs, &node);
+  Error error = AcquireFsAndNode(path, open_flags, mode & mask, &fs, &node);
   if (error) {
     errno = error;
     return -1;
@@ -271,6 +279,11 @@ int KernelProxy::dup2(int oldfd, int newfd) {
   if (oldfd == newfd)
     return newfd;
 
+  if (newfd < 0) {
+    errno = EBADF;
+    return -1;
+  }
+
   ScopedKernelHandle old_handle;
   std::string old_path;
   Error error = AcquireHandleAndPath(oldfd, &old_handle, &old_path);
@@ -324,13 +337,22 @@ char* KernelProxy::getwd(char* buf) {
 }
 
 int KernelProxy::chmod(const char* path, mode_t mode) {
-  int fd = open(path, O_RDONLY, mode);
-  if (-1 == fd)
-    return -1;
+  ScopedFilesystem fs;
+  ScopedNode node;
 
-  int result = fchmod(fd, mode);
-  close(fd);
-  return result;
+  Error error = AcquireFsAndNode(path, O_RDONLY, 0, &fs, &node);
+  if (error) {
+    errno = error;
+    return -1;
+  }
+
+  error = node->Fchmod(mode & S_MODEBITS);
+  if (error) {
+    errno = error;
+    return -1;
+  }
+
+  return 0;
 }
 
 int KernelProxy::chown(const char* path, uid_t owner, gid_t group) {
@@ -355,7 +377,8 @@ int KernelProxy::mkdir(const char* path, mode_t mode) {
     return -1;
   }
 
-  error = fs->Mkdir(rel, mode);
+  mode_t mask = ~GetUmask() & S_MODEBITS;
+  error = fs->Mkdir(rel, mode & mask);
   if (error) {
     errno = error;
     return -1;
@@ -384,13 +407,22 @@ int KernelProxy::rmdir(const char* path) {
 }
 
 int KernelProxy::stat(const char* path, struct stat* buf) {
-  int fd = open(path, O_RDONLY, 0);
-  if (-1 == fd)
-    return -1;
+  ScopedFilesystem fs;
+  ScopedNode node;
 
-  int result = fstat(fd, buf);
-  close(fd);
-  return result;
+  Error error = AcquireFsAndNode(path, O_RDONLY, 0, &fs, &node);
+  if (error) {
+    errno = error;
+    return -1;
+  }
+
+  error = node->GetStat(buf);
+  if (error) {
+    errno = error;
+    return -1;
+  }
+
+  return 0;
 }
 
 int KernelProxy::mount(const char* source,
@@ -611,6 +643,11 @@ int KernelProxy::ftruncate(int fd, off_t length) {
     return -1;
   }
 
+  if (handle->OpenMode() == O_RDONLY) {
+    errno = EACCES;
+    return -1;
+  }
+
   error = handle->node()->FTruncate(length);
   if (error) {
     errno = error;
@@ -684,7 +721,28 @@ int KernelProxy::futimens(int fd, const struct timespec times[2]) {
     return -1;
   }
 
-  error = handle->node()->Futimens(times);
+  return FutimensInternal(handle->node(), times);
+}
+
+Error KernelProxy::FutimensInternal(const ScopedNode& node,
+                                    const struct timespec times[2]) {
+  Error error(0);
+  if (times == NULL) {
+    struct timespec now[2];
+    struct timeval tm;
+    error = gettimeofday(&tm, NULL);
+    if (error) {
+      errno = error;
+      return -1;
+    }
+
+    now[0].tv_sec = now[1].tv_sec = tm.tv_sec;
+    now[0].tv_nsec = now[1].tv_nsec = tm.tv_usec * 1000;
+    error = node->Futimens(now);
+  } else {
+    error = node->Futimens(times);
+  }
+
   if (error) {
     errno = error;
     return -1;
@@ -731,13 +789,32 @@ int KernelProxy::unlink(const char* path) {
 }
 
 int KernelProxy::truncate(const char* path, off_t len) {
-  int fd = open(path, O_WRONLY, 0);
-  if (-1 == fd)
-    return -1;
+  ScopedFilesystem fs;
+  ScopedNode node;
 
-  int result = ftruncate(fd, len);
-  close(fd);
-  return result;
+  Error error = AcquireFsAndNode(path, O_WRONLY, 0, &fs, &node);
+  if (error) {
+    errno = error;
+    return -1;
+  }
+
+  // Directories cannot be truncated.
+  if (node->IsaDir()) {
+    return EISDIR;
+  }
+
+  if (!node->CanOpen(O_WRONLY)) {
+    errno = EACCES;
+    return -1;
+  }
+
+  error = node->FTruncate(len);
+  if (error) {
+    errno = error;
+    return -1;
+  }
+
+  return 0;
 }
 
 int KernelProxy::lstat(const char* path, struct stat* buf) {
@@ -807,7 +884,7 @@ int KernelProxy::fchmod(int fd, mode_t mode) {
     return -1;
   }
 
-  error = handle->node()->Fchmod(mode);
+  error = handle->node()->Fchmod(mode & S_MODEBITS);
   if (error) {
     errno = error;
     return -1;
@@ -883,16 +960,19 @@ int KernelProxy::readlink(const char* path, char* buf, size_t count) {
 }
 
 int KernelProxy::utimens(const char* path, const struct timespec times[2]) {
-  int fd = open(path, O_RDONLY, 0);
-  if (-1 == fd)
-    return -1;
+  ScopedFilesystem fs;
+  ScopedNode node;
 
-  int result = futimens(fd, times);
-  close(fd);
-  return result;
+  Error error = AcquireFsAndNode(path, O_WRONLY, 0, &fs, &node);
+  if (error) {
+    errno = error;
+    return -1;
+  }
+
+  return FutimensInternal(node, times);
 }
 
-// TODO(noelallen): Needs implementation.
+// TODO(bradnelson): Needs implementation.
 int KernelProxy::link(const char* oldpath, const char* newpath) {
   LOG_TRACE("link is not implemented.");
   errno = EINVAL;
@@ -1077,7 +1157,9 @@ int KernelProxy::sigaction(int signum,
     case SIGHUP:
     case SIGINT:
     case SIGPIPE:
+#if defined(SIGPOLL)
     case SIGPOLL:
+#endif
     case SIGPROF:
     case SIGTERM:
     case SIGCHLD:
@@ -1090,7 +1172,7 @@ int KernelProxy::sigaction(int signum,
       if (action && action->sa_handler != SIG_DFL) {
         // Trying to set this action to anything other than SIG_DFL
         // is not yet supported.
-        LOG_TRACE("sigaction on signal %d != SIG_DFL not supported.", sig);
+        LOG_TRACE("sigaction on signal %d != SIG_DFL not supported.", signum);
         errno = EINVAL;
         return -1;
       }
@@ -1112,6 +1194,10 @@ int KernelProxy::sigaction(int signum,
   // Unknown signum
   errno = EINVAL;
   return -1;
+}
+
+mode_t KernelProxy::umask(mode_t mask) {
+  return SetUmask(mask & S_MODEBITS);
 }
 
 #ifdef PROVIDES_SOCKET_API
@@ -1157,7 +1243,7 @@ int KernelProxy::select(int nfds,
     if ((timeout->tv_sec < 0) || (timeout->tv_sec >= (INT_MAX / 1000)) ||
         (timeout->tv_usec < 0) || (timeout->tv_usec >= 1000000) || (ms < 0) ||
         (ms >= INT_MAX)) {
-      LOG_TRACE("Invalid timeout: tv_sec=%d tv_usec=%d.",
+      LOG_TRACE("Invalid timeout: tv_sec=%" PRIi64 " tv_usec=%ld.",
                 timeout->tv_sec,
                 timeout->tv_usec);
       errno = EINVAL;
@@ -1283,11 +1369,6 @@ int KernelProxy::poll(struct pollfd* fds, nfds_t nfds, int timeout) {
 
 // Socket Functions
 int KernelProxy::accept(int fd, struct sockaddr* addr, socklen_t* len) {
-  if (NULL == addr || NULL == len) {
-    errno = EFAULT;
-    return -1;
-  }
-
   ScopedKernelHandle handle;
   Error error = AcquireHandle(fd, &handle);
   if (error) {
@@ -1651,8 +1732,9 @@ int KernelProxy::socket(int domain, int type, int protocol) {
 
   int open_flags = O_RDWR;
 
+#if defined(SOCK_CLOEXEC)
   if (type & SOCK_CLOEXEC) {
-#ifdef O_CLOEXEC
+#if defined(O_CLOEXEC)
     // The NaCl newlib version of fcntl.h doesn't currently define
     // O_CLOEXEC.
     // TODO(sbc): remove this guard once it gets added.
@@ -1660,11 +1742,14 @@ int KernelProxy::socket(int domain, int type, int protocol) {
 #endif
     type &= ~SOCK_CLOEXEC;
   }
+#endif
 
+#if defined(SOCK_NONBLOCK)
   if (type & SOCK_NONBLOCK) {
     open_flags |= O_NONBLOCK;
     type &= ~SOCK_NONBLOCK;
   }
+#endif
 
   SocketNode* sock = NULL;
   switch (type) {

@@ -34,14 +34,9 @@
 #include "WebContentSecurityPolicy.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
+#include "public/web/WebSettings.h"
 
 namespace blink {
-
-// FIXME: delete after waitForDebugger is in use in both chrome and blink.
-enum WebEmbeddedWorkerStartMode {
-    WebEmbeddedWorkerStartModeDontPauseOnStart,
-    WebEmbeddedWorkerStartModePauseOnStart
-};
 
 struct WebEmbeddedWorkerStartData {
     enum PauseAfterDownloadMode {
@@ -55,14 +50,14 @@ struct WebEmbeddedWorkerStartData {
 
     WebURL scriptURL;
     WebString userAgent;
-    WebEmbeddedWorkerStartMode startMode; // FIXME: ditto delete
     PauseAfterDownloadMode pauseAfterDownloadMode;
     WaitForDebuggerMode waitForDebuggerMode;
+    WebSettings::V8CacheOptions v8CacheOptions;
 
     WebEmbeddedWorkerStartData()
-        : startMode(WebEmbeddedWorkerStartModeDontPauseOnStart)
-        , pauseAfterDownloadMode(DontPauseAfterDownload)
-        , waitForDebuggerMode(DontWaitForDebugger) { }
+        : pauseAfterDownloadMode(DontPauseAfterDownload)
+        , waitForDebuggerMode(DontWaitForDebugger)
+        , v8CacheOptions(WebSettings::V8CacheOptionsDefault) { }
 };
 
 } // namespace blink

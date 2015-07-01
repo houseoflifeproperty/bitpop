@@ -2,153 +2,141 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+GEN_INCLUDE(['downloads_ui_browsertest_base.js']);
 GEN('#include "chrome/browser/ui/webui/downloads_ui_browsertest.h"');
-
-/** @const */ var TOTAL_RESULT_COUNT = 25;
-
-/**
- * Test C++ fixture for downloads WebUI testing.
- * @constructor
- * @extends {testing.Test}
- */
-function DownloadsUIBrowserTest() {}
-
-/**
- * Base fixture for Downloads WebUI testing.
- * @extends {testing.Test}
- * @constructor
- */
-function BaseDownloadsWebUITest() {}
-
-BaseDownloadsWebUITest.prototype = {
-  __proto__: testing.Test.prototype,
-
-  /**
-   * Browse to the downloads page & call our preLoad().
-   */
-  browsePreload: 'chrome://downloads/',
-
-  /** @override */
-  typedefCppFixture: 'DownloadsUIBrowserTest',
-
-  /** @override */
-  testGenPreamble: function() {
-    GEN('  SetDeleteAllowed(true);');
-  },
-
-  /** @override */
-  runAccessibilityChecks: true,
-
-  /** @override */
-  accessibilityIssuesAreErrors: true,
-
-  /**
-   * Sends TOTAL_RESULT_COUNT fake downloads to the page. This can't be called
-   * in the preLoad, because it requires the global Download object to have
-   * been created by the page.
-   * @override
-   */
-  setUp: function() {
-    // The entries will begin at 1:00 AM on Sept 2, 2008, and will be spaced
-    // two minutes apart.
-    var timestamp = new Date(2008, 9, 2, 1, 0).getTime();
-    for (var i = 0; i < TOTAL_RESULT_COUNT; ++i) {
-      downloads.updated(this.createDownload_(i, timestamp));
-      timestamp += 2 * 60 * 1000;  // Next visit is two minutes later.
-    }
-    expectEquals(downloads.size(), TOTAL_RESULT_COUNT);
-  },
-
-  /**
-   * Creates a download object to be passed to the page, following the expected
-   * backend format (see downloads_dom_handler.cc).
-   * @param {number} A unique ID for the download.
-   * @param {number} The time the download purportedly started.
-   * @return {!Object} A fake download object.
-   * @private
-   */
-  createDownload_: function(id, timestamp) {
-    return {
-      id: id,
-      started: timestamp,
-      otr: false,
-      state: Download.States.COMPLETE,
-      retry: false,
-      file_path: '/path/to/file',
-      file_url: 'http://google.com/' + timestamp,
-      file_name: 'download_' + timestamp,
-      url: 'http://google.com/' + timestamp,
-      file_externally_removed: false,
-      danger_type: Download.DangerType.NOT_DANGEROUS,
-      last_reason_text: '',
-      since_string: 'today',
-      date_string: 'today',
-      percent: 100,
-      progress_status_text: 'done',
-      received: 128,
-    };
-  },
-
-  /**
-   * Asserts the correctness of the state of the UI elements
-   * that delete the download history.
-   * @param {boolean} allowDelete True if download history deletion is
-   *     allowed and false otherwise.
-   * @param {boolean} expectControlsHidden True if the controls to delete
-   *     download history are expected to be hidden and false otherwise.
-   */
-  testHelper: function(allowDelete, expectControlsHidden) {
-    var clearAllElements = document.getElementsByClassName('clear-all-link');
-    var disabledElements = document.getElementsByClassName('disabled-link');
-    var removeLinkElements =
-        document.getElementsByClassName('control-remove-link');
-
-    // "Clear all" should be a link only when deletions are allowed.
-    expectEquals(allowDelete ? 1 : 0, clearAllElements.length);
-
-    // There should be no disabled links when deletions are allowed.
-    // On the other hand, when deletions are not allowed, "Clear All"
-    // and all "Remove from list" links should be disabled.
-    expectEquals(allowDelete ? 0 : TOTAL_RESULT_COUNT + 1,
-        disabledElements.length);
-
-    // All "Remove from list" items should be links when deletions are allowed.
-    // On the other hand, when deletions are not allowed, all
-    // "Remove from list" items should be text.
-    expectEquals(allowDelete ? TOTAL_RESULT_COUNT : 0,
-        removeLinkElements.length);
-
-    if (allowDelete) {
-      // "Clear all" should not be hidden.
-      expectFalse(clearAllElements[0].hidden);
-
-      // No "Remove from list" items should be hidden.
-      expectFalse(removeLinkElements[0].hidden);
-    } else {
-      expectEquals(expectControlsHidden, disabledElements[0].hidden);
-    }
-
-    // The model is updated synchronously, even though the actual
-    // back-end removal (tested elsewhere) is asynchronous.
-    clearAll();
-    expectEquals(allowDelete ? 0 : TOTAL_RESULT_COUNT, downloads.size());
-  },
-};
 
 // Test UI when removing entries is allowed.
 TEST_F('BaseDownloadsWebUITest', 'DeleteAllowed', function() {
-  this.testHelper(true, false);
+  this.expectDeleteControlsVisible(true);
   // TODO(pamg): Mock out the back-end calls, so we can also test removing a
   // single item.
-  testDone();
 });
 
-// Test that clicking <a href=#> doesn't actually go to #.
-TEST_F('BaseDownloadsWebUITest', 'PoundLinkClicksDontChangeUrl', function() {
-  assertEquals(this.browsePreload, document.location.href);
-  document.querySelector('.clear-all-link').click();
-  assertEquals(this.browsePreload, document.location.href);
-  testDone();
+TEST_F('BaseDownloadsWebUITest', 'NoResultsHiddenWhenDownloads', function() {
+  assertNotEquals(0, downloads.Manager.size());
+  expectFalse($('downloads-display').hidden);
+  expectTrue($('no-downloads-or-results').hidden);
+});
+
+TEST_F('BaseDownloadsWebUITest', 'NoSearchResultsShown', function() {
+  expectFalse($('downloads-display').hidden);
+  var noResults = $('no-downloads-or-results');
+  expectTrue(noResults.hidden);
+
+  downloads.Manager.setSearchText('just try to search for me!');
+  this.sendEmptyList();
+
+  expectTrue($('downloads-display').hidden);
+  this.checkShowing(noResults, loadTimeData.getString('no_search_results'));
+});
+
+TEST_F('BaseDownloadsWebUITest', 'NoDownloadsAfterClearAll', function() {
+  expectFalse($('downloads-display').hidden);
+  var noResults = $('no-downloads-or-results');
+  expectTrue(noResults.hidden);
+
+  $('clear-all').click();
+  this.sendEmptyList();
+
+  expectTrue($('downloads-display').hidden);
+  this.checkShowing(noResults, loadTimeData.getString('no_downloads'));
+});
+
+TEST_F('BaseDownloadsWebUITest', 'PauseResumeFocus', function() {
+  var manager = downloads.Manager.getInstance();
+  assertGE(manager.size(), 0);
+
+  var freshestDownload = this.createdDownloads[0];
+  freshestDownload.state = downloads.Item.States.IN_PROGRESS;
+  freshestDownload.resume = false;
+  downloads.Manager.updateItem(freshestDownload);
+
+  var node = manager.idMap_[freshestDownload.id].view.node;
+  var pause = node.querySelector('.pause');
+  var resume = node.querySelector('.resume');
+
+  expectFalse(pause.hidden);
+  expectTrue(resume.hidden);
+  // Move the focus to "Pause" then pretend the download was resumed. The focus
+  // should move to the equivalent button ("Resume" in this case).
+  pause.focus();
+  assertEquals(document.activeElement, pause);
+
+  freshestDownload.state = downloads.Item.States.PAUSED;
+  freshestDownload.resume = true;
+  downloads.Manager.updateItem(freshestDownload);
+
+  expectTrue(pause.hidden);
+  expectFalse(resume.hidden);
+  expectEquals(document.activeElement, resume);
+});
+
+TEST_F('BaseDownloadsWebUITest', 'DatesCollapse', function() {
+  function datesShowing() {
+    var displayDiv = $('downloads-display');
+    return displayDiv.querySelectorAll('.date-container:not([hidden])').length;
+  }
+
+  var manager = downloads.Manager.getInstance();
+  var numDownloads = manager.size();
+  assertGE(numDownloads, 2);
+
+  expectEquals(1, datesShowing());
+
+  var freshestId = this.createdDownloads[0].id;
+  this.createDangerousDownload(freshestId + 1, Date.now());
+  manager.updateAll(this.createdDownloads);
+
+  expectEquals(numDownloads + 1, manager.size());
+  expectEquals(1, datesShowing());
+
+  var firstContainer = document.querySelector('.date-container');
+  assertFalse(firstContainer.hidden);
+  expectGT(firstContainer.querySelector('.since').textContent.trim().length, 0);
+  expectGT(firstContainer.querySelector('.date').textContent.trim().length, 0);
+});
+
+TEST_F('BaseDownloadsWebUITest', 'EmptyProgressStatusText', function() {
+  this.createdDownloads[0].state = downloads.Item.States.PAUSED;
+  this.createdDownloads[0].progress_status_text = '';
+  downloads.Manager.updateItem(this.createdDownloads[0]);  // Might assert().
+});
+
+TEST_F('BaseDownloadsWebUITest', 'EmptyLastStatusText', function() {
+  this.createdDownloads[0].state = downloads.Item.States.INTERRUPTED;
+  this.createdDownloads[0].last_reason_text = '';
+  downloads.Manager.updateItem(this.createdDownloads[0]);  // Might assert().
+});
+
+/**
+ * @constructor
+ * @extends {BaseDownloadsWebUITest}
+ */
+function EmptyDownloadsWebUITest() {}
+
+EmptyDownloadsWebUITest.prototype = {
+  __proto__: BaseDownloadsWebUITest.prototype,
+
+  /** @override */
+  setUp: function() {
+    // Doesn't create any fake downloads.
+    assertEquals(0, downloads.Manager.size());
+  },
+};
+
+TEST_F('EmptyDownloadsWebUITest', 'NoDownloadsMessageShowing', function() {
+  expectTrue($('downloads-display').hidden);
+  var noResults = $('no-downloads-or-results');
+  this.checkShowing(noResults, loadTimeData.getString('no_downloads'));
+});
+
+TEST_F('EmptyDownloadsWebUITest', 'NoSearchResultsWithNoDownloads', function() {
+  downloads.Manager.setSearchText('bananas');
+  this.sendEmptyList();
+
+  expectTrue($('downloads-display').hidden);
+  var noResults = $('no-downloads-or-results');
+  this.checkShowing(noResults, loadTimeData.getString('no_search_results'));
 });
 
 /**
@@ -169,29 +157,13 @@ DownloadsWebUIDeleteProhibitedTest.prototype = {
 
 // Test UI when removing entries is prohibited.
 TEST_F('DownloadsWebUIDeleteProhibitedTest', 'DeleteProhibited', function() {
-  this.testHelper(false, false);
+  this.expectDeleteControlsVisible(false);
   // TODO(pamg): Mock out the back-end calls, so we can also test removing a
   // single item.
-  testDone();
 });
 
-/**
- * Fixture for Downloads WebUI testing for a supervised user.
- * @extends {BaseDownloadsWebUITest}
- * @constructor
- */
-function DownloadsWebUIForSupervisedUsersTest() {}
-
-DownloadsWebUIForSupervisedUsersTest.prototype = {
-  __proto__: BaseDownloadsWebUITest.prototype,
-
-  /** @override */
-  typedefCppFixture: 'DownloadsWebUIForSupervisedUsersTest',
-};
-
-// Test UI for supervised users, removing entries should be disabled
-// and removal controls should be hidden.
-TEST_F('DownloadsWebUIForSupervisedUsersTest', 'SupervisedUsers', function() {
-  this.testHelper(false, true);
-  testDone();
+TEST_F('DownloadsWebUIDeleteProhibitedTest', 'ClearLeavesSearch', function() {
+  downloads.Manager.setSearchText('muhahaha');
+  $('clear-all').click();
+  expectGE(downloads.Manager.getInstance().searchText_.length, 0);
 });

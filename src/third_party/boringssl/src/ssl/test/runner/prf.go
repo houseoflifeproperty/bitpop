@@ -117,6 +117,7 @@ const (
 )
 
 var masterSecretLabel = []byte("master secret")
+var extendedMasterSecretLabel = []byte("extended master secret")
 var keyExpansionLabel = []byte("key expansion")
 var clientFinishedLabel = []byte("client finished")
 var serverFinishedLabel = []byte("server finished")
@@ -150,6 +151,15 @@ func masterFromPreMasterSecret(version uint16, suite *cipherSuite, preMasterSecr
 	return masterSecret
 }
 
+// extendedMasterFromPreMasterSecret generates the master secret from the
+// pre-master secret when the Triple Handshake fix is in effect. See
+// https://tools.ietf.org/html/draft-ietf-tls-session-hash-01
+func extendedMasterFromPreMasterSecret(version uint16, suite *cipherSuite, preMasterSecret []byte, h finishedHash) []byte {
+	masterSecret := make([]byte, masterSecretLength)
+	prfForVersion(version, suite)(masterSecret, preMasterSecret, extendedMasterSecretLabel, h.Sum())
+	return masterSecret
+}
+
 // keysFromMasterSecret generates the connection keys from the master
 // secret, given the lengths of the MAC key, cipher key and IV, as defined in
 // RFC 2246, section 6.3.
@@ -173,6 +183,27 @@ func keysFromMasterSecret(version uint16, suite *cipherSuite, masterSecret, clie
 	keyMaterial = keyMaterial[ivLen:]
 	serverIV = keyMaterial[:ivLen]
 	return
+}
+
+// lookupTLSHash looks up the corresponding crypto.Hash for a given
+// TLS hash identifier.
+func lookupTLSHash(hash uint8) (crypto.Hash, error) {
+	switch hash {
+	case hashMD5:
+		return crypto.MD5, nil
+	case hashSHA1:
+		return crypto.SHA1, nil
+	case hashSHA224:
+		return crypto.SHA224, nil
+	case hashSHA256:
+		return crypto.SHA256, nil
+	case hashSHA384:
+		return crypto.SHA384, nil
+	case hashSHA512:
+		return crypto.SHA512, nil
+	default:
+		return 0, errors.New("tls: unsupported hash algorithm")
+	}
 }
 
 func newFinishedHash(version uint16, cipherSuite *cipherSuite) finishedHash {
@@ -221,6 +252,16 @@ func (h *finishedHash) Write(msg []byte) (n int, err error) {
 	return len(msg), nil
 }
 
+func (h finishedHash) Sum() []byte {
+	if h.version >= VersionTLS12 {
+		return h.client.Sum(nil)
+	}
+
+	out := make([]byte, 0, md5.Size+sha1.Size)
+	out = h.clientMD5.Sum(out)
+	return h.client.Sum(out)
+}
+
 // finishedSum30 calculates the contents of the verify_data member of a SSLv3
 // Finished message given the MD5 and SHA1 hashes of a set of handshake
 // messages.
@@ -264,15 +305,7 @@ func (h finishedHash) clientSum(masterSecret []byte) []byte {
 	}
 
 	out := make([]byte, finishedVerifyLength)
-	if h.version >= VersionTLS12 {
-		seed := h.client.Sum(nil)
-		h.prf(out, masterSecret, clientFinishedLabel, seed)
-	} else {
-		seed := make([]byte, 0, md5.Size+sha1.Size)
-		seed = h.clientMD5.Sum(seed)
-		seed = h.client.Sum(seed)
-		h.prf(out, masterSecret, clientFinishedLabel, seed)
-	}
+	h.prf(out, masterSecret, clientFinishedLabel, h.Sum())
 	return out
 }
 
@@ -284,28 +317,20 @@ func (h finishedHash) serverSum(masterSecret []byte) []byte {
 	}
 
 	out := make([]byte, finishedVerifyLength)
-	if h.version >= VersionTLS12 {
-		seed := h.server.Sum(nil)
-		h.prf(out, masterSecret, serverFinishedLabel, seed)
-	} else {
-		seed := make([]byte, 0, md5.Size+sha1.Size)
-		seed = h.serverMD5.Sum(seed)
-		seed = h.server.Sum(seed)
-		h.prf(out, masterSecret, serverFinishedLabel, seed)
-	}
+	h.prf(out, masterSecret, serverFinishedLabel, h.Sum())
 	return out
 }
 
 // selectClientCertSignatureAlgorithm returns a signatureAndHash to sign a
 // client's CertificateVerify with, or an error if none can be found.
-func (h finishedHash) selectClientCertSignatureAlgorithm(serverList []signatureAndHash, sigType uint8) (signatureAndHash, error) {
+func (h finishedHash) selectClientCertSignatureAlgorithm(serverList, clientList []signatureAndHash, sigType uint8) (signatureAndHash, error) {
 	if h.version < VersionTLS12 {
 		// Nothing to negotiate before TLS 1.2.
 		return signatureAndHash{signature: sigType}, nil
 	}
 
 	for _, v := range serverList {
-		if v.signature == sigType && v.hash == hashSHA256 {
+		if v.signature == sigType && isSupportedSignatureAndHash(v, clientList) {
 			return v, nil
 		}
 	}
@@ -327,21 +352,19 @@ func (h finishedHash) hashForClientCertificate(signatureAndHash signatureAndHash
 		return finishedSum30(md5Hash, sha1Hash, masterSecret, nil), crypto.MD5SHA1, nil
 	}
 	if h.version >= VersionTLS12 {
-		if signatureAndHash.hash != hashSHA256 {
-			return nil, 0, errors.New("tls: unsupported hash function for client certificate")
+		hashAlg, err := lookupTLSHash(signatureAndHash.hash)
+		if err != nil {
+			return nil, 0, err
 		}
-		digest := sha256.Sum256(h.buffer)
-		return digest[:], crypto.SHA256, nil
+		hash := hashAlg.New()
+		hash.Write(h.buffer)
+		return hash.Sum(nil), hashAlg, nil
 	}
 	if signatureAndHash.signature == signatureECDSA {
-		digest := h.server.Sum(nil)
-		return digest, crypto.SHA1, nil
+		return h.server.Sum(nil), crypto.SHA1, nil
 	}
 
-	digest := make([]byte, 0, 36)
-	digest = h.serverMD5.Sum(digest)
-	digest = h.server.Sum(digest)
-	return digest, crypto.MD5SHA1, nil
+	return h.Sum(), crypto.MD5SHA1, nil
 }
 
 // hashForChannelID returns the hash to be signed for TLS Channel

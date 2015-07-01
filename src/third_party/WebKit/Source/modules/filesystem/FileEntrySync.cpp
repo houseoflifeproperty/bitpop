@@ -42,7 +42,7 @@ FileEntrySync::FileEntrySync(DOMFileSystemBase* fileSystem, const String& fullPa
 {
 }
 
-PassRefPtrWillBeRawPtr<File> FileEntrySync::file(ExceptionState& exceptionState)
+File* FileEntrySync::file(ExceptionState& exceptionState)
 {
     return filesystem()->createFile(this, exceptionState);
 }
@@ -52,7 +52,7 @@ FileWriterSync* FileEntrySync::createWriter(ExceptionState& exceptionState)
     return filesystem()->createWriter(this, exceptionState);
 }
 
-void FileEntrySync::trace(Visitor* visitor)
+DEFINE_TRACE(FileEntrySync)
 {
     EntrySync::trace(visitor);
 }

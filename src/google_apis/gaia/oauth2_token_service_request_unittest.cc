@@ -7,6 +7,9 @@
 #include <set>
 #include <string>
 #include <vector>
+
+#include "base/bind.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
 #include "google_apis/gaia/fake_oauth2_token_service.h"
 #include "google_apis/gaia/google_service_auth_error.h"
@@ -22,13 +25,13 @@ const char kScope[] = "SCOPE";
 class TestingOAuth2TokenServiceConsumer : public OAuth2TokenService::Consumer {
  public:
   TestingOAuth2TokenServiceConsumer();
-  virtual ~TestingOAuth2TokenServiceConsumer();
+  ~TestingOAuth2TokenServiceConsumer() override;
 
-  virtual void OnGetTokenSuccess(const OAuth2TokenService::Request* request,
-                                 const std::string& access_token,
-                                 const base::Time& expiration_time) OVERRIDE;
-  virtual void OnGetTokenFailure(const OAuth2TokenService::Request* request,
-                                 const GoogleServiceAuthError& error) OVERRIDE;
+  void OnGetTokenSuccess(const OAuth2TokenService::Request* request,
+                         const std::string& access_token,
+                         const base::Time& expiration_time) override;
+  void OnGetTokenFailure(const OAuth2TokenService::Request* request,
+                         const GoogleServiceAuthError& error) override;
 
   int num_get_token_success_;
   int num_get_token_failure_;
@@ -67,7 +70,7 @@ void TestingOAuth2TokenServiceConsumer::OnGetTokenFailure(
 class MockOAuth2TokenService : public FakeOAuth2TokenService {
  public:
   MockOAuth2TokenService();
-  virtual ~MockOAuth2TokenService();
+  ~MockOAuth2TokenService() override;
 
   void SetResponse(const GoogleServiceAuthError& error,
                    const std::string& access_token,
@@ -80,17 +83,17 @@ class MockOAuth2TokenService : public FakeOAuth2TokenService {
   }
 
  protected:
-  virtual void FetchOAuth2Token(RequestImpl* request,
-                                const std::string& account_id,
-                                net::URLRequestContextGetter* getter,
-                                const std::string& client_id,
-                                const std::string& client_secret,
-                                const ScopeSet& scopes) OVERRIDE;
+  void FetchOAuth2Token(RequestImpl* request,
+                        const std::string& account_id,
+                        net::URLRequestContextGetter* getter,
+                        const std::string& client_id,
+                        const std::string& client_secret,
+                        const ScopeSet& scopes) override;
 
-  virtual void InvalidateOAuth2Token(const std::string& account_id,
-                                     const std::string& client_id,
-                                     const ScopeSet& scopes,
-                                     const std::string& access_token) OVERRIDE;
+  void InvalidateOAuth2Token(const std::string& account_id,
+                             const std::string& client_id,
+                             const ScopeSet& scopes,
+                             const std::string& access_token) override;
 
  private:
   GoogleServiceAuthError response_error_;
@@ -145,8 +148,8 @@ void MockOAuth2TokenService::InvalidateOAuth2Token(
 
 class OAuth2TokenServiceRequestTest : public testing::Test {
  public:
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
  protected:
   class Provider : public OAuth2TokenServiceRequest::TokenServiceProvider {
@@ -154,12 +157,12 @@ class OAuth2TokenServiceRequestTest : public testing::Test {
     Provider(const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
              OAuth2TokenService* token_service);
 
-    virtual scoped_refptr<base::SingleThreadTaskRunner>
-        GetTokenServiceTaskRunner() OVERRIDE;
-    virtual OAuth2TokenService* GetTokenService() OVERRIDE;
+    scoped_refptr<base::SingleThreadTaskRunner> GetTokenServiceTaskRunner()
+        override;
+    OAuth2TokenService* GetTokenService() override;
 
    private:
-    virtual ~Provider();
+    ~Provider() override;
 
     scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
     OAuth2TokenService* token_service_;
@@ -177,7 +180,7 @@ void OAuth2TokenServiceRequestTest::SetUp() {
   oauth2_service_.reset(new MockOAuth2TokenService);
   oauth2_service_->AddAccount(kAccountId);
   provider_ =
-      new Provider(base::MessageLoopProxy::current(), oauth2_service_.get());
+      new Provider(base::ThreadTaskRunnerHandle::Get(), oauth2_service_.get());
 }
 
 void OAuth2TokenServiceRequestTest::TearDown() {

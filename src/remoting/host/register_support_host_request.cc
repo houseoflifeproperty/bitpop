@@ -5,6 +5,7 @@
 #include "remoting/host/register_support_host_request.h"
 
 #include "base/bind.h"
+#include "base/callback_helpers.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
@@ -12,9 +13,10 @@
 #include "remoting/base/constants.h"
 #include "remoting/host/host_config.h"
 #include "remoting/signaling/iq_sender.h"
+#include "remoting/signaling/jid_util.h"
 #include "remoting/signaling/signal_strategy.h"
-#include "third_party/libjingle/source/talk/xmpp/constants.h"
 #include "third_party/webrtc/libjingle/xmllite/xmlelement.h"
+#include "third_party/webrtc/libjingle/xmpp/constants.h"
 
 using buzz::QName;
 using buzz::XmlElement;
@@ -97,7 +99,7 @@ scoped_ptr<XmlElement> RegisterSupportHostRequest::CreateSignature(
   signature_tag->AddAttr(
       QName(kChromotingXmlNamespace, kSignatureTimeAttr), time_str);
 
-  std::string message = jid + ' ' + time_str;
+  std::string message = NormalizeJid(jid) + ' ' + time_str;
   std::string signature(key_pair_->SignMessage(message));
   signature_tag->AddText(signature);
 
@@ -176,11 +178,9 @@ void RegisterSupportHostRequest::CallCallback(
   request_.reset();
   iq_sender_.reset();
   signal_strategy_->RemoveListener(this);
-  signal_strategy_ = NULL;
+  signal_strategy_ = nullptr;
 
-  RegisterCallback callback = callback_;
-  callback_.Reset();
-  callback.Run(success, support_id, lifetime);
+  base::ResetAndReturn(&callback_).Run(success, support_id, lifetime);
 }
 
 }  // namespace remoting

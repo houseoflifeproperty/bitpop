@@ -28,6 +28,7 @@
 
 #include "platform/PlatformMouseEvent.h"
 #include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/scroll/ScrollbarThemeClient.h"
 #include "platform/transforms/TransformationMatrix.h"
 #include "public/platform/Platform.h"
@@ -60,6 +61,11 @@ ScrollbarThemeOverlay::ScrollbarThemeOverlay(int thumbThickness, int scrollbarMa
 int ScrollbarThemeOverlay::scrollbarThickness(ScrollbarControlSize controlSize)
 {
     return m_thumbThickness + m_scrollbarMargin;
+}
+
+int ScrollbarThemeOverlay::scrollbarMargin() const
+{
+    return m_scrollbarMargin;
 }
 
 bool ScrollbarThemeOverlay::usesOverlayScrollbars() const
@@ -122,6 +128,10 @@ int ScrollbarThemeOverlay::thumbThickness(ScrollbarThemeClient*)
 
 void ScrollbarThemeOverlay::paintThumb(GraphicsContext* context, ScrollbarThemeClient* scrollbar, const IntRect& rect)
 {
+    DrawingRecorder recorder(*context, *scrollbar, DisplayItem::ScrollbarThumb, rect);
+    if (recorder.canUseCachedDrawing())
+        return;
+
     IntRect thumbRect = rect;
     if (scrollbar->orientation() == HorizontalScrollbar) {
         thumbRect.setHeight(thumbRect.height() - m_scrollbarMargin);
@@ -136,19 +146,19 @@ void ScrollbarThemeOverlay::paintThumb(GraphicsContext* context, ScrollbarThemeC
         return;
     }
 
-    blink::WebThemeEngine::State state = blink::WebThemeEngine::StateNormal;
+    WebThemeEngine::State state = WebThemeEngine::StateNormal;
     if (scrollbar->pressedPart() == ThumbPart)
-        state = blink::WebThemeEngine::StatePressed;
+        state = WebThemeEngine::StatePressed;
     else if (scrollbar->hoveredPart() == ThumbPart)
-        state = blink::WebThemeEngine::StateHover;
+        state = WebThemeEngine::StateHover;
 
-    blink::WebCanvas* canvas = context->canvas();
+    WebCanvas* canvas = context->canvas();
 
-    blink::WebThemeEngine::Part part = blink::WebThemeEngine::PartScrollbarHorizontalThumb;
+    WebThemeEngine::Part part = WebThemeEngine::PartScrollbarHorizontalThumb;
     if (scrollbar->orientation() == VerticalScrollbar)
-        part = blink::WebThemeEngine::PartScrollbarVerticalThumb;
+        part = WebThemeEngine::PartScrollbarVerticalThumb;
 
-    blink::Platform::current()->themeEngine()->paint(canvas, part, state, blink::WebRect(rect), 0);
+    Platform::current()->themeEngine()->paint(canvas, part, state, WebRect(rect), 0);
 }
 
 ScrollbarPart ScrollbarThemeOverlay::hitTest(ScrollbarThemeClient* scrollbar, const IntPoint& position)

@@ -139,10 +139,6 @@ class NATIVE_THEME_EXPORT NativeTheme {
     int classic_state;  // Used on Windows when uxtheme is not available.
   };
 
-  struct MenuSeparatorExtraParams {
-    bool has_gutter;
-  };
-
   struct MenuBackgroundExtraParams {
     int corner_radius;
   };
@@ -201,7 +197,6 @@ class NATIVE_THEME_EXPORT NativeTheme {
     MenuCheckExtraParams menu_check;
     MenuItemExtraParams menu_item;
     MenuListExtraParams menu_list;
-    MenuSeparatorExtraParams menu_separator;
     MenuBackgroundExtraParams menu_background;
     ProgressBarExtraParams progress_bar;
     ScrollbarArrowExtraParams scrollbar_arrow;
@@ -303,7 +298,7 @@ class NATIVE_THEME_EXPORT NativeTheme {
     kColorId_TableSelectionBackgroundFocused,
     kColorId_TableSelectionBackgroundUnfocused,
     kColorId_TableGroupingIndicatorColor,
-    // Results Tables, such as the chrome omnibox.
+    // Results Tables, such as the omnibox.
     kColorId_ResultsTableNormalBackground,
     kColorId_ResultsTableHoveredBackground,
     kColorId_ResultsTableSelectedBackground,
@@ -319,6 +314,20 @@ class NATIVE_THEME_EXPORT NativeTheme {
     kColorId_ResultsTableNormalDivider,
     kColorId_ResultsTableHoveredDivider,
     kColorId_ResultsTableSelectedDivider,
+    // Positive text refers to good (often rendered in green) text, such as the
+    // stock value went up.
+    kColorId_ResultsTablePositiveText,
+    kColorId_ResultsTablePositiveHoveredText,
+    kColorId_ResultsTablePositiveSelectedText,
+    // Negative text refers to something alarming (often rendered in red), such
+    // as the stock value went down.
+    kColorId_ResultsTableNegativeText,
+    kColorId_ResultsTableNegativeHoveredText,
+    kColorId_ResultsTableNegativeSelectedText,
+    // Colors for the material spinner (aka throbber).
+    kColorId_ThrobberSpinningColor,
+    kColorId_ThrobberWaitingColor,
+    kColorId_ThrobberLightColor,
     // TODO(benrg): move other hardcoded colors here.
 
     kColorId_NumColors,

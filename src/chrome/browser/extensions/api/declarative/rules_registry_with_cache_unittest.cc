@@ -18,8 +18,10 @@
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "extensions/browser/api/declarative/rules_cache_delegate.h"
+#include "extensions/browser/api/declarative/rules_registry_service.h"
 #include "extensions/browser/api/declarative/test_rules_registry.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/value_store/testing_value_store.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
@@ -34,6 +36,7 @@ const char kRule2Id[] = "rule2";
 }
 
 namespace extensions {
+const int kRulesRegistryID = RulesRegistryService::kDefaultRulesRegistryID;
 
 class RulesRegistryWithCacheTest : public testing::Test {
  public:
@@ -43,9 +46,9 @@ class RulesRegistryWithCacheTest : public testing::Test {
                                         /*event_name=*/"",
                                         content::BrowserThread::UI,
                                         &cache_delegate_,
-                                        RulesRegistry::WebViewKey(0, 0))) {}
+                                        kRulesRegistryID)) {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     env_.GetExtensionPrefs();  // Force creation before adding extensions.
     // Note that env_.MakeExtension below also forces the creation of
     // ExtensionService.
@@ -65,7 +68,7 @@ class RulesRegistryWithCacheTest : public testing::Test {
     CHECK_NE(extension2_->id(), extension1_->id());
   }
 
-  virtual ~RulesRegistryWithCacheTest() {}
+  ~RulesRegistryWithCacheTest() override {}
 
   std::string AddRule(const std::string& extension_id,
                       const std::string& rule_id,
@@ -232,10 +235,9 @@ TEST_F(RulesRegistryWithCacheTest, DeclarativeRulesStored) {
       RulesCacheDelegate::GetRulesStoredKey(
           event_name, profile()->IsOffTheRecord()));
   scoped_ptr<RulesCacheDelegate> cache_delegate(new RulesCacheDelegate(false));
-  scoped_refptr<RulesRegistry> registry(new TestRulesRegistry(
-      profile(), event_name, content::BrowserThread::UI,
-      cache_delegate.get(),
-      RulesRegistry::WebViewKey(0, 0)));
+  scoped_refptr<RulesRegistry> registry(
+      new TestRulesRegistry(profile(), event_name, content::BrowserThread::UI,
+                            cache_delegate.get(), kRulesRegistryID));
 
   // 1. Test the handling of preferences.
   // Default value is always true.
@@ -254,16 +256,14 @@ TEST_F(RulesRegistryWithCacheTest, DeclarativeRulesStored) {
 
   scoped_ptr<base::ListValue> value(new base::ListValue);
   value->AppendBoolean(true);
-  cache_delegate->WriteToStorage(extension1_->id(),
-                                 value.PassAs<base::Value>());
+  cache_delegate->WriteToStorage(extension1_->id(), value.Pass());
   EXPECT_TRUE(cache_delegate->GetDeclarativeRulesStored(extension1_->id()));
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(write_count + 1, store->write_count());
   write_count = store->write_count();
 
   value.reset(new base::ListValue);
-  cache_delegate->WriteToStorage(extension1_->id(),
-                                 value.PassAs<base::Value>());
+  cache_delegate->WriteToStorage(extension1_->id(), value.Pass());
   EXPECT_FALSE(cache_delegate->GetDeclarativeRulesStored(extension1_->id()));
   base::RunLoop().RunUntilIdle();
   // No rules currently, but previously there were, so we expect a write.
@@ -271,8 +271,7 @@ TEST_F(RulesRegistryWithCacheTest, DeclarativeRulesStored) {
   write_count = store->write_count();
 
   value.reset(new base::ListValue);
-  cache_delegate->WriteToStorage(extension1_->id(),
-                                 value.PassAs<base::Value>());
+  cache_delegate->WriteToStorage(extension1_->id(), value.Pass());
   EXPECT_FALSE(cache_delegate->GetDeclarativeRulesStored(extension1_->id()));
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(write_count, store->write_count());
@@ -305,16 +304,14 @@ TEST_F(RulesRegistryWithCacheTest, RulesStoredFlagMultipleRegistries) {
       RulesCacheDelegate::GetRulesStoredKey(
           event_name2, profile()->IsOffTheRecord()));
   scoped_ptr<RulesCacheDelegate> cache_delegate1(new RulesCacheDelegate(false));
-  scoped_refptr<RulesRegistry> registry1(new TestRulesRegistry(
-      profile(), event_name1, content::BrowserThread::UI,
-      cache_delegate1.get(),
-      RulesRegistry::WebViewKey(0, 0)));
+  scoped_refptr<RulesRegistry> registry1(
+      new TestRulesRegistry(profile(), event_name1, content::BrowserThread::UI,
+                            cache_delegate1.get(), kRulesRegistryID));
 
   scoped_ptr<RulesCacheDelegate> cache_delegate2(new RulesCacheDelegate(false));
-  scoped_refptr<RulesRegistry> registry2(new TestRulesRegistry(
-      profile(), event_name2, content::BrowserThread::UI,
-      cache_delegate2.get(),
-      RulesRegistry::WebViewKey(0, 0)));
+  scoped_refptr<RulesRegistry> registry2(
+      new TestRulesRegistry(profile(), event_name2, content::BrowserThread::UI,
+                            cache_delegate2.get(), kRulesRegistryID));
 
   // Checkt the correct default values.
   EXPECT_TRUE(cache_delegate1->GetDeclarativeRulesStored(extension1_->id()));
@@ -348,19 +345,18 @@ TEST_F(RulesRegistryWithCacheTest, RulesPreservedAcrossRestart) {
                             &error));
   ASSERT_TRUE(error.empty());
   extension_service->AddExtension(extension.get());
-  EXPECT_TRUE(extension_service->extensions()->Contains(extension->id()));
+  EXPECT_TRUE(extensions::ExtensionRegistry::Get(env_.profile())
+                  ->enabled_extensions()
+                  .Contains(extension->id()));
   EXPECT_TRUE(extension->permissions_data()->HasAPIPermission(
       APIPermission::kDeclarativeWebRequest));
   env_.GetExtensionSystem()->SetReady();
 
   // 2. First run, adding a rule for the extension.
   scoped_ptr<RulesCacheDelegate> cache_delegate(new RulesCacheDelegate(false));
-  scoped_refptr<TestRulesRegistry> registry(new TestRulesRegistry(
-      profile(),
-      "testEvent",
-      content::BrowserThread::UI,
-      cache_delegate.get(),
-      RulesRegistry::WebViewKey(0, 0)));
+  scoped_refptr<TestRulesRegistry> registry(
+      new TestRulesRegistry(profile(), "testEvent", content::BrowserThread::UI,
+                            cache_delegate.get(), kRulesRegistryID));
 
   AddRule(extension1_->id(), kRuleId, registry.get());
   base::RunLoop().RunUntilIdle();  // Posted tasks store the added rule.
@@ -368,12 +364,9 @@ TEST_F(RulesRegistryWithCacheTest, RulesPreservedAcrossRestart) {
 
   // 3. Restart the TestRulesRegistry and see the rule still there.
   cache_delegate.reset(new RulesCacheDelegate(false));
-  registry = new TestRulesRegistry(
-      profile(),
-      "testEvent",
-      content::BrowserThread::UI,
-      cache_delegate.get(),
-      RulesRegistry::WebViewKey(0, 0));
+  registry =
+      new TestRulesRegistry(profile(), "testEvent", content::BrowserThread::UI,
+                            cache_delegate.get(), kRulesRegistryID);
 
   base::RunLoop().RunUntilIdle();  // Posted tasks retrieve the stored rule.
   EXPECT_EQ(1, GetNumberOfRules(extension1_->id(), registry.get()));

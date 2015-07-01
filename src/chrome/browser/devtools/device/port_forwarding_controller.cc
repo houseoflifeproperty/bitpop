@@ -4,7 +4,6 @@
 
 #include "chrome/browser/devtools/device/port_forwarding_controller.h"
 
-#include <algorithm>
 #include <map>
 
 #include "base/bind.h"
@@ -40,50 +39,37 @@ enum {
   kStatusDisconnecting = -2,
   kStatusConnecting = -1,
   kStatusOK = 0,
-  // Positive values are used to count open connections.
 };
 
 namespace tethering = ::chrome::devtools::Tethering;
 
 static const char kDevToolsRemoteBrowserTarget[] = "/devtools/browser";
-const int kMinVersionPortForwarding = 28;
 
 class SocketTunnel : public base::NonThreadSafe {
  public:
-  typedef base::Callback<void(int)> CounterCallback;
-
   static void StartTunnel(const std::string& host,
                           int port,
-                          const CounterCallback& callback,
                           int result,
                           scoped_ptr<net::StreamSocket> socket) {
-    if (result < 0)
-      return;
-    SocketTunnel* tunnel = new SocketTunnel(callback);
-    tunnel->Start(socket.Pass(), host, port);
+    if (result == net::OK)
+      new SocketTunnel(socket.Pass(), host, port);
   }
 
  private:
-  explicit SocketTunnel(const CounterCallback& callback)
-      : pending_writes_(0),
-        pending_destruction_(false),
-        callback_(callback),
-        about_to_destroy_(false) {
-    callback_.Run(1);
-  }
-
-  void Start(scoped_ptr<net::StreamSocket> socket,
-             const std::string& host, int port) {
-    remote_socket_.swap(socket);
-
-    host_resolver_ = net::HostResolver::CreateDefaultResolver(NULL);
+  SocketTunnel(scoped_ptr<net::StreamSocket> socket,
+               const std::string& host,
+               int port)
+      : remote_socket_(socket.Pass()),
+        pending_writes_(0),
+        pending_destruction_(false) {
+    host_resolver_ = net::HostResolver::CreateDefaultResolver(nullptr);
     net::HostResolver::RequestInfo request_info(net::HostPortPair(host, port));
     int result = host_resolver_->Resolve(
         request_info,
         net::DEFAULT_PRIORITY,
         &address_list_,
         base::Bind(&SocketTunnel::OnResolved, base::Unretained(this)),
-        NULL,
+        nullptr,
         net::BoundNetLog());
     if (result != net::ERR_IO_PENDING)
       OnResolved(result);
@@ -95,21 +81,12 @@ class SocketTunnel : public base::NonThreadSafe {
       return;
     }
 
-    host_socket_.reset(new net::TCPClientSocket(address_list_, NULL,
+    host_socket_.reset(new net::TCPClientSocket(address_list_, nullptr,
                                                 net::NetLog::Source()));
     result = host_socket_->Connect(base::Bind(&SocketTunnel::OnConnected,
                                               base::Unretained(this)));
     if (result != net::ERR_IO_PENDING)
       OnConnected(result);
-  }
-
-  ~SocketTunnel() {
-    about_to_destroy_ = true;
-    if (host_socket_)
-      host_socket_->Disconnect();
-    if (remote_socket_)
-      remote_socket_->Disconnect();
-    callback_.Run(-1);
   }
 
   void OnConnected(int result) {
@@ -197,11 +174,6 @@ class SocketTunnel : public base::NonThreadSafe {
   }
 
   void SelfDestruct() {
-    // In case one of the connections closes, we could get here
-    // from another one due to Disconnect firing back on all
-    // read callbacks.
-    if (about_to_destroy_)
-      return;
     if (pending_writes_ > 0) {
       pending_destruction_ = true;
       return;
@@ -215,63 +187,32 @@ class SocketTunnel : public base::NonThreadSafe {
   net::AddressList address_list_;
   int pending_writes_;
   bool pending_destruction_;
-  CounterCallback callback_;
-  bool about_to_destroy_;
 };
-
-typedef DevToolsAndroidBridge::RemoteBrowser::ParsedVersion ParsedVersion;
-
-static bool IsVersionLower(const ParsedVersion& left,
-                           const ParsedVersion& right) {
-  return std::lexicographical_compare(
-    left.begin(), left.end(), right.begin(), right.end());
-}
-
-static bool IsPortForwardingSupported(const ParsedVersion& version) {
-  return !version.empty() && version[0] >= kMinVersionPortForwarding;
-}
-
-static scoped_refptr<DevToolsAndroidBridge::RemoteBrowser>
-FindBestBrowserForTethering(
-    const DevToolsAndroidBridge::RemoteBrowsers browsers) {
-  scoped_refptr<DevToolsAndroidBridge::RemoteBrowser> best_browser;
-  ParsedVersion newest_version;
-  for (DevToolsAndroidBridge::RemoteBrowsers::const_iterator it =
-      browsers.begin(); it != browsers.end(); ++it) {
-    scoped_refptr<DevToolsAndroidBridge::RemoteBrowser> browser = *it;
-    ParsedVersion current_version = browser->GetParsedVersion();
-    if (IsPortForwardingSupported(current_version) &&
-        IsVersionLower(newest_version, current_version)) {
-      best_browser = browser;
-      newest_version = current_version;
-    }
-  }
-  return best_browser;
-}
 
 }  // namespace
 
 class PortForwardingController::Connection
-    : public DevToolsAndroidBridge::AndroidWebSocket::Delegate {
+    : public AndroidDeviceManager::AndroidWebSocket::Delegate {
  public:
-  Connection(Registry* registry,
-             scoped_refptr<DevToolsAndroidBridge::RemoteDevice> device,
+  Connection(PortForwardingController* controller,
              scoped_refptr<DevToolsAndroidBridge::RemoteBrowser> browser,
              const ForwardingMap& forwarding_map);
-  virtual ~Connection();
+  ~Connection() override;
 
   const PortStatusMap& GetPortStatusMap();
 
   void UpdateForwardingMap(const ForwardingMap& new_forwarding_map);
+
+  scoped_refptr<DevToolsAndroidBridge::RemoteBrowser> browser() {
+    return browser_;
+  }
 
  private:
   friend struct content::BrowserThread::DeleteOnThread<
       content::BrowserThread::UI>;
   friend class base::DeleteHelper<Connection>;
 
-
   typedef std::map<int, std::string> ForwardingMap;
-
   typedef base::Callback<void(PortStatus)> CommandCallback;
   typedef std::map<int, CommandCallback> CommandCallbackMap;
 
@@ -285,56 +226,52 @@ class PortForwardingController::Connection
   void ProcessBindResponse(int port, PortStatus status);
   void ProcessUnbindResponse(int port, PortStatus status);
 
-  static void UpdateSocketCountOnHandlerThread(
-      base::WeakPtr<Connection> weak_connection, int port, int increment);
-  void UpdateSocketCount(int port, int increment);
-
   // DevToolsAndroidBridge::AndroidWebSocket::Delegate implementation:
-  virtual void OnSocketOpened() OVERRIDE;
-  virtual void OnFrameRead(const std::string& message) OVERRIDE;
-  virtual void OnSocketClosed() OVERRIDE;
+  void OnSocketOpened() override;
+  void OnFrameRead(const std::string& message) override;
+  void OnSocketClosed() override;
 
-  PortForwardingController::Registry* registry_;
-  scoped_refptr<DevToolsAndroidBridge::RemoteDevice> device_;
+  PortForwardingController* controller_;
   scoped_refptr<DevToolsAndroidBridge::RemoteBrowser> browser_;
-  scoped_ptr<DevToolsAndroidBridge::AndroidWebSocket> web_socket_;
+  scoped_ptr<AndroidDeviceManager::AndroidWebSocket> web_socket_;
   int command_id_;
   bool connected_;
   ForwardingMap forwarding_map_;
   CommandCallbackMap pending_responses_;
   PortStatusMap port_status_;
-  base::WeakPtrFactory<Connection> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(Connection);
 };
 
 PortForwardingController::Connection::Connection(
-    Registry* registry,
-    scoped_refptr<DevToolsAndroidBridge::RemoteDevice> device,
+    PortForwardingController* controller,
     scoped_refptr<DevToolsAndroidBridge::RemoteBrowser> browser,
     const ForwardingMap& forwarding_map)
-    : registry_(registry),
-      device_(device),
+    : controller_(controller),
       browser_(browser),
       command_id_(0),
       connected_(false),
-      forwarding_map_(forwarding_map),
-      weak_factory_(this) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  (*registry_)[device_->serial()] = this;
+      forwarding_map_(forwarding_map) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  controller_->registry_[browser->serial()] = this;
+  scoped_refptr<AndroidDeviceManager::Device> device(
+      controller_->bridge_->FindDevice(browser->serial()));
+  DCHECK(device.get());
   web_socket_.reset(
-      browser->CreateWebSocket(kDevToolsRemoteBrowserTarget, this));
+      device->CreateWebSocket(browser->socket(),
+                              kDevToolsRemoteBrowserTarget, this));
 }
 
 PortForwardingController::Connection::~Connection() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(registry_->find(device_->serial()) != registry_->end());
-  registry_->erase(device_->serial());
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  DCHECK(controller_->registry_.find(browser_->serial()) !=
+         controller_->registry_.end());
+  controller_->registry_.erase(browser_->serial());
 }
 
 void PortForwardingController::Connection::UpdateForwardingMap(
     const ForwardingMap& new_forwarding_map) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (connected_) {
     SerializeChanges(tethering::unbind::kName,
         new_forwarding_map, forwarding_map_);
@@ -348,7 +285,7 @@ void PortForwardingController::Connection::SerializeChanges(
     const std::string& method,
     const ForwardingMap& old_map,
     const ForwardingMap& new_map) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   for (ForwardingMap::const_iterator new_it(new_map.begin());
       new_it != new_map.end(); ++new_it) {
     int port = new_it->first;
@@ -363,18 +300,18 @@ void PortForwardingController::Connection::SerializeChanges(
 
 void PortForwardingController::Connection::SendCommand(
     const std::string& method, int port) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  base::DictionaryValue params;
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  scoped_ptr<base::DictionaryValue> params(new base::DictionaryValue);
   if (method == tethering::bind::kName) {
-    params.SetInteger(tethering::bind::kParamPort, port);
+    params->SetInteger(tethering::bind::kParamPort, port);
   } else {
     DCHECK_EQ(tethering::unbind::kName, method);
-    params.SetInteger(tethering::unbind::kParamPort, port);
+    params->SetInteger(tethering::unbind::kParamPort, port);
   }
-  DevToolsProtocol::Command command(++command_id_, method, &params);
+  int id = ++command_id_;
 
   if (method == tethering::bind::kName) {
-    pending_responses_[command.id()] =
+    pending_responses_[id] =
         base::Bind(&Connection::ProcessBindResponse,
                    base::Unretained(this), port);
 #if defined(DEBUG_DEVTOOLS)
@@ -388,7 +325,7 @@ void PortForwardingController::Connection::SendCommand(
       return;
     }
 
-    pending_responses_[command.id()] =
+    pending_responses_[id] =
         base::Bind(&Connection::ProcessUnbindResponse,
                    base::Unretained(this), port);
 #if defined(DEBUG_DEVTOOLS)
@@ -396,21 +333,22 @@ void PortForwardingController::Connection::SendCommand(
 #endif  // defined(DEBUG_DEVTOOLS)
   }
 
-  web_socket_->SendFrame(command.Serialize());
+  web_socket_->SendFrame(
+      DevToolsProtocol::SerializeCommand(id, method, params.Pass()));
 }
 
 bool PortForwardingController::Connection::ProcessResponse(
     const std::string& message) {
-  scoped_ptr<DevToolsProtocol::Response> response(
-      DevToolsProtocol::ParseResponse(message));
-  if (!response)
+  int id = 0;
+  int error_code = 0;
+  if (!DevToolsProtocol::ParseResponse(message, &id, &error_code))
     return false;
 
-  CommandCallbackMap::iterator it = pending_responses_.find(response->id());
+  CommandCallbackMap::iterator it = pending_responses_.find(id);
   if (it == pending_responses_.end())
     return false;
 
-  it->second.Run(response->error_code() ? kStatusError : kStatusOK);
+  it->second.Run(error_code ? kStatusError : kStatusOK);
   pending_responses_.erase(it);
   return true;
 }
@@ -431,35 +369,14 @@ void PortForwardingController::Connection::ProcessUnbindResponse(
     port_status_.erase(it);
 }
 
-// static
-void PortForwardingController::Connection::UpdateSocketCountOnHandlerThread(
-    base::WeakPtr<Connection> weak_connection, int port, int increment) {
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-     base::Bind(&Connection::UpdateSocketCount,
-                weak_connection, port, increment));
-}
-
-void PortForwardingController::Connection::UpdateSocketCount(
-    int port, int increment) {
-#if defined(DEBUG_DEVTOOLS)
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  PortStatusMap::iterator it = port_status_.find(port);
-  if (it == port_status_.end())
-    return;
-  if (it->second < 0 || (it->second == 0 && increment < 0))
-    return;
-  it->second += increment;
-#endif  // defined(DEBUG_DEVTOOLS)
-}
-
 const PortForwardingController::PortStatusMap&
 PortForwardingController::Connection::GetPortStatusMap() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return port_status_;
 }
 
 void PortForwardingController::Connection::OnSocketOpened() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   connected_ = true;
   SerializeChanges(tethering::bind::kName, ForwardingMap(), forwarding_map_);
 }
@@ -470,20 +387,16 @@ void PortForwardingController::Connection::OnSocketClosed() {
 
 void PortForwardingController::Connection::OnFrameRead(
     const std::string& message) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (ProcessResponse(message))
     return;
 
-  scoped_ptr<DevToolsProtocol::Notification> notification(
-      DevToolsProtocol::ParseNotification(message));
-  if (!notification)
+  std::string method;
+  scoped_ptr<base::DictionaryValue> params;
+  if (!DevToolsProtocol::ParseNotification(message, &method, &params))
     return;
 
-  if (notification->method() != tethering::accepted::kName)
-    return;
-
-  base::DictionaryValue* params = notification->params();
-  if (!params)
+  if (method != tethering::accepted::kName || !params)
     return;
 
   int port;
@@ -505,20 +418,20 @@ void PortForwardingController::Connection::OnFrameRead(
     return;
   std::string destination_host = tokens[0];
 
-  SocketTunnel::CounterCallback callback =
-      base::Bind(&Connection::UpdateSocketCountOnHandlerThread,
-                 weak_factory_.GetWeakPtr(), port);
-
-  device_->OpenSocket(
+  scoped_refptr<AndroidDeviceManager::Device> device(
+      controller_->bridge_->FindDevice(browser_->serial()));
+  DCHECK(device.get());
+  device->OpenSocket(
       connection_id.c_str(),
       base::Bind(&SocketTunnel::StartTunnel,
                  destination_host,
-                 destination_port,
-                 callback));
+                 destination_port));
 }
 
-PortForwardingController::PortForwardingController(Profile* profile)
-    : profile_(profile),
+PortForwardingController::PortForwardingController(
+    Profile* profile,
+    DevToolsAndroidBridge* bridge)
+    : bridge_(bridge),
       pref_service_(profile->GetPrefs()) {
   pref_change_registrar_.Init(pref_service_);
   base::Closure callback = base::Bind(
@@ -530,30 +443,25 @@ PortForwardingController::PortForwardingController(Profile* profile)
 
 PortForwardingController::~PortForwardingController() {}
 
-PortForwardingController::DevicesStatus
+PortForwardingController::ForwardingStatus
 PortForwardingController::DeviceListChanged(
     const DevToolsAndroidBridge::RemoteDevices& devices) {
-  DevicesStatus status;
+  ForwardingStatus status;
   if (forwarding_map_.empty())
     return status;
 
-  for (DevToolsAndroidBridge::RemoteDevices::const_iterator it =
-      devices.begin(); it != devices.end(); ++it) {
-    scoped_refptr<DevToolsAndroidBridge::RemoteDevice> device = *it;
+  for (const auto& device : devices) {
     if (!device->is_connected())
       continue;
     Registry::iterator rit = registry_.find(device->serial());
     if (rit == registry_.end()) {
-      scoped_refptr<DevToolsAndroidBridge::RemoteBrowser> browser =
-          FindBestBrowserForTethering(device->browsers());
-      if (browser.get()) {
-        new Connection(&registry_, device, browser, forwarding_map_);
-      }
+      if (device->browsers().size() > 0)
+        new Connection(this, device->browsers()[0], forwarding_map_);
     } else {
-      status[device->serial()] = (*rit).second->GetPortStatusMap();
+      status.push_back(std::make_pair(rit->second->browser(),
+                                      rit->second->GetPortStatusMap()));
     }
   }
-
   return status;
 }
 

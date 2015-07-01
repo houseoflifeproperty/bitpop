@@ -10,7 +10,6 @@
 #include "base/files/file_util.h"
 #include "base/files/memory_mapped_file.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/installer/util/installer_util_test_common.h"
@@ -21,7 +20,7 @@
 namespace {
 class MoveTreeWorkItemTest : public testing::Test {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(temp_from_dir_.CreateUniqueTempDir());
     ASSERT_TRUE(temp_to_dir_.CreateUniqueTempDir());
   }

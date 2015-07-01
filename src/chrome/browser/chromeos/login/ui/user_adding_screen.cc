@@ -16,8 +16,8 @@
 #include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "components/session_manager/core/session_manager.h"
 #include "components/user_manager/user_manager.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace chromeos {
 
@@ -25,12 +25,12 @@ namespace {
 
 class UserAddingScreenImpl : public UserAddingScreen {
  public:
-  virtual void Start() OVERRIDE;
-  virtual void Cancel() OVERRIDE;
-  virtual bool IsRunning() OVERRIDE;
+  void Start() override;
+  void Cancel() override;
+  bool IsRunning() override;
 
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
 
   static UserAddingScreenImpl* GetInstance();
  private:
@@ -39,7 +39,7 @@ class UserAddingScreenImpl : public UserAddingScreen {
   void OnDisplayHostCompletion();
 
   UserAddingScreenImpl();
-  virtual ~UserAddingScreenImpl();
+  ~UserAddingScreenImpl() override;
 
   ObserverList<Observer> observers_;
   LoginDisplayHost* display_host_;

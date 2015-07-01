@@ -19,19 +19,20 @@ namespace chromeos {
 class SupervisedUserCreationFlow : public ExtendedUserFlow {
  public:
   explicit SupervisedUserCreationFlow(const std::string& manager_id);
-  virtual ~SupervisedUserCreationFlow();
+  ~SupervisedUserCreationFlow() override;
 
-  virtual bool CanLockScreen() OVERRIDE;
-  virtual bool ShouldShowSettings() OVERRIDE;
-  virtual bool ShouldLaunchBrowser() OVERRIDE;
-  virtual bool ShouldSkipPostLoginScreens() OVERRIDE;
-  virtual bool SupportsEarlyRestartToApplyFlags() OVERRIDE;
-  virtual bool HandleLoginFailure(const AuthFailure& failure) OVERRIDE;
-  virtual void HandleLoginSuccess(const UserContext& context) OVERRIDE;
-  virtual bool HandlePasswordChangeDetected() OVERRIDE;
-  virtual void HandleOAuthTokenStatusChange(
-      user_manager::User::OAuthTokenStatus status) OVERRIDE;
-  virtual void LaunchExtraSteps(Profile* profile) OVERRIDE;
+  bool CanLockScreen() override;
+  bool ShouldShowSettings() override;
+  bool ShouldLaunchBrowser() override;
+  bool ShouldSkipPostLoginScreens() override;
+  bool SupportsEarlyRestartToApplyFlags() override;
+  bool HandleLoginFailure(const AuthFailure& failure) override;
+  void HandleLoginSuccess(const UserContext& context) override;
+  bool HandlePasswordChangeDetected() override;
+  void HandleOAuthTokenStatusChange(
+      user_manager::User::OAuthTokenStatus status) override;
+  void LaunchExtraSteps(Profile* profile) override;
+
  private:
   // Display name for user being created.
   base::string16 name_;

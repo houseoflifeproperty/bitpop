@@ -31,8 +31,8 @@ class URLSecurityManagerWin : public URLSecurityManager {
   explicit URLSecurityManagerWin(const HttpAuthFilter* whitelist_delegate);
 
   // URLSecurityManager methods:
-  virtual bool CanUseDefaultCredentials(const GURL& auth_origin) const;
-  virtual bool CanDelegate(const GURL& auth_origin) const;
+  bool CanUseDefaultCredentials(const GURL& auth_origin) const override;
+  bool CanDelegate(const GURL& auth_origin) const override;
 
  private:
   bool EnsureSystemSecurityManager();
@@ -53,10 +53,10 @@ bool URLSecurityManagerWin::CanUseDefaultCredentials(
   if (!const_cast<URLSecurityManagerWin*>(this)->EnsureSystemSecurityManager())
     return false;
 
-  std::wstring url_w = base::ASCIIToWide(auth_origin.spec());
+  base::string16 url16 = base::ASCIIToUTF16(auth_origin.spec());
   DWORD policy = 0;
   HRESULT hr;
-  hr = security_manager_->ProcessUrlAction(url_w.c_str(),
+  hr = security_manager_->ProcessUrlAction(url16.c_str(),
                                            URLACTION_CREDENTIALS_USE,
                                            reinterpret_cast<BYTE*>(&policy),
                                            sizeof(policy), NULL, 0,
@@ -84,7 +84,7 @@ bool URLSecurityManagerWin::CanUseDefaultCredentials(
       // URLZONE_INTERNET      3
       // URLZONE_UNTRUSTED     4
       DWORD zone = 0;
-      hr = security_manager_->MapUrlToZone(url_w.c_str(), &zone, 0);
+      hr = security_manager_->MapUrlToZone(url16.c_str(), &zone, 0);
       if (FAILED(hr)) {
         LOG(ERROR) << "IInternetSecurityManager::MapUrlToZone failed: " << hr;
         return false;
@@ -111,11 +111,11 @@ bool URLSecurityManagerWin::CanDelegate(const GURL& auth_origin) const {
 }
 
 bool URLSecurityManagerWin::EnsureSystemSecurityManager() {
-  if (!security_manager_) {
+  if (!security_manager_.get()) {
     HRESULT hr = CoInternetCreateSecurityManager(NULL,
                                                  security_manager_.Receive(),
                                                  NULL);
-    if (FAILED(hr) || !security_manager_) {
+    if (FAILED(hr) || !security_manager_.get()) {
       LOG(ERROR) << "Unable to create the Windows Security Manager instance";
       return false;
     }

@@ -10,16 +10,11 @@
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/password_manager/core/browser/log_router.h"
 
-namespace content {
-class BrowserContext;
-}
-
 namespace password_manager {
 
 // Collects the logs for the password manager internals page and distributes
 // them to all open tabs with the internals page.
-class PasswordManagerInternalsService : public KeyedService,
-                                        public LogRouter {
+class PasswordManagerInternalsService : public KeyedService, public LogRouter {
  public:
   // There are only two ways in which the service depends on the BrowserContext:
   // 1) There is one service per each non-incognito BrowserContext.
@@ -27,7 +22,7 @@ class PasswordManagerInternalsService : public KeyedService,
   // Both properties are guarantied by the BrowserContextKeyedFactory framework,
   // so the service itself does not need the context on creation.
   PasswordManagerInternalsService();
-  virtual ~PasswordManagerInternalsService();
+  ~PasswordManagerInternalsService() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(PasswordManagerInternalsService);

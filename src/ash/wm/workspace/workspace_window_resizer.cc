@@ -72,7 +72,7 @@ scoped_ptr<WindowResizer> CreateWindowResizer(
   // It may be possible to refactor and eliminate chaining.
   WindowResizer* window_resizer = NULL;
 
-  if (!window_state->IsNormalOrSnapped())
+  if (!window_state->IsNormalOrSnapped() && !window_state->IsDocked())
     return scoped_ptr<WindowResizer>();
 
   int bounds_change = WindowResizer::GetBoundsChangeForWindowComponent(
@@ -941,10 +941,14 @@ void WorkspaceWindowResizer::UpdateSnapPhantomWindow(const gfx::Point& location,
     edge_cycler_.reset();
     return;
   }
-  if (!edge_cycler_)
-    edge_cycler_.reset(new TwoStepEdgeCycler(location));
-  else
+  if (!edge_cycler_) {
+    edge_cycler_.reset(new TwoStepEdgeCycler(
+        location, snap_type_ == SNAP_LEFT
+                      ? TwoStepEdgeCycler::DIRECTION_LEFT
+                      : TwoStepEdgeCycler::DIRECTION_RIGHT));
+  } else {
     edge_cycler_->OnMove(location);
+  }
 
   // Update phantom window with snapped or docked guide bounds.
   // Windows that cannot be snapped or are less wide than kMaxDockWidth can get

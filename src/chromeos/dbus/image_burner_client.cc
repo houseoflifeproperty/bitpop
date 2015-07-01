@@ -21,12 +21,12 @@ class ImageBurnerClientImpl : public ImageBurnerClient {
  public:
   ImageBurnerClientImpl() : proxy_(NULL), weak_ptr_factory_(this) {}
 
-  virtual ~ImageBurnerClientImpl() {}
+  ~ImageBurnerClientImpl() override {}
 
   // ImageBurnerClient override.
-  virtual void BurnImage(const std::string& from_path,
-                         const std::string& to_path,
-                         const ErrorCallback& error_callback) OVERRIDE {
+  void BurnImage(const std::string& from_path,
+                 const std::string& to_path,
+                 const ErrorCallback& error_callback) override {
     dbus::MethodCall method_call(imageburn::kImageBurnServiceInterface,
                                  imageburn::kBurnImage);
     dbus::MessageWriter writer(&method_call);
@@ -39,21 +39,21 @@ class ImageBurnerClientImpl : public ImageBurnerClient {
   }
 
   // ImageBurnerClient override.
-  virtual void SetEventHandlers(
+  void SetEventHandlers(
       const BurnFinishedHandler& burn_finished_handler,
-      const BurnProgressUpdateHandler& burn_progress_update_handler) OVERRIDE {
+      const BurnProgressUpdateHandler& burn_progress_update_handler) override {
     burn_finished_handler_ = burn_finished_handler;
     burn_progress_update_handler_ = burn_progress_update_handler;
   }
 
   // ImageBurnerClient override.
-  virtual void ResetEventHandlers() OVERRIDE {
+  void ResetEventHandlers() override {
     burn_finished_handler_.Reset();
     burn_progress_update_handler_.Reset();
   }
 
  protected:
-  virtual void Init(dbus::Bus* bus) OVERRIDE {
+  void Init(dbus::Bus* bus) override {
     proxy_ =
         bus->GetObjectProxy(imageburn::kImageBurnServiceName,
                             dbus::ObjectPath(imageburn::kImageBurnServicePath));

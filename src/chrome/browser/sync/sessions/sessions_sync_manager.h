@@ -15,15 +15,16 @@
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
-#include "chrome/browser/sessions/session_types.h"
 #include "chrome/browser/sync/glue/favicon_cache.h"
 #include "chrome/browser/sync/glue/synced_session.h"
 #include "chrome/browser/sync/glue/synced_session_tracker.h"
 #include "chrome/browser/sync/open_tabs_ui_delegate.h"
 #include "chrome/browser/sync/sessions/tab_node_pool.h"
 #include "components/sessions/session_id.h"
+#include "components/sessions/session_types.h"
 #include "components/sync_driver/device_info.h"
 #include "components/sync_driver/sync_prefs.h"
+#include "components/variations/variations_associated_data.h"
 #include "sync/api/syncable_service.h"
 
 class Profile;
@@ -89,40 +90,39 @@ class SessionsSyncManager : public syncer::SyncableService,
   SessionsSyncManager(Profile* profile,
                       sync_driver::LocalDeviceInfoProvider* local_device,
                       scoped_ptr<LocalSessionEventRouter> router);
-  virtual ~SessionsSyncManager();
+  ~SessionsSyncManager() override;
 
   // syncer::SyncableService implementation.
-  virtual syncer::SyncMergeResult MergeDataAndStartSyncing(
+  syncer::SyncMergeResult MergeDataAndStartSyncing(
       syncer::ModelType type,
       const syncer::SyncDataList& initial_sync_data,
       scoped_ptr<syncer::SyncChangeProcessor> sync_processor,
-      scoped_ptr<syncer::SyncErrorFactory> error_handler) OVERRIDE;
-  virtual void StopSyncing(syncer::ModelType type) OVERRIDE;
-  virtual syncer::SyncDataList GetAllSyncData(
-      syncer::ModelType type) const OVERRIDE;
-  virtual syncer::SyncError ProcessSyncChanges(
+      scoped_ptr<syncer::SyncErrorFactory> error_handler) override;
+  void StopSyncing(syncer::ModelType type) override;
+  syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const override;
+  syncer::SyncError ProcessSyncChanges(
       const tracked_objects::Location& from_here,
-      const syncer::SyncChangeList& change_list) OVERRIDE;
+      const syncer::SyncChangeList& change_list) override;
 
   // OpenTabsUIDelegate implementation.
-  virtual bool GetSyncedFaviconForPageURL(
+  bool GetSyncedFaviconForPageURL(
       const std::string& pageurl,
-      scoped_refptr<base::RefCountedMemory>* favicon_png) const OVERRIDE;
-  virtual bool GetAllForeignSessions(
-      std::vector<const SyncedSession*>* sessions) OVERRIDE;
-  virtual bool GetForeignSession(
+      scoped_refptr<base::RefCountedMemory>* favicon_png) const override;
+  bool GetAllForeignSessions(
+      std::vector<const SyncedSession*>* sessions) override;
+  bool GetForeignSession(
       const std::string& tag,
-      std::vector<const SessionWindow*>* windows) OVERRIDE;
-  virtual bool GetForeignTab(const std::string& tag,
-                             const SessionID::id_type tab_id,
-                             const SessionTab** tab) OVERRIDE;
-  virtual void DeleteForeignSession(const std::string& tag) OVERRIDE;
-  virtual bool GetLocalSession(const SyncedSession* * local_session) OVERRIDE;
+      std::vector<const sessions::SessionWindow*>* windows) override;
+  bool GetForeignTab(const std::string& tag,
+                     const SessionID::id_type tab_id,
+                     const sessions::SessionTab** tab) override;
+  void DeleteForeignSession(const std::string& tag) override;
+  bool GetLocalSession(const SyncedSession** local_session) override;
 
   // LocalSessionEventHandler implementation.
-  virtual void OnLocalTabModified(SyncedTabDelegate* modified_tab) OVERRIDE;
-  virtual void OnFaviconPageUrlsUpdated(
-      const std::set<GURL>& updated_favicon_page_urls) OVERRIDE;
+  void OnLocalTabModified(SyncedTabDelegate* modified_tab) override;
+  void OnFaviconPageUrlsUpdated(
+      const std::set<GURL>& updated_favicon_page_urls) override;
 
   // Returns the tag used to uniquely identify this machine's session in the
   // sync model.
@@ -203,6 +203,8 @@ class SessionsSyncManager : public syncer::SyncableService,
                            SwappedOutOnRestore);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest,
                            ProcessRemoteDeleteOfLocalSession);
+  FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest,
+                           SetVariationIds);
 
   void InitializeCurrentMachineTag();
 
@@ -258,7 +260,7 @@ class SessionsSyncManager : public syncer::SyncableService,
       const std::string& session_tag,
       const sync_pb::SessionWindow& specifics,
       base::Time mtime,
-      SessionWindow* session_window);
+      sessions::SessionWindow* session_window);
 
   // Resync local window information. Updates the local sessions header node
   // with the status of open windows and the order of tabs they contain. Should
@@ -298,7 +300,11 @@ class SessionsSyncManager : public syncer::SyncableService,
   static void SetSessionTabFromDelegate(
       const SyncedTabDelegate& tab_delegate,
       base::Time mtime,
-      SessionTab* session_tab);
+      sessions::SessionTab* session_tab);
+
+  // Sets |variation_ids| field of |session_tab| with the ids of the currently
+  // assigned variations which should be sent to sync.
+  static void SetVariationIds(sessions::SessionTab* session_tab);
 
   // Populates |specifics| based on the data in |tab_delegate|.
   void LocalTabDelegateToSpecifics(const SyncedTabDelegate& tab_delegate,

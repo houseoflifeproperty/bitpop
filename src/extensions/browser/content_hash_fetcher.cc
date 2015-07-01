@@ -82,7 +82,7 @@ class ContentHashFetcherJob
 
  private:
   friend class base::RefCountedThreadSafe<ContentHashFetcherJob>;
-  virtual ~ContentHashFetcherJob();
+  ~ContentHashFetcherJob() override;
 
   // Tries to load a verified_contents.json file at |path|. On successfully
   // reading and validing the file, the verified_contents_ member variable will
@@ -97,7 +97,7 @@ class ContentHashFetcherJob
   void DoneCheckingForVerifiedContents(bool found);
 
   // URLFetcherDelegate interface
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
 
   // Callback for when we're done ensuring we have verified contents, and are
   // ready to move on to MaybeCreateHashes.
@@ -237,8 +237,8 @@ void ContentHashFetcherJob::DoneCheckingForVerifiedContents(bool found) {
   } else {
     VLOG(1) << "Missing verified contents for " << extension_id_
             << ", fetching...";
-    url_fetcher_.reset(
-        net::URLFetcher::Create(fetch_url_, net::URLFetcher::GET, this));
+    url_fetcher_ =
+        net::URLFetcher::Create(fetch_url_, net::URLFetcher::GET, this);
     url_fetcher_->SetRequestContext(request_context_);
     url_fetcher_->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
                                net::LOAD_DO_NOT_SAVE_COOKIES |

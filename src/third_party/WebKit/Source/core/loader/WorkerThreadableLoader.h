@@ -35,6 +35,7 @@
 #include "core/loader/ThreadableLoaderClient.h"
 #include "core/loader/ThreadableLoaderClientWrapper.h"
 #include "platform/heap/Handle.h"
+#include "platform/weborigin/Referrer.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -49,8 +50,8 @@ namespace blink {
     class WorkerLoaderProxy;
     struct CrossThreadResourceRequestData;
 
-    class WorkerThreadableLoader FINAL : public ThreadableLoader {
-        WTF_MAKE_FAST_ALLOCATED;
+    class WorkerThreadableLoader final : public ThreadableLoader {
+        WTF_MAKE_FAST_ALLOCATED(WorkerThreadableLoader);
     public:
         static void loadResourceSynchronously(WorkerGlobalScope&, const ResourceRequest&, ThreadableLoaderClient&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
         static PassRefPtr<WorkerThreadableLoader> create(WorkerGlobalScope& workerGlobalScope, PassRefPtr<ThreadableLoaderClientWrapper> clientWrapper, PassOwnPtr<ThreadableLoaderClient> clientBridge, const ResourceRequest& request, const ThreadableLoaderOptions& options, const ResourceLoaderOptions& resourceLoaderOptions)
@@ -60,9 +61,9 @@ namespace blink {
 
         virtual ~WorkerThreadableLoader();
 
-        virtual void overrideTimeout(unsigned long timeout) OVERRIDE;
+        virtual void overrideTimeout(unsigned long timeout) override;
 
-        virtual void cancel() OVERRIDE;
+        virtual void cancel() override;
 
     private:
         // Creates a loader on the main thread and bridges communication between
@@ -84,10 +85,10 @@ namespace blink {
         //    thread do "ThreadableLoaderClientWrapper::ref" (automatically inside of the cross thread copy
         //    done in createCrossThreadTask), so the ThreadableLoaderClientWrapper instance is there until all
         //    tasks are executed.
-        class MainThreadBridge FINAL : public ThreadableLoaderClient {
+        class MainThreadBridge final : public ThreadableLoaderClient {
         public:
             // All executed on the worker context's thread.
-            MainThreadBridge(PassRefPtr<ThreadableLoaderClientWrapper>, PassOwnPtr<ThreadableLoaderClient>, WorkerLoaderProxy&, const ResourceRequest&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&, const String& outgoingReferrer);
+            MainThreadBridge(PassRefPtr<ThreadableLoaderClientWrapper>, PassOwnPtr<ThreadableLoaderClient>, PassRefPtr<WorkerLoaderProxy>, const ResourceRequest&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&, const ReferrerPolicy, const String& outgoingReferrer);
             void overrideTimeout(unsigned long timeoutMilliseconds);
             void cancel();
             void destroy();
@@ -97,21 +98,21 @@ namespace blink {
             void clearClientWrapper();
 
             // All executed on the main thread.
-            static void mainThreadDestroy(ExecutionContext*, MainThreadBridge*);
+            void mainThreadDestroy(ExecutionContext*);
             virtual ~MainThreadBridge();
 
-            static void mainThreadCreateLoader(ExecutionContext*, MainThreadBridge*, PassOwnPtr<CrossThreadResourceRequestData>, ThreadableLoaderOptions, ResourceLoaderOptions, const String& outgoingReferrer);
-            static void mainThreadOverrideTimeout(ExecutionContext*, MainThreadBridge*, unsigned long timeoutMilliseconds);
-            static void mainThreadCancel(ExecutionContext*, MainThreadBridge*);
-            virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent) OVERRIDE;
-            virtual void didReceiveResponse(unsigned long identifier, const ResourceResponse&) OVERRIDE;
-            virtual void didReceiveData(const char*, int dataLength) OVERRIDE;
-            virtual void didDownloadData(int dataLength) OVERRIDE;
-            virtual void didReceiveCachedMetadata(const char*, int dataLength) OVERRIDE;
-            virtual void didFinishLoading(unsigned long identifier, double finishTime) OVERRIDE;
-            virtual void didFail(const ResourceError&) OVERRIDE;
-            virtual void didFailAccessControlCheck(const ResourceError&) OVERRIDE;
-            virtual void didFailRedirectCheck() OVERRIDE;
+            void mainThreadCreateLoader(PassOwnPtr<CrossThreadResourceRequestData>, ThreadableLoaderOptions, ResourceLoaderOptions, const ReferrerPolicy, const String& outgoingReferrer, ExecutionContext*);
+            void mainThreadOverrideTimeout(unsigned long timeoutMilliseconds, ExecutionContext*);
+            void mainThreadCancel(ExecutionContext*);
+            virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent) override;
+            virtual void didReceiveResponse(unsigned long identifier, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
+            virtual void didReceiveData(const char*, unsigned dataLength) override;
+            virtual void didDownloadData(int dataLength) override;
+            virtual void didReceiveCachedMetadata(const char*, int dataLength) override;
+            virtual void didFinishLoading(unsigned long identifier, double finishTime) override;
+            virtual void didFail(const ResourceError&) override;
+            virtual void didFailAccessControlCheck(const ResourceError&) override;
+            virtual void didFailRedirectCheck() override;
 
             // Only to be used on the main thread.
             RefPtr<ThreadableLoader> m_mainThreadLoader;
@@ -122,7 +123,7 @@ namespace blink {
             RefPtr<ThreadableLoaderClientWrapper> m_workerClientWrapper;
 
             // Used on the worker context thread.
-            WorkerLoaderProxy& m_loaderProxy;
+            RefPtr<WorkerLoaderProxy> m_loaderProxy;
         };
 
         WorkerThreadableLoader(WorkerGlobalScope&, PassRefPtr<ThreadableLoaderClientWrapper>, PassOwnPtr<ThreadableLoaderClient>, const ResourceRequest&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);

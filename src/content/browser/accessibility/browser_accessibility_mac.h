@@ -18,9 +18,9 @@ namespace content {
 class BrowserAccessibilityMac : public BrowserAccessibility {
  public:
   // BrowserAccessibility overrides.
-  virtual void NativeReleaseReference() OVERRIDE;
-  virtual bool IsNative() const OVERRIDE;
-  virtual void OnDataChanged() OVERRIDE;
+  void NativeReleaseReference() override;
+  bool IsNative() const override;
+  void OnDataChanged() override;
 
   // The BrowserAccessibilityCocoa associated with us.
   BrowserAccessibilityCocoa* native_view() const {
@@ -48,4 +48,4 @@ class BrowserAccessibilityMac : public BrowserAccessibility {
 
 }  // namespace content
 
-#endif // CONTENT_BROWSER_ACCESSIBILITY_BROWSER_ACCESSIBILITY_MAC_H_
+#endif  // CONTENT_BROWSER_ACCESSIBILITY_BROWSER_ACCESSIBILITY_MAC_H_

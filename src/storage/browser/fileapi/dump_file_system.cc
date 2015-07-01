@@ -9,6 +9,8 @@
 // ./out/Release/dump_file_system [options] <filesystem dir> [origin]...
 //
 // If no origin is specified, this dumps all origins in the profile dir.
+// For Chrome App, which has a separate storage directory, specify "primary"
+// as the origin name.
 //
 // Available options:
 //
@@ -42,13 +44,14 @@
 #include "storage/browser/fileapi/sandbox_directory_database.h"
 #include "storage/browser/fileapi/sandbox_file_system_backend.h"
 #include "storage/browser/fileapi/sandbox_origin_database.h"
+#include "storage/browser/fileapi/sandbox_prioritized_origin_database.h"
 #include "storage/common/fileapi/file_system_types.h"
 #include "storage/common/fileapi/file_system_util.h"
 
 namespace {
 
 bool g_opt_long;
-const char* g_opt_fs_type = "p";
+const base::FilePath::CharType* g_opt_fs_type = FILE_PATH_LITERAL("p");
 
 void ShowMessageAndExit(const std::string& msg) {
   fprintf(stderr, "%s\n", msg.c_str());
@@ -131,8 +134,14 @@ static void DumpDirectoryTree(const std::string& origin_name,
   }
 }
 
-static void DumpOrigin(const base::FilePath& file_system_dir,
-                       const std::string& origin_name) {
+static base::FilePath GetOriginDir(const base::FilePath& file_system_dir,
+                                   const std::string& origin_name) {
+  if (base::PathExists(file_system_dir.Append(
+          SandboxPrioritizedOriginDatabase::kPrimaryOriginFile))) {
+    return base::FilePath(
+        SandboxPrioritizedOriginDatabase::kPrimaryDirectory);
+  }
+
   SandboxOriginDatabase origin_db(file_system_dir, NULL);
   base::FilePath origin_dir;
   if (!origin_db.HasOriginPath(origin_name)) {
@@ -144,6 +153,13 @@ static void DumpOrigin(const base::FilePath& file_system_dir,
     ShowMessageAndExit("Failed to get path of origin " + origin_name +
                        " in " + FilePathToString(file_system_dir));
   }
+
+  return origin_dir;
+}
+
+static void DumpOrigin(const base::FilePath& file_system_dir,
+                       const std::string& origin_name) {
+  base::FilePath origin_dir = GetOriginDir(file_system_dir, origin_name);
   DumpDirectoryTree(origin_name, file_system_dir.Append(origin_dir));
 }
 
@@ -162,7 +178,6 @@ static void DumpFileSystem(const base::FilePath& file_system_dir) {
 
 int main(int argc, char* argv[]) {
   const char* arg0 = argv[0];
-  std::string username = "Default";
   while (true) {
     if (argc < 2)
       ShowUsageAndExit(arg0);
@@ -172,11 +187,11 @@ int main(int argc, char* argv[]) {
       argc--;
       argv++;
     } else if (std::string(argv[1]) == "-t") {
-      g_opt_fs_type = "t";
+      g_opt_fs_type = FILE_PATH_LITERAL("t");
       argc--;
       argv++;
     } else if (std::string(argv[1]) == "-s") {
-      g_opt_fs_type = "s";
+      g_opt_fs_type = FILE_PATH_LITERAL("s");
       argc--;
       argv++;
     } else {

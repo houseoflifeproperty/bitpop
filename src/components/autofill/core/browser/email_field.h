@@ -7,17 +7,18 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
 #include "components/autofill/core/browser/form_field.h"
 
 namespace autofill {
 
 class EmailField : public FormField {
  public:
-  static FormField* Parse(AutofillScanner* scanner);
+  static scoped_ptr<FormField> Parse(AutofillScanner* scanner);
 
  protected:
   // FormField:
-  virtual bool ClassifyField(ServerFieldTypeMap* map) const OVERRIDE;
+  bool ClassifyField(ServerFieldTypeMap* map) const override;
 
  private:
   explicit EmailField(const AutofillField* field);

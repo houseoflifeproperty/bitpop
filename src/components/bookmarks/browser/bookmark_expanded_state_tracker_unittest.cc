@@ -24,10 +24,8 @@ scoped_ptr<PrefService> PrefServiceForTesting() {
   scoped_refptr<user_prefs::PrefRegistrySyncable> registry(
       new user_prefs::PrefRegistrySyncable());
   registry->RegisterListPref(prefs::kBookmarkEditorExpandedNodes,
-                             new base::ListValue,
-                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterListPref(prefs::kManagedBookmarks,
-                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+                             new base::ListValue);
+  registry->RegisterListPref(prefs::kManagedBookmarks);
   base::PrefServiceFactory factory;
   factory.set_user_prefs(make_scoped_refptr(new TestingPrefStore()));
   return factory.Create(registry.get());
@@ -36,12 +34,12 @@ scoped_ptr<PrefService> PrefServiceForTesting() {
 class BookmarkExpandedStateTrackerTest : public testing::Test {
  public:
   BookmarkExpandedStateTrackerTest();
-  virtual ~BookmarkExpandedStateTrackerTest();
+  ~BookmarkExpandedStateTrackerTest() override;
 
  protected:
   // testing::Test:
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   base::MessageLoop message_loop_;
   TestBookmarkClient client_;
@@ -90,7 +88,7 @@ TEST_F(BookmarkExpandedStateTrackerTest, SetExpandedNodes) {
   EXPECT_EQ(nodes, tracker->GetExpandedNodes());
 
   // Remove the folder, which should remove it from the list of expanded nodes.
-  model_->Remove(model_->bookmark_bar_node(), 0);
+  model_->Remove(model_->bookmark_bar_node()->GetChild(0));
   nodes.erase(n1);
   n1 = NULL;
   EXPECT_EQ(nodes, tracker->GetExpandedNodes());

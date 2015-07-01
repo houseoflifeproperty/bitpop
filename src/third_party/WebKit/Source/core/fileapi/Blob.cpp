@@ -35,7 +35,7 @@
 #include "core/dom/DOMURL.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/fileapi/File.h"
+#include "core/fileapi/BlobPropertyBag.h"
 #include "platform/blob/BlobRegistry.h"
 #include "platform/blob/BlobURL.h"
 
@@ -43,10 +43,10 @@ namespace blink {
 
 namespace {
 
-class BlobURLRegistry FINAL : public URLRegistry {
+class BlobURLRegistry final : public URLRegistry {
 public:
-    virtual void registerURL(SecurityOrigin*, const KURL&, URLRegistrable*) OVERRIDE;
-    virtual void unregisterURL(const KURL&) OVERRIDE;
+    virtual void registerURL(SecurityOrigin*, const KURL&, URLRegistrable*) override;
+    virtual void unregisterURL(const KURL&) override;
 
     static URLRegistry& registry();
 };
@@ -65,7 +65,11 @@ void BlobURLRegistry::unregisterURL(const KURL& publicURL)
 
 URLRegistry& BlobURLRegistry::registry()
 {
-    DEFINE_STATIC_LOCAL(BlobURLRegistry, instance, ());
+    // This is called on multiple threads.
+    // (This code assumes it is safe to register or unregister URLs on
+    // BlobURLRegistry (that is implemented by the embedder) on
+    // multiple threads.)
+    AtomicallyInitializedStaticReference(BlobURLRegistry, instance, new BlobURLRegistry());
     return instance;
 }
 
@@ -79,6 +83,27 @@ Blob::Blob(PassRefPtr<BlobDataHandle> dataHandle)
 
 Blob::~Blob()
 {
+}
+
+// static
+Blob* Blob::create(const HeapVector<ArrayBufferOrArrayBufferViewOrBlobOrString>& blobParts, const BlobPropertyBag& options, ExceptionState& exceptionState)
+{
+    ASSERT(options.hasType());
+    if (!options.type().containsOnlyASCII()) {
+        exceptionState.throwDOMException(SyntaxError, "The 'type' property must consist of ASCII characters.");
+        return nullptr;
+    }
+
+    ASSERT(options.hasEndings());
+    bool normalizeLineEndingsToNative = options.endings() == "native";
+
+    OwnPtr<BlobData> blobData = BlobData::create();
+    blobData->setContentType(options.type().lower());
+
+    populateBlobData(blobData.get(), blobParts, normalizeLineEndingsToNative);
+
+    long long blobSize = blobData->length();
+    return new Blob(BlobDataHandle::create(blobData.release(), blobSize));
 }
 
 void Blob::clampSliceOffsets(long long size, long long& start, long long& end)
@@ -105,7 +130,7 @@ void Blob::clampSliceOffsets(long long size, long long& start, long long& end)
         end = size;
 }
 
-PassRefPtrWillBeRawPtr<Blob> Blob::slice(long long start, long long end, const String& contentType, ExceptionState& exceptionState) const
+Blob* Blob::slice(long long start, long long end, const String& contentType, ExceptionState& exceptionState) const
 {
     if (hasBeenClosed()) {
         exceptionState.throwDOMException(InvalidStateError, "Blob has been closed.");

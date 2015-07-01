@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include <map>
+#include <set>
 #include <vector>
 
 #include "base/compiler_specific.h"
@@ -19,23 +20,25 @@
 #include "ui/display/types/native_display_delegate.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/size.h"
+#include "ui/gfx/x/x11_types.h"
 
 // Forward declarations for Xlib and Xrandr.
 // This is so unused X definitions don't pollute the namespace.
-typedef unsigned long XID;
 typedef XID RROutput;
 typedef XID RRCrtc;
 typedef XID RRMode;
 typedef XID Window;
 
-struct _XDisplay;
-typedef struct _XDisplay Display;
 struct _XRROutputInfo;
 typedef _XRROutputInfo XRROutputInfo;
 struct _XRRScreenResources;
 typedef _XRRScreenResources XRRScreenResources;
 struct _XRRCrtcGamma;
 typedef _XRRCrtcGamma XRRCrtcGamma;
+
+extern "C" {
+void XRRFreeScreenResources(XRRScreenResources* resources);
+}
 
 namespace ui {
 
@@ -65,34 +68,37 @@ class DISPLAY_EXPORT NativeDisplayDelegateX11 : public NativeDisplayDelegate {
   };
 
   NativeDisplayDelegateX11();
-  virtual ~NativeDisplayDelegateX11();
+  ~NativeDisplayDelegateX11() override;
 
   // NativeDisplayDelegate overrides:
-  virtual void Initialize() OVERRIDE;
-  virtual void GrabServer() OVERRIDE;
-  virtual void UngrabServer() OVERRIDE;
-  virtual void SyncWithServer() OVERRIDE;
-  virtual void SetBackgroundColor(uint32_t color_argb) OVERRIDE;
-  virtual void ForceDPMSOn() OVERRIDE;
-  virtual std::vector<DisplaySnapshot*> GetDisplays() OVERRIDE;
-  virtual void AddMode(const DisplaySnapshot& output,
-                       const DisplayMode* mode) OVERRIDE;
-  virtual bool Configure(const DisplaySnapshot& output,
-                         const DisplayMode* mode,
-                         const gfx::Point& origin) OVERRIDE;
-  virtual void CreateFrameBuffer(const gfx::Size& size) OVERRIDE;
-  virtual bool GetHDCPState(const DisplaySnapshot& output,
-                            HDCPState* state) OVERRIDE;
-  virtual bool SetHDCPState(const DisplaySnapshot& output,
-                            HDCPState state) OVERRIDE;
-  virtual std::vector<ColorCalibrationProfile>
-      GetAvailableColorCalibrationProfiles(
-          const DisplaySnapshot& output) OVERRIDE;
-  virtual bool SetColorCalibrationProfile(
-      const DisplaySnapshot& output,
-      ColorCalibrationProfile new_profile) OVERRIDE;
-  virtual void AddObserver(NativeDisplayObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(NativeDisplayObserver* observer) OVERRIDE;
+  void Initialize() override;
+  void GrabServer() override;
+  void UngrabServer() override;
+  bool TakeDisplayControl() override;
+  bool RelinquishDisplayControl() override;
+  void SyncWithServer() override;
+  void SetBackgroundColor(uint32_t color_argb) override;
+  void ForceDPMSOn() override;
+  void GetDisplays(const GetDisplaysCallback& callback) override;
+  void AddMode(const DisplaySnapshot& output, const DisplayMode* mode) override;
+  void Configure(const DisplaySnapshot& output,
+                 const DisplayMode* mode,
+                 const gfx::Point& origin,
+                 const ConfigureCallback& callback) override;
+  void CreateFrameBuffer(const gfx::Size& size) override;
+  void GetHDCPState(const DisplaySnapshot& output,
+                    const GetHDCPStateCallback& callback) override;
+  void SetHDCPState(const DisplaySnapshot& output,
+                    HDCPState state,
+                    const SetHDCPStateCallback& callback) override;
+  std::vector<ColorCalibrationProfile> GetAvailableColorCalibrationProfiles(
+      const DisplaySnapshot& output) override;
+  bool SetColorCalibrationProfile(const DisplaySnapshot& output,
+                                  ColorCalibrationProfile new_profile) override;
+  bool SetGammaRamp(const ui::DisplaySnapshot& output,
+                    const std::vector<GammaRampRGBEntry>& lut) override;
+  void AddObserver(NativeDisplayObserver* observer) override;
+  void RemoveObserver(NativeDisplayObserver* observer) override;
 
  private:
   class HelperDelegateX11;
@@ -104,7 +110,7 @@ class DISPLAY_EXPORT NativeDisplayDelegateX11 : public NativeDisplayDelegate {
   // on the passed-in information.
   DisplaySnapshotX11* InitDisplaySnapshot(RROutput id,
                                           XRROutputInfo* info,
-                                          RRCrtc* last_used_crtc,
+                                          std::set<RRCrtc>* last_used_crtcs,
                                           int index);
 
   // Destroys unused CRTCs.
@@ -118,6 +124,10 @@ class DISPLAY_EXPORT NativeDisplayDelegateX11 : public NativeDisplayDelegate {
 
   bool ConfigureCrtc(RRCrtc crtc, RRMode mode, RROutput output, int x, int y);
 
+  // Helper functions that perform the actual HDCP requests.
+  bool GetHDCPState(const DisplaySnapshot& output, HDCPState* state);
+  bool SetHDCPState(const DisplaySnapshot& output, HDCPState state);
+
   // Returns whether |id| is configured to preserve aspect when scaling.
   bool IsOutputAspectPreservingScaling(RROutput id);
 
@@ -129,11 +139,14 @@ class DISPLAY_EXPORT NativeDisplayDelegateX11 : public NativeDisplayDelegate {
 
   void DrawBackground();
 
-  Display* display_;
+  XDisplay* display_;
   Window window_;
 
   // Initialized when the server is grabbed and freed when it's ungrabbed.
-  XRRScreenResources* screen_;
+  gfx::XScopedPtr<
+      XRRScreenResources,
+      gfx::XObjectDeleter<XRRScreenResources, void, XRRFreeScreenResources>>
+      screen_;
 
   std::map<RRMode, DisplayModeX11*> modes_;
 

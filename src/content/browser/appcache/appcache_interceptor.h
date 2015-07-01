@@ -5,11 +5,16 @@
 #ifndef CONTENT_BROWSER_APPCACHE_APPCACHE_INTERCEPTOR_H_
 #define CONTENT_BROWSER_APPCACHE_APPCACHE_INTERCEPTOR_H_
 
-#include "base/memory/singleton.h"
+#include "base/basictypes.h"
 #include "content/common/content_export.h"
 #include "content/public/common/resource_type.h"
-#include "net/url_request/url_request.h"
-#include "url/gurl.h"
+#include "net/url_request/url_request_interceptor.h"
+
+class GURL;
+
+namespace net {
+class URLRequest;
+}
 
 namespace content {
 class AppCacheRequestHandler;
@@ -17,21 +22,15 @@ class AppCacheServiceImpl;
 
 // An interceptor to hijack requests and potentially service them out of
 // the appcache.
-class CONTENT_EXPORT AppCacheInterceptor
-    : public net::URLRequest::Interceptor {
+class CONTENT_EXPORT AppCacheInterceptor : public net::URLRequestInterceptor {
  public:
-  // Registers a singleton instance with the net library.
-  // Should be called early in the IO thread prior to initiating requests.
-  static void EnsureRegistered() {
-    CHECK(GetInstance());
-  }
-
   // Must be called to make a request eligible for retrieval from an appcache.
   static void SetExtraRequestInfo(net::URLRequest* request,
                                   AppCacheServiceImpl* service,
                                   int process_id,
                                   int host_id,
-                                  ResourceType resource_type);
+                                  ResourceType resource_type,
+                                  bool should_reset_appcache);
 
   // May be called after response headers are complete to retrieve extra
   // info about the response.
@@ -45,28 +44,27 @@ class CONTENT_EXPORT AppCacheInterceptor
   static void CompleteCrossSiteTransfer(net::URLRequest* request,
                                         int new_process_id,
                                         int new_host_id);
-
-  static AppCacheInterceptor* GetInstance();
-
- protected:
-  // Override from net::URLRequest::Interceptor:
-  virtual net::URLRequestJob* MaybeIntercept(
+  static void MaybeCompleteCrossSiteTransferInOldProcess(
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) OVERRIDE;
-  virtual net::URLRequestJob* MaybeInterceptResponse(
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) OVERRIDE;
-  virtual net::URLRequestJob* MaybeInterceptRedirect(
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate,
-      const GURL& location) OVERRIDE;
-
- private:
-  friend struct DefaultSingletonTraits<AppCacheInterceptor>;
+      int old_process_id);
 
   AppCacheInterceptor();
-  virtual ~AppCacheInterceptor();
+  ~AppCacheInterceptor() override;
 
+ protected:
+  // Override from net::URLRequestInterceptor:
+  net::URLRequestJob* MaybeInterceptRequest(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const override;
+  net::URLRequestJob* MaybeInterceptResponse(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const override;
+  net::URLRequestJob* MaybeInterceptRedirect(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate,
+      const GURL& location) const override;
+
+ private:
   static void SetHandler(net::URLRequest* request,
                          AppCacheRequestHandler* handler);
   static AppCacheRequestHandler* GetHandler(net::URLRequest* request);

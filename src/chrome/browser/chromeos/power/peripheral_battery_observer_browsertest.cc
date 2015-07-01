@@ -8,6 +8,7 @@
 #include "base/message_loop/message_loop.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "content/public/test/test_utils.h"
@@ -32,25 +33,21 @@ namespace chromeos {
 class PeripheralBatteryObserverTest : public InProcessBrowserTest {
  public:
   PeripheralBatteryObserverTest() {}
-  virtual ~PeripheralBatteryObserverTest() {}
+  ~PeripheralBatteryObserverTest() override {}
 
-  virtual void SetUp() OVERRIDE {
-    chromeos::DBusThreadManager::Initialize();
-  }
+  void SetUp() override { chromeos::DBusThreadManager::Initialize(); }
 
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  void SetUpInProcessBrowserTestFixture() override {
     InProcessBrowserTest::SetUpInProcessBrowserTestFixture();
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     observer_.reset(new PeripheralBatteryObserver());
   }
 
-  virtual void TearDownOnMainThread() OVERRIDE {
-    observer_.reset();
-  }
+  void TearDownOnMainThread() override { observer_.reset(); }
 
-  virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
+  void TearDownInProcessBrowserTestFixture() override {
     InProcessBrowserTest::TearDownInProcessBrowserTestFixture();
   }
 
@@ -80,7 +77,10 @@ IN_PROC_BROWSER_TEST_F(PeripheralBatteryObserverTest, Basic) {
   EXPECT_EQ(info.name, kTestDeviceName);
   EXPECT_EQ(info.level, 50);
   EXPECT_EQ(info.last_notification_timestamp, base::TimeTicks());
-  EXPECT_FALSE(notification_manager->FindById(kTestBatteryAddress) != NULL);
+  EXPECT_FALSE(notification_manager->FindById(
+                   kTestBatteryAddress,
+                   NotificationUIManager::GetProfileID(
+                       ProfileManager::GetPrimaryUserProfile())) != NULL);
 
   // Level 5 at time 110, low-battery notification.
   clock.Advance(base::TimeDelta::FromSeconds(10));
@@ -88,7 +88,10 @@ IN_PROC_BROWSER_TEST_F(PeripheralBatteryObserverTest, Basic) {
                                              kTestDeviceName, 5);
   EXPECT_EQ(info.level, 5);
   EXPECT_EQ(info.last_notification_timestamp, clock.NowTicks());
-  EXPECT_TRUE(notification_manager->FindById(kTestBatteryAddress) != NULL);
+  EXPECT_TRUE(notification_manager->FindById(
+                  kTestBatteryAddress,
+                  NotificationUIManager::GetProfileID(
+                      ProfileManager::GetPrimaryUserProfile())) != NULL);
 
   // Level -1 at time 115, cancel previous notification
   clock.Advance(base::TimeDelta::FromSeconds(5));
@@ -97,7 +100,10 @@ IN_PROC_BROWSER_TEST_F(PeripheralBatteryObserverTest, Basic) {
   EXPECT_EQ(info.level, 5);
   EXPECT_EQ(info.last_notification_timestamp,
             clock.NowTicks() - base::TimeDelta::FromSeconds(5));
-  EXPECT_FALSE(notification_manager->FindById(kTestBatteryAddress) != NULL);
+  EXPECT_FALSE(notification_manager->FindById(
+                   kTestBatteryAddress,
+                   NotificationUIManager::GetProfileID(
+                       ProfileManager::GetPrimaryUserProfile())) != NULL);
 
   // Level 50 at time 120, no low-battery notification.
   clock.Advance(base::TimeDelta::FromSeconds(5));
@@ -106,7 +112,10 @@ IN_PROC_BROWSER_TEST_F(PeripheralBatteryObserverTest, Basic) {
   EXPECT_EQ(info.level, 50);
   EXPECT_EQ(info.last_notification_timestamp,
             clock.NowTicks() - base::TimeDelta::FromSeconds(10));
-  EXPECT_FALSE(notification_manager->FindById(kTestBatteryAddress) != NULL);
+  EXPECT_FALSE(notification_manager->FindById(
+                   kTestBatteryAddress,
+                   NotificationUIManager::GetProfileID(
+                       ProfileManager::GetPrimaryUserProfile())) != NULL);
 
   // Level 5 at time 130, no low-battery notification (throttling).
   clock.Advance(base::TimeDelta::FromSeconds(10));
@@ -115,7 +124,10 @@ IN_PROC_BROWSER_TEST_F(PeripheralBatteryObserverTest, Basic) {
   EXPECT_EQ(info.level, 5);
   EXPECT_EQ(info.last_notification_timestamp,
             clock.NowTicks() - base::TimeDelta::FromSeconds(20));
-  EXPECT_FALSE(notification_manager->FindById(kTestBatteryAddress) != NULL);
+  EXPECT_FALSE(notification_manager->FindById(
+                   kTestBatteryAddress,
+                   NotificationUIManager::GetProfileID(
+                       ProfileManager::GetPrimaryUserProfile())) != NULL);
 }
 
 IN_PROC_BROWSER_TEST_F(PeripheralBatteryObserverTest, InvalidBatteryInfo) {
@@ -147,10 +159,16 @@ IN_PROC_BROWSER_TEST_F(PeripheralBatteryObserverTest, DeviceRemove) {
   observer_->PeripheralBatteryStatusReceived(kTestBatteryPath,
                                              kTestDeviceName, 5);
   EXPECT_EQ(observer_->batteries_.count(kTestBatteryAddress), 1u);
-  EXPECT_TRUE(notification_manager->FindById(kTestBatteryAddress) != NULL);
+  EXPECT_TRUE(notification_manager->FindById(
+                  kTestBatteryAddress,
+                  NotificationUIManager::GetProfileID(
+                      ProfileManager::GetPrimaryUserProfile())) != NULL);
 
   observer_->RemoveBattery(kTestBatteryAddress);
-  EXPECT_FALSE(notification_manager->FindById(kTestBatteryAddress) != NULL);
+  EXPECT_FALSE(notification_manager->FindById(
+                   kTestBatteryAddress,
+                   NotificationUIManager::GetProfileID(
+                       ProfileManager::GetPrimaryUserProfile())) != NULL);
 }
 
 }  // namespace chromeos

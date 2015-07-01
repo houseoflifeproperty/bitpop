@@ -4,15 +4,14 @@
 
 #include "chrome/browser/ui/screen_capture_notification_ui.h"
 
-#include "ash/shell.h"
 #include "chrome/app/chrome_dll_resource.h"
 #include "chrome/browser/ui/views/chrome_views_export.h"
 #include "chrome/grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/screen.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/controls/button/blue_button.h"
@@ -26,6 +25,10 @@
 
 #if defined(OS_WIN)
 #include "ui/views/win/hwnd_util.h"
+#endif
+
+#if defined(USE_ASH)
+#include "ash/shell.h"
 #endif
 
 namespace {
@@ -48,12 +51,12 @@ class NotificationBarClientView : public views::ClientView {
   NotificationBarClientView(views::Widget* widget, views::View* view)
       : views::ClientView(widget, view) {
   }
-  virtual ~NotificationBarClientView() {}
+  ~NotificationBarClientView() override {}
 
   void set_client_rect(const gfx::Rect& rect) { rect_ = rect; }
 
   // views::ClientView overrides.
-  virtual int NonClientHitTest(const gfx::Point& point) OVERRIDE  {
+  int NonClientHitTest(const gfx::Point& point) override {
     if (!bounds().Contains(point))
       return HTNOWHERE;
     // The whole window is HTCAPTION, except the |rect_|.
@@ -79,33 +82,31 @@ class ScreenCaptureNotificationUIViews
       public views::LinkListener {
  public:
   explicit ScreenCaptureNotificationUIViews(const base::string16& text);
-  virtual ~ScreenCaptureNotificationUIViews();
+  ~ScreenCaptureNotificationUIViews() override;
 
   // ScreenCaptureNotificationUI interface.
-  virtual gfx::NativeViewId OnStarted(const base::Closure& stop_callback)
-      OVERRIDE;
+  gfx::NativeViewId OnStarted(const base::Closure& stop_callback) override;
 
   // views::View overrides.
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void Layout() OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  void Layout() override;
 
   // views::WidgetDelegateView overrides.
-  virtual void DeleteDelegate() OVERRIDE;
-  virtual views::View* GetContentsView() OVERRIDE;
-  virtual views::ClientView* CreateClientView(views::Widget* widget) OVERRIDE;
-  virtual views::NonClientFrameView* CreateNonClientFrameView(
-      views::Widget* widget) OVERRIDE;
-  virtual base::string16 GetWindowTitle() const OVERRIDE;
-  virtual bool ShouldShowWindowTitle() const OVERRIDE;
-  virtual bool ShouldShowCloseButton() const OVERRIDE;
-  virtual bool CanActivate() const OVERRIDE;
+  void DeleteDelegate() override;
+  views::View* GetContentsView() override;
+  views::ClientView* CreateClientView(views::Widget* widget) override;
+  views::NonClientFrameView* CreateNonClientFrameView(
+      views::Widget* widget) override;
+  base::string16 GetWindowTitle() const override;
+  bool ShouldShowWindowTitle() const override;
+  bool ShouldShowCloseButton() const override;
+  bool CanActivate() const override;
 
   // views::ButtonListener interface.
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   // views::LinkListener interface.
-  virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
+  void LinkClicked(views::Link* source, int event_flags) override;
 
  private:
   // Helper to call |stop_callback_|.
@@ -177,11 +178,13 @@ gfx::NativeViewId ScreenCaptureNotificationUIViews::OnStarted(
   params.remove_standard_frame = true;
   params.keep_on_top = true;
 
+#if defined(USE_ASH)
   // TODO(sergeyu): The notification bar must be shown on the monitor that's
   // being captured. Make sure it's always the case. Currently we always capture
   // the primary monitor.
   if (ash::Shell::HasInstance())
     params.context = ash::Shell::GetPrimaryRootWindow();
+#endif
 
   widget->set_frame_type(views::Widget::FRAME_TYPE_FORCE_CUSTOM);
   widget->Init(params);

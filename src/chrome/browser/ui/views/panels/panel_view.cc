@@ -20,8 +20,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "ui/aura/window.h"
-#include "ui/aura/window_tree_host.h"
+#include "ui/content_accelerators/accelerator_util.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/screen.h"
@@ -42,6 +41,7 @@
 #include "chrome/browser/shell_integration_linux.h"
 #include "chrome/browser/ui/views/panels/x11_panel_resizer.h"
 #include "chrome/browser/web_applications/web_app.h"
+#include "ui/aura/window.h"
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host_x11.h"
 #endif
 
@@ -55,7 +55,7 @@ const int kStackedPanelHeightShrinkThresholdToBecomeMinimized =
 #endif
 
 // Supported accelerators.
-// Note: We can't use the acclerator table defined in chrome/browser/ui/views
+// Note: We can't use the accelerator table defined in chrome/browser/ui/views
 // due to checkdeps violation.
 struct AcceleratorMapping {
   ui::KeyboardCode keycode;
@@ -101,27 +101,25 @@ const std::map<ui::Accelerator, int>& GetAcceleratorTable() {
 class NativePanelTestingViews : public NativePanelTesting {
  public:
   explicit NativePanelTestingViews(PanelView* panel_view);
-  virtual ~NativePanelTestingViews();
+  ~NativePanelTestingViews() override;
 
  private:
-  virtual void PressLeftMouseButtonTitlebar(
-      const gfx::Point& mouse_location, panel::ClickModifier modifier) OVERRIDE;
-  virtual void ReleaseMouseButtonTitlebar(
-      panel::ClickModifier modifier) OVERRIDE;
-  virtual void DragTitlebar(const gfx::Point& mouse_location) OVERRIDE;
-  virtual void CancelDragTitlebar() OVERRIDE;
-  virtual void FinishDragTitlebar() OVERRIDE;
-  virtual bool VerifyDrawingAttention() const OVERRIDE;
-  virtual bool VerifyActiveState(bool is_active) OVERRIDE;
-  virtual bool VerifyAppIcon() const OVERRIDE;
-  virtual bool VerifySystemMinimizeState() const OVERRIDE;
-  virtual bool IsWindowVisible() const OVERRIDE;
-  virtual bool IsWindowSizeKnown() const OVERRIDE;
-  virtual bool IsAnimatingBounds() const OVERRIDE;
-  virtual bool IsButtonVisible(
-      panel::TitlebarButtonType button_type) const OVERRIDE;
-  virtual panel::CornerStyle GetWindowCornerStyle() const OVERRIDE;
-  virtual bool EnsureApplicationRunOnForeground() OVERRIDE;
+  void PressLeftMouseButtonTitlebar(const gfx::Point& mouse_location,
+                                    panel::ClickModifier modifier) override;
+  void ReleaseMouseButtonTitlebar(panel::ClickModifier modifier) override;
+  void DragTitlebar(const gfx::Point& mouse_location) override;
+  void CancelDragTitlebar() override;
+  void FinishDragTitlebar() override;
+  bool VerifyDrawingAttention() const override;
+  bool VerifyActiveState(bool is_active) override;
+  bool VerifyAppIcon() const override;
+  bool VerifySystemMinimizeState() const override;
+  bool IsWindowVisible() const override;
+  bool IsWindowSizeKnown() const override;
+  bool IsAnimatingBounds() const override;
+  bool IsButtonVisible(panel::TitlebarButtonType button_type) const override;
+  panel::CornerStyle GetWindowCornerStyle() const override;
+  bool EnsureApplicationRunOnForeground() override;
 
   PanelView* panel_view_;
 };
@@ -339,8 +337,10 @@ PanelView::~PanelView() {
 }
 
 void PanelView::ShowPanel() {
-  ShowPanelInactive();
-  ActivatePanel();
+  if (window_->IsVisible())
+    return;
+  window_->Show();
+  panel_->manager()->OnPanelAnimationEnded(panel_.get());
 }
 
 void PanelView::ShowPanelInactive() {
@@ -536,10 +536,6 @@ void PanelView::UpdatePanelLoadingAnimations(bool should_animate) {
   GetFrameView()->UpdateThrobber();
 }
 
-void PanelView::PanelWebContentsFocused(content::WebContents* contents) {
-  web_view_->OnWebContentsFocused(contents);
-}
-
 void PanelView::PanelCut() {
   // Nothing to do since we do not have panel-specific system menu.
   NOTREACHED();
@@ -598,11 +594,8 @@ void PanelView::HandlePanelKeyboardEvent(
   if (focus_manager->shortcut_handling_suspended())
     return;
 
-  ui::Accelerator accelerator(
-      static_cast<ui::KeyboardCode>(event.windowsKeyCode),
-      content::GetModifiersFromNativeWebKeyboardEvent(event));
-  if (event.type == blink::WebInputEvent::KeyUp)
-    accelerator.set_type(ui::ET_KEY_RELEASED);
+  ui::Accelerator accelerator =
+      ui::GetAcceleratorFromNativeWebKeyboardEvent(event);
   focus_manager->ProcessAccelerator(accelerator);
 }
 

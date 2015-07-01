@@ -6,8 +6,8 @@
 
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/autocomplete/shortcuts_backend.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/pref_names.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 // static
@@ -30,7 +30,7 @@ ShortcutsBackendFactory* ShortcutsBackendFactory::GetInstance() {
 }
 
 // static
-scoped_refptr<RefcountedBrowserContextKeyedService>
+scoped_refptr<RefcountedKeyedService>
 ShortcutsBackendFactory::BuildProfileForTesting(
     content::BrowserContext* profile) {
   scoped_refptr<ShortcutsBackend> backend(
@@ -41,7 +41,7 @@ ShortcutsBackendFactory::BuildProfileForTesting(
 }
 
 // static
-scoped_refptr<RefcountedBrowserContextKeyedService>
+scoped_refptr<RefcountedKeyedService>
 ShortcutsBackendFactory::BuildProfileNoDatabaseForTesting(
     content::BrowserContext* profile) {
   scoped_refptr<ShortcutsBackend> backend(
@@ -55,11 +55,12 @@ ShortcutsBackendFactory::ShortcutsBackendFactory()
     : RefcountedBrowserContextKeyedServiceFactory(
         "ShortcutsBackend",
         BrowserContextDependencyManager::GetInstance()) {
+  DependsOn(HistoryServiceFactory::GetInstance());
 }
 
 ShortcutsBackendFactory::~ShortcutsBackendFactory() {}
 
-scoped_refptr<RefcountedBrowserContextKeyedService>
+scoped_refptr<RefcountedKeyedService>
 ShortcutsBackendFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   scoped_refptr<ShortcutsBackend> backend(

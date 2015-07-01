@@ -14,20 +14,18 @@ class PrintBackendChromeOS : public PrintBackend {
   PrintBackendChromeOS();
 
   // PrintBackend implementation.
-  virtual bool EnumeratePrinters(PrinterList* printer_list) OVERRIDE;
-  virtual std::string GetDefaultPrinterName() OVERRIDE;
-  virtual bool GetPrinterSemanticCapsAndDefaults(
+  bool EnumeratePrinters(PrinterList* printer_list) override;
+  std::string GetDefaultPrinterName() override;
+  bool GetPrinterSemanticCapsAndDefaults(
       const std::string& printer_name,
-      PrinterSemanticCapsAndDefaults* printer_info) OVERRIDE;
-  virtual bool GetPrinterCapsAndDefaults(
-      const std::string& printer_name,
-      PrinterCapsAndDefaults* printer_info) OVERRIDE;
-  virtual std::string GetPrinterDriverInfo(
-      const std::string& printer_name) OVERRIDE;
-  virtual bool IsValidPrinter(const std::string& printer_name) OVERRIDE;
+      PrinterSemanticCapsAndDefaults* printer_info) override;
+  bool GetPrinterCapsAndDefaults(const std::string& printer_name,
+                                 PrinterCapsAndDefaults* printer_info) override;
+  std::string GetPrinterDriverInfo(const std::string& printer_name) override;
+  bool IsValidPrinter(const std::string& printer_name) override;
 
  protected:
-  virtual ~PrintBackendChromeOS() {}
+  ~PrintBackendChromeOS() override {}
 };
 
 PrintBackendChromeOS::PrintBackendChromeOS() {}

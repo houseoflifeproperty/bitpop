@@ -53,6 +53,9 @@ bear-320x240-av_enc-v.webm - bear-320x240.webm with video track encrypted using 
 bear-320x240-av_enc-a.webm - bear-320x240.webm with audio track encrypted using key ID [1] and key [2].
 bear-320x240-v_enc-v.webm - bear-320x240-video-only.webm encrypted using key ID [1] and key [2].
 bear-320x240-v-vp9_enc-v.webm - bear-vp9.webm VP9 video only encrypted using key ID [1] and key [2].
+bear-320x240-opus-a_enc-a.webm - bear-opus.webm encrypted using key ID [1] and key[2].
+bear-320x240-opus-av_enc-av.webm - bear-vp9-opus.webm with audio & video encrypted using key ID [1] and key[2].
+bear-320x240-opus-av_enc-v.webm - bear-vp9-opus.webm with video track encrypted using key ID [1] and key[2].
 bear-640x360-a_frag-cenc.mp4 - A fragmented MP4 version of the audio track of bear-640x360.mp4 encrypted (ISO CENC) using key ID [1] and key [2].
 bear-640x360-a_frag-cenc-key_rotation.mp4 - A fragmented MP4 version of the audio track of bear-640x360.mp4 encrypted (ISO CENC) using key ID [1] and key [2] with key rotation [3].
 bear-640x360-v_frag-cenc.mp4 - A fragmented MP4 version of the video track of bear-640x360.mp4 encrypted (ISO CENC) using key ID [1] and key [2].
@@ -109,6 +112,21 @@ test-25fps.vp8.md5:
   MD5 of RGB thumbnail rendered version of test-25fps.vp8 decoded with V4L2VDA
   on Exynos. Written out by video_decode_accelerator_unittest.
 
+test-25fps.vp9:
+  avconv 9.16-6:9.16-0ubuntu0.14.04.1, vpxenc v1.3.0
+  avconv -i test-25fps.h264 -c:v rawvideo -pix_fmt yuv420p test-25fps_i420.yuv
+  vpxenc test-25fps_i420.yuv -o test-25fps.vp9 --codec=vp9 -w 320 -h 240 --ivf \
+      --profile=0 --kf-min-dist=0 --kf-max-dist=150 --lag-in-frames=24 \
+      --drop-frame=0 --target-bitrate=140 --cq-level=23 --min-q=4 --max-q=56 \
+      --static-thresh=1000 --arnr-maxframes=7 --arnr-strength=5 --arnr-type=3 \
+      --cpu-used=1 --good --tile-columns=1 --passes=2 --threads=1 --fps=25/1 \
+      --end-usage=cq --auto-alt-ref=1 --bias-pct=50 --minsection-pct=0 \
+      --maxsection-pct=2000 --undershoot-pct=100
+
+test-25fps.vp9.md5:
+  MD5 of RGB thumbnail rendered version of test-25fps.vp9. Written out by
+  video_decode_accelerator_unittest.
+
 // VDA test files: bear
 bear.h264:
   Using ffmpeg version 0.8.6-4:0.8.6-0ubuntu0.12.04.1, generated with
@@ -158,3 +176,8 @@ red-green.h264.md5:
 bear_320x192_40frames.yuv
   First 40 raw i420 frames of bear-1280x720.mp4 scaled down to 320x192 for
   video_encode_accelerator_unittest.
+
+// JPEG test files:
+pixel-1280x720.jpg - single MJEPG encoded frame of 1280x720, captured on
+ Chromebook Pixel.
+blank-1x1.jpg - 1x1 small picture to test special cases.

@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+GEN('#include "chrome/browser/ui/browser.h"');
+GEN('#include "chrome/browser/ui/browser_commands.h"');
+GEN('#include "chrome/browser/ui/exclusive_access/' +
+    'fullscreen_controller_test.h"');
+
 /**
  * Fixture for ChromeOs WebUI OOBE testing.
  *
@@ -17,9 +22,33 @@ function OobeWebUITest() {}
 OobeWebUITest.prototype = {
   __proto__: testing.Test.prototype,
 
+  /** @override */
   browsePreload: 'chrome://oobe/oobe',
 
-  isAsync: false
+  /** @override */
+  runAccessibilityChecks: true,
+
+  /** @override */
+  accessibilityIssuesAreErrors: true,
+
+  /** @override */
+  testGenPreamble: function() {
+    // OobeWebUI should run in fullscreen.
+    GEN('  FullscreenNotificationObserver fullscreen_observer;');
+    GEN('  chrome::ToggleFullscreenMode(browser());');
+    GEN('  fullscreen_observer.Wait();');
+  },
+
+  /** @override */
+  setUp: function() {
+    testing.Test.prototype.setUp.call(this);
+
+    // Polymer issue https://github.com/Polymer/polymer/issues/1081
+    this.accessibilityAuditConfig.ignoreSelectors('badAriaAttributeValue',
+                                                  'PAPER-BUTTON');
+    this.accessibilityAuditConfig.ignoreSelectors('badAriaAttributeValue',
+                                                  '#progressContainer');
+  },
 };
 
 function createOobeWebUITestSupervisedManagerData() {

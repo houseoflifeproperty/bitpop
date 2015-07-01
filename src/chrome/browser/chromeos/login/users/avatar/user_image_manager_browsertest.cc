@@ -103,27 +103,26 @@ class UserImageManagerTest : public LoginManagerTest,
   }
 
   // LoginManagerTest overrides:
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  void SetUpInProcessBrowserTestFixture() override {
     LoginManagerTest::SetUpInProcessBrowserTestFixture();
 
     ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir_));
     ASSERT_TRUE(PathService::Get(chrome::DIR_USER_DATA, &user_data_dir_));
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     LoginManagerTest::SetUpOnMainThread();
     local_state_ = g_browser_process->local_state();
     user_manager::UserManager::Get()->AddObserver(this);
   }
 
-  virtual void TearDownOnMainThread() OVERRIDE {
+  void TearDownOnMainThread() override {
     user_manager::UserManager::Get()->RemoveObserver(this);
     LoginManagerTest::TearDownOnMainThread();
   }
 
   // UserManager::Observer overrides:
-  virtual void LocalStateChanged(
-      user_manager::UserManager* user_manager) OVERRIDE {
+  void LocalStateChanged(user_manager::UserManager* user_manager) override {
     if (run_loop_)
       run_loop_->Quit();
   }
@@ -236,8 +235,8 @@ class UserImageManagerTest : public LoginManagerTest,
                           std::string(),
                           base::Time::Now() + base::TimeDelta::FromDays(1));
 
-    net::TestURLFetcher* fetcher =
-        url_fetcher_factory->GetFetcherByID(0);
+    net::TestURLFetcher* fetcher = url_fetcher_factory->GetFetcherByID(
+        gaia::GaiaOAuthClient::kUrlFetcherId);
     ASSERT_TRUE(fetcher);
     fetcher->SetResponseString(
         "{ \"picture\": \"http://localhost/avatar.jpg\" }");
@@ -442,6 +441,7 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerTest, SaveUserImage) {
 
   SkBitmap custom_image_bitmap;
   custom_image_bitmap.allocN32Pixels(10, 10);
+  custom_image_bitmap.eraseColor(SK_ColorWHITE);
   custom_image_bitmap.setImmutable();
   const gfx::ImageSkia custom_image =
       gfx::ImageSkia::CreateFrom1xBitmap(custom_image_bitmap);
@@ -604,13 +604,13 @@ class UserImageManagerPolicyTest : public UserImageManagerTest,
   }
 
   // UserImageManagerTest overrides:
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  void SetUpInProcessBrowserTestFixture() override {
     DBusThreadManager::GetSetterForTesting()->SetSessionManagerClient(
         scoped_ptr<SessionManagerClient>(fake_session_manager_client_));
     UserImageManagerTest::SetUpInProcessBrowserTestFixture();
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     UserImageManagerTest::SetUpOnMainThread();
 
     base::FilePath user_keys_dir;
@@ -639,12 +639,12 @@ class UserImageManagerPolicyTest : public UserImageManagerTest,
   }
 
   // policy::CloudPolicyStore::Observer overrides:
-  virtual void OnStoreLoaded(policy::CloudPolicyStore* store) OVERRIDE {
+  void OnStoreLoaded(policy::CloudPolicyStore* store) override {
     if (run_loop_)
       run_loop_->Quit();
   }
 
-  virtual void OnStoreError(policy::CloudPolicyStore* store) OVERRIDE {
+  void OnStoreError(policy::CloudPolicyStore* store) override {
     if (run_loop_)
       run_loop_->Quit();
   }

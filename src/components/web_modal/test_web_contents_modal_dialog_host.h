@@ -9,22 +9,22 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/size.h"
 
 namespace web_modal {
 
 class TestWebContentsModalDialogHost : public WebContentsModalDialogHost {
  public:
   explicit TestWebContentsModalDialogHost(gfx::NativeView host_view);
-  virtual ~TestWebContentsModalDialogHost();
+  ~TestWebContentsModalDialogHost() override;
 
   // WebContentsModalDialogHost:
-  virtual gfx::Size GetMaximumDialogSize() OVERRIDE;
-  virtual gfx::NativeView GetHostView() const OVERRIDE;
-  virtual gfx::Point GetDialogPosition(const gfx::Size& size) OVERRIDE;
-  virtual void AddObserver(ModalDialogHostObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(ModalDialogHostObserver* observer) OVERRIDE;
+  gfx::Size GetMaximumDialogSize() override;
+  gfx::NativeView GetHostView() const override;
+  gfx::Point GetDialogPosition(const gfx::Size& size) override;
+  void AddObserver(ModalDialogHostObserver* observer) override;
+  void RemoveObserver(ModalDialogHostObserver* observer) override;
 
   void set_max_dialog_size(const gfx::Size& max_dialog_size) {
     max_dialog_size_ = max_dialog_size;

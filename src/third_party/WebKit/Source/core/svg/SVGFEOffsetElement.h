@@ -24,10 +24,11 @@
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FEOffset.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
-class SVGFEOffsetElement FINAL : public SVGFilterPrimitiveStandardAttributes {
+class SVGFEOffsetElement final : public SVGFilterPrimitiveStandardAttributes {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGFEOffsetElement);
@@ -35,17 +36,18 @@ public:
     SVGAnimatedNumber* dx() { return m_dx.get(); }
     SVGAnimatedNumber* dy() { return m_dy.get(); }
     SVGAnimatedString* in1() { return m_in1.get(); }
+
+    DECLARE_VIRTUAL_TRACE();
+
 private:
     explicit SVGFEOffsetElement(Document&);
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual PassRefPtrWillBeRawPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
-    RefPtr<SVGAnimatedNumber> m_dx;
-    RefPtr<SVGAnimatedNumber> m_dy;
-    RefPtr<SVGAnimatedString> m_in1;
+    RefPtrWillBeMember<SVGAnimatedNumber> m_dx;
+    RefPtrWillBeMember<SVGAnimatedNumber> m_dy;
+    RefPtrWillBeMember<SVGAnimatedString> m_in1;
 };
 
 } // namespace blink

@@ -7,6 +7,8 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/stringprintf.h"
+#include "net/socket/ssl_client_socket.h"
+#include "net/ssl/ssl_config.h"
 
 namespace net {
 
@@ -17,34 +19,22 @@ namespace {
 // The order of these strings much match the order of the enum definition
 // for AlternateProtocol.
 const char* const kAlternateProtocolStrings[] = {
-  "npn-spdy/2",
-  "npn-spdy/3",
-  "npn-spdy/3.1",
-  "npn-h2-14",  // HTTP/2 draft 14. Called SPDY4 internally.
-  "quic"
-};
-const char kBrokenAlternateProtocol[] = "Broken";
+    "npn-spdy/2",
+    "npn-spdy/3",
+    "npn-spdy/3.1",
+    "npn-h2-14",  // HTTP/2 draft-14. Called SPDY4 internally.
+    "npn-h2",
+    "quic"};
 
-COMPILE_ASSERT(
-    arraysize(kAlternateProtocolStrings) == NUM_VALID_ALTERNATE_PROTOCOLS,
-    kAlternateProtocolStringsSize_kNumValidAlternateProtocols_not_equal);
+static_assert(arraysize(kAlternateProtocolStrings) ==
+                  NUM_VALID_ALTERNATE_PROTOCOLS,
+              "kAlternateProtocolStrings has incorrect size");
 
 }  // namespace
 
-void HistogramAlternateProtocolUsage(
-    AlternateProtocolUsage usage,
-    AlternateProtocolExperiment alternate_protocol_experiment) {
+void HistogramAlternateProtocolUsage(AlternateProtocolUsage usage) {
   UMA_HISTOGRAM_ENUMERATION("Net.AlternateProtocolUsage", usage,
                             ALTERNATE_PROTOCOL_USAGE_MAX);
-  if (alternate_protocol_experiment ==
-      ALTERNATE_PROTOCOL_TRUNCATED_200_SERVERS) {
-    UMA_HISTOGRAM_ENUMERATION("Net.AlternateProtocolUsage.200Truncated", usage,
-                              ALTERNATE_PROTOCOL_USAGE_MAX);
-  } else if (alternate_protocol_experiment ==
-      ALTERNATE_PROTOCOL_TRUNCATED_1000_SERVERS) {
-    UMA_HISTOGRAM_ENUMERATION("Net.AlternateProtocolUsage.1000Truncated", usage,
-                              ALTERNATE_PROTOCOL_USAGE_MAX);
-  }
 }
 
 void HistogramBrokenAlternateProtocolLocation(
@@ -63,13 +53,12 @@ const char* AlternateProtocolToString(AlternateProtocol protocol) {
     case DEPRECATED_NPN_SPDY_2:
     case NPN_SPDY_3:
     case NPN_SPDY_3_1:
+    case NPN_SPDY_4_14:
     case NPN_SPDY_4:
     case QUIC:
       DCHECK(IsAlternateProtocolValid(protocol));
       return kAlternateProtocolStrings[
           protocol - ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION];
-    case ALTERNATE_PROTOCOL_BROKEN:
-      return kBrokenAlternateProtocol;
     case UNINITIALIZED_ALTERNATE_PROTOCOL:
       return "Uninitialized";
   }
@@ -84,8 +73,6 @@ AlternateProtocol AlternateProtocolFromString(const std::string& str) {
     if (str == AlternateProtocolToString(protocol))
       return protocol;
   }
-  if (str == kBrokenAlternateProtocol)
-    return ALTERNATE_PROTOCOL_BROKEN;
   return UNINITIALIZED_ALTERNATE_PROTOCOL;
 }
 
@@ -97,6 +84,8 @@ AlternateProtocol AlternateProtocolFromNextProto(NextProto next_proto) {
       return NPN_SPDY_3;
     case kProtoSPDY31:
       return NPN_SPDY_3_1;
+    case kProtoSPDY4_14:
+      return NPN_SPDY_4_14;
     case kProtoSPDY4:
       return NPN_SPDY_4;
     case kProtoQUIC1SPDY3:
@@ -111,10 +100,20 @@ AlternateProtocol AlternateProtocolFromNextProto(NextProto next_proto) {
   return UNINITIALIZED_ALTERNATE_PROTOCOL;
 }
 
-std::string AlternateProtocolInfo::ToString() const {
-  return base::StringPrintf("%d:%s p=%f", port,
-                            AlternateProtocolToString(protocol),
+std::string AlternativeService::ToString() const {
+  return base::StringPrintf("%s %s:%d", AlternateProtocolToString(protocol),
+                            host.c_str(), port);
+}
+
+std::string AlternativeServiceInfo::ToString() const {
+  return base::StringPrintf("%s, p=%f", alternative_service.ToString().c_str(),
                             probability);
+}
+
+// static
+void HttpServerProperties::ForceHTTP11(SSLConfig* ssl_config) {
+  ssl_config->next_protos.clear();
+  ssl_config->next_protos.push_back(kProtoHTTP11);
 }
 
 }  // namespace net

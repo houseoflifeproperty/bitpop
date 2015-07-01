@@ -7,24 +7,26 @@
 
 #include <string>
 
+#include "base/macros.h"
+#include "base/time/tick_clock.h"
 #include "base/time/time.h"
 #include "net/base/backoff_entry.h"
 #include "net/url_request/url_request_throttler_header_interface.h"
 
 namespace net {
 
-class MockBackoffEntry : public BackoffEntry {
+class TestTickClock : public base::TickClock {
  public:
-  explicit MockBackoffEntry(const BackoffEntry::Policy* const policy);
-  virtual ~MockBackoffEntry();
+  TestTickClock();
+  explicit TestTickClock(base::TimeTicks now);
+  ~TestTickClock() override;
 
-  // BackoffEntry overrides.
-  virtual base::TimeTicks ImplGetTimeNow() const OVERRIDE;
-
-  void set_fake_now(const base::TimeTicks& now);
+  base::TimeTicks NowTicks() override;
+  void set_now(base::TimeTicks now) { now_ticks_ = now; }
 
  private:
-  base::TimeTicks fake_now_;
+  base::TimeTicks now_ticks_;
+  DISALLOW_COPY_AND_ASSIGN(TestTickClock);
 };
 
 // Mocks the URLRequestThrottlerHeaderInterface, allowing testing code to
@@ -42,11 +44,11 @@ class MockURLRequestThrottlerHeaderAdapter
   MockURLRequestThrottlerHeaderAdapter(const std::string& retry_value,
                                        const std::string& opt_out_value,
                                        int response_code);
-  virtual ~MockURLRequestThrottlerHeaderAdapter();
+  ~MockURLRequestThrottlerHeaderAdapter() override;
 
   // URLRequestThrottlerHeaderInterface overrides.
-  virtual std::string GetNormalizedValue(const std::string& key) const OVERRIDE;
-  virtual int GetResponseCode() const OVERRIDE;
+  std::string GetNormalizedValue(const std::string& key) const override;
+  int GetResponseCode() const override;
 
  private:
   std::string fake_retry_value_;

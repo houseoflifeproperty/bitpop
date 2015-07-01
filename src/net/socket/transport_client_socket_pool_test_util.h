@@ -17,7 +17,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "net/base/address_list.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/stream_socket.h"
@@ -62,31 +62,34 @@ class MockTransportClientSocketFactory : public ClientSocketFactory {
     MOCK_DELAYED_FAILING_CLIENT_SOCKET,
     // A stalled socket that never connects at all.
     MOCK_STALLED_CLIENT_SOCKET,
+    // A stalled socket that never connects at all, but returns a failing
+    // ConnectionAttempt in |GetConnectionAttempts|.
+    MOCK_STALLED_FAILING_CLIENT_SOCKET,
     // A socket that can be triggered to connect explicitly, asynchronously.
     MOCK_TRIGGERABLE_CLIENT_SOCKET,
   };
 
   explicit MockTransportClientSocketFactory(NetLog* net_log);
-  virtual ~MockTransportClientSocketFactory();
+  ~MockTransportClientSocketFactory() override;
 
-  virtual scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
+  scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
       const RandIntCallback& rand_int_cb,
       NetLog* net_log,
-      const NetLog::Source& source) OVERRIDE;
+      const NetLog::Source& source) override;
 
-  virtual scoped_ptr<StreamSocket> CreateTransportClientSocket(
+  scoped_ptr<StreamSocket> CreateTransportClientSocket(
       const AddressList& addresses,
       NetLog* /* net_log */,
-      const NetLog::Source& /* source */) OVERRIDE;
+      const NetLog::Source& /* source */) override;
 
-  virtual scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
+  scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
       scoped_ptr<ClientSocketHandle> transport_socket,
       const HostPortPair& host_and_port,
       const SSLConfig& ssl_config,
-      const SSLClientSocketContext& context) OVERRIDE;
+      const SSLClientSocketContext& context) override;
 
-  virtual void ClearSSLSessionCache() OVERRIDE;
+  void ClearSSLSessionCache() override;
 
   int allocation_count() const { return allocation_count_; }
 

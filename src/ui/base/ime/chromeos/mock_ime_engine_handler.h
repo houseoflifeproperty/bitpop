@@ -6,27 +6,31 @@
 #define UI_BASE_IME_CHROMEOS_MOCK_IME_ENGINE_HANDLER_H_
 
 #include "ui/base/ime/chromeos/ime_bridge.h"
-#include "ui/base/ui_base_export.h"
+#include "ui/base/ime/ui_base_ime_export.h"
 #include "ui/events/event.h"
 
 namespace chromeos {
 
-class UI_BASE_EXPORT MockIMEEngineHandler : public IMEEngineHandlerInterface {
+class UI_BASE_IME_EXPORT MockIMEEngineHandler
+    : public IMEEngineHandlerInterface {
  public:
   MockIMEEngineHandler();
-  virtual ~MockIMEEngineHandler();
+  ~MockIMEEngineHandler() override;
 
-  virtual void FocusIn(const InputContext& input_context) OVERRIDE;
-  virtual void FocusOut() OVERRIDE;
-  virtual void Enable(const std::string& component_id) OVERRIDE;
-  virtual void Disable() OVERRIDE;
-  virtual void PropertyActivate(const std::string& property_name) OVERRIDE;
-  virtual void Reset() OVERRIDE;
-  virtual void ProcessKeyEvent(const ui::KeyEvent& key_event,
-                               const KeyEventDoneCallback& callback) OVERRIDE;
-  virtual void CandidateClicked(uint32 index) OVERRIDE;
-  virtual void SetSurroundingText(const std::string& text, uint32 cursor_pos,
-                                  uint32 anchor_pos) OVERRIDE;
+  void FocusIn(const InputContext& input_context) override;
+  void FocusOut() override;
+  void Enable(const std::string& component_id) override;
+  void Disable() override;
+  void PropertyActivate(const std::string& property_name) override;
+  void Reset() override;
+  bool IsInterestedInKeyEvent() const override;
+  void ProcessKeyEvent(const ui::KeyEvent& key_event,
+                       const KeyEventDoneCallback& callback) override;
+  void CandidateClicked(uint32 index) override;
+  void SetSurroundingText(const std::string& text,
+                          uint32 cursor_pos,
+                          uint32 anchor_pos) override;
+  void SetCompositionBounds(const std::vector<gfx::Rect>& bounds) override;
 
   int focus_in_call_count() const { return focus_in_call_count_; }
   int focus_out_call_count() const { return focus_out_call_count_; }

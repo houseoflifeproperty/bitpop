@@ -7,6 +7,7 @@ import optparse
 import os.path
 import shutil
 import subprocess
+import stat
 import sys
 import time
 import traceback
@@ -24,6 +25,10 @@ ARCH_MAP = {
     'arm': {
         'gyp_arch': 'arm',
         'scons_platform': 'arm',
+        },
+    'mips32': {
+        'gyp_arch': 'mips32',
+        'scons_platform': 'mips32',
         },
     }
 
@@ -183,22 +188,28 @@ def ParseStandardCommandLine(context):
   parser.add_option('--use-breakpad-tools', dest='use_breakpad_tools',
                     default=False, action='store_true',
                     help='Use breakpad tools for testing')
+  parser.add_option('--skip-build', dest='skip_build', default=False,
+                    action='store_true',
+                    help='Skip building steps in buildbot_pnacl')
+  parser.add_option('--skip-run', dest='skip_run', default=False,
+                    action='store_true',
+                    help='Skip test-running steps in buildbot_pnacl')
 
   options, args = parser.parse_args()
 
   if len(args) != 3:
-    parser.error('Expected 3 arguments: mode arch clib')
+    parser.error('Expected 3 arguments: mode arch toolchain')
 
   # script + 3 args == 4
-  mode, arch, clib = args
+  mode, arch, toolchain = args
   if mode not in ('dbg', 'opt', 'coverage'):
     parser.error('Invalid mode %r' % mode)
 
   if arch not in ARCH_MAP:
     parser.error('Invalid arch %r' % arch)
 
-  if clib not in ('newlib', 'glibc', 'pnacl'):
-    parser.error('Invalid clib %r' % clib)
+  if toolchain not in ('newlib', 'glibc', 'pnacl', 'nacl_clang'):
+    parser.error('Invalid toolchain %r' % toolchain)
 
   # TODO(ncbray) allow a command-line override
   platform = GetHostPlatform()
@@ -216,6 +227,10 @@ def ParseStandardCommandLine(context):
       'opt': 'Release',
       'dbg': 'Debug',
       'coverage': 'Debug'}[mode]
+  context['gn_is_debug'] = {
+      'opt': 'false',
+      'dbg': 'true',
+      'coverage': 'true'}[mode]
   context['gyp_arch'] = ARCH_MAP[arch]['gyp_arch']
   context['gyp_vars'] = []
   if context['clang']:
@@ -228,8 +243,9 @@ def ParseStandardCommandLine(context):
   # TODO(mcgrathr): clean this up somehow
   if arch != 'arm' or platform == 'linux':
     context['default_scons_mode'] += [mode + '-host']
-  context['use_glibc'] = clib == 'glibc'
-  context['pnacl'] = clib == 'pnacl'
+  context['use_glibc'] = toolchain == 'glibc'
+  context['pnacl'] = toolchain == 'pnacl'
+  context['nacl_clang'] = toolchain == 'nacl_clang'
   context['max_jobs'] = 8
   context['dry_run'] = options.dry_run
   context['inside_toolchain'] = options.inside_toolchain
@@ -239,6 +255,8 @@ def ParseStandardCommandLine(context):
   context['coverage'] = options.coverage
   context['use_breakpad_tools'] = options.use_breakpad_tools
   context['scons_args'] = options.scons_args
+  context['skip_build'] = options.skip_build
+  context['skip_run'] = options.skip_run
   # Don't run gyp on coverage builds.
   if context['coverage']:
     context['no_gyp'] = True
@@ -274,13 +292,10 @@ def TryToCleanPath(path, file_name_filter=lambda fn: True):
   if os.path.exists(path):
     if file_name_filter(path):
       print 'Trying to remove %s' % path
-      if os.path.isdir(path):
-        shutil.rmtree(path, ignore_errors=True)
-      else:
-        try:
-          os.remove(path)
-        except Exception:
-          pass
+      try:
+        RemovePath(path)
+      except Exception:
+        print 'Failed to remove %s' % path
     else:
       print 'Skipping %s' % path
 
@@ -314,10 +329,18 @@ def Retry(op, *args):
     op(*args)
 
 
+def PermissionsFixOnError(func, path, exc_info):
+  if not os.access(path, os.W_OK):
+    os.chmod(path, stat.S_IWUSR)
+    func(path)
+  else:
+    raise
+
+
 def _RemoveDirectory(path):
   print 'Removing %s' % path
   if os.path.exists(path):
-    shutil.rmtree(path)
+    shutil.rmtree(path, onerror=PermissionsFixOnError)
     print '    Succeeded.'
   else:
     print '    Path does not exist, nothing to do.'
@@ -329,6 +352,16 @@ def RemoveDirectory(path):
   Does not mask failures, although it does retry a few times on Windows.
   """
   Retry(_RemoveDirectory, path)
+
+
+def RemovePath(path):
+  """Remove a path, file or directory."""
+  if os.path.isdir(path):
+    RemoveDirectory(path)
+  else:
+    if os.path.isfile(path) and not os.access(path, os.W_OK):
+      os.chmod(path, stat.S_IWUSR)
+    os.remove(path)
 
 
 # This is a sanity check so Command can print out better error information.
@@ -440,6 +473,7 @@ def SCons(context, mode=None, platform=None, parallel=False, browser_test=False,
   if context['asan']: cmd.append('--asan')
   if context['use_glibc']: cmd.append('--nacl_glibc')
   if context['pnacl']: cmd.append('bitcode=1')
+  if context['nacl_clang']: cmd.append('nacl_clang=1')
   if context['use_breakpad_tools']:
     cmd.append('breakpad_tools_dir=breakpad-out')
   if context['android']:
@@ -483,6 +517,7 @@ class Step(object):
 
   # Called on entry to a 'with' block.
   def __enter__(self):
+    sys.stdout.flush()
     print
     print '@@@BUILD_STEP %s@@@' % self.name
     self.status.ReportBegin(self.name)
@@ -496,6 +531,7 @@ class Step(object):
   # step to be printed and also allows the build to continue of the failure of
   # a given step doesn't halt the build.
   def __exit__(self, type, exception, trace):
+    sys.stdout.flush()
     if exception is None:
       # If exception is None, no exception occurred.
       step_failed = False
@@ -518,10 +554,12 @@ class Step(object):
       if self.halt_on_fail:
         print
         print 'Entire build halted because %s failed.' % self.name
+        sys.stdout.flush()
         raise StopBuild()
     else:
       self.status.ReportPass(self.name)
 
+    sys.stdout.flush()
     # Suppress any exception that occurred.
     return True
 

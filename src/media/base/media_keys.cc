@@ -10,6 +10,4 @@ MediaKeys::MediaKeys() {}
 
 MediaKeys::~MediaKeys() {}
 
-Decryptor* MediaKeys::GetDecryptor() { return NULL; }
-
 }  // namespace media

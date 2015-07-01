@@ -4,9 +4,9 @@
 
 #include "chrome/test/base/tracing.h"
 
-#include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "base/trace_event/trace_event.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -22,8 +22,8 @@ using tracing::BeginTracingWithWatch;
 using tracing::WaitForWatchEvent;
 using tracing::EndTracing;
 
-const char* g_category = "test_tracing";
-const char* g_event = "TheEvent";
+const char g_category[] = "test_tracing";
+const char g_event[] = "TheEvent";
 
 class TracingBrowserTest : public InProcessBrowserTest {
  protected:

@@ -10,17 +10,21 @@
       var firstVideoSeek = false;
       var video_fixed_size = document.getElementsByTagName("video")[0];
       var video = document.getElementsByTagName("video")[1];
-      var testConfig = new TestConfig();
-      testConfig.loadQueryParams();
+      var testConfig;
+
+      function initTestConfig() {
+        testConfig = new TestConfig();
+        testConfig.loadQueryParams();
+      }
 
       function load() {
-        loadVideo(video_fixed_size);
-        loadVideo(video);
+        initTestConfig();
+        loadVideo(video_fixed_size).then(function() {
+          loadVideo(video);
+        });
       }
 
       function loadVideo(video) {
-        var videoPlayer = PlayerUtils.createPlayer(video, testConfig);
-        videoPlayer.init();
         video.addEventListener('playing', function() {
           // Make sure the video plays for a bit.
           video.addEventListener('timeupdate', function() {
@@ -43,7 +47,11 @@
         });
 
         video.addEventListener('canplay', oncanplay);
-        video.play();
+
+        var videoPlayer = PlayerUtils.createPlayer(video, testConfig);
+        return videoPlayer.init()
+            .then(function() { video.play(); })
+            .catch(function() { Utils.failTest('Unable to play video.'); });
       }
     </script>
   </body>

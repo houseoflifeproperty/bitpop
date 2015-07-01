@@ -35,16 +35,15 @@ class MEDIA_EXPORT FileVideoCaptureDevice : public VideoCaptureDevice {
   explicit FileVideoCaptureDevice(const base::FilePath& file_path);
 
   // VideoCaptureDevice implementation, class methods.
-  virtual ~FileVideoCaptureDevice();
-  virtual void AllocateAndStart(
-      const VideoCaptureParams& params,
-      scoped_ptr<VideoCaptureDevice::Client> client) OVERRIDE;
-  virtual void StopAndDeAllocate() OVERRIDE;
+  ~FileVideoCaptureDevice() override;
+  void AllocateAndStart(const VideoCaptureParams& params,
+                        scoped_ptr<VideoCaptureDevice::Client> client) override;
+  void StopAndDeAllocate() override;
 
  private:
   // Returns size in bytes of an I420 frame, not including possible paddings,
   // defined by |capture_format_|.
-  int CalculateFrameSize();
+  int CalculateFrameSize() const;
 
   // Called on the |capture_thread_|.
   void OnAllocateAndStart(const VideoCaptureParams& params,

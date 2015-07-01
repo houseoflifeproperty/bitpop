@@ -6,6 +6,7 @@
 #define ImageBitmap_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/canvas/CanvasImageSource.h"
 #include "platform/geometry/IntRect.h"
@@ -20,7 +21,7 @@ class HTMLCanvasElement;
 class HTMLVideoElement;
 class ImageData;
 
-class ImageBitmap FINAL : public RefCountedWillBeGarbageCollectedFinalized<ImageBitmap>, public ScriptWrappable, public ImageLoaderClient, public CanvasImageSource {
+class CORE_EXPORT ImageBitmap final : public RefCountedWillBeGarbageCollectedFinalized<ImageBitmap>, public ScriptWrappable, public ImageLoaderClient, public CanvasImageSource {
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ImageBitmap);
 public:
@@ -43,12 +44,12 @@ public:
     virtual ~ImageBitmap();
 
     // CanvasImageSource implementation
-    virtual PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const OVERRIDE;
-    virtual bool wouldTaintOrigin(SecurityOrigin*) const OVERRIDE { return false; };
-    virtual void adjustDrawRects(FloatRect* srcRect, FloatRect* dstRect) const OVERRIDE;
-    virtual FloatSize sourceSize() const OVERRIDE;
+    virtual PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const override;
+    virtual bool wouldTaintOrigin(SecurityOrigin*) const override { return false; };
+    virtual void adjustDrawRects(FloatRect* srcRect, FloatRect* dstRect) const override;
+    virtual FloatSize elementSize() const override;
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     ImageBitmap(HTMLImageElement*, const IntRect&);
@@ -59,8 +60,8 @@ private:
     ImageBitmap(Image*, const IntRect&);
 
     // ImageLoaderClient
-    virtual void notifyImageSourceChanged() OVERRIDE;
-    virtual bool requestsHighLiveResourceCachePriority() OVERRIDE { return true; }
+    virtual void notifyImageSourceChanged() override;
+    virtual bool requestsHighLiveResourceCachePriority() override { return true; }
 
     // ImageBitmaps constructed from HTMLImageElements hold a reference to the HTMLImageElement until
     // the image source changes.

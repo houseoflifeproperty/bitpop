@@ -19,7 +19,7 @@ namespace chromeos {
 class NetworkPortalDetectorTestImpl : public NetworkPortalDetector {
  public:
   NetworkPortalDetectorTestImpl();
-  virtual ~NetworkPortalDetectorTestImpl();
+  ~NetworkPortalDetectorTestImpl() override;
 
   void SetDefaultNetworkForTesting(const std::string& guid);
   void SetDetectionResultsForTesting(const std::string& guid,
@@ -27,16 +27,17 @@ class NetworkPortalDetectorTestImpl : public NetworkPortalDetector {
   void NotifyObserversForTesting();
 
   // NetworkPortalDetector implementation:
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void AddAndFireObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual CaptivePortalState GetCaptivePortalState(
-      const std::string& service_path) OVERRIDE;
-  virtual bool IsEnabled() OVERRIDE;
-  virtual void Enable(bool start_detection) OVERRIDE;
-  virtual bool StartDetectionIfIdle() OVERRIDE;
+  void AddObserver(Observer* observer) override;
+  void AddAndFireObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
+  CaptivePortalState GetCaptivePortalState(
+      const std::string& service_path) override;
+  bool IsEnabled() override;
+  void Enable(bool start_detection) override;
+  bool StartDetectionIfIdle() override;
 
-  virtual void SetStrategy(PortalDetectorStrategy::StrategyId id) OVERRIDE;
+  void SetStrategy(PortalDetectorStrategy::StrategyId id) override;
+  void OnLockScreenRequest() override;
 
   PortalDetectorStrategy::StrategyId strategy_id() const {
     return strategy_id_;

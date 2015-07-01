@@ -8,9 +8,10 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/gfx/font_list.h"
-#include "ui/gfx/insets.h"
+#include "ui/gfx/geometry/insets.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/safe_integer_conversions.h"
 #include "ui/gfx/range/range.h"
-#include "ui/gfx/rect.h"
 #include "ui/gfx/render_text.h"
 #include "ui/gfx/shadow_value.h"
 #include "ui/gfx/text_elider.h"
@@ -19,41 +20,6 @@
 namespace gfx {
 
 namespace {
-
-#if defined(OS_WIN)
-// If necessary, wraps |text| with RTL/LTR directionality characters based on
-// |flags| and |text| content.
-// Returns true if the text will be rendered right-to-left.
-// TODO(msw): Nix this, now that RenderTextWin supports directionality directly.
-bool AdjustStringDirection(int flags, base::string16* text) {
-  // TODO(msw): FORCE_LTR_DIRECTIONALITY does not work for RTL text now.
-
-  // If the string is empty or LTR was forced, simply return false since the
-  // default RenderText directionality is already LTR.
-  if (text->empty() || (flags & Canvas::FORCE_LTR_DIRECTIONALITY))
-    return false;
-
-  // If RTL is forced, apply it to the string.
-  if (flags & Canvas::FORCE_RTL_DIRECTIONALITY) {
-    base::i18n::WrapStringWithRTLFormatting(text);
-    return true;
-  }
-
-  // If a direction wasn't forced but the UI language is RTL and there were
-  // strong RTL characters, ensure RTL is applied.
-  if (base::i18n::IsRTL() && base::i18n::StringContainsStrongRTLChars(*text)) {
-    base::i18n::WrapStringWithRTLFormatting(text);
-    return true;
-  }
-
-  // In the default case, the string should be rendered as LTR. RenderText's
-  // default directionality is LTR, so the text doesn't need to be wrapped.
-  // Note that individual runs within the string may still be rendered RTL
-  // (which will be the case for RTL text under non-RTL locales, since under RTL
-  // locales it will be handled by the if statement above).
-  return false;
-}
-#endif  // defined(OS_WIN)
 
 // Checks each pixel immediately adjacent to the given pixel in the bitmap. If
 // any of them are not the halo color, returns true. This defines the halo of
@@ -100,7 +66,7 @@ Range StripAcceleratorChars(int flags, base::string16* text) {
 // Elides |text| and adjusts |range| appropriately. If eliding causes |range|
 // to no longer point to the same character in |text|, |range| is made invalid.
 void ElideTextAndAdjustRange(const FontList& font_list,
-                             int width,
+                             float width,
                              base::string16* text,
                              Range* range) {
   const base::char16 start_char =
@@ -130,19 +96,22 @@ void UpdateRenderText(const Rect& rect,
   // if not specified.
   if (!(flags & (Canvas::TEXT_ALIGN_CENTER |
                  Canvas::TEXT_ALIGN_RIGHT |
-                 Canvas::TEXT_ALIGN_LEFT))) {
+                 Canvas::TEXT_ALIGN_LEFT |
+                 Canvas::TEXT_ALIGN_TO_HEAD))) {
     flags |= Canvas::DefaultCanvasTextAlignment();
   }
 
-  if (flags & Canvas::TEXT_ALIGN_RIGHT)
+  if (flags & Canvas::TEXT_ALIGN_TO_HEAD)
+    render_text->SetHorizontalAlignment(ALIGN_TO_HEAD);
+  else if (flags & Canvas::TEXT_ALIGN_RIGHT)
     render_text->SetHorizontalAlignment(ALIGN_RIGHT);
   else if (flags & Canvas::TEXT_ALIGN_CENTER)
     render_text->SetHorizontalAlignment(ALIGN_CENTER);
   else
     render_text->SetHorizontalAlignment(ALIGN_LEFT);
 
-  if (flags & Canvas::NO_SUBPIXEL_RENDERING)
-    render_text->set_background_is_transparent(true);
+  render_text->set_subpixel_rendering_suppressed(
+      (flags & Canvas::NO_SUBPIXEL_RENDERING) != 0);
 
   render_text->SetColor(color);
   const int font_style = font_list.GetFontStyle();
@@ -162,11 +131,6 @@ void Canvas::SizeStringFloat(const base::string16& text,
   DCHECK_GE(*width, 0);
   DCHECK_GE(*height, 0);
 
-  base::string16 adjusted_text = text;
-#if defined(OS_WIN)
-  AdjustStringDirection(flags, &adjusted_text);
-#endif
-
   if ((flags & MULTI_LINE) && *width != 0) {
     WordWrapBehavior wrap_behavior = TRUNCATE_LONG_WORDS;
     if (flags & CHARACTER_BREAK)
@@ -174,10 +138,10 @@ void Canvas::SizeStringFloat(const base::string16& text,
     else if (!(flags & NO_ELLIPSIS))
       wrap_behavior = ELIDE_LONG_WORDS;
 
-    Rect rect(*width, INT_MAX);
     std::vector<base::string16> strings;
-    ElideRectangleText(adjusted_text, font_list, rect.width(), rect.height(),
-                       wrap_behavior, &strings);
+    ElideRectangleText(text, font_list, *width, INT_MAX, wrap_behavior,
+                       &strings);
+    Rect rect(ClampToInt(*width), INT_MAX);
     scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
     UpdateRenderText(rect, base::string16(), font_list, flags, 0,
                      render_text.get());
@@ -189,27 +153,22 @@ void Canvas::SizeStringFloat(const base::string16& text,
       render_text->SetText(strings[i]);
       const SizeF& string_size = render_text->GetStringSizeF();
       w = std::max(w, string_size.width());
-      h += (i > 0 && line_height > 0) ? line_height : string_size.height();
+      h += (i > 0 && line_height > 0) ?
+               std::max(static_cast<float>(line_height), string_size.height())
+                   : string_size.height();
     }
     *width = w;
     *height = h;
   } else {
-    // If the string is too long, the call by |RenderTextWin| to |ScriptShape()|
-    // will inexplicably fail with result E_INVALIDARG. Guard against this.
-    const size_t kMaxRenderTextLength = 5000;
-    if (adjusted_text.length() >= kMaxRenderTextLength) {
-      *width = font_list.GetExpectedTextWidth(adjusted_text.length());
-      *height = font_list.GetHeight();
-    } else {
-      scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
-      Rect rect(*width, *height);
-      StripAcceleratorChars(flags, &adjusted_text);
-      UpdateRenderText(rect, adjusted_text, font_list, flags, 0,
-                       render_text.get());
-      const SizeF& string_size = render_text->GetStringSizeF();
-      *width = string_size.width();
-      *height = string_size.height();
-    }
+    scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
+    Rect rect(ClampToInt(*width), ClampToInt(*height));
+    base::string16 adjusted_text = text;
+    StripAcceleratorChars(flags, &adjusted_text);
+    UpdateRenderText(rect, adjusted_text, font_list, flags, 0,
+                     render_text.get());
+    const SizeF& string_size = render_text->GetStringSizeF();
+    *width = string_size.width();
+    *height = string_size.height();
   }
 }
 
@@ -230,11 +189,6 @@ void Canvas::DrawStringRectWithShadows(const base::string16& text,
   ClipRect(clip_rect);
 
   Rect rect(text_bounds);
-  base::string16 adjusted_text = text;
-
-#if defined(OS_WIN)
-  AdjustStringDirection(flags, &adjusted_text);
-#endif
 
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->set_shadows(shadows);
@@ -247,7 +201,8 @@ void Canvas::DrawStringRectWithShadows(const base::string16& text,
       wrap_behavior = ELIDE_LONG_WORDS;
 
     std::vector<base::string16> strings;
-    ElideRectangleText(adjusted_text, font_list, text_bounds.width(),
+    ElideRectangleText(text, font_list,
+                       static_cast<float>(text_bounds.width()),
                        text_bounds.height(), wrap_behavior, &strings);
 
     for (size_t i = 0; i < strings.size(); i++) {
@@ -278,6 +233,7 @@ void Canvas::DrawStringRectWithShadows(const base::string16& text,
       rect += Vector2d(0, line_height);
     }
   } else {
+    base::string16 adjusted_text = text;
     Range range = StripAcceleratorChars(flags, &adjusted_text);
     bool elide_text = ((flags & NO_ELLIPSIS) == 0);
 
@@ -286,7 +242,7 @@ void Canvas::DrawStringRectWithShadows(const base::string16& text,
     // for LTR text. RTL text is still elided (on the left) with "...".
     if (elide_text) {
       render_text->SetText(adjusted_text);
-      if (render_text->GetTextDirection() == base::i18n::LEFT_TO_RIGHT) {
+      if (render_text->GetDisplayTextDirection() == base::i18n::LEFT_TO_RIGHT) {
         render_text->SetElideBehavior(FADE_TAIL);
         elide_text = false;
       }
@@ -294,8 +250,9 @@ void Canvas::DrawStringRectWithShadows(const base::string16& text,
 #endif
 
     if (elide_text) {
-      ElideTextAndAdjustRange(font_list, text_bounds.width(), &adjusted_text,
-                              &range);
+      ElideTextAndAdjustRange(font_list,
+                              static_cast<float>(text_bounds.width()),
+                              &adjusted_text, &range);
     }
 
     UpdateRenderText(rect, adjusted_text, font_list, flags, color,
@@ -366,21 +323,10 @@ void Canvas::DrawFadedString(const base::string16& text,
     DrawStringRectWithFlags(text, font_list, color, display_rect, flags);
     return;
   }
-
-  // Align with forced content directionality, overriding alignment flags.
-  if (flags & FORCE_RTL_DIRECTIONALITY) {
-    flags &= ~(TEXT_ALIGN_CENTER | TEXT_ALIGN_LEFT);
-    flags |= TEXT_ALIGN_RIGHT;
-  } else if (flags & FORCE_LTR_DIRECTIONALITY) {
-    flags &= ~(TEXT_ALIGN_CENTER | TEXT_ALIGN_RIGHT);
-    flags |= TEXT_ALIGN_LEFT;
-  } else if (!(flags & TEXT_ALIGN_LEFT) && !(flags & TEXT_ALIGN_RIGHT)) {
-    // Also align with content directionality instead of fading both ends.
-    flags &= ~TEXT_ALIGN_CENTER;
-    const bool is_rtl = base::i18n::GetFirstStrongCharacterDirection(text) ==
-                        base::i18n::RIGHT_TO_LEFT;
-    flags |= is_rtl ? TEXT_ALIGN_RIGHT : TEXT_ALIGN_LEFT;
-  }
+  // Align with content directionality instead of fading both ends.
+  flags &= ~TEXT_ALIGN_CENTER;
+  if (!(flags & (TEXT_ALIGN_LEFT | TEXT_ALIGN_RIGHT)))
+    flags |= TEXT_ALIGN_TO_HEAD;
   flags |= NO_ELLIPSIS;
 
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());

@@ -15,14 +15,15 @@
 #include "base/guid.h"
 #include "base/message_loop/message_loop.h"
 #include "base/prefs/testing_pref_service.h"
+#include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_remover_test_util.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/domain_reliability/service_factory.h"
-#include "chrome/browser/history/history_service.h"
+#include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/common/pref_names.h"
@@ -33,13 +34,16 @@
 #include "components/autofill/core/browser/credit_card.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "components/domain_reliability/clear_mode.h"
 #include "components/domain_reliability/monitor.h"
 #include "components/domain_reliability/service.h"
+#include "components/favicon/core/favicon_service.h"
+#include "components/history/core/browser/history_service.h"
 #include "content/public/browser/cookie_store_factory.h"
 #include "content/public/browser/dom_storage_context.h"
 #include "content/public/browser/local_storage_usage_info.h"
-#include "content/public/browser/notification_service.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -52,6 +56,8 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/gfx/favicon_size.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/users/mock_user_manager.h"
@@ -133,41 +139,44 @@ struct StoragePartitionRemovalData {
 class TestStoragePartition : public StoragePartition {
  public:
   TestStoragePartition() {}
-  virtual ~TestStoragePartition() {}
+  ~TestStoragePartition() override {}
 
   // content::StoragePartition implementation.
-  virtual base::FilePath GetPath() OVERRIDE { return base::FilePath(); }
-  virtual net::URLRequestContextGetter* GetURLRequestContext() OVERRIDE {
+  base::FilePath GetPath() override { return base::FilePath(); }
+  net::URLRequestContextGetter* GetURLRequestContext() override { return NULL; }
+  net::URLRequestContextGetter* GetMediaURLRequestContext() override {
     return NULL;
   }
-  virtual net::URLRequestContextGetter* GetMediaURLRequestContext() OVERRIDE {
+  storage::QuotaManager* GetQuotaManager() override { return NULL; }
+  content::AppCacheService* GetAppCacheService() override { return NULL; }
+  storage::FileSystemContext* GetFileSystemContext() override { return NULL; }
+  storage::DatabaseTracker* GetDatabaseTracker() override { return NULL; }
+  content::DOMStorageContext* GetDOMStorageContext() override { return NULL; }
+  content::IndexedDBContext* GetIndexedDBContext() override { return NULL; }
+  content::ServiceWorkerContext* GetServiceWorkerContext() override {
     return NULL;
   }
-  virtual storage::QuotaManager* GetQuotaManager() OVERRIDE { return NULL; }
-  virtual content::AppCacheService* GetAppCacheService() OVERRIDE {
-    return NULL;
-  }
-  virtual storage::FileSystemContext* GetFileSystemContext() OVERRIDE {
-    return NULL;
-  }
-  virtual storage::DatabaseTracker* GetDatabaseTracker() OVERRIDE {
-    return NULL;
-  }
-  virtual content::DOMStorageContext* GetDOMStorageContext() OVERRIDE {
-    return NULL;
-  }
-  virtual content::IndexedDBContext* GetIndexedDBContext() OVERRIDE {
-    return NULL;
-  }
-  virtual content::ServiceWorkerContext* GetServiceWorkerContext() OVERRIDE {
-    return NULL;
+  content::GeofencingManager* GetGeofencingManager() override { return NULL; }
+  content::NavigatorConnectContext* GetNavigatorConnectContext() override {
+    return nullptr;
   }
 
-  virtual void ClearDataForOrigin(uint32 remove_mask,
-                                  uint32 quota_storage_remove_mask,
-                                  const GURL& storage_origin,
-                                  net::URLRequestContextGetter* rq_context,
-                                  const base::Closure& callback) OVERRIDE {
+  content::PlatformNotificationContext* GetPlatformNotificationContext()
+      override {
+    return nullptr;
+  }
+
+  content::HostZoomMap* GetHostZoomMap() override { return NULL; }
+  content::HostZoomLevelContext* GetHostZoomLevelContext() override {
+    return NULL;
+  }
+  content::ZoomLevelDelegate* GetZoomLevelDelegate() override { return NULL; }
+
+  void ClearDataForOrigin(uint32 remove_mask,
+                          uint32 quota_storage_remove_mask,
+                          const GURL& storage_origin,
+                          net::URLRequestContextGetter* rq_context,
+                          const base::Closure& callback) override {
     BrowserThread::PostTask(BrowserThread::UI,
                             FROM_HERE,
                             base::Bind(&TestStoragePartition::AsyncRunCallback,
@@ -175,13 +184,13 @@ class TestStoragePartition : public StoragePartition {
                                        callback));
   }
 
-  virtual void ClearData(uint32 remove_mask,
-                         uint32 quota_storage_remove_mask,
-                         const GURL& storage_origin,
-                         const OriginMatcherFunction& origin_matcher,
-                         const base::Time begin,
-                         const base::Time end,
-                         const base::Closure& callback) OVERRIDE {
+  void ClearData(uint32 remove_mask,
+                 uint32 quota_storage_remove_mask,
+                 const GURL& storage_origin,
+                 const OriginMatcherFunction& origin_matcher,
+                 const base::Time begin,
+                 const base::Time end,
+                 const base::Closure& callback) override {
     // Store stuff to verify parameters' correctness later.
     storage_partition_removal_data_.remove_mask = remove_mask;
     storage_partition_removal_data_.quota_storage_remove_mask =
@@ -197,6 +206,8 @@ class TestStoragePartition : public StoragePartition {
         base::Bind(&TestStoragePartition::AsyncRunCallback,
                    base::Unretained(this), callback));
   }
+
+  void Flush() override {}
 
   StoragePartitionRemovalData GetStoragePartitionRemovalData() {
     return storage_partition_removal_data_;
@@ -274,7 +285,7 @@ class RemoveCookieTester {
   DISALLOW_COPY_AND_ASSIGN(RemoveCookieTester);
 };
 
-#if defined(FULL_SAFE_BROWSING) || defined(MOBILE_SAFE_BROWSING)
+#if defined(SAFE_BROWSING_SERVICE)
 class RemoveSafeBrowsingCookieTester : public RemoveCookieTester {
  public:
   RemoveSafeBrowsingCookieTester()
@@ -317,7 +328,7 @@ class RemoveChannelIDTester : public net::SSLConfigService::Observer {
     ssl_config_service_->AddObserver(this);
   }
 
-  virtual ~RemoveChannelIDTester() {
+  ~RemoveChannelIDTester() override {
     ssl_config_service_->RemoveObserver(this);
   }
 
@@ -361,9 +372,7 @@ class RemoveChannelIDTester : public net::SSLConfigService::Observer {
   }
 
   // net::SSLConfigService::Observer implementation:
-  virtual void OnSSLConfigChanged() OVERRIDE {
-    ssl_config_changed_count_++;
-  }
+  void OnSSLConfigChanged() override { ssl_config_changed_count_++; }
 
  private:
   static void GetAllChannelIDsCallback(
@@ -387,7 +396,7 @@ class RemoveHistoryTester {
     if (!profile->CreateHistoryService(true, false))
       return false;
     history_service_ = HistoryServiceFactory::GetForProfile(
-        profile, Profile::EXPLICIT_ACCESS);
+        profile, ServiceAccessType::EXPLICIT_ACCESS);
     return true;
   }
 
@@ -427,9 +436,99 @@ class RemoveHistoryTester {
   base::Closure quit_closure_;
 
   // TestingProfile owns the history service; we shouldn't delete it.
-  HistoryService* history_service_;
+  history::HistoryService* history_service_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoveHistoryTester);
+};
+
+class RemoveFaviconTester {
+ public:
+  RemoveFaviconTester()
+      : got_favicon_(false),
+        got_expired_favicon_(false),
+        history_service_(nullptr),
+        favicon_service_(nullptr) {}
+
+  bool Init(TestingProfile* profile) WARN_UNUSED_RESULT {
+    // Create the history service if it has not been created yet.
+    history_service_ = HistoryServiceFactory::GetForProfile(
+        profile, ServiceAccessType::EXPLICIT_ACCESS);
+    if (!history_service_) {
+      if (!profile->CreateHistoryService(true, false))
+        return false;
+      history_service_ = HistoryServiceFactory::GetForProfile(
+          profile, ServiceAccessType::EXPLICIT_ACCESS);
+    }
+
+    profile->CreateFaviconService();
+    favicon_service_ = FaviconServiceFactory::GetForProfile(
+        profile, ServiceAccessType::EXPLICIT_ACCESS);
+    return true;
+  }
+
+  // Returns true if there is a favicon stored for |page_url| in the favicon
+  // database.
+  bool HasFaviconForPageURL(const GURL& page_url) {
+    RequestFaviconSyncForPageURL(page_url);
+    return got_favicon_;
+  }
+
+  // Returns true if:
+  // - There is a favicon stored for |page_url| in the favicon database.
+  // - The stored favicon is expired.
+  bool HasExpiredFaviconForPageURL(const GURL& page_url) {
+    RequestFaviconSyncForPageURL(page_url);
+    return got_expired_favicon_;
+  }
+
+  // Adds a visit to history and stores an arbitrary favicon bitmap for
+  // |page_url|.
+  void VisitAndAddFavicon(const GURL& page_url) {
+    history_service_->AddPage(page_url, base::Time::Now(), nullptr, 0, GURL(),
+        history::RedirectList(), ui::PAGE_TRANSITION_LINK,
+        history::SOURCE_BROWSED, false);
+
+    SkBitmap bitmap;
+    bitmap.allocN32Pixels(gfx::kFaviconSize, gfx::kFaviconSize);
+    bitmap.eraseColor(SK_ColorBLUE);
+    favicon_service_->SetFavicons(page_url, page_url, favicon_base::FAVICON,
+                                  gfx::Image::CreateFrom1xBitmap(bitmap));
+  }
+
+ private:
+  // Synchronously requests the favicon for |page_url| from the favicon
+  // database.
+  void RequestFaviconSyncForPageURL(const GURL& page_url) {
+    base::RunLoop run_loop;
+    quit_closure_ = run_loop.QuitClosure();
+    favicon_service_->GetRawFaviconForPageURL(
+        page_url,
+        favicon_base::FAVICON,
+        gfx::kFaviconSize,
+        base::Bind(&RemoveFaviconTester::SaveResultAndQuit,
+                   base::Unretained(this)),
+        &tracker_);
+    run_loop.Run();
+  }
+
+  // Callback for HistoryService::QueryURL.
+  void SaveResultAndQuit(const favicon_base::FaviconRawBitmapResult& result) {
+    got_favicon_ = result.is_valid();
+    got_expired_favicon_ = result.is_valid() && result.expired;
+    quit_closure_.Run();
+  }
+
+  // For favicon requests.
+  base::CancelableTaskTracker tracker_;
+  bool got_favicon_;
+  bool got_expired_favicon_;
+  base::Closure quit_closure_;
+
+  // Owned by TestingProfile.
+  history::HistoryService* history_service_;
+  favicon::FaviconService* favicon_service_;
+
+  DISALLOW_COPY_AND_ASSIGN(RemoveFaviconTester);
 };
 
 class RemoveAutofillTester : public autofill::PersonalDataManagerObserver {
@@ -441,7 +540,7 @@ class RemoveAutofillTester : public autofill::PersonalDataManagerObserver {
     personal_data_manager_->AddObserver(this);
   }
 
-  virtual ~RemoveAutofillTester() {
+  ~RemoveAutofillTester() override {
     personal_data_manager_->RemoveObserver(this);
   }
 
@@ -512,7 +611,7 @@ class RemoveAutofillTester : public autofill::PersonalDataManagerObserver {
   }
 
  private:
-  virtual void OnPersonalDataChanged() OVERRIDE {
+  void OnPersonalDataChanged() override {
     base::MessageLoop::current()->Quit();
   }
 
@@ -597,25 +696,24 @@ class MockDomainReliabilityService : public DomainReliabilityService {
  public:
   MockDomainReliabilityService() : clear_count_(0) {}
 
-  virtual ~MockDomainReliabilityService() {}
+  ~MockDomainReliabilityService() override {}
 
-  virtual scoped_ptr<DomainReliabilityMonitor> CreateMonitor(
+  scoped_ptr<DomainReliabilityMonitor> CreateMonitor(
       scoped_refptr<base::SingleThreadTaskRunner> network_task_runner)
-      OVERRIDE {
+      override {
     NOTREACHED();
     return scoped_ptr<DomainReliabilityMonitor>();
   }
 
-  virtual void ClearBrowsingData(DomainReliabilityClearMode clear_mode,
-                                 const base::Closure& callback) OVERRIDE {
+  void ClearBrowsingData(DomainReliabilityClearMode clear_mode,
+                         const base::Closure& callback) override {
     clear_count_++;
     last_clear_mode_ = clear_mode;
     callback.Run();
   }
 
-  virtual void GetWebUIData(
-      const base::Callback<void(scoped_ptr<base::Value>)>& callback)
-      const OVERRIDE {
+  void GetWebUIData(const base::Callback<void(scoped_ptr<base::Value>)>&
+                        callback) const override {
     NOTREACHED();
   }
 
@@ -638,7 +736,7 @@ struct TestingDomainReliabilityServiceFactoryUserData
       : context(context),
         service(service),
         attached(false) {}
-  virtual ~TestingDomainReliabilityServiceFactoryUserData() {}
+  ~TestingDomainReliabilityServiceFactoryUserData() override {}
 
   content::BrowserContext* const context;
   MockDomainReliabilityService* const service;
@@ -674,9 +772,9 @@ class ClearDomainReliabilityTester {
     AttachService();
   }
 
-  unsigned clear_count() { return mock_service_->clear_count(); }
+  unsigned clear_count() const { return mock_service_->clear_count(); }
 
-  DomainReliabilityClearMode last_clear_mode() {
+  DomainReliabilityClearMode last_clear_mode() const {
     return mock_service_->last_clear_mode();
   }
 
@@ -708,19 +806,20 @@ class ClearDomainReliabilityTester {
 
 // Test Class ----------------------------------------------------------------
 
-class BrowsingDataRemoverTest : public testing::Test,
-                                public content::NotificationObserver {
+class BrowsingDataRemoverTest : public testing::Test {
  public:
   BrowsingDataRemoverTest()
-      : profile_(new TestingProfile()) {
-    registrar_.Add(this, chrome::NOTIFICATION_BROWSING_DATA_REMOVED,
-                   content::Source<Profile>(profile_.get()));
+      : profile_(new TestingProfile()),
+        clear_domain_reliability_tester_(GetProfile()) {
+    callback_subscription_ =
+        BrowsingDataRemover::RegisterOnBrowsingDataRemovedCallback(
+            base::Bind(&BrowsingDataRemoverTest::NotifyWithDetails,
+                       base::Unretained(this)));
   }
 
-  virtual ~BrowsingDataRemoverTest() {
-  }
+  ~BrowsingDataRemoverTest() override {}
 
-  virtual void TearDown() {
+  void TearDown() override {
 #if defined(ENABLE_EXTENSIONS)
     mock_policy_ = NULL;
 #endif
@@ -732,6 +831,8 @@ class BrowsingDataRemoverTest : public testing::Test,
     // Otherwise we leak memory.
     profile_.reset();
     base::MessageLoop::current()->RunUntilIdle();
+
+    TestingBrowserProcess::GetGlobal()->SetLocalState(NULL);
   }
 
   void BlockUntilBrowsingDataRemoved(BrowsingDataRemover::TimePeriod period,
@@ -800,19 +901,15 @@ class BrowsingDataRemoverTest : public testing::Test,
     return storage_partition_removal_data_;
   }
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
-    DCHECK_EQ(type, chrome::NOTIFICATION_BROWSING_DATA_REMOVED);
-
+  // Callback for browsing data removal events.
+  void NotifyWithDetails(
+      const BrowsingDataRemover::NotificationDetails& details) {
     // We're not taking ownership of the details object, but storing a copy of
     // it locally.
-    called_with_details_.reset(new BrowsingDataRemover::NotificationDetails(
-        *content::Details<BrowsingDataRemover::NotificationDetails>(
-            details).ptr()));
+    called_with_details_.reset(
+        new BrowsingDataRemover::NotificationDetails(details));
 
-    registrar_.RemoveAll();
+    callback_subscription_.reset();
   }
 
   MockExtensionSpecialStoragePolicy* CreateMockPolicy() {
@@ -843,12 +940,14 @@ class BrowsingDataRemoverTest : public testing::Test,
 #endif
   }
 
+  const ClearDomainReliabilityTester& clear_domain_reliability_tester() {
+    return clear_domain_reliability_tester_;
+  }
+
  protected:
   scoped_ptr<BrowsingDataRemover::NotificationDetails> called_with_details_;
 
  private:
-  content::NotificationRegistrar registrar_;
-
   content::TestBrowserThreadBundle thread_bundle_;
   scoped_ptr<TestingProfile> profile_;
 
@@ -857,6 +956,11 @@ class BrowsingDataRemoverTest : public testing::Test,
 #if defined(ENABLE_EXTENSIONS)
   scoped_refptr<MockExtensionSpecialStoragePolicy> mock_policy_;
 #endif
+
+  BrowsingDataRemover::CallbackSubscription callback_subscription_;
+
+  // Needed to mock out DomainReliabilityService, even for unrelated tests.
+  ClearDomainReliabilityTester clear_domain_reliability_tester_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowsingDataRemoverTest);
 };
@@ -901,7 +1005,7 @@ TEST_F(BrowsingDataRemoverTest, RemoveCookieLastHour) {
   EXPECT_EQ(removal_data.remove_begin, GetBeginTime());
 }
 
-#if defined(FULL_SAFE_BROWSING) || defined(MOBILE_SAFE_BROWSING)
+#if defined(SAFE_BROWSING_SERVICE)
 TEST_F(BrowsingDataRemoverTest, RemoveSafeBrowsingCookieForever) {
   RemoveSafeBrowsingCookieTester tester;
 
@@ -1187,6 +1291,48 @@ TEST_F(BrowsingDataRemoverTest, RemoveMultipleTypesHistoryProhibited) {
             ~StoragePartition::QUOTA_MANAGED_STORAGE_MASK_PERSISTENT);
 }
 #endif
+
+// Test that clearing history deletes favicons not associated with bookmarks.
+TEST_F(BrowsingDataRemoverTest, RemoveFaviconsForever) {
+  GURL page_url("http://a");
+
+  RemoveFaviconTester favicon_tester;
+  ASSERT_TRUE(favicon_tester.Init(GetProfile()));
+  favicon_tester.VisitAndAddFavicon(page_url);
+  ASSERT_TRUE(favicon_tester.HasFaviconForPageURL(page_url));
+
+  BlockUntilBrowsingDataRemoved(BrowsingDataRemover::EVERYTHING,
+                                BrowsingDataRemover::REMOVE_HISTORY, false);
+  EXPECT_EQ(BrowsingDataRemover::REMOVE_HISTORY, GetRemovalMask());
+  EXPECT_FALSE(favicon_tester.HasFaviconForPageURL(page_url));
+}
+
+// Test that a bookmark's favicon is expired and not deleted when clearing
+// history. Expiring the favicon causes the bookmark's favicon to be updated
+// when the user next visits the bookmarked page. Expiring the bookmark's
+// favicon is useful when the bookmark's favicon becomes incorrect (See
+// crbug.com/474421 for a sample bug which causes this).
+TEST_F(BrowsingDataRemoverTest, ExpireBookmarkFavicons) {
+  GURL bookmarked_page("http://a");
+
+  TestingProfile* profile = GetProfile();
+  profile->CreateBookmarkModel(true);
+  bookmarks::BookmarkModel* bookmark_model =
+      BookmarkModelFactory::GetForProfile(profile);
+  bookmarks::test::WaitForBookmarkModelToLoad(bookmark_model);
+  bookmark_model->AddURL(bookmark_model->bookmark_bar_node(), 0,
+                         base::ASCIIToUTF16("a"), bookmarked_page);
+
+  RemoveFaviconTester favicon_tester;
+  ASSERT_TRUE(favicon_tester.Init(GetProfile()));
+  favicon_tester.VisitAndAddFavicon(bookmarked_page);
+  ASSERT_TRUE(favicon_tester.HasFaviconForPageURL(bookmarked_page));
+
+  BlockUntilBrowsingDataRemoved(BrowsingDataRemover::EVERYTHING,
+                                BrowsingDataRemover::REMOVE_HISTORY, false);
+  EXPECT_EQ(BrowsingDataRemover::REMOVE_HISTORY, GetRemovalMask());
+  EXPECT_TRUE(favicon_tester.HasExpiredFaviconForPageURL(bookmarked_page));
+}
 
 TEST_F(BrowsingDataRemoverTest, RemoveQuotaManagedDataForeverBoth) {
   BlockUntilBrowsingDataRemoved(BrowsingDataRemover::EVERYTHING,
@@ -1784,13 +1930,15 @@ TEST_F(BrowsingDataRemoverTest, ContentProtectionPlatformKeysRemoval) {
 #endif
 
 TEST_F(BrowsingDataRemoverTest, DomainReliability_Null) {
-  ClearDomainReliabilityTester tester(GetProfile());
+  const ClearDomainReliabilityTester& tester =
+      clear_domain_reliability_tester();
 
   EXPECT_EQ(0u, tester.clear_count());
 }
 
 TEST_F(BrowsingDataRemoverTest, DomainReliability_Beacons) {
-  ClearDomainReliabilityTester tester(GetProfile());
+  const ClearDomainReliabilityTester& tester =
+      clear_domain_reliability_tester();
 
   BlockUntilBrowsingDataRemoved(
       BrowsingDataRemover::EVERYTHING,
@@ -1800,7 +1948,8 @@ TEST_F(BrowsingDataRemoverTest, DomainReliability_Beacons) {
 }
 
 TEST_F(BrowsingDataRemoverTest, DomainReliability_Contexts) {
-  ClearDomainReliabilityTester tester(GetProfile());
+  const ClearDomainReliabilityTester& tester =
+      clear_domain_reliability_tester();
 
   BlockUntilBrowsingDataRemoved(
       BrowsingDataRemover::EVERYTHING,
@@ -1810,7 +1959,8 @@ TEST_F(BrowsingDataRemoverTest, DomainReliability_Contexts) {
 }
 
 TEST_F(BrowsingDataRemoverTest, DomainReliability_ContextsWin) {
-  ClearDomainReliabilityTester tester(GetProfile());
+  const ClearDomainReliabilityTester& tester =
+      clear_domain_reliability_tester();
 
   BlockUntilBrowsingDataRemoved(
       BrowsingDataRemover::EVERYTHING,
@@ -1821,7 +1971,8 @@ TEST_F(BrowsingDataRemoverTest, DomainReliability_ContextsWin) {
 }
 
 TEST_F(BrowsingDataRemoverTest, DomainReliability_ProtectedOrigins) {
-  ClearDomainReliabilityTester tester(GetProfile());
+  const ClearDomainReliabilityTester& tester =
+      clear_domain_reliability_tester();
 
   BlockUntilBrowsingDataRemoved(
       BrowsingDataRemover::EVERYTHING,
@@ -1830,7 +1981,11 @@ TEST_F(BrowsingDataRemoverTest, DomainReliability_ProtectedOrigins) {
   EXPECT_EQ(CLEAR_CONTEXTS, tester.last_clear_mode());
 }
 
-TEST_F(BrowsingDataRemoverTest, DomainReliability_NoMonitor) {
+// TODO(ttuttle): This isn't actually testing the no-monitor case, since
+// BrowsingDataRemoverTest now creates one unconditionally, since it's needed
+// for some unrelated test cases. This should be fixed so it tests the no-
+// monitor case again.
+TEST_F(BrowsingDataRemoverTest, DISABLED_DomainReliability_NoMonitor) {
   BlockUntilBrowsingDataRemoved(
       BrowsingDataRemover::EVERYTHING,
       BrowsingDataRemover::REMOVE_HISTORY |

@@ -4,18 +4,33 @@
 
 #include "chrome/browser/ui/views/tabs/window_finder.h"
 
+#include "ui/gfx/geometry/point_conversions.h"
+#include "ui/gfx/screen.h"
 #include "ui/views/widget/desktop_aura/x11_topmost_window_finder.h"
 
+namespace {
+
+float GetDeviceScaleFactor() {
+  gfx::Display display = gfx::Screen::GetNativeScreen()->GetPrimaryDisplay();
+  return display.device_scale_factor();
+}
+
+gfx::Point DIPToPixelPoint(const gfx::Point& dip_point) {
+  return ToFlooredPoint(gfx::ScalePoint(dip_point, GetDeviceScaleFactor()));
+}
+
+}  // anonymous namespace
+
 #if defined(USE_ASH)
-aura::Window* GetLocalProcessWindowAtPointAsh(
+gfx::NativeWindow GetLocalProcessWindowAtPointAsh(
     const gfx::Point& screen_point,
-    const std::set<aura::Window*>& ignore);
+    const std::set<gfx::NativeWindow>& ignore);
 #endif
 
-aura::Window* GetLocalProcessWindowAtPoint(
+gfx::NativeWindow GetLocalProcessWindowAtPoint(
     chrome::HostDesktopType host_desktop_type,
     const gfx::Point& screen_point,
-    const std::set<aura::Window*>& ignore) {
+    const std::set<gfx::NativeWindow>& ignore) {
 #if defined(USE_ASH)
   if (host_desktop_type == chrome::HOST_DESKTOP_TYPE_ASH)
     return GetLocalProcessWindowAtPointAsh(screen_point, ignore);
@@ -24,5 +39,5 @@ aura::Window* GetLocalProcessWindowAtPoint(
   // The X11 server is the canonical state of what the window stacking order
   // is.
   views::X11TopmostWindowFinder finder;
-  return finder.FindLocalProcessWindowAt(screen_point, ignore);
+  return finder.FindLocalProcessWindowAt(DIPToPixelPoint(screen_point), ignore);
 }

@@ -23,7 +23,7 @@ class SequencedTaskRunner;
 }  // namespace base
 
 namespace drive {
-
+struct ClientContext;
 class EventLogger;
 class FakeDriveService;
 class FakeFreeDiskSpaceGetter;
@@ -56,15 +56,13 @@ class OperationTestBase : public testing::Test {
     ~LoggingDelegate();
 
     // OperationDelegate overrides.
-    virtual void OnFileChangedByOperation(
-        const FileChange& changed_files) OVERRIDE;
-    virtual void OnEntryUpdatedByOperation(
-        const std::string& local_id) OVERRIDE;
-    virtual void OnDriveSyncError(DriveSyncErrorType type,
-                                  const std::string& local_id) OVERRIDE;
-    virtual bool WaitForSyncComplete(
-        const std::string& local_id,
-        const FileOperationCallback& callback) OVERRIDE;
+    void OnFileChangedByOperation(const FileChange& changed_files) override;
+    void OnEntryUpdatedByOperation(const ClientContext& context,
+                                   const std::string& local_id) override;
+    void OnDriveSyncError(DriveSyncErrorType type,
+                          const std::string& local_id) override;
+    bool WaitForSyncComplete(const std::string& local_id,
+                             const FileOperationCallback& callback) override;
 
     // Gets the set of changed paths.
     const FileChange& get_changed_files() { return changed_files_; }
@@ -94,10 +92,10 @@ class OperationTestBase : public testing::Test {
 
   OperationTestBase();
   explicit OperationTestBase(int test_thread_bundle_options);
-  virtual ~OperationTestBase();
+  ~OperationTestBase() override;
 
   // testing::Test overrides.
-  virtual void SetUp() OVERRIDE;
+  void SetUp() override;
 
   // Returns the path of the temporary directory for putting test files.
   base::FilePath temp_dir() const { return temp_dir_.path(); }

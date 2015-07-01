@@ -59,11 +59,11 @@ SubstitutionList SubstitutionList::MakeForTest(
 
   Err err;
   SubstitutionList result;
-  result.Parse(input_strings, NULL, &err);
+  result.Parse(input_strings, nullptr, &err);
   return result;
 }
 
 void SubstitutionList::FillRequiredTypes(SubstitutionBits* bits) const {
-  for (size_t i = 0; i < list_.size(); i++)
-    list_[i].FillRequiredTypes(bits);
+  for (const auto& item : list_)
+    item.FillRequiredTypes(bits);
 }

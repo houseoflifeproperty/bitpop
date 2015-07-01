@@ -109,7 +109,7 @@ cr.define('uber', function() {
     // If the page isn't the current page, load it fresh. Even if the page is
     // already loaded, it may have state not reflected in the URL, such as the
     // history page's "Remove selected items" overlay. http://crbug.com/377386
-    if (getRequiredElement(params.id) !== getSelectedIframe())
+    if (getRequiredElement(params.id) !== getSelectedIframeContainer())
       showPage(params.id, HISTORY_STATE_OPTION.NONE, params.path);
 
     // Either way, send the state down to it.
@@ -131,8 +131,15 @@ cr.define('uber', function() {
   /**
    * @return {Object} The currently selected iframe container.
    */
-  function getSelectedIframe() {
+  function getSelectedIframeContainer() {
     return document.querySelector('.iframe-container.selected');
+  }
+
+  /**
+   * @return {Object} The currently selected iframe's contentWindow.
+   */
+  function getSelectedIframeWindow() {
+    return getSelectedIframeContainer().querySelector('iframe').contentWindow;
   }
 
   /**
@@ -151,7 +158,7 @@ cr.define('uber', function() {
    * @param {Event} e The posted object.
    */
   function handleWindowMessage(e) {
-    e = /** @type{!MessageEvent.<!{method: string, params: *}>} */(e);
+    e = /** @type{!MessageEvent<!{method: string, params: *}>} */(e);
     if (e.data.method === 'beginInterceptingEvents') {
       backgroundNavigation();
     } else if (e.data.method === 'stopInterceptingEvents') {
@@ -173,6 +180,8 @@ cr.define('uber', function() {
       adjustToScroll(/** @type {number} */(e.data.params));
     } else if (e.data.method === 'mouseWheel') {
       forwardMouseWheel(/** @type {Object} */(e.data.params));
+    } else if (e.data.method === 'mouseDown') {
+      forwardMouseDown();
     } else {
       console.error('Received unexpected message', e.data);
     }
@@ -240,7 +249,7 @@ cr.define('uber', function() {
 
     assert(histFunc, 'invalid historyOption given ' + historyOption);
 
-    var pageId = getSelectedIframe().id;
+    var pageId = getSelectedIframeContainer().id;
     var args = [state, '', '/' + pageId + '/' + (path || '')];
     histFunc.apply(window.history, args);
   }
@@ -259,7 +268,7 @@ cr.define('uber', function() {
         replace ? HISTORY_STATE_OPTION.REPLACE : HISTORY_STATE_OPTION.PUSH;
     // Only update the currently displayed path if this is the visible frame.
     var container = getIframeFromOrigin(origin).parentNode;
-    if (container == getSelectedIframe())
+    if (container == getSelectedIframeContainer())
       changePathTo(state, path, historyOption);
   }
 
@@ -276,7 +285,7 @@ cr.define('uber', function() {
     container.dataset.title = title;
 
     // Only update the currently displayed title if this is the visible frame.
-    if (container == getSelectedIframe())
+    if (container == getSelectedIframeContainer())
       document.title = title;
   }
 
@@ -330,6 +339,7 @@ cr.define('uber', function() {
     if (!frame) {
       frame = container.ownerDocument.createElement('iframe');
       frame.name = pageId;
+      frame.setAttribute('role', 'presentation');
       container.appendChild(frame);
       frame.src = sourceUrl;
     } else {
@@ -368,9 +378,9 @@ cr.define('uber', function() {
     setContentChanging(true);
     adjustToScroll(0);
 
-    var selectedFrame = getSelectedIframe().querySelector('iframe');
-    uber.invokeMethodOnWindow(selectedFrame.contentWindow, 'frameSelected');
-    selectedFrame.contentWindow.focus();
+    var selectedWindow = getSelectedIframeWindow();
+    uber.invokeMethodOnWindow(selectedWindow, 'frameSelected');
+    selectedWindow.focus();
 
     if (historyOption != HISTORY_STATE_OPTION.NONE)
       changePathTo({}, path, historyOption);
@@ -395,9 +405,9 @@ cr.define('uber', function() {
    * It should be called whenever the selected iframe changes.
    */
   function updateNavigationControls() {
-    var iframe = getSelectedIframe();
+    var container = getSelectedIframeContainer();
     uber.invokeMethodOnWindow(navFrame.firstChild.contentWindow,
-                              'changeSelection', {pageId: iframe.id});
+                              'changeSelection', {pageId: container.id});
   }
 
   /**
@@ -427,8 +437,12 @@ cr.define('uber', function() {
    * @param {Object} params Relevant parameters of wheel event.
    */
   function forwardMouseWheel(params) {
-    var iframe = getSelectedIframe().querySelector('iframe');
-    uber.invokeMethodOnWindow(iframe.contentWindow, 'mouseWheel', params);
+    uber.invokeMethodOnWindow(getSelectedIframeWindow(), 'mouseWheel', params);
+  }
+
+  /** Forward mouse down events to subpages. */
+  function forwardMouseDown() {
+    uber.invokeMethodOnWindow(getSelectedIframeWindow(), 'mouseDown');
   }
 
   /**

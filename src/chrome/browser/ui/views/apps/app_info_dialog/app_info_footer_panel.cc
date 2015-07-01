@@ -4,8 +4,6 @@
 
 #include "chrome/browser/ui/views/apps/app_info_dialog/app_info_footer_panel.h"
 
-#include "ash/shelf/shelf_delegate.h"
-#include "ash/shell.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
@@ -24,6 +22,11 @@
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
+
+#if defined(USE_ASH)
+#include "ash/shelf/shelf_delegate.h"
+#include "ash/shell.h"
+#endif
 
 AppInfoFooterPanel::AppInfoFooterPanel(gfx::NativeWindow parent_window,
                                        Profile* profile,
@@ -82,19 +85,27 @@ void AppInfoFooterPanel::LayoutButtons() {
     AddChildView(pin_to_shelf_button_);
   if (unpin_from_shelf_button_)
     AddChildView(unpin_from_shelf_button_);
-  UpdatePinButtons();
+  UpdatePinButtons(false);
 
   if (remove_button_)
     AddChildView(remove_button_);
 }
 
-void AppInfoFooterPanel::UpdatePinButtons() {
+void AppInfoFooterPanel::UpdatePinButtons(bool focus_visible_button) {
+#if defined(USE_ASH)
   if (pin_to_shelf_button_ && unpin_from_shelf_button_) {
     bool is_pinned =
         !ash::Shell::GetInstance()->GetShelfDelegate()->IsAppPinned(app_->id());
     pin_to_shelf_button_->SetVisible(is_pinned);
     unpin_from_shelf_button_->SetVisible(!is_pinned);
+
+    if (focus_visible_button) {
+      views::View* button_to_focus =
+          is_pinned ? pin_to_shelf_button_ : unpin_from_shelf_button_;
+      button_to_focus->RequestFocus();
+    }
   }
+#endif
 }
 
 void AppInfoFooterPanel::ButtonPressed(views::Button* sender,
@@ -121,7 +132,7 @@ void AppInfoFooterPanel::ExtensionUninstallAccepted() {
                               NULL);
 
   // Close the App Info dialog as well (which will free the dialog too).
-  GetWidget()->Close();
+  Close();
 }
 
 void AppInfoFooterPanel::ExtensionUninstallCanceled() {
@@ -137,12 +148,15 @@ void AppInfoFooterPanel::CreateShortcuts() {
 }
 
 bool AppInfoFooterPanel::CanCreateShortcuts() const {
-  // Ash platforms can't create shortcuts.
-  return (chrome::GetHostDesktopTypeForNativeWindow(parent_window_) !=
+  // Ash platforms can't create shortcuts. Extensions and the Chrome
+  // component app can't have shortcuts.
+  return app_->id() != extension_misc::kChromeAppId && !app_->is_extension() &&
+         (chrome::GetHostDesktopTypeForNativeWindow(parent_window_) !=
           chrome::HOST_DESKTOP_TYPE_ASH);
 }
 
 void AppInfoFooterPanel::SetPinnedToShelf(bool value) {
+#if defined(USE_ASH)
   DCHECK(CanSetPinnedToShelf());
   ash::ShelfDelegate* shelf_delegate =
       ash::Shell::GetInstance()->GetShelfDelegate();
@@ -152,20 +166,27 @@ void AppInfoFooterPanel::SetPinnedToShelf(bool value) {
   else
     shelf_delegate->UnpinAppWithID(app_->id());
 
-  UpdatePinButtons();
+  UpdatePinButtons(true);
   Layout();
+#else
+  NOTREACHED();
+#endif
 }
 
 bool AppInfoFooterPanel::CanSetPinnedToShelf() const {
+#if defined(USE_ASH)
   // Non-Ash platforms don't have a shelf.
   if (chrome::GetHostDesktopTypeForNativeWindow(parent_window_) !=
       chrome::HOST_DESKTOP_TYPE_ASH) {
     return false;
   }
 
-  // The Chrome app can't be unpinned.
-  return app_->id() != extension_misc::kChromeAppId &&
+  // The Chrome app can't be unpinned, and extensions can't be pinned.
+  return app_->id() != extension_misc::kChromeAppId && !app_->is_extension() &&
          ash::Shell::GetInstance()->GetShelfDelegate()->CanPin();
+#else
+  return false;
+#endif
 }
 
 void AppInfoFooterPanel::UninstallApp() {
@@ -177,7 +198,8 @@ void AppInfoFooterPanel::UninstallApp() {
 }
 
 bool AppInfoFooterPanel::CanUninstallApp() const {
-  return extensions::ExtensionSystem::Get(profile_)
-      ->management_policy()
-      ->UserMayModifySettings(app_, NULL);
+  extensions::ManagementPolicy* policy =
+      extensions::ExtensionSystem::Get(profile_)->management_policy();
+  return policy->UserMayModifySettings(app_, nullptr) &&
+         !policy->MustRemainInstalled(app_, nullptr);
 }

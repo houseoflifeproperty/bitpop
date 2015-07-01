@@ -28,6 +28,14 @@ static const char kMissing[] = "Missing";
 static const char kCommandKeyNotSupported[] =
     "Command key is not supported. Note: Ctrl means Command on Mac";
 
+#if defined(OS_CHROMEOS)
+// ChromeOS supports an additional modifier 'Search', which can result in longer
+// sequences.
+static const int kMaxTokenSize = 4;
+#else
+static const int kMaxTokenSize = 3;
+#endif  // OS_CHROMEOS
+
 bool IsNamedCommand(const std::string& command_name) {
   return command_name != values::kPageActionCommandEvent &&
          command_name != values::kBrowserActionCommandEvent;
@@ -40,6 +48,14 @@ bool DoesRequireModifier(const std::string& accelerator) {
          accelerator != values::kKeyMediaStop;
 }
 
+// Parse an |accelerator| for a given platform (specified by |platform_key|) and
+// return the result as a ui::Accelerator if successful, or VKEY_UNKNOWN if not.
+// |index| is used when constructing an |error| messages to show which command
+// in the manifest is failing and |should_parse_media_keys| specifies whether
+// media keys are to be considered for parsing.
+// Note: If the parsing rules here are changed, make sure to update the
+// corresponding extension_command_list.js validation, which validates the user
+// input for chrome://extensions/configureCommands.
 ui::Accelerator ParseImpl(const std::string& accelerator,
                           const std::string& platform_key,
                           int index,
@@ -62,7 +78,7 @@ ui::Accelerator ParseImpl(const std::string& accelerator,
   base::SplitString(accelerator, '+', &tokens);
   if (tokens.size() == 0 ||
       (tokens.size() == 1 && DoesRequireModifier(accelerator)) ||
-      tokens.size() > 3) {
+      tokens.size() > kMaxTokenSize) {
     *error = ErrorUtils::FormatErrorMessageUTF16(
         errors::kInvalidKeyBinding,
         base::IntToString(index),
@@ -123,6 +139,7 @@ ui::Accelerator ParseImpl(const std::string& accelerator,
                tokens[i] == values::kKeyEnd ||
                tokens[i] == values::kKeyPgUp ||
                tokens[i] == values::kKeyPgDwn ||
+               tokens[i] == values::kKeySpace ||
                tokens[i] == values::kKeyTab ||
                tokens[i] == values::kKeyMediaNextTrack ||
                tokens[i] == values::kKeyMediaPlayPause ||
@@ -158,6 +175,8 @@ ui::Accelerator ParseImpl(const std::string& accelerator,
         key = ui::VKEY_PRIOR;
       } else if (tokens[i] == values::kKeyPgDwn) {
         key = ui::VKEY_NEXT;
+      } else if (tokens[i] == values::kKeySpace) {
+        key = ui::VKEY_SPACE;
       } else if (tokens[i] == values::kKeyTab) {
         key = ui::VKEY_TAB;
       } else if (tokens[i] == values::kKeyMediaNextTrack &&
@@ -369,6 +388,9 @@ std::string Command::AcceleratorToString(const ui::Accelerator& accelerator) {
         break;
       case ui::VKEY_NEXT:
         shortcut += values::kKeyPgDwn;
+        break;
+      case ui::VKEY_SPACE:
+        shortcut += values::kKeySpace;
         break;
       case ui::VKEY_TAB:
         shortcut += values::kKeyTab;

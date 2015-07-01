@@ -56,6 +56,14 @@ static const ELF::Sword DT_ANDROID_REL_SIZE = DT_LOOS + 1;
 // page.  See http://www.airs.com/blog/archives/189.
 static const size_t kPreserveAlignment = 4096;
 
+// Alignment values used by ld and gold for the GNU_STACK segment.  Different
+// linkers write different values; the actual value is immaterial on Android
+// because it ignores GNU_STACK segments.  However, it is useful for binary
+// comparison and unit test purposes if packing and unpacking can preserve
+// them through a round-trip.
+static const size_t kLdGnuStackSegmentAlignment = 16;
+static const size_t kGoldGnuStackSegmentAlignment = 0;
+
 namespace {
 
 // Get section data.  Checks that the section has exactly one data entry,
@@ -71,9 +79,10 @@ Elf_Data* GetSectionData(Elf_Scn* section) {
 
 // Rewrite section data.  Allocates new data and makes it the data element's
 // buffer.  Relies on program exit to free allocated data.
-void RewriteSectionData(Elf_Data* data,
+void RewriteSectionData(Elf_Scn* section,
                         const void* section_data,
                         size_t size) {
+  Elf_Data* data = GetSectionData(section);
   CHECK(size == data->d_size);
   uint8_t* area = new uint8_t[size];
   memcpy(area, section_data, size);
@@ -362,11 +371,36 @@ ELF::Phdr* FindFirstLoadSegment(ELF::Phdr* program_headers,
   return first_loadable_segment;
 }
 
+// Helper for ResizeSection().  Deduce the alignment that the PT_GNU_STACK
+// segment will use.  Determined by sensing the linker that was used to
+// create the shared library.
+size_t DeduceGnuStackSegmentAlignment(Elf* elf) {
+  size_t string_index;
+  elf_getshdrstrndx(elf, &string_index);
+
+  Elf_Scn* section = NULL;
+  size_t gnu_stack_segment_alignment = kLdGnuStackSegmentAlignment;
+
+  while ((section = elf_nextscn(elf, section)) != NULL) {
+    const ELF::Shdr* section_header = ELF::getshdr(section);
+    std::string name = elf_strptr(elf, string_index, section_header->sh_name);
+
+    if (name == ".note.gnu.gold-version") {
+      gnu_stack_segment_alignment = kGoldGnuStackSegmentAlignment;
+      break;
+    }
+  }
+
+  return gnu_stack_segment_alignment;
+}
+
 // Helper for ResizeSection().  Find the PT_GNU_STACK segment, and check
 // that it contains what we expect so we can restore it on unpack if needed.
-ELF::Phdr* FindUnusedGnuStackSegment(ELF::Phdr* program_headers,
+ELF::Phdr* FindUnusedGnuStackSegment(Elf* elf,
+                                     ELF::Phdr* program_headers,
                                      size_t count) {
   ELF::Phdr* unused_segment = NULL;
+  const size_t stack_alignment = DeduceGnuStackSegmentAlignment(elf);
 
   for (size_t i = 0; i < count; ++i) {
     ELF::Phdr* program_header = &program_headers[i];
@@ -378,7 +412,7 @@ ELF::Phdr* FindUnusedGnuStackSegment(ELF::Phdr* program_headers,
         program_header->p_filesz == 0 &&
         program_header->p_memsz == 0 &&
         program_header->p_flags == (PF_R | PF_W) &&
-        program_header->p_align == ELF::kGnuStackSegmentAlignment) {
+        program_header->p_align == stack_alignment) {
       unused_segment = program_header;
     }
   }
@@ -557,7 +591,7 @@ void SplitProgramHeadersForHole(Elf* elf,
   // Locate the segment that we can overwrite to form the new LOAD entry,
   // and the segment that we are going to split into two parts.
   ELF::Phdr* spliced_header =
-      FindUnusedGnuStackSegment(elf_program_header, program_header_count);
+      FindUnusedGnuStackSegment(elf, elf_program_header, program_header_count);
   ELF::Phdr* split_header =
       FindFirstLoadSegment(elf_program_header, program_header_count);
 
@@ -679,6 +713,7 @@ void CoalesceProgramHeadersForHole(Elf* elf,
       last_section_header->sh_offset + last_section_header->sh_size;
 
   // Reconstruct the original GNU_STACK segment into spliced_header.
+  const size_t stack_alignment = DeduceGnuStackSegmentAlignment(elf);
   spliced_header->p_type = PT_GNU_STACK;
   spliced_header->p_offset = 0;
   spliced_header->p_vaddr = 0;
@@ -686,7 +721,7 @@ void CoalesceProgramHeadersForHole(Elf* elf,
   spliced_header->p_filesz = 0;
   spliced_header->p_memsz = 0;
   spliced_header->p_flags = PF_R | PF_W;
-  spliced_header->p_align = ELF::kGnuStackSegmentAlignment;
+  spliced_header->p_align = stack_alignment;
 
   // Adjust the offsets of all program headers that are not one of the pair
   // we just coalesced.
@@ -797,7 +832,7 @@ void AdjustDynamicSectionForHole(Elf_Scn* dynamic_section,
 
   void* section_data = &dynamics[0];
   size_t bytes = dynamics.size() * sizeof(dynamics[0]);
-  RewriteSectionData(data, section_data, bytes);
+  RewriteSectionData(dynamic_section, section_data, bytes);
 }
 
 // Resize a section.  If the new size is larger than the current size, open
@@ -907,27 +942,26 @@ void RemoveDynamicEntry(ELF::Sword tag,
   CHECK(dynamics->at(dynamics->size() - 1).d_tag == DT_NULL);
 }
 
-template <typename Rel>
-void PadRelocations(size_t count, std::vector<Rel>* relocations);
-
-template <>
-void PadRelocations<ELF::Rel>(size_t count,
-                              std::vector<ELF::Rel>* relocations) {
-  ELF::Rel null_relocation;
-  null_relocation.r_offset = 0;
-  null_relocation.r_info = ELF_R_INFO(0, ELF::kNoRelocationCode);
-  std::vector<ELF::Rel> padding(count, null_relocation);
-  relocations->insert(relocations->end(), padding.begin(), padding.end());
+// Construct a null relocation without addend.
+void NullRelocation(ELF::Rel* relocation) {
+  relocation->r_offset = 0;
+  relocation->r_info = ELF_R_INFO(0, ELF::kNoRelocationCode);
 }
 
-template <>
-void PadRelocations<ELF::Rela>(size_t count,
-                               std::vector<ELF::Rela>* relocations) {
-  ELF::Rela null_relocation;
-  null_relocation.r_offset = 0;
-  null_relocation.r_info = ELF_R_INFO(0, ELF::kNoRelocationCode);
-  null_relocation.r_addend = 0;
-  std::vector<ELF::Rela> padding(count, null_relocation);
+// Construct a null relocation with addend.
+void NullRelocation(ELF::Rela* relocation) {
+  relocation->r_offset = 0;
+  relocation->r_info = ELF_R_INFO(0, ELF::kNoRelocationCode);
+  relocation->r_addend = 0;
+}
+
+// Pad relocations with the given number of null entries.  Generates its
+// null entry with the appropriate NullRelocation() invocation.
+template <typename Rel>
+void PadRelocations(size_t count, std::vector<Rel>* relocations) {
+  Rel null_relocation;
+  NullRelocation(&null_relocation);
+  std::vector<Rel> padding(count, null_relocation);
   relocations->insert(relocations->end(), padding.begin(), padding.end());
 }
 
@@ -953,7 +987,7 @@ bool ElfFile::PackRelocations() {
         relocations_base + data->d_size / sizeof(relocations[0]));
 
     LOG(INFO) << "Relocations   : REL";
-    return PackTypedRelocations<ELF::Rel>(relocations, data);
+    return PackTypedRelocations<ELF::Rel>(relocations);
   }
 
   if (relocations_type_ == RELA) {
@@ -965,7 +999,7 @@ bool ElfFile::PackRelocations() {
         relocations_base + data->d_size / sizeof(relocations[0]));
 
     LOG(INFO) << "Relocations   : RELA";
-    return PackTypedRelocations<ELF::Rela>(relocations, data);
+    return PackTypedRelocations<ELF::Rela>(relocations);
   }
 
   NOTREACHED();
@@ -974,8 +1008,7 @@ bool ElfFile::PackRelocations() {
 
 // Helper for PackRelocations().  Rel type is one of ELF::Rel or ELF::Rela.
 template <typename Rel>
-bool ElfFile::PackTypedRelocations(const std::vector<Rel>& relocations,
-                                   Elf_Data* data) {
+bool ElfFile::PackTypedRelocations(const std::vector<Rel>& relocations) {
   // Filter relocations into those that are relative and others.
   std::vector<Rel> relative_relocations;
   std::vector<Rel> other_relocations;
@@ -1005,8 +1038,6 @@ bool ElfFile::PackTypedRelocations(const std::vector<Rel>& relocations,
   if (!is_padding_relocations_) {
     // Calculate the size of the hole we will close up when we rewrite
     // dynamic relocations.
-    ELF::Shdr* section_header = ELF::getshdr(relocations_section_);
-    const ELF::Off hole_start = section_header->sh_offset;
     ssize_t hole_size =
         relative_relocations.size() * sizeof(relative_relocations[0]);
     const ssize_t unaligned_hole_size = hole_size;
@@ -1088,17 +1119,16 @@ bool ElfFile::PackTypedRelocations(const std::vector<Rel>& relocations,
   const void* section_data = &other_relocations[0];
   const size_t bytes = other_relocations.size() * sizeof(other_relocations[0]);
   ResizeSection<Rel>(elf_, relocations_section_, bytes);
-  RewriteSectionData(data, section_data, bytes);
+  RewriteSectionData(relocations_section_, section_data, bytes);
 
   // Rewrite the current packed android relocations section to hold the packed
   // relative relocations.
-  data = GetSectionData(android_relocations_section_);
   ResizeSection<Rel>(elf_, android_relocations_section_, packed_bytes);
-  RewriteSectionData(data, packed_data, packed_bytes);
+  RewriteSectionData(android_relocations_section_, packed_data, packed_bytes);
 
   // Rewrite .dynamic to include two new tags describing the packed android
   // relocations.
-  data = GetSectionData(dynamic_section_);
+  Elf_Data* data = GetSectionData(dynamic_section_);
   const ELF::Dyn* dynamic_base = reinterpret_cast<ELF::Dyn*>(data->d_buf);
   std::vector<ELF::Dyn> dynamics(
       dynamic_base,
@@ -1119,7 +1149,7 @@ bool ElfFile::PackTypedRelocations(const std::vector<Rel>& relocations,
   }
   const void* dynamics_data = &dynamics[0];
   const size_t dynamics_bytes = dynamics.size() * sizeof(dynamics[0]);
-  RewriteSectionData(data, dynamics_data, dynamics_bytes);
+  RewriteSectionData(dynamic_section_, dynamics_data, dynamics_bytes);
 
   Flush();
   return true;
@@ -1152,7 +1182,7 @@ bool ElfFile::UnpackRelocations() {
     // Signature is APR1, unpack relocations.
     CHECK(relocations_type_ == REL);
     LOG(INFO) << "Relocations   : REL";
-    return UnpackTypedRelocations<ELF::Rel>(packed, data);
+    return UnpackTypedRelocations<ELF::Rel>(packed);
   }
 
   if (packed.size() > 3 &&
@@ -1163,7 +1193,7 @@ bool ElfFile::UnpackRelocations() {
     // Signature is APA1, unpack relocations with addends.
     CHECK(relocations_type_ == RELA);
     LOG(INFO) << "Relocations   : RELA";
-    return UnpackTypedRelocations<ELF::Rela>(packed, data);
+    return UnpackTypedRelocations<ELF::Rela>(packed);
   }
 
   LOG(ERROR) << "Packed relative relocations not found (not packed?)";
@@ -1172,8 +1202,7 @@ bool ElfFile::UnpackRelocations() {
 
 // Helper for UnpackRelocations().  Rel type is one of ELF::Rel or ELF::Rela.
 template <typename Rel>
-bool ElfFile::UnpackTypedRelocations(const std::vector<uint8_t>& packed,
-                                     Elf_Data* data) {
+bool ElfFile::UnpackTypedRelocations(const std::vector<uint8_t>& packed) {
   // Unpack the data to re-materialize the relative relocations.
   const size_t packed_bytes = packed.size() * sizeof(packed[0]);
   LOG(INFO) << "Packed   relative: " << packed_bytes << " bytes";
@@ -1185,7 +1214,7 @@ bool ElfFile::UnpackTypedRelocations(const std::vector<uint8_t>& packed,
   LOG(INFO) << "Unpacked relative: " << unpacked_bytes << " bytes";
 
   // Retrieve the current dynamic relocations section data.
-  data = GetSectionData(relocations_section_);
+  Elf_Data* data = GetSectionData(relocations_section_);
 
   // Interpret data as relocations.
   const Rel* relocations_base = reinterpret_cast<Rel*>(data->d_buf);
@@ -1214,14 +1243,10 @@ bool ElfFile::UnpackTypedRelocations(const std::vector<uint8_t>& packed,
   // this is a padded file.
   const bool is_padded = padding == relative_relocations.size();
 
-  // Unless padded, pre-apply relative relocations to account for the
-  // hole, and pre-adjust all relocation offsets accordingly.
+  // Unless padded, report by how much we expand the file.
   if (!is_padded) {
-    // Pre-calculate the size of the hole we will open up when we rewrite
-    // dynamic relocations.  We have to adjust relocation addresses to
-    // account for this.
-    ELF::Shdr* section_header = ELF::getshdr(relocations_section_);
-    const ELF::Off hole_start = section_header->sh_offset;
+    // Calculate the size of the hole we will open up when we rewrite
+    // dynamic relocations.
     ssize_t hole_size =
         relative_relocations.size() * sizeof(relative_relocations[0]);
 
@@ -1241,17 +1266,17 @@ bool ElfFile::UnpackTypedRelocations(const std::vector<uint8_t>& packed,
   const size_t bytes = relocations.size() * sizeof(relocations[0]);
   LOG(INFO) << "Total         : " << relocations.size() << " entries";
   ResizeSection<Rel>(elf_, relocations_section_, bytes);
-  RewriteSectionData(data, section_data, bytes);
+  RewriteSectionData(relocations_section_, section_data, bytes);
 
   // Nearly empty the current packed android relocations section.  Leaves a
   // four-byte stub so that some data remains allocated to the section.
   // This is a convenience which allows us to re-pack this file again without
   // having to remove the section and then add a new small one with objcopy.
   // The way we resize sections relies on there being some data in a section.
-  data = GetSectionData(android_relocations_section_);
   ResizeSection<Rel>(
       elf_, android_relocations_section_, sizeof(kStubIdentifier));
-  RewriteSectionData(data, &kStubIdentifier, sizeof(kStubIdentifier));
+  RewriteSectionData(
+      android_relocations_section_, &kStubIdentifier, sizeof(kStubIdentifier));
 
   // Rewrite .dynamic to remove two tags describing packed android relocations.
   data = GetSectionData(dynamic_section_);
@@ -1263,7 +1288,7 @@ bool ElfFile::UnpackTypedRelocations(const std::vector<uint8_t>& packed,
   RemoveDynamicEntry(DT_ANDROID_REL_SIZE, &dynamics);
   const void* dynamics_data = &dynamics[0];
   const size_t dynamics_bytes = dynamics.size() * sizeof(dynamics[0]);
-  RewriteSectionData(data, dynamics_data, dynamics_bytes);
+  RewriteSectionData(dynamic_section_, dynamics_data, dynamics_bytes);
 
   Flush();
   return true;

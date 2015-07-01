@@ -34,6 +34,7 @@ scoped_ptr<base::DictionaryValue> CreateInfoDict(
 }  // namespace
 
 DriveAppMapping::DriveAppMapping(PrefService* prefs) : prefs_(prefs) {
+  GetUninstalledIdsFromPref();
 }
 
 DriveAppMapping::~DriveAppMapping() {
@@ -42,9 +43,8 @@ DriveAppMapping::~DriveAppMapping() {
 // static
 void DriveAppMapping::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
-  registry->RegisterDictionaryPref(
-      prefs::kAppLauncherDriveAppMapping,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterDictionaryPref(prefs::kAppLauncherDriveAppMapping);
+  registry->RegisterListPref(prefs::kAppLauncherUninstalledDriveApps);
 }
 
 void DriveAppMapping::Add(const std::string& drive_app_id,
@@ -124,4 +124,44 @@ std::set<std::string> DriveAppMapping::GetDriveAppIds() const {
     keys.insert(it.key());
   }
   return keys;
+}
+
+void DriveAppMapping::AddUninstalledDriveApp(const std::string& drive_app_id) {
+  if (IsUninstalledDriveApp(drive_app_id))
+    return;
+  uninstalled_app_ids_.insert(drive_app_id);
+  UpdateUninstalledList();
+}
+
+void DriveAppMapping::RemoveUninstalledDriveApp(
+    const std::string& drive_app_id) {
+  auto it = uninstalled_app_ids_.find(drive_app_id);
+  if (it == uninstalled_app_ids_.end())
+    return;
+  uninstalled_app_ids_.erase(it);
+  UpdateUninstalledList();
+}
+
+bool DriveAppMapping::IsUninstalledDriveApp(
+    const std::string& drive_app_id) const {
+  return uninstalled_app_ids_.find(drive_app_id) != uninstalled_app_ids_.end();
+}
+
+void DriveAppMapping::GetUninstalledIdsFromPref() {
+  uninstalled_app_ids_.clear();
+  const base::ListValue* list =
+      prefs_->GetList(prefs::kAppLauncherUninstalledDriveApps);
+  for (size_t i = 0; i < list->GetSize(); ++i) {
+    std::string app_id;
+    if (!list->GetString(i, &app_id))
+      continue;
+    uninstalled_app_ids_.insert(app_id);
+  }
+}
+
+void DriveAppMapping::UpdateUninstalledList() {
+  ListPrefUpdate update(prefs_, prefs::kAppLauncherUninstalledDriveApps);
+  update->Clear();
+  for (const auto& app_id : uninstalled_app_ids_)
+    update->AppendString(app_id);
 }

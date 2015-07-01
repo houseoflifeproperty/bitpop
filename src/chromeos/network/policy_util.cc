@@ -115,14 +115,46 @@ bool IsPolicyMatching(const base::DictionaryValue& policy,
       return false;
 
     std::string policy_ssid;
-    policy_wifi->GetStringWithoutPathExpansion(::onc::wifi::kSSID,
+    policy_wifi->GetStringWithoutPathExpansion(::onc::wifi::kHexSSID,
                                                &policy_ssid);
     std::string actual_ssid;
-    actual_wifi->GetStringWithoutPathExpansion(::onc::wifi::kSSID,
+    actual_wifi->GetStringWithoutPathExpansion(::onc::wifi::kHexSSID,
                                                &actual_ssid);
     return (policy_ssid == actual_ssid);
   }
   return false;
+}
+
+// Returns true if AutoConnect is enabled by |policy| (as mandatory or
+// recommended setting). Otherwise and on error returns false.
+bool IsAutoConnectEnabledInPolicy(const base::DictionaryValue& policy) {
+  std::string type;
+  policy.GetStringWithoutPathExpansion(::onc::network_config::kType, &type);
+
+  std::string autoconnect_key;
+  std::string network_dict_key;
+  if (type == ::onc::network_type::kWiFi) {
+    network_dict_key = ::onc::network_config::kWiFi;
+    autoconnect_key = ::onc::wifi::kAutoConnect;
+  } else if (type == ::onc::network_type::kVPN) {
+    network_dict_key = ::onc::network_config::kVPN;
+    autoconnect_key = ::onc::vpn::kAutoConnect;
+  } else {
+    VLOG(2) << "Network type without autoconnect property.";
+    return false;
+  }
+
+  const base::DictionaryValue* network_dict = NULL;
+  policy.GetDictionaryWithoutPathExpansion(network_dict_key, &network_dict);
+  if (!network_dict) {
+    LOG(ERROR) << "ONC doesn't contain a " << network_dict_key
+               << " dictionary.";
+    return false;
+  }
+
+  bool autoconnect = false;
+  network_dict->GetBooleanWithoutPathExpansion(autoconnect_key, &autoconnect);
+  return autoconnect;
 }
 
 base::DictionaryValue* GetOrCreateDictionary(const std::string& key,
@@ -178,7 +210,7 @@ void ApplyGlobalAutoconnectPolicy(
   std::string policy_source;
   if (profile_type == NetworkProfile::TYPE_USER)
     policy_source = ::onc::kAugmentationUserPolicy;
-  else if(profile_type == NetworkProfile::TYPE_SHARED)
+  else if (profile_type == NetworkProfile::TYPE_SHARED)
     policy_source = ::onc::kAugmentationDevicePolicy;
   else
     NOTREACHED();
@@ -323,6 +355,21 @@ scoped_ptr<base::DictionaryValue> CreateShillConfiguration(
 
   shill_dictionary->SetStringWithoutPathExpansion(shill::kProfileProperty,
                                                   profile.path);
+
+  // If AutoConnect is enabled by policy, set the ManagedCredentials property to
+  // indicate to Shill that this network can be used for autoconnect even
+  // without a manual and successful connection attempt.
+  // Note that this is only an indicator for the administrator's true intention,
+  // i.e. when the administrator enables AutoConnect, we assume that the network
+  // is indeed connectable.
+  // Ideally, we would know whether the (policy) provided credentials are
+  // complete and only set ManagedCredentials in that case.
+  if (network_policy && IsAutoConnectEnabledInPolicy(*network_policy)) {
+    VLOG(1) << "Enable ManagedCredentials for managed network with GUID "
+            << guid;
+    shill_dictionary->SetBooleanWithoutPathExpansion(
+        shill::kManagedCredentialsProperty, true);
+  }
 
   if (!network_policy && global_policy) {
     // The network isn't managed. Global network policies have to be applied.

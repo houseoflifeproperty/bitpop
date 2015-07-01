@@ -8,7 +8,7 @@
 #include "base/process/process_handle.h"
 #include "ipc/ipc_message_utils.h"
 #include "ipc/ipc_platform_file.h"
-#include "mojo/embedder/platform_channel_pair.h"
+#include "third_party/mojo/src/mojo/edk/embedder/platform_channel_pair.h"
 
 namespace IPC {
 
@@ -16,19 +16,19 @@ namespace {
 
 // MojoBootstrap for the server process. You should create the instance
 // using MojoBootstrap::Create().
-class IPC_MOJO_EXPORT MojoServerBootstrap : public MojoBootstrap {
+class MojoServerBootstrap : public MojoBootstrap {
  public:
   MojoServerBootstrap();
 
-  virtual void OnClientLaunched(base::ProcessHandle process) OVERRIDE;
+  void OnClientLaunched(base::ProcessHandle process) override;
 
  private:
   void SendClientPipe();
   void SendClientPipeIfReady();
 
   // Listener implementations
-  virtual bool OnMessageReceived(const Message& message) OVERRIDE;
-  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
+  bool OnMessageReceived(const Message& message) override;
+  void OnChannelConnected(int32 peer_pid) override;
 
   mojo::embedder::ScopedPlatformHandle server_pipe_;
   base::ProcessHandle client_process_;
@@ -56,7 +56,16 @@ void MojoServerBootstrap::SendClientPipe() {
 #endif
       client_process_,
       true);
-  CHECK(client_pipe != IPC::InvalidPlatformFileForTransit());
+  if (client_pipe == IPC::InvalidPlatformFileForTransit()) {
+#if !defined(OS_WIN)
+    // GetFileHandleForProcess() only fails on Windows.
+    NOTREACHED();
+#endif
+    LOG(WARNING) << "Failed to translate file handle for client process.";
+    Fail();
+    return;
+  }
+
   scoped_ptr<Message> message(new Message());
   ParamTraits<PlatformFileForTransit>::Write(message.get(), client_pipe);
   Send(message.release());
@@ -75,6 +84,9 @@ void MojoServerBootstrap::SendClientPipeIfReady() {
 }
 
 void MojoServerBootstrap::OnClientLaunched(base::ProcessHandle process) {
+  if (HasFailed())
+    return;
+
   DCHECK_EQ(state(), STATE_INITIALIZED);
   DCHECK_NE(process, base::kNullProcessHandle);
   client_process_ = process;
@@ -88,9 +100,14 @@ void MojoServerBootstrap::OnChannelConnected(int32 peer_pid) {
 }
 
 bool MojoServerBootstrap::OnMessageReceived(const Message&) {
-  DCHECK_EQ(state(), STATE_WAITING_ACK);
-  set_state(STATE_READY);
+  if (state() != STATE_WAITING_ACK) {
+    set_state(STATE_ERROR);
+    LOG(ERROR) << "Got inconsistent message from client.";
+    return false;
+  }
 
+  set_state(STATE_READY);
+  CHECK(server_pipe_.is_valid());
   delegate()->OnPipeAvailable(
       mojo::embedder::ScopedPlatformHandle(server_pipe_.release()));
 
@@ -99,16 +116,16 @@ bool MojoServerBootstrap::OnMessageReceived(const Message&) {
 
 // MojoBootstrap for client processes. You should create the instance
 // using MojoBootstrap::Create().
-class IPC_MOJO_EXPORT MojoClientBootstrap : public MojoBootstrap {
+class MojoClientBootstrap : public MojoBootstrap {
  public:
   MojoClientBootstrap();
 
-  virtual void OnClientLaunched(base::ProcessHandle process) OVERRIDE;
+  void OnClientLaunched(base::ProcessHandle process) override;
 
  private:
   // Listener implementations
-  virtual bool OnMessageReceived(const Message& message) OVERRIDE;
-  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
+  bool OnMessageReceived(const Message& message) override;
+  void OnChannelConnected(int32 peer_pid) override;
 
   DISALLOW_COPY_AND_ASSIGN(MojoClientBootstrap);
 };
@@ -117,10 +134,16 @@ MojoClientBootstrap::MojoClientBootstrap() {
 }
 
 bool MojoClientBootstrap::OnMessageReceived(const Message& message) {
+  if (state() != STATE_INITIALIZED) {
+    set_state(STATE_ERROR);
+    LOG(ERROR) << "Got inconsistent message from server.";
+    return false;
+  }
+
   PlatformFileForTransit pipe;
   PickleIterator iter(message);
   if (!ParamTraits<PlatformFileForTransit>::Read(&message, &iter, &pipe)) {
-    DLOG(WARNING) << "Failed to read a file handle from bootstrap channel.";
+    LOG(WARNING) << "Failed to read a file handle from bootstrap channel.";
     message.set_dispatch_error();
     return false;
   }
@@ -177,15 +200,28 @@ bool MojoBootstrap::Connect() {
   return channel_->Connect();
 }
 
+base::ProcessId MojoBootstrap::GetSelfPID() const {
+  return channel_->GetSelfPID();
+}
+
 void MojoBootstrap::OnBadMessageReceived(const Message& message) {
-  delegate_->OnBootstrapError();
+  Fail();
 }
 
 void MojoBootstrap::OnChannelError() {
-  if (state_ == STATE_READY)
+  if (state_ == STATE_READY || state_ == STATE_ERROR)
     return;
   DLOG(WARNING) << "Detected error on Mojo bootstrap channel.";
+  Fail();
+}
+
+void MojoBootstrap::Fail() {
+  set_state(STATE_ERROR);
   delegate()->OnBootstrapError();
+}
+
+bool MojoBootstrap::HasFailed() const {
+  return state() == STATE_ERROR;
 }
 
 bool MojoBootstrap::Send(Message* message) {
@@ -197,7 +233,7 @@ int MojoBootstrap::GetClientFileDescriptor() const {
   return channel_->GetClientFileDescriptor();
 }
 
-int MojoBootstrap::TakeClientFileDescriptor() {
+base::ScopedFD MojoBootstrap::TakeClientFileDescriptor() {
   return channel_->TakeClientFileDescriptor();
 }
 #endif  // defined(OS_POSIX) && !defined(OS_NACL)

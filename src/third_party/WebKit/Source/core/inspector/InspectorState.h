@@ -47,8 +47,8 @@ public:
     virtual void inspectorStateUpdated() = 0;
 };
 
-class InspectorState FINAL : public NoBaseWillBeGarbageCollectedFinalized<InspectorState> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+class InspectorState final : public NoBaseWillBeGarbageCollectedFinalized<InspectorState> {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InspectorState);
 public:
     InspectorState(InspectorStateUpdateListener*, PassRefPtr<JSONObject>);
 
@@ -73,7 +73,7 @@ public:
 
     void remove(const String&);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     void updateCookie();
@@ -88,17 +88,17 @@ private:
     RefPtr<JSONObject> m_properties;
 };
 
-class InspectorCompositeState FINAL : public NoBaseWillBeGarbageCollectedFinalized<InspectorCompositeState>, public InspectorStateUpdateListener {
+class InspectorCompositeState final : public NoBaseWillBeGarbageCollectedFinalized<InspectorCompositeState>, public InspectorStateUpdateListener {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(InspectorCompositeState);
 public:
-    InspectorCompositeState(InspectorStateClient* inspectorClient)
-        : m_client(inspectorClient)
+    InspectorCompositeState(InspectorStateClient* inspectorStateClient)
+        : m_client(inspectorStateClient)
         , m_stateObject(JSONObject::create())
         , m_isMuted(false)
     {
     }
     virtual ~InspectorCompositeState() { }
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     void mute();
     void unmute();
@@ -110,7 +110,7 @@ private:
     typedef WillBeHeapHashMap<String, OwnPtrWillBeMember<InspectorState> > InspectorStateMap;
 
     // From InspectorStateUpdateListener.
-    virtual void inspectorStateUpdated() OVERRIDE;
+    virtual void inspectorStateUpdated() override;
 
     InspectorStateClient* m_client;
     RefPtr<JSONObject> m_stateObject;

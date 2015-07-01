@@ -44,27 +44,27 @@ namespace extensions {
 // the unit tests.
 class ActivityDatabaseTestPolicy : public ActivityDatabase::Delegate {
  public:
-  ActivityDatabaseTestPolicy() {};
+  ActivityDatabaseTestPolicy() {}
 
   static const char kTableName[];
-  static const char* kTableContentFields[];
-  static const char* kTableFieldTypes[];
+  static const char* const kTableContentFields[];
+  static const char* const kTableFieldTypes[];
 
   virtual void Record(ActivityDatabase* db, scoped_refptr<Action> action);
 
  protected:
-  virtual bool InitDatabase(sql::Connection* db) OVERRIDE;
-  virtual bool FlushDatabase(sql::Connection*) OVERRIDE;
-  virtual void OnDatabaseFailure() OVERRIDE {}
-  virtual void OnDatabaseClose() OVERRIDE { delete this; }
+  bool InitDatabase(sql::Connection* db) override;
+  bool FlushDatabase(sql::Connection*) override;
+  void OnDatabaseFailure() override {}
+  void OnDatabaseClose() override { delete this; }
 
   std::vector<scoped_refptr<Action> > queue_;
 };
 
 const char ActivityDatabaseTestPolicy::kTableName[] = "actions";
-const char* ActivityDatabaseTestPolicy::kTableContentFields[] = {
+const char* const ActivityDatabaseTestPolicy::kTableContentFields[] = {
     "extension_id", "time", "action_type", "api_name"};
-const char* ActivityDatabaseTestPolicy::kTableFieldTypes[] = {
+const char* const ActivityDatabaseTestPolicy::kTableFieldTypes[] = {
     "LONGVARCHAR NOT NULL", "INTEGER", "INTEGER", "LONGVARCHAR"};
 
 bool ActivityDatabaseTestPolicy::InitDatabase(sql::Connection* db) {
@@ -107,17 +107,17 @@ void ActivityDatabaseTestPolicy::Record(ActivityDatabase* db,
 
 class ActivityDatabaseTest : public ChromeRenderViewHostTestHarness {
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ChromeRenderViewHostTestHarness::SetUp();
 #if defined OS_CHROMEOS
     test_user_manager_.reset(new chromeos::ScopedTestUserManager());
 #endif
-    CommandLine command_line(CommandLine::NO_PROGRAM);
-    CommandLine::ForCurrentProcess()->AppendSwitch(
+    base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kEnableExtensionActivityLogTesting);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
 #if defined OS_CHROMEOS
     test_user_manager_.reset();
 #endif
@@ -174,7 +174,7 @@ TEST_F(ActivityDatabaseTest, Init) {
   base::FilePath db_file;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   db_file = temp_dir.path().AppendASCII("ActivityInit.db");
-  base::DeleteFile(db_file, false);
+  sql::Connection::Delete(db_file);
 
   ActivityDatabase* activity_db = OpenDatabase(db_file);
   activity_db->Close();
@@ -191,7 +191,7 @@ TEST_F(ActivityDatabaseTest, RecordAction) {
   base::FilePath db_file;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   db_file = temp_dir.path().AppendASCII("ActivityRecord.db");
-  base::DeleteFile(db_file, false);
+  sql::Connection::Delete(db_file);
 
   ActivityDatabase* activity_db = OpenDatabase(db_file);
   activity_db->SetBatchModeForTesting(false);
@@ -210,7 +210,7 @@ TEST_F(ActivityDatabaseTest, BatchModeOff) {
   base::FilePath db_file;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   db_file = temp_dir.path().AppendASCII("ActivityRecord.db");
-  base::DeleteFile(db_file, false);
+  sql::Connection::Delete(db_file);
 
   // Record some actions
   ActivityDatabase* activity_db = OpenDatabase(db_file);
@@ -228,7 +228,7 @@ TEST_F(ActivityDatabaseTest, BatchModeOn) {
   base::FilePath db_file;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   db_file = temp_dir.path().AppendASCII("ActivityRecord.db");
-  base::DeleteFile(db_file, false);
+  sql::Connection::Delete(db_file);
 
   // Record some actions
   ActivityDatabase* activity_db = OpenDatabase(db_file);
@@ -250,7 +250,7 @@ TEST_F(ActivityDatabaseTest, BatchModeFlush) {
   base::FilePath db_file;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   db_file = temp_dir.path().AppendASCII("ActivityFlush.db");
-  base::DeleteFile(db_file, false);
+  sql::Connection::Delete(db_file);
 
   // Record some actions
   ActivityDatabase* activity_db = OpenDatabase(db_file);
@@ -272,7 +272,7 @@ TEST_F(ActivityDatabaseTest, InitFailure) {
   base::FilePath db_file;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   db_file = temp_dir.path().AppendASCII("ActivityRecord.db");
-  base::DeleteFile(db_file, false);
+  sql::Connection::Delete(db_file);
 
   ActivityDatabaseTestPolicy* delegate = new ActivityDatabaseTestPolicy();
   ActivityDatabase* activity_db = new ActivityDatabase(delegate);

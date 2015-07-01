@@ -99,7 +99,8 @@ void AppWindowLauncherController::OnAppWindowIconChanged(
                                app_window->app_icon().AsImageSkia());
 }
 
-void AppWindowLauncherController::OnAppWindowShown(AppWindow* app_window) {
+void AppWindowLauncherController::OnAppWindowShown(AppWindow* app_window,
+                                                   bool was_hidden) {
   aura::Window* window = app_window->GetNativeWindow();
   if (!ControlsWindow(window))
     return;
@@ -144,6 +145,11 @@ void AppWindowLauncherController::OnWindowActivated(aura::Window* new_active,
 }
 
 void AppWindowLauncherController::RegisterApp(AppWindow* app_window) {
+  // Windows created by IME extension should be treated the same way as the
+  // virtual keyboard window, which does not register itself in launcher.
+  if (app_window->is_ime_window())
+    return;
+
   aura::Window* window = app_window->GetNativeWindow();
   // Get the app's shelf identifier and add an entry to the map.
   DCHECK(window_to_app_shelf_id_map_.find(window) ==

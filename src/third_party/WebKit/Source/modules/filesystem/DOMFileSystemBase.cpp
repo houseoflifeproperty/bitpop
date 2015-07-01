@@ -51,6 +51,8 @@
 #include "public/platform/WebFileSystemCallbacks.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/text/StringBuilder.h"
+#include "wtf/text/TextEncoding.h"
+#include <url/url_util.h>
 
 namespace blink {
 
@@ -70,6 +72,11 @@ DOMFileSystemBase::DOMFileSystemBase(ExecutionContext* context, const String& na
 
 DOMFileSystemBase::~DOMFileSystemBase()
 {
+}
+
+DEFINE_TRACE(DOMFileSystemBase)
+{
+    visitor->trace(m_context);
 }
 
 WebFileSystem* DOMFileSystemBase::fileSystem() const
@@ -146,7 +153,7 @@ KURL DOMFileSystemBase::createFileSystemURL(const String& fullPath) const
         result.append(externalPathPrefix);
         result.append(m_filesystemRootURL.path());
         // Remove the extra leading slash.
-        result.append(encodeWithURLEscapeSequences(fullPath.substring(1)));
+        result.append(encodeFilePathAsURIComponent(fullPath.substring(1)));
         return KURL(ParsedURLString, result.toString());
     }
 
@@ -154,7 +161,7 @@ KURL DOMFileSystemBase::createFileSystemURL(const String& fullPath) const
     ASSERT(!m_filesystemRootURL.isEmpty());
     KURL url = m_filesystemRootURL;
     // Remove the extra leading slash.
-    url.setPath(url.path() + encodeWithURLEscapeSequences(fullPath.substring(1)));
+    url.setPath(url.path() + encodeFilePathAsURIComponent(fullPath.substring(1)));
     return url;
 }
 
@@ -189,7 +196,7 @@ bool DOMFileSystemBase::pathPrefixToFileSystemType(const String& pathPrefix, Fil
     return false;
 }
 
-PassRefPtrWillBeRawPtr<File> DOMFileSystemBase::createFile(const FileMetadata& metadata, const KURL& fileSystemURL, FileSystemType type, const String name)
+File* DOMFileSystemBase::createFile(const FileMetadata& metadata, const KURL& fileSystemURL, FileSystemType type, const String name)
 {
     // For regular filesystem types (temporary or persistent), we should not cache file metadata as it could change File semantics.
     // For other filesystem types (which could be platform-specific ones), there's a chance that the files are on remote filesystem.
@@ -199,13 +206,15 @@ PassRefPtrWillBeRawPtr<File> DOMFileSystemBase::createFile(const FileMetadata& m
     if (type == FileSystemTypeTemporary || type == FileSystemTypePersistent)
         return File::createForFileSystemFile(metadata.platformPath, name);
 
-    if (!metadata.platformPath.isEmpty()) {
-        // If the platformPath in the returned metadata is given, we create a File object for the path.
-        File::UserVisibility userVisibility = (type == FileSystemTypeExternal) ? File::IsUserVisible : File::IsNotUserVisible;
-        return File::createForFileSystemFile(name, metadata, userVisibility);
-    }
+    const File::UserVisibility userVisibility = (type == FileSystemTypeExternal) ? File::IsUserVisible : File::IsNotUserVisible;
 
-    return File::createForFileSystemFile(fileSystemURL, metadata);
+    if (!metadata.platformPath.isEmpty()) {
+        // If the platformPath in the returned metadata is given, we create a File object for the snapshot path.
+        return File::createForFileSystemFile(name, metadata, userVisibility);
+    } else {
+        // Otherwise we create a File object for the fileSystemURL.
+        return File::createForFileSystemFile(fileSystemURL, metadata, userVisibility);
+    }
 }
 
 void DOMFileSystemBase::getMetadata(const EntryBase* entry, MetadataCallback* successCallback, ErrorCallback* errorCallback, SynchronousType synchronousType)
@@ -356,8 +365,8 @@ void DOMFileSystemBase::getFile(const EntryBase* entry, const String& path, cons
     OwnPtr<AsyncFileSystemCallbacks> callbacks(EntryCallbacks::create(successCallback, errorCallback, m_context, this, absolutePath, false));
     callbacks->setShouldBlockUntilCompletion(synchronousType == Synchronous);
 
-    if (flags.create)
-        fileSystem()->createFile(createFileSystemURL(absolutePath), flags.exclusive, callbacks.release());
+    if (flags.createFlag())
+        fileSystem()->createFile(createFileSystemURL(absolutePath), flags.exclusive(), callbacks.release());
     else
         fileSystem()->fileExists(createFileSystemURL(absolutePath), callbacks.release());
 }
@@ -378,8 +387,8 @@ void DOMFileSystemBase::getDirectory(const EntryBase* entry, const String& path,
     OwnPtr<AsyncFileSystemCallbacks> callbacks(EntryCallbacks::create(successCallback, errorCallback, m_context, this, absolutePath, true));
     callbacks->setShouldBlockUntilCompletion(synchronousType == Synchronous);
 
-    if (flags.create)
-        fileSystem()->createDirectory(createFileSystemURL(absolutePath), flags.exclusive, callbacks.release());
+    if (flags.createFlag())
+        fileSystem()->createDirectory(createFileSystemURL(absolutePath), flags.exclusive(), callbacks.release());
     else
         fileSystem()->directoryExists(createFileSystemURL(absolutePath), callbacks.release());
 }
@@ -404,6 +413,22 @@ bool DOMFileSystemBase::waitForAdditionalResult(int callbacksId)
     if (!fileSystem())
         return false;
     return fileSystem()->waitForAdditionalResult(callbacksId);
+}
+
+String DOMFileSystemBase::encodeFilePathAsURIComponent(const String& fullPath)
+{
+    CString utf8 = UTF8Encoding().encode(fullPath, WTF::URLEncodedEntitiesForUnencodables);
+
+    url::RawCanonOutputT<char> buffer;
+    int inputLength = utf8.length();
+    if (buffer.length() < inputLength * 3)
+        buffer.Resize(inputLength * 3);
+
+    url::EncodeURIComponent(utf8.data(), inputLength, &buffer);
+    String escaped(buffer.data(), buffer.length());
+    // Unescape '/'; it's safe and much prettier.
+    escaped.replace("%2F", "/");
+    return escaped;
 }
 
 } // namespace blink

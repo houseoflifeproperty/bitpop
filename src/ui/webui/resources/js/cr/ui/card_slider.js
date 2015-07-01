@@ -335,10 +335,8 @@ cr.define('cr.ui', function() {
      */
     onWebkitTransitionEnd_: function(e) {
       // Ignore irrelevant transitions that might bubble up.
-      if (e.target !== this.container_ ||
-          e.propertyName != '-webkit-transform') {
+      if (e.target !== this.container_ || e.propertyName != 'transform')
         return;
-      }
       this.fireChangeEndedEvent_(true);
     },
 
@@ -597,10 +595,11 @@ cr.define('cr.ui', function() {
     /**
      * Clear any transition that is in progress and enable dragging for the
      * touch.
-     * @param {!cr.ui.TouchHandler.Event} e The TouchHandler event.
+     * @param {!Event} e The TouchHandler event.
      * @private
      */
     onTouchStart_: function(e) {
+      e = /** @type {!cr.ui.TouchHandler.Event} */(e);
       this.container_.style.WebkitTransition = '';
       e.enableDrag = true;
     },
@@ -608,10 +607,11 @@ cr.define('cr.ui', function() {
     /**
      * Tell the TouchHandler that dragging is acceptable when the user begins by
      * scrolling horizontally and there is more than one card to slide.
-     * @param {!cr.ui.TouchHandler.Event} e The TouchHandler event.
+     * @param {!Event} e The TouchHandler event.
      * @private
      */
     onDragStart_: function(e) {
+      e = /** @type {!cr.ui.TouchHandler.Event} */(e);
       e.enableDrag = this.cardCount > 1 && Math.abs(e.dragDeltaX) >
           Math.abs(e.dragDeltaY);
     },
@@ -619,10 +619,11 @@ cr.define('cr.ui', function() {
     /**
      * On each drag move event reposition the container appropriately so the
      * cards look like they are sliding.
-     * @param {!cr.ui.TouchHandler.Event} e The TouchHandler event.
+     * @param {!Event} e The TouchHandler event.
      * @private
      */
     onDragMove_: function(e) {
+      e = /** @type {!cr.ui.TouchHandler.Event} */(e);
       var deltaX = e.dragDeltaX;
       // If dragging beyond the first or last card then apply a backoff so the
       // dragging feels stickier than usual.
@@ -636,10 +637,11 @@ cr.define('cr.ui', function() {
     /**
      * On drag end events we may want to transition to another card, depending
      * on the ending position of the drag and the velocity of the drag.
-     * @param {!cr.ui.TouchHandler.Event} e The TouchHandler event.
+     * @param {!Event} e The TouchHandler event.
      * @private
      */
     onDragEnd_: function(e) {
+      e = /** @type {!cr.ui.TouchHandler.Event} */(e);
       var deltaX = e.dragDeltaX;
       var velocity = this.touchHandler_.getEndVelocity().x;
       var newX = this.currentLeft_ + deltaX;

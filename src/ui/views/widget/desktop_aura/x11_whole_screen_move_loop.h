@@ -10,19 +10,19 @@
 #include "base/memory/weak_ptr.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/events/platform/platform_event_dispatcher.h"
+#include "ui/gfx/geometry/vector2d_f.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/vector2d_f.h"
+#include "ui/gfx/x/x11_types.h"
 #include "ui/views/widget/desktop_aura/x11_move_loop.h"
 #include "ui/views/widget/desktop_aura/x11_move_loop_delegate.h"
-
-typedef struct _XDisplay XDisplay;
 
 namespace aura {
 class Window;
 }
 
 namespace ui {
+class MouseEvent;
 class ScopedEventDispatcher;
 }
 
@@ -36,28 +36,26 @@ class X11WholeScreenMoveLoop : public X11MoveLoop,
                                public ui::PlatformEventDispatcher {
  public:
   explicit X11WholeScreenMoveLoop(X11MoveLoopDelegate* delegate);
-  virtual ~X11WholeScreenMoveLoop();
+  ~X11WholeScreenMoveLoop() override;
 
   // ui:::PlatformEventDispatcher:
-  virtual bool CanDispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
-  virtual uint32_t DispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
+  bool CanDispatchEvent(const ui::PlatformEvent& event) override;
+  uint32_t DispatchEvent(const ui::PlatformEvent& event) override;
 
   // X11MoveLoop:
-  virtual bool RunMoveLoop(aura::Window* window,
-                           gfx::NativeCursor cursor) OVERRIDE;
-  virtual void UpdateCursor(gfx::NativeCursor cursor) OVERRIDE;
-  virtual void EndMoveLoop() OVERRIDE;
+  bool RunMoveLoop(aura::Window* window, gfx::NativeCursor cursor) override;
+  void UpdateCursor(gfx::NativeCursor cursor) override;
+  void EndMoveLoop() override;
 
  private:
   // Grabs the pointer, setting the mouse cursor to |cursor|. Returns true if
   // successful.
   bool GrabPointer(gfx::NativeCursor cursor);
 
-  // Grabs the keyboard. Returns true if successful.
-  bool GrabKeyboard();
+  void GrabEscKey();
 
   // Creates an input-only window to be used during the drag.
-  Window CreateDragInputWindow(XDisplay* display);
+  XID CreateDragInputWindow(XDisplay* display);
 
   // Dispatch mouse movement event to |delegate_| in a posted task.
   void DispatchMouseMovement();
@@ -76,7 +74,7 @@ class X11WholeScreenMoveLoop : public X11MoveLoop,
 
   // An invisible InputOnly window. Keyboard grab and sometimes mouse grab
   // are set on this window.
-  ::Window grab_input_window_;
+  XID grab_input_window_;
 
   // Whether the pointer was grabbed on |grab_input_window_|.
   bool grabbed_pointer_;
@@ -87,7 +85,7 @@ class X11WholeScreenMoveLoop : public X11MoveLoop,
   // pressing escape).
   bool canceled_;
 
-  XMotionEvent last_xmotion_;
+  scoped_ptr<ui::MouseEvent> last_motion_in_screen_;
   base::WeakPtrFactory<X11WholeScreenMoveLoop> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(X11WholeScreenMoveLoop);

@@ -54,7 +54,7 @@ bool SkROLockPixelsPixelRef::onLockPixelsAreWritable() const {
 ///////////////////////////////////////////////////////////////////////////////
 
 static SkGrPixelRef* copy_to_new_texture_pixelref(GrTexture* texture, SkColorType dstCT,
-                                           const SkIRect* subset) {
+                                                  SkColorProfileType dstPT, const SkIRect* subset) {
     if (NULL == texture || kUnknown_SkColorType == dstCT) {
         return NULL;
     }
@@ -62,38 +62,37 @@ static SkGrPixelRef* copy_to_new_texture_pixelref(GrTexture* texture, SkColorTyp
     if (NULL == context) {
         return NULL;
     }
-    GrTextureDesc desc;
+    GrSurfaceDesc desc;
 
-    SkIPoint pointStorage;
-    SkIPoint* topLeft;
-    if (subset != NULL) {
+    SkIRect srcRect;
+
+    if (!subset) {
+        desc.fWidth  = texture->width();
+        desc.fHeight = texture->height();
+        srcRect = SkIRect::MakeWH(texture->width(), texture->height());
+    } else {
         SkASSERT(SkIRect::MakeWH(texture->width(), texture->height()).contains(*subset));
         // Create a new texture that is the size of subset.
         desc.fWidth = subset->width();
         desc.fHeight = subset->height();
-        pointStorage.set(subset->x(), subset->y());
-        topLeft = &pointStorage;
-    } else {
-        desc.fWidth  = texture->width();
-        desc.fHeight = texture->height();
-        topLeft = NULL;
+        srcRect = *subset;
     }
-    desc.fFlags = kRenderTarget_GrTextureFlagBit | kNoStencil_GrTextureFlagBit;
-    desc.fConfig = SkImageInfo2GrPixelConfig(dstCT, kPremul_SkAlphaType);
+    desc.fFlags = kRenderTarget_GrSurfaceFlag;
+    desc.fConfig = SkImageInfo2GrPixelConfig(dstCT, kPremul_SkAlphaType, dstPT);
 
-    GrTexture* dst = context->createUncachedTexture(desc, NULL, 0);
+    GrTexture* dst = context->textureProvider()->createTexture(desc, false, NULL, 0);
     if (NULL == dst) {
         return NULL;
     }
 
-    context->copyTexture(texture, dst->asRenderTarget(), topLeft);
-
     // Blink is relying on the above copy being sent to GL immediately in the case when the source
-    // is a WebGL canvas backing store. We could have a TODO to remove this flush, but we have a
-    // larger TODO to remove SkGrPixelRef entirely.
-    context->flush();
-
-    SkImageInfo info = SkImageInfo::Make(desc.fWidth, desc.fHeight, dstCT, kPremul_SkAlphaType);
+    // is a WebGL canvas backing store. We could have a TODO to remove this flush flag, but we have
+    // a larger TODO to remove SkGrPixelRef entirely.
+    context->copySurface(dst->asRenderTarget(), texture, srcRect, SkIPoint::Make(0,0),
+                         GrContext::kFlushWrites_PixelOp);
+  
+    SkImageInfo info = SkImageInfo::Make(desc.fWidth, desc.fHeight, dstCT, kPremul_SkAlphaType,
+                                         dstPT);
     SkGrPixelRef* pixelRef = SkNEW_ARGS(SkGrPixelRef, (info, dst));
     SkSafeUnref(dst);
     return pixelRef;
@@ -101,8 +100,7 @@ static SkGrPixelRef* copy_to_new_texture_pixelref(GrTexture* texture, SkColorTyp
 
 ///////////////////////////////////////////////////////////////////////////////
 
-SkGrPixelRef::SkGrPixelRef(const SkImageInfo& info, GrSurface* surface,
-                           bool transferCacheLock) : INHERITED(info) {
+SkGrPixelRef::SkGrPixelRef(const SkImageInfo& info, GrSurface* surface) : INHERITED(info) {
     // For surfaces that are both textures and render targets, the texture owns the
     // render target but not vice versa. So we ref the texture to keep both alive for
     // the lifetime of this pixel ref.
@@ -110,7 +108,6 @@ SkGrPixelRef::SkGrPixelRef(const SkImageInfo& info, GrSurface* surface,
     if (NULL == fSurface) {
         fSurface = SkSafeRef(surface);
     }
-    fUnlock = transferCacheLock;
 
     if (fSurface) {
         SkASSERT(info.width() <= fSurface->width());
@@ -119,13 +116,6 @@ SkGrPixelRef::SkGrPixelRef(const SkImageInfo& info, GrSurface* surface,
 }
 
 SkGrPixelRef::~SkGrPixelRef() {
-    if (fUnlock) {
-        GrContext* context = fSurface->getContext();
-        GrTexture* texture = fSurface->asTexture();
-        if (context && texture) {
-            context->unlockScratchTexture(texture);
-        }
-    }
     SkSafeUnref(fSurface);
 }
 
@@ -136,7 +126,8 @@ GrTexture* SkGrPixelRef::getTexture() {
     return NULL;
 }
 
-SkPixelRef* SkGrPixelRef::deepCopy(SkColorType dstCT, const SkIRect* subset) {
+SkPixelRef* SkGrPixelRef::deepCopy(SkColorType dstCT, SkColorProfileType dstPT,
+                                   const SkIRect* subset) {
     if (NULL == fSurface) {
         return NULL;
     }
@@ -147,7 +138,7 @@ SkPixelRef* SkGrPixelRef::deepCopy(SkColorType dstCT, const SkIRect* subset) {
     // a GrTexture owned elsewhere (e.g., SkGpuDevice), and cannot live
     // independently of that texture.  Texture-backed pixel refs, on the other
     // hand, own their GrTextures, and are thus self-contained.
-    return copy_to_new_texture_pixelref(fSurface->asTexture(), dstCT, subset);
+    return copy_to_new_texture_pixelref(fSurface->asTexture(), dstCT, dstPT, subset);
 }
 
 static bool tryAllocBitmapPixels(SkBitmap* bitmap) {
@@ -198,7 +189,7 @@ bool SkGrPixelRef::onReadPixels(SkBitmap* dst, const SkIRect* subset) {
         // If we are here, pixels were read correctly from the surface.
         cachedBitmap.setImmutable();
         //Add to the cache
-        SkBitmapCache::Add(this->getGenerationID(), bounds, cachedBitmap);
+        SkBitmapCache::Add(this, bounds, cachedBitmap);
 
         dst->swap(cachedBitmap);
     }

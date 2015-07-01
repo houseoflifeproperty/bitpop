@@ -23,17 +23,17 @@ class ChromeNetBenchmarkingMessageFilter
       net::URLRequestContextGetter* request_context);
 
   // content::BrowserMessageFilter methods:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
  private:
-  virtual ~ChromeNetBenchmarkingMessageFilter();
+  ~ChromeNetBenchmarkingMessageFilter() override;
 
   // Message handlers.
   void OnCloseCurrentConnections();
   void OnClearCache(IPC::Message* reply_msg);
-  void OnClearHostResolverCache(int* result);
+  void OnClearHostResolverCache();
   void OnSetCacheMode(bool enabled);
-  void OnClearPredictorCache(int* result);
+  void OnClearPredictorCache();
 
   // Returns true if benchmarking is enabled for chrome.
   bool CheckBenchmarkingEnabled() const;

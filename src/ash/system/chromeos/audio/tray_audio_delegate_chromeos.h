@@ -14,17 +14,18 @@ namespace system {
 
 class ASH_EXPORT TrayAudioDelegateChromeOs : public TrayAudioDelegate {
  public:
-  virtual ~TrayAudioDelegateChromeOs() {}
+  ~TrayAudioDelegateChromeOs() override {}
 
   // Overridden from TrayAudioDelegate.
-  virtual void AdjustOutputVolumeToAudibleLevel() OVERRIDE;
-  virtual int GetOutputDefaultVolumeMuteLevel() OVERRIDE;
-  virtual int GetOutputVolumeLevel() OVERRIDE;
-  virtual int GetActiveOutputDeviceIconId() OVERRIDE;
-  virtual bool HasAlternativeSources() OVERRIDE;
-  virtual bool IsOutputAudioMuted() OVERRIDE;
-  virtual void SetOutputAudioIsMuted(bool is_muted) OVERRIDE;
-  virtual void SetOutputVolumeLevel(int level) OVERRIDE;
+  void AdjustOutputVolumeToAudibleLevel() override;
+  int GetOutputDefaultVolumeMuteLevel() override;
+  int GetOutputVolumeLevel() override;
+  int GetActiveOutputDeviceIconId() override;
+  bool HasAlternativeSources() override;
+  bool IsOutputAudioMuted() override;
+  void SetOutputAudioIsMuted(bool is_muted) override;
+  void SetOutputVolumeLevel(int level) override;
+  void SetInternalSpeakerChannelMode(AudioChannelMode mode) override;
 };
 
 }  // namespace system

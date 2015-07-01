@@ -22,15 +22,15 @@ template<typename T>
 struct LabelPtrPair {
   typedef T DestType;
 
-  LabelPtrPair() : label(), ptr(NULL), origin(NULL) {}
+  LabelPtrPair() : label(), ptr(nullptr), origin(nullptr) {}
 
-  explicit LabelPtrPair(const Label& l) : label(l), ptr(NULL), origin(NULL) {
-  }
+  explicit LabelPtrPair(const Label& l)
+      : label(l), ptr(nullptr), origin(nullptr) {}
 
   // This contructor is typically used in unit tests, it extracts the label
   // automatically from a given pointer.
-  explicit LabelPtrPair(const T* p) : label(p->label()), ptr(p), origin(NULL) {
-  }
+  explicit LabelPtrPair(const T* p)
+      : label(p->label()), ptr(p), origin(nullptr) {}
 
   ~LabelPtrPair() {}
 
@@ -105,19 +105,12 @@ template<typename T> inline bool operator<(const LabelPtrPair<T>& a,
 
 namespace BASE_HASH_NAMESPACE {
 
-#if defined(COMPILER_GCC)
 template<typename T> struct hash< LabelPtrPair<T> > {
   std::size_t operator()(const LabelPtrPair<T>& v) const {
     BASE_HASH_NAMESPACE::hash<Label> h;
     return h(v.label);
   }
 };
-#elif defined(COMPILER_MSVC)
-template<typename T>
-inline size_t hash_value(const LabelPtrPair<T>& v) {
-  return BASE_HASH_NAMESPACE::hash_value(v.label);
-}
-#endif  // COMPILER...
 
 }  // namespace BASE_HASH_NAMESPACE
 

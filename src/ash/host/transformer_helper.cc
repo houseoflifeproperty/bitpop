@@ -13,7 +13,7 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size.h"
-#include "ui/gfx/size_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/transform.h"
 
 namespace ash {
@@ -27,27 +27,26 @@ class SimpleRootWindowTransformer : public RootWindowTransformer {
       : root_window_(root_window), transform_(transform) {}
 
   // RootWindowTransformer overrides:
-  virtual gfx::Transform GetTransform() const OVERRIDE { return transform_; }
+  gfx::Transform GetTransform() const override { return transform_; }
 
-  virtual gfx::Transform GetInverseTransform() const OVERRIDE {
+  gfx::Transform GetInverseTransform() const override {
     gfx::Transform invert;
     if (!transform_.GetInverse(&invert))
       return transform_;
     return invert;
   }
 
-  virtual gfx::Rect GetRootWindowBounds(const gfx::Size& host_size) const
-      OVERRIDE {
+  gfx::Rect GetRootWindowBounds(const gfx::Size& host_size) const override {
     gfx::Rect bounds(host_size);
     gfx::RectF new_bounds(ui::ConvertRectToDIP(root_window_->layer(), bounds));
     transform_.TransformRect(&new_bounds);
     return gfx::Rect(gfx::ToFlooredSize(new_bounds.size()));
   }
 
-  virtual gfx::Insets GetHostInsets() const OVERRIDE { return gfx::Insets(); }
+  gfx::Insets GetHostInsets() const override { return gfx::Insets(); }
 
  private:
-  virtual ~SimpleRootWindowTransformer() {}
+  ~SimpleRootWindowTransformer() override {}
 
   const aura::Window* root_window_;
   const gfx::Transform transform_;
@@ -59,10 +58,13 @@ class SimpleRootWindowTransformer : public RootWindowTransformer {
 
 TransformerHelper::TransformerHelper(AshWindowTreeHost* ash_host)
     : ash_host_(ash_host) {
-  SetTransform(gfx::Transform());
 }
 
 TransformerHelper::~TransformerHelper() {}
+
+void TransformerHelper::Init() {
+  SetTransform(gfx::Transform());
+}
 
 gfx::Insets TransformerHelper::GetHostInsets() const {
   return transformer_->GetHostInsets();

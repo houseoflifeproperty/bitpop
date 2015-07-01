@@ -19,12 +19,12 @@ namespace syncer {
 class SYNC_EXPORT_PRIVATE SyncRollbackManager : public SyncRollbackManagerBase {
  public:
   SyncRollbackManager();
-  virtual ~SyncRollbackManager();
+  ~SyncRollbackManager() override;
 
   // SyncManager implementation.
-  virtual void Init(InitArgs* args) OVERRIDE;
-  virtual void StartSyncingNormally(
-      const ModelSafeRoutingInfo& routing_info) OVERRIDE;
+  void Init(InitArgs* args) override;
+  void StartSyncingNormally(const ModelSafeRoutingInfo& routing_info,
+                            base::Time last_poll_time) override;
 
  private:
   // Deletes specified entries in local model.

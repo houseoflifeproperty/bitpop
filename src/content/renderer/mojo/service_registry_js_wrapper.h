@@ -11,7 +11,7 @@
 #include "gin/handle.h"
 #include "gin/object_template_builder.h"
 #include "gin/wrappable.h"
-#include "mojo/public/cpp/system/core.h"
+#include "third_party/mojo/src/mojo/public/cpp/system/core.h"
 
 namespace content {
 
@@ -22,14 +22,14 @@ class ServiceRegistry;
 class CONTENT_EXPORT ServiceRegistryJsWrapper
     : public gin::Wrappable<ServiceRegistryJsWrapper> {
  public:
-  virtual ~ServiceRegistryJsWrapper();
+  ~ServiceRegistryJsWrapper() override;
   static gin::Handle<ServiceRegistryJsWrapper> Create(
       v8::Isolate* isolate,
       ServiceRegistry* service_registry);
 
   // gin::Wrappable<ServiceRegistryJsWrapper> overrides.
-  virtual gin::ObjectTemplateBuilder GetObjectTemplateBuilder(
-      v8::Isolate* isolate) OVERRIDE;
+  gin::ObjectTemplateBuilder GetObjectTemplateBuilder(
+      v8::Isolate* isolate) override;
 
   // JS interface implementation.
   mojo::Handle ConnectToService(const std::string& service_name);

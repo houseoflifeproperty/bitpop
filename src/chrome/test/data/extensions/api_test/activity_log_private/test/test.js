@@ -254,8 +254,7 @@ hookNames = ['click', 'dblclick', 'drag', 'dragend', 'dragenter',
 for (var i = 0; i < hookNames.length; i++) {
   domExpectedActivity.push('blinkAddEventListener BODY ' + hookNames[i]);
   domExpectedActivity.push('blinkAddEventListener #document ' + hookNames[i]);
-  domExpectedActivity.push('blinkAddEventListener LocalDOMWindow ' +
-                           hookNames[i]);
+  domExpectedActivity.push('blinkAddEventListener DOMWindow ' + hookNames[i]);
 }
 
 // Close the tab.

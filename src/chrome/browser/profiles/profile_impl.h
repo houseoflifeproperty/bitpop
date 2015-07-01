@@ -17,6 +17,7 @@
 #include "base/timer/timer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_impl_io_data.h"
+#include "chrome/browser/ui/zoom/chrome_zoom_level_prefs.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/host_zoom_map.h"
 
@@ -39,12 +40,6 @@ class SupervisedUserTestBase;
 namespace base {
 class SequencedTaskRunner;
 }
-
-namespace data_reduction_proxy {
-class DataReductionProxyParams;
-}
-
-class DataReductionProxyChromeSettings;
 
 namespace domain_reliability {
 class DomainReliabilityMonitor;
@@ -70,82 +65,81 @@ class ProfileImpl : public Profile {
   // Value written to prefs when the exit type is EXIT_NORMAL. Public for tests.
   static const char* const kPrefExitTypeNormal;
 
-  virtual ~ProfileImpl();
+  ~ProfileImpl() override;
 
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // content::BrowserContext implementation:
-  virtual base::FilePath GetPath() const OVERRIDE;
-  virtual content::DownloadManagerDelegate*
-      GetDownloadManagerDelegate() OVERRIDE;
-  virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE;
-  virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
-      int renderer_child_id) OVERRIDE;
-  virtual net::URLRequestContextGetter* GetMediaRequestContext() OVERRIDE;
-  virtual net::URLRequestContextGetter* GetMediaRequestContextForRenderProcess(
-      int renderer_child_id) OVERRIDE;
-  virtual net::URLRequestContextGetter*
-      GetMediaRequestContextForStoragePartition(
-          const base::FilePath& partition_path,
-          bool in_memory) OVERRIDE;
-  virtual content::ResourceContext* GetResourceContext() OVERRIDE;
-  virtual content::BrowserPluginGuestManager* GetGuestManager() OVERRIDE;
-  virtual storage::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
-  virtual content::PushMessagingService* GetPushMessagingService() OVERRIDE;
-  virtual content::SSLHostStateDelegate* GetSSLHostStateDelegate() OVERRIDE;
+  scoped_ptr<content::ZoomLevelDelegate> CreateZoomLevelDelegate(
+      const base::FilePath& partition_path) override;
+  base::FilePath GetPath() const override;
+  content::DownloadManagerDelegate* GetDownloadManagerDelegate() override;
+  net::URLRequestContextGetter* GetRequestContext() override;
+  net::URLRequestContextGetter* GetRequestContextForRenderProcess(
+      int renderer_child_id) override;
+  net::URLRequestContextGetter* GetMediaRequestContext() override;
+  net::URLRequestContextGetter* GetMediaRequestContextForRenderProcess(
+      int renderer_child_id) override;
+  net::URLRequestContextGetter* GetMediaRequestContextForStoragePartition(
+      const base::FilePath& partition_path,
+      bool in_memory) override;
+  content::ResourceContext* GetResourceContext() override;
+  content::BrowserPluginGuestManager* GetGuestManager() override;
+  storage::SpecialStoragePolicy* GetSpecialStoragePolicy() override;
+  content::PushMessagingService* GetPushMessagingService() override;
+  content::SSLHostStateDelegate* GetSSLHostStateDelegate() override;
+  content::PermissionManager* GetPermissionManager() override;
 
   // Profile implementation:
-  virtual scoped_refptr<base::SequencedTaskRunner> GetIOTaskRunner() OVERRIDE;
+  scoped_refptr<base::SequencedTaskRunner> GetIOTaskRunner() override;
   // Note that this implementation returns the Google-services username, if any,
   // not the Chrome user's display name.
-  virtual std::string GetProfileName() OVERRIDE;
-  virtual ProfileType GetProfileType() const OVERRIDE;
-  virtual bool IsOffTheRecord() const OVERRIDE;
-  virtual Profile* GetOffTheRecordProfile() OVERRIDE;
-  virtual void DestroyOffTheRecordProfile() OVERRIDE;
-  virtual bool HasOffTheRecordProfile() OVERRIDE;
-  virtual Profile* GetOriginalProfile() OVERRIDE;
-  virtual bool IsSupervised() OVERRIDE;
-  virtual history::TopSites* GetTopSites() OVERRIDE;
-  virtual history::TopSites* GetTopSitesWithoutCreating() OVERRIDE;
-  virtual ExtensionSpecialStoragePolicy*
-      GetExtensionSpecialStoragePolicy() OVERRIDE;
-  virtual PrefService* GetPrefs() OVERRIDE;
-  virtual PrefService* GetOffTheRecordPrefs() OVERRIDE;
-  virtual net::URLRequestContextGetter*
-      GetRequestContextForExtensions() OVERRIDE;
-  virtual net::SSLConfigService* GetSSLConfigService() OVERRIDE;
-  virtual HostContentSettingsMap* GetHostContentSettingsMap() OVERRIDE;
-  virtual bool IsSameProfile(Profile* profile) OVERRIDE;
-  virtual base::Time GetStartTime() const OVERRIDE;
-  virtual net::URLRequestContextGetter* CreateRequestContext(
+  std::string GetProfileUserName() const override;
+  ProfileType GetProfileType() const override;
+  bool IsOffTheRecord() const override;
+  Profile* GetOffTheRecordProfile() override;
+  void DestroyOffTheRecordProfile() override;
+  bool HasOffTheRecordProfile() override;
+  Profile* GetOriginalProfile() override;
+  bool IsSupervised() override;
+  bool IsChild() override;
+  bool IsLegacySupervised() override;
+  ExtensionSpecialStoragePolicy* GetExtensionSpecialStoragePolicy() override;
+  PrefService* GetPrefs() override;
+  const PrefService* GetPrefs() const override;
+  chrome::ChromeZoomLevelPrefs* GetZoomLevelPrefs() override;
+  PrefService* GetOffTheRecordPrefs() override;
+  net::URLRequestContextGetter* GetRequestContextForExtensions() override;
+  net::SSLConfigService* GetSSLConfigService() override;
+  HostContentSettingsMap* GetHostContentSettingsMap() override;
+  bool IsSameProfile(Profile* profile) override;
+  base::Time GetStartTime() const override;
+  net::URLRequestContextGetter* CreateRequestContext(
       content::ProtocolHandlerMap* protocol_handlers,
-      content::URLRequestInterceptorScopedVector request_interceptors) OVERRIDE;
-  virtual net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
+      content::URLRequestInterceptorScopedVector request_interceptors) override;
+  net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
       const base::FilePath& partition_path,
       bool in_memory,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::URLRequestInterceptorScopedVector request_interceptors) OVERRIDE;
-  virtual base::FilePath last_selected_directory() OVERRIDE;
-  virtual void set_last_selected_directory(const base::FilePath& path) OVERRIDE;
-  virtual chrome_browser_net::Predictor* GetNetworkPredictor() OVERRIDE;
-  virtual DevToolsNetworkController* GetDevToolsNetworkController() OVERRIDE;
-  virtual void ClearNetworkingHistorySince(
-      base::Time time,
-      const base::Closure& completion) OVERRIDE;
-  virtual GURL GetHomePage() OVERRIDE;
-  virtual bool WasCreatedByVersionOrLater(const std::string& version) OVERRIDE;
-  virtual void SetExitType(ExitType exit_type) OVERRIDE;
-  virtual ExitType GetLastSessionExitType() OVERRIDE;
+      content::URLRequestInterceptorScopedVector request_interceptors) override;
+  base::FilePath last_selected_directory() override;
+  void set_last_selected_directory(const base::FilePath& path) override;
+  chrome_browser_net::Predictor* GetNetworkPredictor() override;
+  DevToolsNetworkController* GetDevToolsNetworkController() override;
+  void ClearNetworkingHistorySince(base::Time time,
+                                   const base::Closure& completion) override;
+  GURL GetHomePage() override;
+  bool WasCreatedByVersionOrLater(const std::string& version) override;
+  void SetExitType(ExitType exit_type) override;
+  ExitType GetLastSessionExitType() override;
 
 #if defined(OS_CHROMEOS)
-  virtual void ChangeAppLocale(const std::string& locale,
-                               AppLocaleChangedVia) OVERRIDE;
-  virtual void OnLogin() OVERRIDE;
-  virtual void InitChromeOSPreferences() OVERRIDE;
+  void ChangeAppLocale(const std::string& locale, AppLocaleChangedVia) override;
+  void OnLogin() override;
+  void InitChromeOSPreferences() override;
 #endif  // defined(OS_CHROMEOS)
 
-  virtual PrefProxyConfigTracker* GetProxyConfigTracker() OVERRIDE;
+  PrefProxyConfigTracker* GetProxyConfigTracker() override;
 
  private:
 #if defined(OS_CHROMEOS)
@@ -153,7 +147,6 @@ class ProfileImpl : public Profile {
   friend class chromeos::SupervisedUserTestBase;
 #endif
   friend class Profile;
-  friend class BetterSessionRestoreCrashTest;
   FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorTest,
                            ProfilesLaunchedAfterCrash);
   FRIEND_TEST_ALL_PREFIXES(ProfileBrowserTest, DISABLED_ProfileReadmeCreated);
@@ -172,14 +165,11 @@ class ProfileImpl : public Profile {
   // Does final initialization. Should be called after prefs were loaded.
   void DoFinalInit();
 
-  void InitHostZoomMap();
-
-  void OnDefaultZoomLevelChanged();
-  void OnZoomLevelChanged(
-      const content::HostZoomMap::ZoomLevelChange& change);
+  // Switch locale (when possible) and proceed to OnLocaleReady().
+  void OnPrefsLoaded(CreateMode create_mode, bool success);
 
   // Does final prefs initialization and calls Init().
-  void OnPrefsLoaded(bool success);
+  void OnLocaleReady();
 
 #if defined(ENABLE_SESSION_SERVICE)
   void StopCreateSessionServiceTimer();
@@ -193,7 +183,6 @@ class ProfileImpl : public Profile {
   }
 
   // Updates the ProfileInfoCache with data from this profile.
-  void UpdateProfileUserNameCache();
   void UpdateProfileSupervisedUserIdCache();
   void UpdateProfileNameCache();
   void UpdateProfileAvatarCache();
@@ -208,7 +197,6 @@ class ProfileImpl : public Profile {
   scoped_ptr<domain_reliability::DomainReliabilityMonitor>
       CreateDomainReliabilityMonitor(PrefService* local_state);
 
-  scoped_ptr<content::HostZoomMap::Subscription> zoom_subscription_;
   PrefChangeRegistrar pref_change_registrar_;
 
   base::FilePath path_;
@@ -264,14 +252,10 @@ class ProfileImpl : public Profile {
   // See GetStartTime for details.
   base::Time start_time_;
 
-  scoped_refptr<history::TopSites> top_sites_;  // For history and thumbnails.
-
 #if defined(OS_CHROMEOS)
   scoped_ptr<chromeos::Preferences> chromeos_preferences_;
 
   scoped_ptr<chromeos::LocaleChangeGuard> locale_change_guard_;
-
-  bool is_login_profile_;
 #endif
 
   scoped_ptr<PrefProxyConfigTracker> pref_proxy_config_tracker_;

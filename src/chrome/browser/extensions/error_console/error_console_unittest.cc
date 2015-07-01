@@ -13,6 +13,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/crx_file/id_util.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "extensions/browser/extension_error.h"
 #include "extensions/browser/extension_error_test_util.h"
 #include "extensions/browser/extension_registry.h"
@@ -30,9 +31,9 @@ using error_test_util::CreateNewRuntimeError;
 class ErrorConsoleUnitTest : public testing::Test {
  public:
   ErrorConsoleUnitTest() : error_console_(NULL) { }
-  virtual ~ErrorConsoleUnitTest() { }
+  ~ErrorConsoleUnitTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     testing::Test::SetUp();
 
     // Errors are only kept if we have the FeatureSwitch and have Developer Mode
@@ -45,6 +46,7 @@ class ErrorConsoleUnitTest : public testing::Test {
   }
 
  protected:
+  content::TestBrowserThreadBundle thread_bundle_;
   scoped_ptr<TestingProfile> profile_;
   ErrorConsole* error_console_;
 };

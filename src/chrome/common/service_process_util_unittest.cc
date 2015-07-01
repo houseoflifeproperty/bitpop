@@ -61,7 +61,6 @@ TEST(ServiceProcessUtilTest, ScopedVersionedName) {
   std::string test_str = "test";
   std::string scoped_name = GetServiceProcessScopedVersionedName(test_str);
   chrome::VersionInfo version_info;
-  DCHECK(version_info.is_valid());
   EXPECT_TRUE(EndsWith(scoped_name, test_str, true));
   EXPECT_NE(std::string::npos, scoped_name.find(version_info.Version()));
 }
@@ -69,8 +68,8 @@ TEST(ServiceProcessUtilTest, ScopedVersionedName) {
 class ServiceProcessStateTest : public base::MultiProcessTest {
  public:
   ServiceProcessStateTest();
-  virtual ~ServiceProcessStateTest();
-  virtual void SetUp();
+  ~ServiceProcessStateTest() override;
+  void SetUp() override;
   base::MessageLoopProxy* IOMessageLoopProxy() {
     return io_thread_.message_loop_proxy().get();
   }
@@ -95,10 +94,10 @@ void ServiceProcessStateTest::SetUp() {
 }
 
 void ServiceProcessStateTest::LaunchAndWait(const std::string& name) {
-  base::ProcessHandle handle = SpawnChild(name);
-  ASSERT_TRUE(handle);
+  base::Process process = SpawnChild(name);
+  ASSERT_TRUE(process.IsValid());
   int exit_code = 0;
-  ASSERT_TRUE(base::WaitForExitCode(handle, &exit_code));
+  ASSERT_TRUE(process.WaitForExit(&exit_code));
   ASSERT_EQ(exit_code, 0);
 }
 
@@ -122,14 +121,15 @@ TEST_F(ServiceProcessStateTest, DISABLED_ReadyState) {
 TEST_F(ServiceProcessStateTest, AutoRun) {
   ServiceProcessState state;
   ASSERT_TRUE(state.AddToAutoRun());
-  scoped_ptr<CommandLine> autorun_command_line;
+  scoped_ptr<base::CommandLine> autorun_command_line;
 #if defined(OS_WIN)
   std::string value_name = GetServiceProcessScopedName("_service_run");
   base::string16 value;
   EXPECT_TRUE(base::win::ReadCommandFromAutoRun(HKEY_CURRENT_USER,
                                                 base::UTF8ToWide(value_name),
                                                 &value));
-  autorun_command_line.reset(new CommandLine(CommandLine::FromString(value)));
+  autorun_command_line.reset(
+      new base::CommandLine(base::CommandLine::FromString(value)));
 #elif defined(OS_POSIX) && !defined(OS_MACOSX)
 #if defined(GOOGLE_CHROME_BUILD)
   std::string base_desktop_name = "google-chrome-service.desktop";
@@ -147,11 +147,11 @@ TEST_F(ServiceProcessStateTest, AutoRun) {
   ASSERT_EQ(std::string::npos, exec_value.find('"'));
   ASSERT_EQ(std::string::npos, exec_value.find('\''));
 
-  CommandLine::StringVector argv;
+  base::CommandLine::StringVector argv;
   base::SplitString(exec_value, ' ', &argv);
   ASSERT_GE(argv.size(), 2U)
       << "Expected at least one command-line option in: " << exec_value;
-  autorun_command_line.reset(new CommandLine(argv));
+  autorun_command_line.reset(new base::CommandLine(argv));
 #endif  // defined(OS_WIN)
   if (autorun_command_line.get()) {
     EXPECT_EQ(autorun_command_line->GetSwitchValueASCII(switches::kProcessType),
@@ -187,8 +187,8 @@ TEST_F(ServiceProcessStateTest, DISABLED_SharedMem) {
 }
 
 TEST_F(ServiceProcessStateTest, MAYBE_ForceShutdown) {
-  base::ProcessHandle handle = SpawnChild("ServiceProcessStateTestShutdown");
-  ASSERT_TRUE(handle);
+  base::Process process = SpawnChild("ServiceProcessStateTestShutdown");
+  ASSERT_TRUE(process.IsValid());
   for (int i = 0; !CheckServiceProcessReady() && i < 10; ++i) {
     base::PlatformThread::Sleep(TestTimeouts::tiny_timeout());
   }
@@ -198,9 +198,8 @@ TEST_F(ServiceProcessStateTest, MAYBE_ForceShutdown) {
   ASSERT_TRUE(GetServiceProcessData(&version, &pid));
   ASSERT_TRUE(ForceServiceProcessShutdown(version, pid));
   int exit_code = 0;
-  ASSERT_TRUE(base::WaitForExitCodeWithTimeout(handle,
-      &exit_code, TestTimeouts::action_max_timeout()));
-  base::CloseProcessHandle(handle);
+  ASSERT_TRUE(process.WaitForExitWithTimeout(TestTimeouts::action_max_timeout(),
+                                             &exit_code));
   ASSERT_EQ(exit_code, 0);
 }
 
@@ -259,9 +258,8 @@ class ServiceProcessStateFileManipulationTest : public ::testing::Test {
   ServiceProcessStateFileManipulationTest()
       : io_thread_("ServiceProcessStateFileManipulationTest_IO") {
   }
-  virtual ~ServiceProcessStateFileManipulationTest() { }
 
-  virtual void SetUp() {
+  void SetUp() override {
     base::Thread::Options options;
     options.message_loop_type = base::MessageLoop::TYPE_IO;
     ASSERT_TRUE(io_thread_.StartWithOptions(options));
@@ -350,7 +348,7 @@ TEST_F(ServiceProcessStateFileManipulationTest, VerifyLaunchD) {
   // /tmp/launchd*/sock. This test is still useful as a sanity check to make
   // sure that launchd appears to be working.
 
-  CommandLine cl(base::FilePath("/bin/launchctl"));
+  base::CommandLine cl(base::FilePath("/bin/launchctl"));
   cl.AppendArg("limit");
 
   std::string output;

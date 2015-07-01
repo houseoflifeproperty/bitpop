@@ -14,12 +14,19 @@ class FakeContentLayerImpl : public TiledLayerImpl {
  public:
   static scoped_ptr<FakeContentLayerImpl> Create(
       LayerTreeImpl* tree_impl, int id) {
-    return make_scoped_ptr(new FakeContentLayerImpl(tree_impl, id));
+    return make_scoped_ptr(new FakeContentLayerImpl(
+        tree_impl, id, new LayerImpl::SyncedScrollOffset));
   }
-  virtual ~FakeContentLayerImpl();
+  static scoped_ptr<FakeContentLayerImpl> Create(
+      LayerTreeImpl* tree_impl,
+      int id,
+      scoped_refptr<LayerImpl::SyncedScrollOffset> synced_scroll_offset) {
+    return make_scoped_ptr(
+        new FakeContentLayerImpl(tree_impl, id, synced_scroll_offset));
+  }
+  ~FakeContentLayerImpl() override;
 
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
 
   bool HaveResourceForTileAt(int i, int j);
 
@@ -28,10 +35,13 @@ class FakeContentLayerImpl : public TiledLayerImpl {
   }
   void reset_lost_output_surface_count() { lost_output_surface_count_ = 0; }
 
-  virtual void ReleaseResources() OVERRIDE;
+  void ReleaseResources() override;
 
  private:
-  explicit FakeContentLayerImpl(LayerTreeImpl* tree_impl, int id);
+  explicit FakeContentLayerImpl(
+      LayerTreeImpl* tree_impl,
+      int id,
+      scoped_refptr<LayerImpl::SyncedScrollOffset> synced_scroll_offset);
 
   size_t lost_output_surface_count_;
 };

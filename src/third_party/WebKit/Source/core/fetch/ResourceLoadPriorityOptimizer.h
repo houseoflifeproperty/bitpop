@@ -49,8 +49,8 @@ public:
     };
     void notifyImageResourceVisibility(ImageResource*, VisibilityStatus, const LayoutRect&);
     void updateAllImageResourcePriorities();
-    void addRenderObject(RenderObject*);
-    void removeRenderObject(RenderObject*);
+    void addLayoutObject(LayoutObject*);
+    void removeLayoutObject(LayoutObject*);
 
     static ResourceLoadPriorityOptimizer* resourceLoadPriorityOptimizer();
 
@@ -68,11 +68,11 @@ private:
         int screenArea;
     };
 
-    typedef HashMap<unsigned long, OwnPtr<ResourceAndVisibility>, WTF::IntHash<unsigned>, WTF::UnsignedWithZeroKeyHashTraits<unsigned> > ImageResourceMap;
+    typedef HashMap<unsigned long, OwnPtr<ResourceAndVisibility>, WTF::IntHash<unsigned>, WTF::UnsignedWithZeroKeyHashTraits<unsigned>> ImageResourceMap;
     ImageResourceMap m_imageResources;
 
-    typedef HashSet<RenderObject*> RenderObjectSet;
-    RenderObjectSet m_objects;
+    typedef HashSet<LayoutObject*> LayoutObjectSet;
+    LayoutObjectSet m_objects;
 };
 
 }

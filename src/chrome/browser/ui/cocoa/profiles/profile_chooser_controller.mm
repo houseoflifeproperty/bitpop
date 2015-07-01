@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #import <Cocoa/Cocoa.h>
+#import <Carbon/Carbon.h>  // kVK_Return.
 
 #import "chrome/browser/ui/cocoa/profiles/profile_chooser_controller.h"
 
@@ -11,6 +12,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
@@ -23,8 +25,8 @@
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
-#include "chrome/browser/signin/local_auth.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_error_controller_factory.h"
 #include "chrome/browser/signin/signin_header_helper.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
@@ -34,6 +36,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/chrome_style.h"
+#import "chrome/browser/ui/cocoa/browser_window_utils.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #import "chrome/browser/ui/cocoa/profiles/user_manager_mac.h"
@@ -49,7 +52,9 @@
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/common/profile_management_switches.h"
+#include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "google_apis/gaia/oauth2_token_service.h"
 #include "grit/theme_resources.h"
@@ -162,14 +167,17 @@ NSTextView* BuildFixedWidthTextViewWithLink(
       [[HyperlinkTextView alloc] initWithFrame:NSZeroRect]);
   NSColor* link_color = gfx::SkColorToCalibratedNSColor(
       chrome_style::GetLinkColor());
+  NSMutableString* finalMessage =
+      [NSMutableString stringWithFormat:@"%@\n", message];
+  [finalMessage insertString:link atIndex:link_offset];
   // Adds a padding row at the bottom, because |boundingRectWithSize| below cuts
   // off the last row sometimes.
-  [text_view setMessageAndLink:[NSString stringWithFormat:@"%@\n", message]
-                      withLink:link
-                      atOffset:link_offset
-                          font:[NSFont labelFontOfSize:kTextFontSize]
-                  messageColor:[NSColor blackColor]
-                     linkColor:link_color];
+  [text_view setMessage:finalMessage
+               withFont:[NSFont labelFontOfSize:kTextFontSize]
+           messageColor:[NSColor blackColor]];
+  [text_view addLinkRange:NSMakeRange(link_offset, [link length])
+                 withName:@""
+                linkColor:link_color];
 
   // Removes the underlining from the link.
   [text_view setLinkTextAttributes:nil];
@@ -240,11 +248,64 @@ NSView* BuildTitleCard(NSRect frame_rect,
 
 bool HasAuthError(Profile* profile) {
   const SigninErrorController* error_controller =
-      profiles::GetSigninErrorController(profile);
+      SigninErrorControllerFactory::GetForProfile(profile);
   return error_controller && error_controller->HasError();
 }
 
+std::string GetAuthErrorAccountId(Profile* profile) {
+  const SigninErrorController* error_controller =
+      SigninErrorControllerFactory::GetForProfile(profile);
+  if (!error_controller)
+    return std::string();
+
+  return error_controller->error_account_id();
+}
+
 }  // namespace
+
+// Custom WebContentsDelegate that allows handling of hotkeys and suppresses
+// the context menu.
+class GaiaWebContentsDelegate : public content::WebContentsDelegate {
+ public:
+  GaiaWebContentsDelegate() {}
+  ~GaiaWebContentsDelegate() override {}
+
+ private:
+  // content::WebContentsDelegate:
+  bool HandleContextMenu(const content::ContextMenuParams& params) override;
+  void HandleKeyboardEvent(
+      content::WebContents* source,
+      const content::NativeWebKeyboardEvent& event) override;
+
+  DISALLOW_COPY_AND_ASSIGN(GaiaWebContentsDelegate);
+};
+
+bool GaiaWebContentsDelegate::HandleContextMenu(
+    const content::ContextMenuParams& params) {
+  // Suppresses the context menu because some features, such as inspecting
+  // elements, are not appropriate in a bubble.
+  return true;
+}
+
+void GaiaWebContentsDelegate::HandleKeyboardEvent(
+    content::WebContents* source,
+    const content::NativeWebKeyboardEvent& event) {
+  if (![BrowserWindowUtils shouldHandleKeyboardEvent:event])
+    return;
+
+  int chrome_command_id = [BrowserWindowUtils getCommandId:event];
+
+  bool is_text_editing_command =
+      (event.modifiers & blink::WebInputEvent::MetaKey) &&
+      (event.windowsKeyCode == ui::VKEY_A ||
+       event.windowsKeyCode == ui::VKEY_V);
+
+  // TODO(guohui): maybe should add an accelerator for the back button.
+  if (chrome_command_id == IDC_CLOSE_WINDOW || chrome_command_id == IDC_EXIT ||
+      is_text_editing_command) {
+    [[NSApp mainMenu] performKeyEquivalent:event.os_event];
+  }
+}
 
 // Class that listens to changes to the OAuth2Tokens for the active profile,
 // changes to the avatar menu model or browser close notifications.
@@ -263,9 +324,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
       AddTokenServiceObserver();
   }
 
-  virtual ~ActiveProfileObserverBridge() {
-    RemoveTokenServiceObserver();
-  }
+  ~ActiveProfileObserverBridge() override { RemoveTokenServiceObserver(); }
 
  private:
   void AddTokenServiceObserver() {
@@ -288,7 +347,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   }
 
   // OAuth2TokenService::Observer:
-  virtual void OnRefreshTokenAvailable(const std::string& account_id) OVERRIDE {
+  void OnRefreshTokenAvailable(const std::string& account_id) override {
     // Tokens can only be added by adding an account through the inline flow,
     // which is started from the account management view. Refresh it to show the
     // update.
@@ -303,7 +362,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
     }
   }
 
-  virtual void OnRefreshTokenRevoked(const std::string& account_id) OVERRIDE {
+  void OnRefreshTokenRevoked(const std::string& account_id) override {
     // Tokens can only be removed from the account management view. Refresh it
     // to show the update.
     if ([controller_ viewMode] == profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT)
@@ -312,7 +371,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   }
 
   // AvatarMenuObserver:
-  virtual void OnAvatarMenuChanged(AvatarMenu* avatar_menu) OVERRIDE {
+  void OnAvatarMenuChanged(AvatarMenu* avatar_menu) override {
     profiles::BubbleViewMode viewMode = [controller_ viewMode];
     if (viewMode == profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER ||
         viewMode == profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT) {
@@ -321,10 +380,9 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   }
 
   // content::NotificationObserver:
-  virtual void Observe(
-      int type,
-      const content::NotificationSource& source,
-      const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     DCHECK_EQ(chrome::NOTIFICATION_BROWSER_CLOSING, type);
     if (browser_ == content::Source<Browser>(source).ptr()) {
       RemoveTokenServiceObserver();
@@ -570,7 +628,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 @end
 
 // A custom text control that turns into a textfield for editing when clicked.
-@interface EditableProfileNameButton : HoverImageButton {
+@interface EditableProfileNameButton : HoverImageButton<NSTextFieldDelegate> {
  @private
   base::scoped_nsobject<NSTextField> profileNameTextField_;
   Profile* profile_;  // Weak.
@@ -587,7 +645,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 - (void)showEditableView:(id)sender;
 
 // Called when enter is pressed in the text field.
-- (void)saveProfileName:(id)sender;
+- (void)saveProfileName;
 
 @end
 
@@ -641,19 +699,32 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
       [[profileNameTextField_ cell] setWraps:NO];
       [[profileNameTextField_ cell] setLineBreakMode:
           NSLineBreakByTruncatingTail];
+      [[profileNameTextField_ cell] setUsesSingleLineMode:YES];
       [self addSubview:profileNameTextField_];
-      [profileNameTextField_ setTarget:self];
-      [profileNameTextField_ setAction:@selector(saveProfileName:)];
+      [profileNameTextField_ setDelegate:self];
 
       // Hide the textfield until the user clicks on the button.
       [profileNameTextField_ setHidden:YES];
+
+      [[self cell] accessibilitySetOverrideValue:l10n_util::GetNSStringF(
+          IDS_PROFILES_NEW_AVATAR_MENU_EDIT_NAME_ACCESSIBLE_NAME,
+          base::SysNSStringToUTF16(profileName))
+                                    forAttribute:NSAccessibilityTitleAttribute];
+
+      NSSize textSize = [profileName sizeWithAttributes:@{
+        NSFontAttributeName : [profileNameTextField_ font]
+      }];
+
+      if (textSize.width > frameRect.size.width - [hoverImage size].width * 2)
+        [self setToolTip:profileName];
     }
 
     [[self cell] accessibilitySetOverrideValue:NSAccessibilityButtonRole
-                           forAttribute:NSAccessibilityRoleAttribute];
-    [[self cell] accessibilitySetOverrideValue:
-        NSAccessibilityRoleDescription(NSAccessibilityButtonRole, nil)
-          forAttribute:NSAccessibilityRoleDescriptionAttribute];
+                                  forAttribute:NSAccessibilityRoleAttribute];
+    [[self cell]
+        accessibilitySetOverrideValue:NSAccessibilityRoleDescription(
+                                          NSAccessibilityButtonRole, nil)
+                         forAttribute:NSAccessibilityRoleDescriptionAttribute];
 
     [self setBordered:NO];
     [self setFont:[NSFont labelFontOfSize:kTitleFontSize]];
@@ -664,22 +735,18 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   return self;
 }
 
-- (void)saveProfileName:(id)sender {
+- (void)saveProfileName {
   base::string16 newProfileName =
       base::SysNSStringToUTF16([profileNameTextField_ stringValue]);
 
-  // Empty profile names are not allowed, and are treated as a cancel.
+  // Empty profile names are not allowed, and do nothing.
   base::TrimWhitespace(newProfileName, base::TRIM_ALL, &newProfileName);
   if (!newProfileName.empty()) {
     profiles::UpdateProfileName(profile_, newProfileName);
     [controller_
         postActionPerformed:ProfileMetrics::PROFILE_DESKTOP_MENU_EDIT_NAME];
-    [self setTitle:base::SysUTF16ToNSString(newProfileName)];
-  } else {
-    // Since the text is empty and not allowed, revert it from the textbox.
-    [profileNameTextField_ setStringValue:[self title]];
+    [profileNameTextField_ setHidden:YES];
   }
-  [profileNameTextField_ setHidden:YES];
 }
 
 - (void)showEditableView:(id)sender {
@@ -689,6 +756,17 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
 - (BOOL)canBecomeKeyView {
   return false;
+}
+
+- (BOOL)control:(NSControl*)control
+               textView:(NSTextView*)textView
+    doCommandBySelector:(SEL)commandSelector {
+  if (commandSelector == @selector(insertTab:) ||
+      commandSelector == @selector(insertNewline:)) {
+    [self saveProfileName];
+    return YES;
+  }
+  return NO;
 }
 
 @end
@@ -738,6 +816,20 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   [[self cell] setBackgroundColor:backgroundColor];
 }
 
+-(void)keyDown:(NSEvent*)event {
+  // Since there is no default button in the bubble, it is safe to activate
+  // all buttons on Enter as well, and be consistent with the Windows
+  // implementation.
+  if ([event keyCode] == kVK_Return)
+    [self performClick:self];
+  else
+    [super keyDown:event];
+}
+
+- (BOOL)canBecomeKeyView {
+  return YES;
+}
+
 @end
 
 // A custom view with the given background color.
@@ -777,14 +869,33 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 }
 
 - (BOOL)canBecomeKeyView {
-  return false;
+  return NO;
 }
 
 @end
 
 @interface ProfileChooserController ()
+// Adds an horizontal separator to |container| at |yOffset| and returns the
+// yOffset corresponding to after the separator.
+- (CGFloat)addSeparatorToContainer:(NSView*)container
+                         atYOffset:(CGFloat)yOffset;
+
+// Builds the right-click profile switcher.
+- (void)buildFastUserSwitcherViewWithProfiles:(NSMutableArray*)otherProfiles
+                                    atYOffset:(CGFloat)yOffset
+                                  inContainer:(NSView*)container;
+
+// Builds the regular profile chooser view.
+- (void)buildProfileChooserViewWithProfileView:(NSView*)currentProfileView
+                                  tutorialView:(NSView*)tutorialView
+                                     atYOffset:(CGFloat)yOffset
+                                   inContainer:(NSView*)container
+                                   displayLock:(bool)displayLock;
+
 // Builds the profile chooser view.
 - (NSView*)buildProfileChooserView;
+
+- (NSView*)buildTutorialViewIfNeededForItem:(const AvatarMenu::Item&)item;
 
 // Builds a tutorial card with a title label using |titleMessage|, a content
 // label using |contentMessage|, a link using |linkMessage|, and a button using
@@ -805,7 +916,11 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 // Builds a tutorial card to introduce an upgrade user to the new avatar menu if
 // needed. |tutorial_shown| indicates if the tutorial has already been shown in
 // the previous active view. |avatar_item| refers to the current profile.
-- (NSView*)buildWelcomeUpgradeTutorialViewIfNeeded;
+- (NSView*)buildWelcomeUpgradeTutorialView:(const AvatarMenu::Item&)item;
+
+// Builds a tutorial card to inform the user about right-click user switching if
+// needed.
+- (NSView*)buildRightClickTutorialView;
 
 // Builds a tutorial card to have the user confirm the last Chrome signin,
 // Chrome sync will be delayed until the user either dismisses the tutorial, or
@@ -914,6 +1029,8 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 - (IBAction)goIncognito:(id)sender {
   DCHECK([self shouldShowGoIncognito]);
   chrome::NewIncognitoWindow(browser_);
+  [self postActionPerformed:
+      ProfileMetrics::PROFILE_DESKTOP_MENU_GO_INCOGNITO];
 }
 
 - (IBAction)showAccountManagement:(id)sender {
@@ -1035,6 +1152,12 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
         signin_ui_util::kUpgradeWelcomeTutorialShowMax + 1);
   }
 
+  if(tutorialMode_ == profiles::TUTORIAL_MODE_RIGHT_CLICK_SWITCHING) {
+    PrefService* localState = g_browser_process->local_state();
+    localState->SetBoolean(
+        prefs::kProfileAvatarRightClickTutorialDismissed, true);
+  }
+
   tutorialMode_ = profiles::TUTORIAL_MODE_NONE;
   [self initMenuContentsWithView:profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER];
 }
@@ -1058,6 +1181,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
 - (void)cleanUpEmbeddedViewContents {
   webContents_.reset();
+  webContentsDelegate_.reset();
 }
 
 - (id)initWithBrowser:(Browser*)browser
@@ -1140,6 +1264,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
       subView = [self buildSwitchUserView];
       break;
     case profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER:
+    case profiles::BUBBLE_VIEW_MODE_FAST_PROFILE_CHOOSER:
     case profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT:
       subView = [self buildProfileChooserView];
       break;
@@ -1162,50 +1287,38 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
       NSMakeSize(NSWidth([subView frame]), NSHeight([subView frame])));
 }
 
-- (NSView*)buildProfileChooserView {
-  base::scoped_nsobject<NSView> container(
-      [[NSView alloc] initWithFrame:NSZeroRect]);
+- (CGFloat)addSeparatorToContainer:(NSView*)container
+                         atYOffset:(CGFloat)yOffset {
+  NSBox* separator = [self horizontalSeparatorWithFrame:NSMakeRect(
+      0, yOffset, kFixedMenuWidth, 0)];
+  [container addSubview:separator];
+  return NSMaxY([separator frame]);
+}
 
-  NSView* tutorialView = nil;
-  NSView* currentProfileView = nil;
-  base::scoped_nsobject<NSMutableArray> otherProfiles(
-      [[NSMutableArray alloc] init]);
-  // Local and guest profiles cannot lock their profile.
-  bool displayLock = false;
+// Builds the fast user switcher view in |container| at |yOffset| and populates
+// it with the entries for every profile in |otherProfiles|. Returns the new
+// yOffset after adding the elements.
+- (void)buildFastUserSwitcherViewWithProfiles:(NSMutableArray*)otherProfiles
+                                    atYOffset:(CGFloat)yOffset
+                                  inContainer:(NSView*)container {
+  // Other profiles switcher. The profiles have already been sorted
+  // by their y-coordinate, so they can be added in the existing order.
+  for (NSView* otherProfileView in otherProfiles) {
+   [otherProfileView setFrameOrigin:NSMakePoint(0, yOffset)];
+   [container addSubview:otherProfileView];
+   yOffset = NSMaxY([otherProfileView frame]);
 
-  // Loop over the profiles in reverse, so that they are sorted by their
-  // y-coordinate, and separate them into active and "other" profiles.
-  for (int i = avatarMenu_->GetNumberOfItems() - 1; i >= 0; --i) {
-    const AvatarMenu::Item& item = avatarMenu_->GetItemAt(i);
-    if (item.active) {
-      if (viewMode_ == profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER) {
-        switch (tutorialMode_) {
-          case profiles::TUTORIAL_MODE_NONE:
-          case profiles::TUTORIAL_MODE_WELCOME_UPGRADE:
-            tutorialView =
-                [self buildWelcomeUpgradeTutorialViewIfNeeded];
-            break;
-          case profiles::TUTORIAL_MODE_CONFIRM_SIGNIN:
-            tutorialView = [self buildSigninConfirmationView];
-            break;
-          case profiles::TUTORIAL_MODE_SHOW_ERROR:
-            tutorialView = [self buildSigninErrorView];
-        }
-      }
-      currentProfileView = [self createCurrentProfileView:item];
-      displayLock = switches::IsNewProfileManagement() && item.signed_in;
-    } else {
-      [otherProfiles addObject:[self createOtherProfileView:i]];
-    }
+   yOffset = [self addSeparatorToContainer:container atYOffset: yOffset];
   }
-  if (!currentProfileView)  // Guest windows don't have an active profile.
-    currentProfileView = [self createGuestProfileView];
 
-  // |yOffset| is the next position at which to draw in |container|
-  // coordinates. Add a pixel offset so that the bottom option buttons don't
-  // overlap the bubble's rounded corners.
-  CGFloat yOffset = 1;
+  [container setFrameSize:NSMakeSize(kFixedMenuWidth, yOffset)];
+}
 
+- (void)buildProfileChooserViewWithProfileView:(NSView*)currentProfileView
+                                  tutorialView:(NSView*)tutorialView
+                                     atYOffset:(CGFloat)yOffset
+                                   inContainer:(NSView*)container
+                                   displayLock:(bool)displayLock {
   // Option buttons.
   NSRect rect = NSMakeRect(0, yOffset, kFixedMenuWidth, 0);
   NSView* optionsView = [self createOptionsViewWithRect:rect
@@ -1217,22 +1330,6 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   [container addSubview:separator];
   yOffset = NSMaxY([separator frame]);
 
-  if (viewMode_ == profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER &&
-      switches::IsFastUserSwitching()) {
-    // Other profiles switcher. The profiles have already been sorted
-    // by their y-coordinate, so they can be added in the existing order.
-    for (NSView *otherProfileView in otherProfiles.get()) {
-      [otherProfileView setFrameOrigin:NSMakePoint(0, yOffset)];
-      [container addSubview:otherProfileView];
-      yOffset = NSMaxY([otherProfileView frame]);
-
-      NSBox* separator = [self horizontalSeparatorWithFrame:NSMakeRect(
-          0, yOffset, kFixedMenuWidth, 0)];
-      [container addSubview:separator];
-      yOffset = NSMaxY([separator frame]);
-    }
-  }
-
   // For supervised users, add the disclaimer text.
   if (browser_->profile()->IsSupervised()) {
     yOffset += kSmallVerticalSpacing;
@@ -1242,10 +1339,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
     yOffset = NSMaxY([disclaimerContainer frame]);
     yOffset += kSmallVerticalSpacing;
 
-    NSBox* separator = [self horizontalSeparatorWithFrame:NSMakeRect(
-        0, yOffset, kFixedMenuWidth, 0)];
-    [container addSubview:separator];
-    yOffset = NSMaxY([separator frame]);
+    yOffset = [self addSeparatorToContainer:container atYOffset: yOffset];
   }
 
   if (viewMode_ == profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT) {
@@ -1254,10 +1348,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
     [container addSubview:currentProfileAccountsView];
     yOffset = NSMaxY([currentProfileAccountsView frame]);
 
-    NSBox* accountsSeparator = [self horizontalSeparatorWithFrame:
-        NSMakeRect(0, yOffset, kFixedMenuWidth, 0)];
-    [container addSubview:accountsSeparator];
-    yOffset = NSMaxY([accountsSeparator frame]);
+    yOffset = [self addSeparatorToContainer:container atYOffset: yOffset];
   }
 
   // Active profile card.
@@ -1278,6 +1369,62 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   }
 
   [container setFrameSize:NSMakeSize(kFixedMenuWidth, yOffset)];
+}
+
+- (NSView*)buildProfileChooserView {
+  base::scoped_nsobject<NSView> container(
+      [[NSView alloc] initWithFrame:NSZeroRect]);
+
+  NSView* tutorialView = nil;
+  NSView* currentProfileView = nil;
+  base::scoped_nsobject<NSMutableArray> otherProfiles(
+      [[NSMutableArray alloc] init]);
+  // Local and guest profiles cannot lock their profile.
+  bool displayLock = false;
+  bool isFastProfileChooser =
+      viewMode_ == profiles::BUBBLE_VIEW_MODE_FAST_PROFILE_CHOOSER;
+  if (isFastProfileChooser) {
+    // The user is using right-click switching, no need to tell them about it.
+    PrefService* localState = g_browser_process->local_state();
+    localState->SetBoolean(
+        prefs::kProfileAvatarRightClickTutorialDismissed, true);
+  }
+
+  // Loop over the profiles in reverse, so that they are sorted by their
+  // y-coordinate, and separate them into active and "other" profiles.
+  for (int i = avatarMenu_->GetNumberOfItems() - 1; i >= 0; --i) {
+    const AvatarMenu::Item& item = avatarMenu_->GetItemAt(i);
+    if (item.active) {
+      if (viewMode_ == profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER) {
+        tutorialView = [self buildTutorialViewIfNeededForItem:item];
+      }
+      currentProfileView = [self createCurrentProfileView:item];
+      displayLock = item.signed_in &&
+          profiles::IsLockAvailable(browser_->profile());
+    } else {
+      [otherProfiles addObject:[self createOtherProfileView:i]];
+    }
+  }
+  if (!currentProfileView)  // Guest windows don't have an active profile.
+    currentProfileView = [self createGuestProfileView];
+
+  // |yOffset| is the next position at which to draw in |container|
+  // coordinates. Add a pixel offset so that the bottom option buttons don't
+  // overlap the bubble's rounded corners.
+  CGFloat yOffset = 1;
+
+  if (isFastProfileChooser) {
+    [self buildFastUserSwitcherViewWithProfiles:otherProfiles.get()
+                                      atYOffset:yOffset
+                                    inContainer:container.get()];
+  } else {
+    [self buildProfileChooserViewWithProfileView:currentProfileView
+                                    tutorialView:tutorialView
+                                       atYOffset:yOffset
+                                     inContainer:container.get()
+                                     displayLock:displayLock];
+  }
+
   return container.autorelease();
 }
 
@@ -1324,24 +1471,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
                        buttonAction:nil];
 }
 
-- (NSView*)buildWelcomeUpgradeTutorialViewIfNeeded {
-  Profile* profile = browser_->profile();
-  const AvatarMenu::Item& avatarItem =
-      avatarMenu_->GetItemAt(avatarMenu_->GetActiveProfileIndex());
-
-  const int showCount = profile->GetPrefs()->GetInteger(
-      prefs::kProfileAvatarTutorialShown);
-  // Do not show the tutorial if user has dismissed it.
-  if (showCount > signin_ui_util::kUpgradeWelcomeTutorialShowMax)
-    return nil;
-
-  if (tutorialMode_ != profiles::TUTORIAL_MODE_WELCOME_UPGRADE) {
-    if (showCount == signin_ui_util::kUpgradeWelcomeTutorialShowMax)
-      return nil;
-    profile->GetPrefs()->SetInteger(
-        prefs::kProfileAvatarTutorialShown, showCount + 1);
-  }
-
+- (NSView*)buildWelcomeUpgradeTutorialView:(const AvatarMenu::Item&)item {
   ProfileMetrics::LogProfileNewAvatarMenuUpgrade(
       ProfileMetrics::PROFILE_AVATAR_MENU_UPGRADE_VIEW);
 
@@ -1350,9 +1480,9 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   NSString* contentMessage = l10n_util::GetNSString(
       IDS_PROFILES_WELCOME_UPGRADE_TUTORIAL_CONTENT_TEXT);
   // For local profiles, the "Not you" link doesn't make sense.
-  NSString* linkMessage = avatarItem.signed_in ?
+  NSString* linkMessage = item.signed_in ?
       ElideMessage(
-          l10n_util::GetStringFUTF16(IDS_PROFILES_NOT_YOU, avatarItem.name),
+          l10n_util::GetStringFUTF16(IDS_PROFILES_NOT_YOU, item.name),
           kFixedMenuWidth - 2 * kHorizontalSpacing) :
       nil;
   NSString* buttonMessage = l10n_util::GetNSString(
@@ -1366,6 +1496,52 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
                      hasCloseButton:YES
                          linkAction:@selector(showSwitchUserView:)
                        buttonAction:@selector(seeWhatsNew:)];
+}
+
+- (NSView*)buildRightClickTutorialView {
+  NSString* titleMessage = l10n_util::GetNSString(
+      IDS_PROFILES_RIGHT_CLICK_TUTORIAL_TITLE);
+  NSString* contentMessage = l10n_util::GetNSString(
+      IDS_PROFILES_RIGHT_CLICK_TUTORIAL_CONTENT_TEXT);
+  NSString* buttonMessage = l10n_util::GetNSString(
+      IDS_PROFILES_TUTORIAL_OK_BUTTON);
+
+  return
+      [self tutorialViewWithMode:profiles::TUTORIAL_MODE_RIGHT_CLICK_SWITCHING
+                             titleMessage:titleMessage
+                           contentMessage:contentMessage
+                              linkMessage:nil
+                            buttonMessage:buttonMessage
+                              stackButton:NO
+                           hasCloseButton:NO
+                               linkAction:nil
+                             buttonAction:@selector(dismissTutorial:)];
+}
+
+- (NSView*)buildTutorialViewIfNeededForItem:(const AvatarMenu::Item&)item {
+  if (tutorialMode_ == profiles::TUTORIAL_MODE_CONFIRM_SIGNIN)
+    return [self buildSigninConfirmationView];
+
+  if (tutorialMode_ == profiles::TUTORIAL_MODE_SHOW_ERROR)
+    return [self buildSigninErrorView];
+
+  if (profiles::ShouldShowWelcomeUpgradeTutorial(
+      browser_->profile(), tutorialMode_)) {
+    if (tutorialMode_ != profiles::TUTORIAL_MODE_WELCOME_UPGRADE) {
+      Profile* profile = browser_->profile();
+      const int showCount = profile->GetPrefs()->GetInteger(
+          prefs::kProfileAvatarTutorialShown);
+      profile->GetPrefs()->SetInteger(
+          prefs::kProfileAvatarTutorialShown, showCount + 1);
+    }
+
+    return [self buildWelcomeUpgradeTutorialView:item];
+  }
+
+  if (profiles::ShouldShowRightClickTutorial(browser_->profile()))
+    return [self buildRightClickTutorialView];
+
+  return nil;
 }
 
 - (NSView*)tutorialViewWithMode:(profiles::TutorialMode)mode
@@ -1530,7 +1706,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
   // Profile name, centered.
   bool editingAllowed = !isGuestSession_ &&
-                        !browser_->profile()->IsSupervised();
+                        !browser_->profile()->IsLegacySupervised();
   base::scoped_nsobject<EditableProfileNameButton> profileName(
       [[EditableProfileNameButton alloc]
           initWithFrame:NSMakeRect(xOffset,
@@ -1564,9 +1740,11 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   if (browser_->profile()->IsSupervised()) {
     base::scoped_nsobject<NSImageView> supervisedIcon(
         [[NSImageView alloc] initWithFrame:NSZeroRect]);
+    int imageId = browser_->profile()->IsChild()
+        ? IDR_ICON_PROFILES_MENU_CHILD
+        : IDR_ICON_PROFILES_MENU_LEGACY_SUPERVISED;
     ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
-    [supervisedIcon setImage:rb->GetNativeImageNamed(
-        IDR_ICON_PROFILES_MENU_SUPERVISED).ToNSImage()];
+    [supervisedIcon setImage:rb->GetNativeImageNamed(imageId).ToNSImage()];
     NSSize size = [[supervisedIcon image] size];
     [supervisedIcon setFrameSize:size];
     NSRect parentFrame = [iconView frame];
@@ -1603,7 +1781,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
                            frameOrigin:rect.origin
                                 action:linkSelector];
     } else {
-      link = [self linkButtonWithTitle:base::SysUTF16ToNSString(item.sync_state)
+      link = [self linkButtonWithTitle:base::SysUTF16ToNSString(item.username)
                            frameOrigin:rect.origin
                                 action:nil];
       if (HasAuthError(browser_->profile())) {
@@ -1617,7 +1795,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
         [[link cell]
             accessibilitySetOverrideValue:l10n_util::GetNSStringF(
             IDS_PROFILES_ACCOUNT_BUTTON_AUTH_ERROR_ACCESSIBLE_NAME,
-            item.sync_state)
+            item.username)
                              forAttribute:NSAccessibilityTitleAttribute];
       } else {
         [link setEnabled:NO];
@@ -1709,15 +1887,35 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
           initWithFrame:rect
       imageTitleSpacing:kImageTitleSpacing
         backgroundColor:GetDialogBackgroundColor()]);
-  [profileButton setTitle:base::SysUTF16ToNSString(item.name)];
+
+  NSString* title = base::SysUTF16ToNSString(
+      profiles::GetProfileSwitcherTextForItem(item));
+  [profileButton setTitle:title];
+
+  // Use the low-res, small default avatars in the fast user switcher, like
+  // we do in the menu bar.
+  gfx::Image itemIcon;
+  bool isRectangle;
+  AvatarMenu::GetImageForMenuButton(item.profile_path, &itemIcon, &isRectangle);
+
   [profileButton setDefaultImage:CreateProfileImage(
-      item.icon, kSmallImageSide).ToNSImage()];
+      itemIcon, kSmallImageSide).ToNSImage()];
   [profileButton setImagePosition:NSImageLeft];
   [profileButton setAlignment:NSLeftTextAlignment];
   [profileButton setBordered:NO];
   [profileButton setTag:itemIndex];
   [profileButton setTarget:self];
   [profileButton setAction:@selector(switchToProfile:)];
+
+  NSSize textSize = [[profileButton title] sizeWithAttributes:@{
+    NSFontAttributeName : [profileButton font]
+  }];
+
+  CGFloat availableWidth = rect.size.width - kSmallImageSide -
+                           kImageTitleSpacing - kHorizontalSpacing;
+
+  if (std::ceil(textSize.width) > availableWidth)
+    [profileButton setToolTip:[profileButton title]];
 
   return profileButton.autorelease();
 }
@@ -1829,10 +2027,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
   // If there is an account with an authentication error, it needs to be
   // badged with a warning icon.
-  const SigninErrorController* errorController =
-      profiles::GetSigninErrorController(profile);
-  std::string errorAccountId =
-      errorController ? errorController->error_account_id() : std::string();
+  std::string errorAccountId = GetAuthErrorAccountId(profile);
 
   rect.origin.y = 0;
   for (size_t i = 0; i < accounts.size(); ++i) {
@@ -1866,26 +2061,24 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
   GURL url;
   int messageId = -1;
-  SigninErrorController* errorController = NULL;
   switch (viewMode_) {
     case profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN:
-      url = signin::GetPromoURL(signin::SOURCE_AVATAR_BUBBLE_SIGN_IN,
+      url = signin::GetPromoURL(signin_metrics::SOURCE_AVATAR_BUBBLE_SIGN_IN,
                                 false /* auto_close */,
                                 true /* is_constrained */);
       messageId = IDS_PROFILES_GAIA_SIGNIN_TITLE;
       break;
     case profiles::BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT:
-      url = signin::GetPromoURL(signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT,
-                                false /* auto_close */,
-                                true /* is_constrained */);
+      url = signin::GetPromoURL(
+          signin_metrics::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT,
+          false /* auto_close */,
+          true /* is_constrained */);
       messageId = IDS_PROFILES_GAIA_ADD_ACCOUNT_TITLE;
       break;
     case profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH:
       DCHECK(HasAuthError(browser_->profile()));
-      errorController = profiles::GetSigninErrorController(browser_->profile());
       url = signin::GetReauthURL(
-          browser_->profile(),
-          errorController ? errorController->error_username() : std::string());
+          browser_->profile(), GetAuthErrorAccountId(browser_->profile()));
       messageId = IDS_PROFILES_GAIA_REAUTH_TITLE;
       break;
     default:
@@ -1895,6 +2088,9 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
   webContents_.reset(content::WebContents::Create(
       content::WebContents::CreateParams(browser_->profile())));
+
+  webContentsDelegate_.reset(new GaiaWebContentsDelegate());
+  webContents_->SetDelegate(webContentsDelegate_.get());
   webContents_->GetController().LoadURL(url,
                                         content::Referrer(),
                                         ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
@@ -1902,6 +2098,9 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   NSView* webview = webContents_->GetNativeView();
   [webview setFrameSize:NSMakeSize(kFixedGaiaViewWidth, kFixedGaiaViewHeight)];
   [container addSubview:webview];
+  content::RenderWidgetHostView* rwhv = webContents_->GetRenderWidgetHostView();
+  if (rwhv)
+    rwhv->SetBackgroundColor(profiles::kAvatarBubbleGaiaBackgroundColor);
   yOffset = NSMaxY([webview frame]);
 
   // Adds the title card.

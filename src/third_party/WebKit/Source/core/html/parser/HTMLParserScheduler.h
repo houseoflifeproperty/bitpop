@@ -27,8 +27,7 @@
 #define HTMLParserScheduler_h
 
 #include "core/html/parser/NestingLevelIncrementer.h"
-#include "platform/Timer.h"
-#include "wtf/CurrentTime.h"
+#include "platform/scheduler/CancellableTaskFactory.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 
@@ -37,30 +36,39 @@ namespace blink {
 class Document;
 class HTMLDocumentParser;
 
-class ActiveParserSession {
+class ActiveParserSession : public NestingLevelIncrementer {
     STACK_ALLOCATED();
 public:
-    explicit ActiveParserSession(Document*);
+    ActiveParserSession(unsigned& nestingLevel, Document*);
     ~ActiveParserSession();
 
 private:
     RefPtrWillBeMember<Document> m_document;
 };
 
-class PumpSession : public NestingLevelIncrementer, public ActiveParserSession {
+class PumpSession : public ActiveParserSession {
     STACK_ALLOCATED();
 public:
     PumpSession(unsigned& nestingLevel, Document*);
     ~PumpSession();
+};
 
-    int processedTokens;
-    double startTime;
-    bool needsYield;
-    bool didSeeScript;
+class SpeculationsPumpSession : public ActiveParserSession {
+public:
+    SpeculationsPumpSession(unsigned& nestingLevel, Document*);
+    ~SpeculationsPumpSession();
+
+    double elapsedTime() const;
+    void addedElementTokens(size_t count);
+    size_t processedElementTokens() const { return m_processedElementTokens; }
+
+private:
+    double m_startTime;
+    size_t m_processedElementTokens;
 };
 
 class HTMLParserScheduler {
-    WTF_MAKE_NONCOPYABLE(HTMLParserScheduler); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(HTMLParserScheduler); WTF_MAKE_FAST_ALLOCATED(HTMLParserScheduler);
 public:
     static PassOwnPtr<HTMLParserScheduler> create(HTMLDocumentParser* parser)
     {
@@ -68,42 +76,32 @@ public:
     }
     ~HTMLParserScheduler();
 
-    // Inline as this is called after every token in the parser.
-    void checkForYieldBeforeToken(PumpSession& session)
-    {
-        if (session.processedTokens > parserChunkSize || session.didSeeScript) {
-            // currentTime() can be expensive.  By delaying, we avoided calling
-            // currentTime() when constructing non-yielding PumpSessions.
-            if (!session.startTime)
-                session.startTime = currentTime();
-
-            session.processedTokens = 0;
-            session.didSeeScript = false;
-
-            double elapsedTime = currentTime() - session.startTime;
-            if (elapsedTime > parserTimeLimit)
-                session.needsYield = true;
-        }
-        ++session.processedTokens;
-    }
+    bool isScheduledForResume() const { return m_isSuspendedWithActiveTimer || m_cancellableContinueParse.isPending(); }
 
     void scheduleForResume();
-    bool isScheduledForResume() const { return m_isSuspendedWithActiveTimer || m_continueNextChunkTimer.isActive(); }
+    bool yieldIfNeeded(const SpeculationsPumpSession&, bool startingScript);
+
+    /**
+     * Can only be called if this scheduler is suspended. If this is called,
+     * then after the scheduler is resumed by calling resume(), this call
+     * ensures that HTMLDocumentParser::resumeAfterYield will be called. Used to
+     * signal this scheduler that the background html parser sent chunks to
+     * HTMLDocumentParser while it was suspended.
+     */
+    void forceResumeAfterYield();
 
     void suspend();
     void resume();
 
 private:
-    static const double parserTimeLimit;
-    static const int parserChunkSize;
+    explicit HTMLParserScheduler(HTMLDocumentParser*);
 
-    HTMLParserScheduler(HTMLDocumentParser*);
-
-    void continueNextChunkTimerFired(Timer<HTMLParserScheduler>*);
+    bool shouldYield(const SpeculationsPumpSession&, bool startingScript) const;
+    void continueParsing();
 
     HTMLDocumentParser* m_parser;
 
-    Timer<HTMLParserScheduler> m_continueNextChunkTimer;
+    CancellableTaskFactory m_cancellableContinueParse;
     bool m_isSuspendedWithActiveTimer;
 };
 

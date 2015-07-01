@@ -9,12 +9,26 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "ui/aura/window_event_dispatcher.h"
 
+#if !defined(OS_CHROMEOS)
+#include "base/command_line.h"
+#include "chrome/common/chrome_switches.h"
+#endif
+
 namespace chrome {
+
+bool ShouldOpenAshOnStartup() {
+#if defined(OS_CHROMEOS)
+  return true;
+#else
+  // TODO(scottmg): http://crbug.com/133312, will need this for Win8 too.
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kOpenAsh);
+#endif
+}
 
 bool IsNativeViewInAsh(gfx::NativeView native_view) {
 #if defined(OS_CHROMEOS)
-  // Optimization. There is only ash or only athena on ChromeOS.
-  return ash::Shell::HasInstance();
+  // Optimization. There is only ash on ChromeOS.
+  return true;
 #endif
 
   if (!ash::Shell::HasInstance())

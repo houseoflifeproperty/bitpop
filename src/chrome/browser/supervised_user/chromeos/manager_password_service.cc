@@ -12,8 +12,8 @@
 #include "chrome/browser/chromeos/login/supervised/supervised_user_constants.h"
 #include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
+#include "chrome/browser/supervised_user/legacy/supervised_user_sync_service.h"
 #include "chrome/browser/supervised_user/supervised_user_constants.h"
-#include "chrome/browser/supervised_user/supervised_user_sync_service.h"
 #include "chromeos/login/auth/key.h"
 #include "chromeos/login/auth/user_context.h"
 #include "components/user_manager/user.h"
@@ -37,23 +37,19 @@ void ManagerPasswordService::Init(
       base::Bind(&ManagerPasswordService::OnSharedSettingsChange,
                  weak_ptr_factory_.GetWeakPtr()));
 
-  authenticator_ = new ExtendedAuthenticator(this);
+  authenticator_ = ExtendedAuthenticator::Create(this);
 
   SupervisedUserManager* supervised_user_manager =
       ChromeUserManager::Get()->GetSupervisedUserManager();
 
-  const user_manager::UserList& users =
-      user_manager::UserManager::Get()->GetUsers();
-
-  for (user_manager::UserList::const_iterator it = users.begin();
-       it != users.end();
-       ++it) {
-    if ((*it)->GetType() != user_manager::USER_TYPE_SUPERVISED)
+  for (const user_manager::User* user :
+           user_manager::UserManager::Get()->GetUsers()) {
+    if (user->GetType() != user_manager::USER_TYPE_SUPERVISED)
       continue;
-    if (user_id != supervised_user_manager->GetManagerUserId((*it)->email()))
+    if (user_id != supervised_user_manager->GetManagerUserId(user->email()))
       continue;
     OnSharedSettingsChange(
-        supervised_user_manager->GetUserSyncId((*it)->email()),
+        supervised_user_manager->GetUserSyncId(user->email()),
         supervised_users::kChromeOSPasswordData);
   }
 }

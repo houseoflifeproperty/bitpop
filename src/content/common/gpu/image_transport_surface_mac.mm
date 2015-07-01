@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "content/common/gpu/image_transport_surface_fbo_mac.h"
+#include "content/common/gpu/image_transport_surface.h"
 
 #include "content/common/gpu/gpu_messages.h"
 #include "ui/gfx/native_widget_types.h"
@@ -11,6 +11,12 @@
 #include "ui/gl/gl_surface_osmesa.h"
 
 namespace content {
+
+scoped_refptr<gfx::GLSurface> ImageTransportSurfaceCreateNativeSurface(
+    GpuChannelManager* manager,
+    GpuCommandBufferStub* stub,
+    gfx::PluginWindowHandle handle);
+
 namespace {
 
 // A subclass of GLSurfaceOSMesa that doesn't print an error message when
@@ -22,10 +28,10 @@ class DRTSurfaceOSMesa : public gfx::GLSurfaceOSMesa {
       : GLSurfaceOSMesa(gfx::OSMesaSurfaceFormatRGBA, gfx::Size(1, 1)) {}
 
   // Implement a subset of GLSurface.
-  virtual bool SwapBuffers() OVERRIDE;
+  bool SwapBuffers() override;
 
  private:
-  virtual ~DRTSurfaceOSMesa() {}
+  ~DRTSurfaceOSMesa() override {}
   DISALLOW_COPY_AND_ASSIGN(DRTSurfaceOSMesa);
 };
 
@@ -43,13 +49,14 @@ scoped_refptr<gfx::GLSurface> ImageTransportSurface::CreateNativeSurface(
     GpuCommandBufferStub* stub,
     const gfx::GLSurfaceHandle& surface_handle) {
   DCHECK(surface_handle.transport_type == gfx::NATIVE_DIRECT ||
-         surface_handle.transport_type == gfx::NATIVE_TRANSPORT);
+         surface_handle.transport_type == gfx::NULL_TRANSPORT);
 
   switch (gfx::GetGLImplementation()) {
     case gfx::kGLImplementationDesktopGL:
+    case gfx::kGLImplementationDesktopGLCoreProfile:
     case gfx::kGLImplementationAppleGL:
-      return scoped_refptr<gfx::GLSurface>(new ImageTransportSurfaceFBO(
-          manager, stub, surface_handle.handle));
+      return ImageTransportSurfaceCreateNativeSurface(manager, stub,
+                                                      surface_handle.handle);
     default:
       // Content shell in DRT mode spins up a gpu process which needs an
       // image transport surface, but that surface isn't used to read pixel

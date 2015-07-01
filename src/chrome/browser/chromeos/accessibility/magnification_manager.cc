@@ -22,6 +22,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/pref_names.h"
+#include "content/public/browser/focused_node_details.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -39,15 +40,15 @@ class MagnificationManagerImpl : public MagnificationManager,
                                  public ash::SessionStateObserver {
  public:
   MagnificationManagerImpl()
-      : first_time_update_(true),
-        profile_(NULL),
+      : profile_(NULL),
         magnifier_enabled_pref_handler_(
             prefs::kAccessibilityScreenMagnifierEnabled),
         magnifier_type_pref_handler_(prefs::kAccessibilityScreenMagnifierType),
         magnifier_scale_pref_handler_(
             prefs::kAccessibilityScreenMagnifierScale),
-        type_(ash::kDefaultMagnifierType),
-        enabled_(false) {
+        type_(ui::kDefaultMagnifierType),
+        enabled_(false),
+        observing_focus_change_in_page_(false) {
     registrar_.Add(this,
                    chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
                    content::NotificationService::AllSources());
@@ -59,20 +60,16 @@ class MagnificationManagerImpl : public MagnificationManager,
                    content::NotificationService::AllSources());
   }
 
-  virtual ~MagnificationManagerImpl() {
+  ~MagnificationManagerImpl() override {
     CHECK(this == g_magnification_manager);
   }
 
   // MagnificationManager implimentation:
-  virtual bool IsMagnifierEnabled() const OVERRIDE {
-    return enabled_;
-  }
+  bool IsMagnifierEnabled() const override { return enabled_; }
 
-  virtual ash::MagnifierType GetMagnifierType() const OVERRIDE {
-    return type_;
-  }
+  ui::MagnifierType GetMagnifierType() const override { return type_; }
 
-  virtual void SetMagnifierEnabled(bool enabled) OVERRIDE {
+  void SetMagnifierEnabled(bool enabled) override {
     if (!profile_)
       return;
 
@@ -81,7 +78,7 @@ class MagnificationManagerImpl : public MagnificationManager,
     prefs->CommitPendingWrite();
   }
 
-  virtual void SetMagnifierType(ash::MagnifierType type) OVERRIDE {
+  void SetMagnifierType(ui::MagnifierType type) override {
     if (!profile_)
       return;
 
@@ -90,7 +87,7 @@ class MagnificationManagerImpl : public MagnificationManager,
     prefs->CommitPendingWrite();
   }
 
-  virtual void SaveScreenMagnifierScale(double scale) OVERRIDE {
+  void SaveScreenMagnifierScale(double scale) override {
     if (!profile_)
       return;
 
@@ -98,7 +95,7 @@ class MagnificationManagerImpl : public MagnificationManager,
                                     scale);
   }
 
-  virtual double GetSavedScreenMagnifierScale() const OVERRIDE {
+  double GetSavedScreenMagnifierScale() const override {
     if (!profile_)
       return std::numeric_limits<double>::min();
 
@@ -106,12 +103,10 @@ class MagnificationManagerImpl : public MagnificationManager,
         prefs::kAccessibilityScreenMagnifierScale);
   }
 
-  virtual void SetProfileForTest(Profile* profile) OVERRIDE {
-    SetProfile(profile);
-  }
+  void SetProfileForTest(Profile* profile) override { SetProfile(profile); }
 
   // SessionStateObserver overrides:
-  virtual void ActiveUserChanged(const std::string& user_id) OVERRIDE {
+  void ActiveUserChanged(const std::string& user_id) override {
     SetProfile(ProfileManager::GetActiveUserProfile());
   }
 
@@ -152,20 +147,21 @@ class MagnificationManagerImpl : public MagnificationManager,
 
     enabled_ = enabled;
 
-    if (type_ == ash::MAGNIFIER_FULL) {
+    if (type_ == ui::MAGNIFIER_FULL) {
       ash::Shell::GetInstance()->magnification_controller()->SetEnabled(
           enabled_);
+      MonitorFocusInPageChange();
     } else {
       ash::Shell::GetInstance()->partial_magnification_controller()->SetEnabled(
           enabled_);
     }
   }
 
-  virtual void SetMagnifierTypeInternal(ash::MagnifierType type) {
+  virtual void SetMagnifierTypeInternal(ui::MagnifierType type) {
     if (type_ == type)
       return;
 
-    type_ = ash::MAGNIFIER_FULL;  // (leave out for full magnifier)
+    type_ = ui::MAGNIFIER_FULL;  // (leave out for full magnifier)
   }
 
   void UpdateMagnifierFromPrefs() {
@@ -177,9 +173,9 @@ class MagnificationManagerImpl : public MagnificationManager,
     const int type_integer = profile_->GetPrefs()->GetInteger(
         prefs::kAccessibilityScreenMagnifierType);
 
-    ash::MagnifierType type = ash::kDefaultMagnifierType;
-    if (type_integer > 0 && type_integer <= ash::kMaxMagnifierType) {
-      type = static_cast<ash::MagnifierType>(type_integer);
+    ui::MagnifierType type = ui::kDefaultMagnifierType;
+    if (type_integer > 0 && type_integer <= ui::kMaxMagnifierType) {
+      type = static_cast<ui::MagnifierType>(type_integer);
     } else if (type_integer == 0) {
       // Type 0 is used to disable the screen magnifier through policy. As the
       // magnifier type is irrelevant in this case, it is OK to just fall back
@@ -200,9 +196,8 @@ class MagnificationManagerImpl : public MagnificationManager,
         ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFIER,
         enabled_,
         type_,
-        ash::A11Y_NOTIFICATION_NONE);
+        ui::A11Y_NOTIFICATION_NONE);
 
-#if defined(OS_CHROMEOS)
     if (AccessibilityManager::Get()) {
       AccessibilityManager::Get()->NotifyAccessibilityStatusChanged(details);
       if (ash::Shell::GetInstance()) {
@@ -210,13 +205,24 @@ class MagnificationManagerImpl : public MagnificationManager,
             AccessibilityManager::Get()->ShouldEnableCursorCompositing());
       }
     }
-#endif
+  }
+
+  void MonitorFocusInPageChange() {
+    if (enabled_ && !observing_focus_change_in_page_) {
+      registrar_.Add(this, content::NOTIFICATION_FOCUS_CHANGED_IN_PAGE,
+                     content::NotificationService::AllSources());
+      observing_focus_change_in_page_ = true;
+    } else if (!enabled_ && observing_focus_change_in_page_) {
+      registrar_.Remove(this, content::NOTIFICATION_FOCUS_CHANGED_IN_PAGE,
+                        content::NotificationService::AllSources());
+      observing_focus_change_in_page_ = false;
+    }
   }
 
   // content::NotificationObserver implementation:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     switch (type) {
       case chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE: {
         // Update |profile_| when entering the login screen.
@@ -241,18 +247,27 @@ class MagnificationManagerImpl : public MagnificationManager,
           SetProfile(NULL);
         break;
       }
+      case content::NOTIFICATION_FOCUS_CHANGED_IN_PAGE: {
+        content::FocusedNodeDetails* node_details =
+            content::Details<content::FocusedNodeDetails>(details).ptr();
+        ash::Shell::GetInstance()
+            ->magnification_controller()
+            ->HandleFocusedNodeChanged(node_details->is_editable_node,
+                                       node_details->node_bounds_in_screen);
+        break;
+      }
     }
   }
 
-  bool first_time_update_;
   Profile* profile_;
 
   AccessibilityManager::PrefHandler magnifier_enabled_pref_handler_;
   AccessibilityManager::PrefHandler magnifier_type_pref_handler_;
   AccessibilityManager::PrefHandler magnifier_scale_pref_handler_;
 
-  ash::MagnifierType type_;
+  ui::MagnifierType type_;
   bool enabled_;
+  bool observing_focus_change_in_page_;
 
   content::NotificationRegistrar registrar_;
   scoped_ptr<PrefChangeRegistrar> pref_change_registrar_;

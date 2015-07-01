@@ -9,7 +9,6 @@
 #include "core/events/Event.h"
 #include "modules/battery/BatteryDispatcher.h"
 #include "modules/battery/BatteryStatus.h"
-#include "platform/RuntimeEnabledFeatures.h"
 
 namespace blink {
 
@@ -22,7 +21,9 @@ BatteryManager* BatteryManager::create(ExecutionContext* context)
 
 BatteryManager::~BatteryManager()
 {
+#if !ENABLE(OILPAN)
     stopUpdating();
+#endif
 }
 
 BatteryManager::BatteryManager(ExecutionContext* context)
@@ -41,8 +42,10 @@ ScriptPromise BatteryManager::startRequest(ScriptState* scriptState)
     m_resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = m_resolver->promise();
 
-    if (m_state == Resolved) {
+    // If the context is in a stopped state already, do not start updating.
+    if (m_state == Resolved || !executionContext() || executionContext()->activeDOMObjectsAreStopped()) {
         // FIXME: Consider returning the same promise in this case. See crbug.com/385025.
+        m_state = Resolved;
         m_resolver->resolve(this);
     } else if (m_state == NotStarted) {
         m_state = Pending;
@@ -75,7 +78,6 @@ double BatteryManager::level()
 
 void BatteryManager::didUpdateData()
 {
-    ASSERT(RuntimeEnabledFeatures::batteryStatusEnabled());
     ASSERT(m_state != NotStarted);
 
     BatteryStatus* oldStatus = m_batteryStatus;
@@ -89,6 +91,7 @@ void BatteryManager::didUpdateData()
     }
 
     Document* document = toDocument(executionContext());
+    ASSERT(document);
     if (document->activeDOMObjectsAreSuspended() || document->activeDOMObjectsAreStopped())
         return;
 
@@ -145,10 +148,13 @@ bool BatteryManager::hasPendingActivity() const
     return m_state == Resolved && hasEventListeners();
 }
 
-void BatteryManager::trace(Visitor* visitor)
+DEFINE_TRACE(BatteryManager)
 {
+    visitor->trace(m_resolver);
     visitor->trace(m_batteryStatus);
-    EventTargetWithInlineData::trace(visitor);
+    PlatformEventController::trace(visitor);
+    RefCountedGarbageCollectedEventTargetWithInlineData<BatteryManager>::trace(visitor);
+    ActiveDOMObject::trace(visitor);
 }
 
 } // namespace blink

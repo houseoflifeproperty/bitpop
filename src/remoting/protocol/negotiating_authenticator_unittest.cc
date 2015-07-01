@@ -46,8 +46,7 @@ class NegotiatingAuthenticatorTest : public AuthenticatorTestBase {
  public:
   NegotiatingAuthenticatorTest() {
   }
-  virtual ~NegotiatingAuthenticatorTest() {
-  }
+  ~NegotiatingAuthenticatorTest() override {}
 
  protected:
   void InitAuthenticators(
@@ -71,7 +70,7 @@ class NegotiatingAuthenticatorTest : public AuthenticatorTestBase {
       methods.push_back(AuthenticationMethod::Spake2(
           AuthenticationMethod::NONE));
     }
-    bool pairing_expected = pairing_registry_.get() != NULL;
+    bool pairing_expected = pairing_registry_.get() != nullptr;
     FetchSecretCallback fetch_secret_callback =
         base::Bind(&NegotiatingAuthenticatorTest::FetchSecret,
                    client_interactive_pin,
@@ -79,14 +78,13 @@ class NegotiatingAuthenticatorTest : public AuthenticatorTestBase {
     client_as_negotiating_authenticator_ = new NegotiatingClientAuthenticator(
         client_id, client_paired_secret,
         kTestHostId, fetch_secret_callback,
-        scoped_ptr<ThirdPartyClientAuthenticator::TokenFetcher>(), methods);
+        nullptr, methods);
     client_.reset(client_as_negotiating_authenticator_);
   }
 
   void CreatePairingRegistry(bool with_paired_client) {
     pairing_registry_ = new SynchronousPairingRegistry(
-        scoped_ptr<PairingRegistry::Delegate>(
-            new MockPairingRegistryDelegate()));
+        make_scoped_ptr(new MockPairingRegistryDelegate()));
     if (with_paired_client) {
       PairingRegistry::Pairing pairing(
           base::Time(), kTestClientName, kTestClientId, kTestPairedSecret);
@@ -124,8 +122,8 @@ class NegotiatingAuthenticatorTest : public AuthenticatorTestBase {
     host_auth_ = host_->CreateChannelAuthenticator();
     RunChannelAuth(false);
 
-    EXPECT_TRUE(client_socket_.get() != NULL);
-    EXPECT_TRUE(host_socket_.get() != NULL);
+    EXPECT_TRUE(client_socket_.get() != nullptr);
+    EXPECT_TRUE(host_socket_.get() != nullptr);
 
     StreamConnectionTester tester(host_socket_.get(), client_socket_.get(),
                                   kMessageSize, kMessages);

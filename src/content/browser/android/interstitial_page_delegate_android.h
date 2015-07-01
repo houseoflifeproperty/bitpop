@@ -26,7 +26,7 @@ class InterstitialPageDelegateAndroid : public InterstitialPageDelegate {
   InterstitialPageDelegateAndroid(JNIEnv* env,
                                   jobject obj,
                                   const std::string& html_content);
-  virtual ~InterstitialPageDelegateAndroid();
+  ~InterstitialPageDelegateAndroid() override;
 
   void set_interstitial_page(InterstitialPage* page) { page_ = page; }
 
@@ -35,10 +35,10 @@ class InterstitialPageDelegateAndroid : public InterstitialPageDelegate {
   void DontProceed(JNIEnv* env, jobject obj);
 
   // Implementation of InterstitialPageDelegate
-  virtual std::string GetHTMLContents() OVERRIDE;
-  virtual void OnProceed() OVERRIDE;
-  virtual void OnDontProceed() OVERRIDE;
-  virtual void CommandReceived(const std::string& command) OVERRIDE;
+  std::string GetHTMLContents() override;
+  void OnProceed() override;
+  void OnDontProceed() override;
+  void CommandReceived(const std::string& command) override;
 
   static bool RegisterInterstitialPageDelegateAndroid(JNIEnv* env);
 

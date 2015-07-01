@@ -23,21 +23,18 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-enum SessionType {
+enum MediaKeySessionType {
     "temporary",
-    "persistent"
+    "persistent-license",
 };
 
 [
+    ActiveDOMObject,
     RuntimeEnabled=EncryptedMedia,
     GarbageCollected,
     TypeChecking=Interface
 ] interface MediaKeys {
-    readonly attribute DOMString keySystem;
+    [CallWith=ScriptState, RaisesException] MediaKeySession createSession(optional MediaKeySessionType sessionType = "temporary");
 
-    [CallWith=ScriptState] MediaKeySession createSession(optional SessionType sessionType = "temporary");
-
-    [CallWith=ScriptState] static Promise create(DOMString keySystem);
-
-    static boolean isTypeSupported(DOMString keySystem, optional DOMString contentType = null);
+    [CallWith=ScriptState] Promise<void> setServerCertificate(BufferSource serverCertificate);
 };

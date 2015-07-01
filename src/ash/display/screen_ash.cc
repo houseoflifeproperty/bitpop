@@ -71,48 +71,32 @@ class ScreenForShutdown : public gfx::Screen {
   }
 
   // gfx::Screen overrides:
-  virtual bool IsDIPEnabled() OVERRIDE {
-    return true;
-  }
-  virtual gfx::Point GetCursorScreenPoint() OVERRIDE {
-    return gfx::Point();
-  }
-  virtual gfx::NativeWindow GetWindowUnderCursor() OVERRIDE {
+  gfx::Point GetCursorScreenPoint() override { return gfx::Point(); }
+  gfx::NativeWindow GetWindowUnderCursor() override { return NULL; }
+  gfx::NativeWindow GetWindowAtScreenPoint(const gfx::Point& point) override {
     return NULL;
   }
-  virtual gfx::NativeWindow GetWindowAtScreenPoint(
-      const gfx::Point& point) OVERRIDE {
-    return NULL;
-  }
-  virtual int GetNumDisplays() const OVERRIDE {
-    return display_list_.size();
-  }
-  virtual std::vector<gfx::Display> GetAllDisplays() const OVERRIDE {
+  int GetNumDisplays() const override { return display_list_.size(); }
+  std::vector<gfx::Display> GetAllDisplays() const override {
     return display_list_;
   }
-  virtual gfx::Display GetDisplayNearestWindow(gfx::NativeView view)
-      const OVERRIDE {
+  gfx::Display GetDisplayNearestWindow(gfx::NativeView view) const override {
     return primary_display_;
   }
-  virtual gfx::Display GetDisplayNearestPoint(
-      const gfx::Point& point) const OVERRIDE {
+  gfx::Display GetDisplayNearestPoint(const gfx::Point& point) const override {
     return FindDisplayNearestPoint(display_list_, point);
   }
-  virtual gfx::Display GetDisplayMatching(const gfx::Rect& match_rect)
-      const OVERRIDE {
+  gfx::Display GetDisplayMatching(const gfx::Rect& match_rect) const override {
     const gfx::Display* matching =
         FindDisplayMatching(display_list_, match_rect);
     // Fallback to the primary display if there is no matching display.
     return matching ? *matching : GetPrimaryDisplay();
   }
-  virtual gfx::Display GetPrimaryDisplay() const OVERRIDE {
-    return primary_display_;
-  }
-  virtual void AddObserver(gfx::DisplayObserver* observer) OVERRIDE {
+  gfx::Display GetPrimaryDisplay() const override { return primary_display_; }
+  void AddObserver(gfx::DisplayObserver* observer) override {
     NOTREACHED() << "Observer should not be added during shutdown";
   }
-  virtual void RemoveObserver(gfx::DisplayObserver* observer) OVERRIDE {
-  }
+  void RemoveObserver(gfx::DisplayObserver* observer) override {}
 
  private:
   const std::vector<gfx::Display> display_list_;
@@ -129,65 +113,6 @@ ScreenAsh::ScreenAsh() {
 ScreenAsh::~ScreenAsh() {
 }
 
-// static
-gfx::Display ScreenAsh::FindDisplayContainingPoint(const gfx::Point& point) {
-  return GetDisplayManager()->FindDisplayContainingPoint(point);
-}
-
-// static
-gfx::Rect ScreenAsh::GetMaximizedWindowBoundsInParent(aura::Window* window) {
-  if (GetRootWindowController(window->GetRootWindow())->shelf())
-    return GetDisplayWorkAreaBoundsInParent(window);
-  else
-    return GetDisplayBoundsInParent(window);
-}
-
-// static
-gfx::Rect ScreenAsh::GetDisplayBoundsInParent(aura::Window* window) {
-  return ConvertRectFromScreen(
-      window->parent(),
-      Shell::GetScreen()->GetDisplayNearestWindow(window).bounds());
-}
-
-// static
-gfx::Rect ScreenAsh::GetDisplayWorkAreaBoundsInParent(aura::Window* window) {
-  return ConvertRectFromScreen(
-      window->parent(),
-      Shell::GetScreen()->GetDisplayNearestWindow(window).work_area());
-}
-
-// static
-gfx::Rect ScreenAsh::ConvertRectToScreen(aura::Window* window,
-                                         const gfx::Rect& rect) {
-  gfx::Point point = rect.origin();
-  aura::client::GetScreenPositionClient(window->GetRootWindow())->
-      ConvertPointToScreen(window, &point);
-  return gfx::Rect(point, rect.size());
-}
-
-// static
-gfx::Rect ScreenAsh::ConvertRectFromScreen(aura::Window* window,
-                                           const gfx::Rect& rect) {
-  gfx::Point point = rect.origin();
-  aura::client::GetScreenPositionClient(window->GetRootWindow())->
-      ConvertPointFromScreen(window, &point);
-  return gfx::Rect(point, rect.size());
-}
-
-// static
-const gfx::Display& ScreenAsh::GetSecondaryDisplay() {
-  DisplayManager* display_manager = GetDisplayManager();
-  CHECK_EQ(2U, display_manager->GetNumDisplays());
-  return display_manager->GetDisplayAt(0).id() ==
-      Shell::GetScreen()->GetPrimaryDisplay().id() ?
-      display_manager->GetDisplayAt(1) : display_manager->GetDisplayAt(0);
-}
-
-// static
-const gfx::Display& ScreenAsh::GetDisplayForId(int64 display_id) {
-  return GetDisplayManager()->GetDisplayForId(display_id);
-}
-
 void ScreenAsh::NotifyMetricsChanged(const gfx::Display& display,
                                      uint32_t metrics) {
   FOR_EACH_OBSERVER(gfx::DisplayObserver,
@@ -202,10 +127,6 @@ void ScreenAsh::NotifyDisplayAdded(const gfx::Display& display) {
 void ScreenAsh::NotifyDisplayRemoved(const gfx::Display& display) {
   FOR_EACH_OBSERVER(
       gfx::DisplayObserver, observers_, OnDisplayRemoved(display));
-}
-
-bool ScreenAsh::IsDIPEnabled() {
-  return true;
 }
 
 gfx::Point ScreenAsh::GetCursorScreenPoint() {
@@ -225,7 +146,7 @@ int ScreenAsh::GetNumDisplays() const {
 }
 
 std::vector<gfx::Display> ScreenAsh::GetAllDisplays() const {
-  return GetDisplayManager()->displays();
+  return GetDisplayManager()->active_display_list();
 }
 
 gfx::Display ScreenAsh::GetDisplayNearestWindow(gfx::NativeView window) const {
@@ -244,8 +165,9 @@ gfx::Display ScreenAsh::GetDisplayNearestWindow(gfx::NativeView window) const {
   DisplayManager* display_manager = GetDisplayManager();
   // RootWindow needs Display to determine its device scale factor
   // for non desktop display.
-  if (display_manager->non_desktop_display().id() == id)
-    return display_manager->non_desktop_display();
+  gfx::Display mirroring_display = display_manager->GetMirroringDisplayById(id);
+  if (mirroring_display.is_valid())
+    return mirroring_display;
   return display_manager->GetDisplayForId(id);
 }
 
@@ -257,14 +179,15 @@ gfx::Display ScreenAsh::GetDisplayNearestPoint(const gfx::Point& point) const {
   // Fallback to the display that has the shortest Manhattan distance from
   // the |point|. This is correct in the only areas that matter, namely in the
   // corners between the physical screens.
-  return FindDisplayNearestPoint(GetDisplayManager()->displays(), point);
+  return FindDisplayNearestPoint(GetDisplayManager()->active_display_list(),
+                                 point);
 }
 
 gfx::Display ScreenAsh::GetDisplayMatching(const gfx::Rect& match_rect) const {
   if (match_rect.IsEmpty())
     return GetDisplayNearestPoint(match_rect.origin());
-  const gfx::Display* matching =
-      FindDisplayMatching(GetDisplayManager()->displays(), match_rect);
+  const gfx::Display* matching = FindDisplayMatching(
+      GetDisplayManager()->active_display_list(), match_rect);
   // Fallback to the primary display if there is no matching display.
   return matching ? *matching : GetPrimaryDisplay();
 }

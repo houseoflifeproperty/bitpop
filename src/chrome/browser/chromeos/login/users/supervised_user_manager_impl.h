@@ -16,52 +16,48 @@ namespace chromeos {
 
 class ChromeUserManagerImpl;
 class CrosSettings;
+class SupervisedUserTestBase;
 
 // Implementation of the UserManager.
 class SupervisedUserManagerImpl
     : public SupervisedUserManager {
  public:
-  virtual ~SupervisedUserManagerImpl();
+  ~SupervisedUserManagerImpl() override;
 
-  virtual bool HasSupervisedUsers(const std::string& manager_id) const OVERRIDE;
-  virtual const user_manager::User* CreateUserRecord(
+  bool HasSupervisedUsers(const std::string& manager_id) const override;
+  const user_manager::User* CreateUserRecord(
       const std::string& manager_id,
       const std::string& local_user_id,
       const std::string& sync_user_id,
-      const base::string16& display_name) OVERRIDE;
-  virtual std::string GenerateUserId() OVERRIDE;
-  virtual const user_manager::User* FindByDisplayName(
-      const base::string16& display_name) const OVERRIDE;
-  virtual const user_manager::User* FindBySyncId(
-      const std::string& sync_id) const OVERRIDE;
-  virtual std::string GetUserSyncId(const std::string& user_id) const OVERRIDE;
-  virtual base::string16 GetManagerDisplayName(const std::string& user_id) const
-      OVERRIDE;
-  virtual std::string GetManagerUserId(const std::string& user_id) const
-      OVERRIDE;
-  virtual std::string GetManagerDisplayEmail(const std::string& user_id) const
-      OVERRIDE;
-  virtual void StartCreationTransaction(const base::string16& display_name)
-      OVERRIDE;
-  virtual void SetCreationTransactionUserId(const std::string& user_id)
-      OVERRIDE;
-  virtual void CommitCreationTransaction() OVERRIDE;
-  virtual SupervisedUserAuthentication* GetAuthentication() OVERRIDE;
-  virtual void GetPasswordInformation(const std::string& user_id,
-                                      base::DictionaryValue* result) OVERRIDE;
-  virtual void SetPasswordInformation(
+      const base::string16& display_name) override;
+  std::string GenerateUserId() override;
+  const user_manager::User* FindByDisplayName(
+      const base::string16& display_name) const override;
+  const user_manager::User* FindBySyncId(
+      const std::string& sync_id) const override;
+  std::string GetUserSyncId(const std::string& user_id) const override;
+  base::string16 GetManagerDisplayName(
+      const std::string& user_id) const override;
+  std::string GetManagerUserId(const std::string& user_id) const override;
+  std::string GetManagerDisplayEmail(const std::string& user_id) const override;
+  void StartCreationTransaction(const base::string16& display_name) override;
+  void SetCreationTransactionUserId(const std::string& user_id) override;
+  void CommitCreationTransaction() override;
+  SupervisedUserAuthentication* GetAuthentication() override;
+  void GetPasswordInformation(const std::string& user_id,
+                              base::DictionaryValue* result) override;
+  void SetPasswordInformation(
       const std::string& user_id,
-      const base::DictionaryValue* password_info) OVERRIDE;
-  virtual void LoadSupervisedUserToken(
-      Profile * profile,
-      const LoadTokenCallback& callback) OVERRIDE;
-  virtual void ConfigureSyncWithToken(
-      Profile* profile,
-      const std::string& token) OVERRIDE;
+      const base::DictionaryValue* password_info) override;
+  void LoadSupervisedUserToken(Profile* profile,
+                               const LoadTokenCallback& callback) override;
+  void ConfigureSyncWithToken(Profile* profile,
+                              const std::string& token) override;
 
  private:
   friend class ChromeUserManagerImpl;
   friend class UserManager;
+  friend class SupervisedUserTestBase;
 
   explicit SupervisedUserManagerImpl(ChromeUserManagerImpl* owner);
 

@@ -31,26 +31,24 @@
 #include "config.h"
 #include "public/web/WebArrayBufferConverter.h"
 
-#include "bindings/core/v8/custom/V8ArrayBufferCustom.h"
-#include "wtf/ArrayBuffer.h"
-#include "wtf/PassOwnPtr.h"
+#include "bindings/core/v8/V8ArrayBuffer.h"
 
 namespace blink {
 
-v8::Handle<v8::Value> WebArrayBufferConverter::toV8Value(WebArrayBuffer* buffer, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+v8::Local<v8::Value> WebArrayBufferConverter::toV8Value(WebArrayBuffer* buffer, v8::Local<v8::Object> /* creationContext */, v8::Isolate* isolate)
 {
+    // We no longer use |creationContext| because it's often misused and points
+    // to a context faked by user script.
     if (!buffer)
-        return v8::Handle<v8::Value>();
-    return toV8(*buffer, creationContext, isolate);
+        return v8::Local<v8::Value>();
+    return toV8(PassRefPtr<DOMArrayBuffer>(*buffer), isolate->GetCurrentContext()->Global(), isolate);
 }
 
-WebArrayBuffer* WebArrayBufferConverter::createFromV8Value(v8::Handle<v8::Value> value, v8::Isolate* isolate)
+WebArrayBuffer* WebArrayBufferConverter::createFromV8Value(v8::Local<v8::Value> value, v8::Isolate* isolate)
 {
     if (!V8ArrayBuffer::hasInstance(value, isolate))
         return 0;
-    ArrayBuffer* buffer = V8ArrayBuffer::toImpl(value->ToObject());
-    return new WebArrayBuffer(buffer);
+    return new WebArrayBuffer(V8ArrayBuffer::toImpl(value.As<v8::Object>()));
 }
 
 } // namespace blink
-

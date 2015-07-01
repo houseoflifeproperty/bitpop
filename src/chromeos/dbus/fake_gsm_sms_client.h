@@ -18,30 +18,28 @@ namespace chromeos {
 class CHROMEOS_EXPORT FakeGsmSMSClient : public GsmSMSClient {
  public:
   FakeGsmSMSClient();
-  virtual ~FakeGsmSMSClient();
+  ~FakeGsmSMSClient() override;
 
   // GsmSMSClient overrides
-  virtual void Init(dbus::Bus* bus) OVERRIDE;
-  virtual void SetSmsReceivedHandler(const std::string& service_name,
-                                     const dbus::ObjectPath& object_path,
-                                     const SmsReceivedHandler& handler)
-      OVERRIDE;
-  virtual void ResetSmsReceivedHandler(const std::string& service_name,
-                                       const dbus::ObjectPath& object_path)
-      OVERRIDE;
-  virtual void Delete(const std::string& service_name,
-                      const dbus::ObjectPath& object_path,
-                      uint32 index,
-                      const DeleteCallback& callback) OVERRIDE;
-  virtual void Get(const std::string& service_name,
-                   const dbus::ObjectPath& object_path,
-                   uint32 index,
-                   const GetCallback& callback) OVERRIDE;
-  virtual void List(const std::string& service_name,
-                    const dbus::ObjectPath& object_path,
-                    const ListCallback& callback) OVERRIDE;
-  virtual void RequestUpdate(const std::string& service_name,
-                             const dbus::ObjectPath& object_path) OVERRIDE;
+  void Init(dbus::Bus* bus) override;
+  void SetSmsReceivedHandler(const std::string& service_name,
+                             const dbus::ObjectPath& object_path,
+                             const SmsReceivedHandler& handler) override;
+  void ResetSmsReceivedHandler(const std::string& service_name,
+                               const dbus::ObjectPath& object_path) override;
+  void Delete(const std::string& service_name,
+              const dbus::ObjectPath& object_path,
+              uint32 index,
+              const DeleteCallback& callback) override;
+  void Get(const std::string& service_name,
+           const dbus::ObjectPath& object_path,
+           uint32 index,
+           const GetCallback& callback) override;
+  void List(const std::string& service_name,
+            const dbus::ObjectPath& object_path,
+            const ListCallback& callback) override;
+  void RequestUpdate(const std::string& service_name,
+                     const dbus::ObjectPath& object_path) override;
 
   // Sets if the command line switch for test is present. RequestUpdate()
   // changes its behavior depending on the switch.

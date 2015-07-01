@@ -20,7 +20,6 @@
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "extensions/common/extension_builder.h"
-#include "sql/statement.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_CHROMEOS)
@@ -37,23 +36,23 @@ class FullStreamUIPolicyTest : public testing::Test {
  public:
   FullStreamUIPolicyTest()
       : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP),
-        saved_cmdline_(CommandLine::NO_PROGRAM) {
+        saved_cmdline_(base::CommandLine::NO_PROGRAM) {
 #if defined OS_CHROMEOS
     test_user_manager_.reset(new chromeos::ScopedTestUserManager());
 #endif
-    CommandLine command_line(CommandLine::NO_PROGRAM);
-    saved_cmdline_ = *CommandLine::ForCurrentProcess();
+    base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
+    saved_cmdline_ = *base::CommandLine::ForCurrentProcess();
     profile_.reset(new TestingProfile());
-    CommandLine::ForCurrentProcess()->AppendSwitch(
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kEnableExtensionActivityLogging);
-    CommandLine::ForCurrentProcess()->AppendSwitch(
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kEnableExtensionActivityLogTesting);
     extension_service_ = static_cast<TestExtensionSystem*>(
         ExtensionSystem::Get(profile_.get()))->CreateExtensionService
             (&command_line, base::FilePath(), false);
   }
 
-  virtual ~FullStreamUIPolicyTest() {
+  ~FullStreamUIPolicyTest() override {
 #if defined OS_CHROMEOS
     test_user_manager_.reset();
 #endif
@@ -61,7 +60,7 @@ class FullStreamUIPolicyTest : public testing::Test {
     profile_.reset(NULL);
     base::RunLoop().RunUntilIdle();
     // Restore the original command line and undo the affects of SetUp().
-    *CommandLine::ForCurrentProcess() = saved_cmdline_;
+    *base::CommandLine::ForCurrentProcess() = saved_cmdline_;
   }
 
   // A wrapper function for CheckReadFilteredData, so that we don't need to
@@ -443,7 +442,7 @@ class FullStreamUIPolicyTest : public testing::Test {
   // The test framework will do this itself as well. However, by then,
   // it is too late to call ActivityLog::RecomputeLoggingIsEnabled() in
   // TearDown().
-  CommandLine saved_cmdline_;
+  base::CommandLine saved_cmdline_;
 
 #if defined OS_CHROMEOS
   chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;

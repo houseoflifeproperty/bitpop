@@ -5,7 +5,7 @@
 """Presubmit script for changes affecting extensions docs server
 
 See http://dev.chromium.org/developers/how-tos/depottools/presubmit-scripts
-for more details about the presubmit API built into gcl.
+for more details about the presubmit API built into depot_tools.
 """
 
 # Run build_server so that files needed by tests are copied to the local
@@ -85,6 +85,13 @@ def _CheckYamlConsistency(input_api, output_api):
 
 def _RunPresubmit(input_api, output_api):
   _BuildServer(input_api)
+  # For now, print any lint errors. When these have been eliminated,
+  # move these into the warning list below.
+  # See crbug.com/434363 and crbug.com/461130.
+  lint_errors = input_api.canned_checks.RunPylint(input_api, output_api)
+  if lint_errors:
+    print(lint_errors)
+
   return (
       _WarnIfAppYamlHasntChanged(input_api, output_api) +
       _CheckYamlConsistency(input_api, output_api) +

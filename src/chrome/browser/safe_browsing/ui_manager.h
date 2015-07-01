@@ -24,7 +24,11 @@ class SafeBrowsingService;
 
 namespace base {
 class Thread;
-}
+}  // namespace base
+
+namespace net {
+class SSLInfo;
+}  // namespace net
 
 // Construction needs to happen on the main thread.
 class SafeBrowsingUIManager
@@ -96,8 +100,8 @@ class SafeBrowsingUIManager
   // chain). Otherwise, |original_url| = |url|.
   virtual void DisplayBlockingPage(const UnsafeResource& resource);
 
-  // Returns true if we already displayed an interstitial for that resource.
-  // Called on the UI thread.
+  // Returns true if we already displayed an interstitial for that resource,
+  // or if we should hide a UwS interstitial. Called on the UI thread.
   bool IsWhitelisted(const UnsafeResource& resource);
 
   // The blocking page on the UI thread has completed.
@@ -124,6 +128,11 @@ class SafeBrowsingUIManager
                                      SBThreatType threat_type,
                                      const std::string& post_data);
 
+  // Report an invalid TLS/SSL certificate chain to the server. Can only
+  // be called on UI thread.
+  void ReportInvalidCertificateChain(const std::string& serialized_report,
+                                     const base::Closure& callback);
+
   // Add and remove observers.  These methods must be invoked on the UI thread.
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* remove);
@@ -144,6 +153,10 @@ class SafeBrowsingUIManager
                                        bool is_subresource,
                                        SBThreatType threat_type,
                                        const std::string& post_data);
+
+  // Sends an invalid certificate chain report over the network.
+  void ReportInvalidCertificateChainOnIOThread(
+      const std::string& serialized_report);
 
   // Adds the given entry to the whitelist.  Called on the UI thread.
   void UpdateWhitelist(const UnsafeResource& resource);

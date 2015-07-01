@@ -115,39 +115,39 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
   // Begin Delegate implementations
 
   // CloudPrintURLFetcher::Delegate implementation.
-  virtual CloudPrintURLFetcher::ResponseAction HandleRawResponse(
+  CloudPrintURLFetcher::ResponseAction HandleRawResponse(
       const net::URLFetcher* source,
       const GURL& url,
       const net::URLRequestStatus& status,
       int response_code,
       const net::ResponseCookies& cookies,
-      const std::string& data) OVERRIDE;
-  virtual CloudPrintURLFetcher::ResponseAction HandleRawData(
+      const std::string& data) override;
+  CloudPrintURLFetcher::ResponseAction HandleRawData(
       const net::URLFetcher* source,
       const GURL& url,
-      const std::string& data) OVERRIDE;
-  virtual CloudPrintURLFetcher::ResponseAction HandleJSONData(
+      const std::string& data) override;
+  CloudPrintURLFetcher::ResponseAction HandleJSONData(
       const net::URLFetcher* source,
       const GURL& url,
       base::DictionaryValue* json_data,
-      bool succeeded) OVERRIDE;
-  virtual void OnRequestGiveUp() OVERRIDE;
-  virtual CloudPrintURLFetcher::ResponseAction OnRequestAuthError() OVERRIDE;
-  virtual std::string GetAuthHeader() OVERRIDE;
+      bool succeeded) override;
+  void OnRequestGiveUp() override;
+  CloudPrintURLFetcher::ResponseAction OnRequestAuthError() override;
+  std::string GetAuthHeader() override;
 
   // JobStatusUpdater::Delegate implementation
-  virtual bool OnJobCompleted(JobStatusUpdater* updater) OVERRIDE;
-  virtual void OnAuthError() OVERRIDE;
+  bool OnJobCompleted(JobStatusUpdater* updater) override;
+  void OnAuthError() override;
 
   // PrinterWatcherDelegate implementation
-  virtual void OnPrinterDeleted() OVERRIDE;
-  virtual void OnPrinterChanged() OVERRIDE;
-  virtual void OnJobChanged() OVERRIDE;
+  void OnPrinterDeleted() override;
+  void OnPrinterChanged() override;
+  void OnJobChanged() override;
 
   // JobSpoolerDelegate implementation.
   // Called on print_thread_.
-  virtual void OnJobSpoolSucceeded(const PlatformJobId& job_id) OVERRIDE;
-  virtual void OnJobSpoolFailed() OVERRIDE;
+  void OnJobSpoolSucceeded(const PlatformJobId& job_id) override;
+  void OnJobSpoolFailed() override;
 
   // End Delegate implementations
 
@@ -176,7 +176,7 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
                                         const GURL& url,
                                         const std::string& data);
 
-  virtual ~PrinterJobHandler();
+  ~PrinterJobHandler() override;
 
   // Begin request handlers for each state in the state machine
   CloudPrintURLFetcher::ResponseAction HandlePrinterUpdateResponse(
@@ -268,8 +268,6 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
   // DataHandler (depending on the current request being made).
   JSONDataHandler next_json_data_handler_;
   DataHandler next_data_handler_;
-  // The number of consecutive times that connecting to the server failed.
-  int server_error_count_;
   // The thread on which the actual print operation happens
   base::Thread print_thread_;
   // The Job spooler object. This is only non-NULL during a print operation.
@@ -289,9 +287,6 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
   // Flags that specify various pending server updates
   bool job_check_pending_;
   bool printer_update_pending_;
-
-  // Number of seconds between XMPP pings (for server registration)
-  int xmpp_ping_interval_;
 
   // Some task in the state machine is in progress.
   bool task_in_progress_;

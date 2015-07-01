@@ -9,13 +9,14 @@
 
 namespace blink {
 
-class HTMLMenuItemElement FINAL : public HTMLElement {
+class HTMLMenuItemElement final : public HTMLElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(HTMLMenuItemElement);
 
 private:
     explicit HTMLMenuItemElement(Document&);
+    virtual void defaultEventHandler(Event*) override;
 };
 
 } // namespace blink

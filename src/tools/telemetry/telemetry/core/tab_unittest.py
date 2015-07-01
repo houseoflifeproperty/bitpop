@@ -5,15 +5,16 @@
 import logging
 import tempfile
 
-from telemetry import benchmark
-from telemetry.core import bitmap
 from telemetry.core import exceptions
-from telemetry.core import util
-from telemetry.core import video
 from telemetry.core.platform import tracing_category_filter
 from telemetry.core.platform import tracing_options
+from telemetry.core import util
+from telemetry.core import video
+from telemetry import decorators
+from telemetry.image_processing import image_util
+from telemetry.image_processing import rgba_color
 from telemetry.timeline import model
-from telemetry.unittest import tab_test_case
+from telemetry.unittest_util import tab_test_case
 
 
 def _IsDocumentVisible(tab):
@@ -61,11 +62,11 @@ class TabTest(tab_test_case.TabTestCase):
     self.assertEquals(self._tab.browser, self._browser)
 
   def testRendererCrash(self):
-    self.assertRaises(exceptions.TabCrashException,
+    self.assertRaises(exceptions.DevtoolsTargetCrashException,
                       lambda: self._tab.Navigate('chrome://crash',
                                                  timeout=5))
 
-  @benchmark.Enabled('has tabs')
+  @decorators.Enabled('has tabs')
   def testActivateTab(self):
     util.WaitFor(lambda: _IsDocumentVisible(self._tab), timeout=5)
     new_tab = self._browser.tabs.New()
@@ -82,13 +83,6 @@ class TabTest(tab_test_case.TabTestCase):
     self._tab.Navigate(url)
     self.assertEquals(self._tab.url, url)
 
-  def testIsTimelineRecordingRunningTab(self):
-    self.assertFalse(self._tab.is_timeline_recording_running)
-    self._tab.StartTimelineRecording()
-    self.assertTrue(self._tab.is_timeline_recording_running)
-    self._tab.StopTimelineRecording()
-    self.assertFalse(self._tab.is_timeline_recording_running)
-
   #pylint: disable=W0212
   def testIsVideoCaptureRunning(self):
     original_platform_backend = self._tab.browser._platform_backend
@@ -102,15 +96,17 @@ class TabTest(tab_test_case.TabTestCase):
     finally:
       self._tab.browser._platform_backend = original_platform_backend
 
-  @benchmark.Disabled('chromeos') # crbug.com/412713.
+  # Test failing on android: http://crbug.com/437057
+  # and mac: http://crbug.com/468675
+  @decorators.Disabled('android', 'chromeos', 'mac')
   def testHighlight(self):
     self.assertEquals(self._tab.url, 'about:blank')
     options = tracing_options.TracingOptions()
     options.enable_chrome_trace = True
     self._browser.platform.tracing_controller.Start(
         options, tracing_category_filter.CreateNoOverheadFilter())
-    self._tab.Highlight(bitmap.WEB_PAGE_TEST_ORANGE)
-    self._tab.ClearHighlight(bitmap.WEB_PAGE_TEST_ORANGE)
+    self._tab.Highlight(rgba_color.WEB_PAGE_TEST_ORANGE)
+    self._tab.ClearHighlight(rgba_color.WEB_PAGE_TEST_ORANGE)
     trace_data = self._browser.platform.tracing_controller.Stop()
     timeline_model = model.TimelineModel(trace_data)
     renderer_thread = timeline_model.GetRendererThreadFromTabId(
@@ -122,8 +118,7 @@ class TabTest(tab_test_case.TabTestCase):
         break
     self.assertTrue(found_video_start_event)
 
-  @benchmark.Enabled('has tabs')
-  @benchmark.Disabled('chromeos') # crbug.com/412713.
+  @decorators.Enabled('has tabs')
   def testGetRendererThreadFromTabId(self):
     self.assertEquals(self._tab.url, 'about:blank')
     # Create 3 tabs. The third tab is closed before we call
@@ -168,14 +163,26 @@ class TabTest(tab_test_case.TabTestCase):
     # renderer_thread corresponding to it in the the trace.
     self.assertIs(None, timeline_model.GetRendererThreadFromTabId(third_tab.id))
 
+  @decorators.Disabled('android') # https://crbug.com/463933
+  def testTabIsAlive(self):
+    self.assertEquals(self._tab.url, 'about:blank')
+    self.assertTrue(self._tab.IsAlive())
+
+    self._tab.Navigate(self.UrlOfUnittestFile('blank.html'))
+    self.assertTrue(self._tab.IsAlive())
+
+    self.assertRaises(exceptions.DevtoolsTargetCrashException,
+        lambda: self._tab.Navigate(self.UrlOfUnittestFile('chrome://crash')))
+    self.assertFalse(self._tab.IsAlive())
+
 
 class GpuTabTest(tab_test_case.TabTestCase):
   @classmethod
   def CustomizeBrowserOptions(cls, options):
     options.AppendExtraBrowserArgs('--enable-gpu-benchmarking')
 
-  # Test flaky on mac: http://crbug.com/358664
-  @benchmark.Disabled('android', 'mac')
+  # Test flaky on mac: crbug.com/358664, chromeos: crbug.com/483212.
+  @decorators.Disabled('android', 'mac', 'chromeos')
   def testScreenshot(self):
     if not self._tab.screenshot_supported:
       logging.warning('Browser does not support screenshots, skipping test.')
@@ -185,10 +192,13 @@ class GpuTabTest(tab_test_case.TabTestCase):
     pixel_ratio = self._tab.EvaluateJavaScript('window.devicePixelRatio || 1')
 
     screenshot = self._tab.Screenshot(5)
-    assert screenshot
-    screenshot.GetPixelColor(0 * pixel_ratio, 0 * pixel_ratio).AssertIsRGB(
-        0, 255, 0, tolerance=2)
-    screenshot.GetPixelColor(31 * pixel_ratio, 31 * pixel_ratio).AssertIsRGB(
-        0, 255, 0, tolerance=2)
-    screenshot.GetPixelColor(32 * pixel_ratio, 32 * pixel_ratio).AssertIsRGB(
-        255, 255, 255, tolerance=2)
+    assert screenshot is not None
+    image_util.GetPixelColor(
+        screenshot, 0 * pixel_ratio, 0 * pixel_ratio).AssertIsRGB(
+            0, 255, 0, tolerance=2)
+    image_util.GetPixelColor(
+        screenshot, 31 * pixel_ratio, 31 * pixel_ratio).AssertIsRGB(
+            0, 255, 0, tolerance=2)
+    image_util.GetPixelColor(
+        screenshot, 32 * pixel_ratio, 32 * pixel_ratio).AssertIsRGB(
+            255, 255, 255, tolerance=2)

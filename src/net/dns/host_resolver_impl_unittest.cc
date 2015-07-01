@@ -25,6 +25,7 @@
 #include "net/dns/dns_client.h"
 #include "net/dns/dns_test_util.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/log/test_net_log.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
@@ -125,11 +126,11 @@ class MockHostResolverProc : public HostResolverProc {
     AddRule(hostname, ADDRESS_FAMILY_IPV6, result);
   }
 
-  virtual int Resolve(const std::string& hostname,
-                      AddressFamily address_family,
-                      HostResolverFlags host_resolver_flags,
-                      AddressList* addrlist,
-                      int* os_error) OVERRIDE {
+  int Resolve(const std::string& hostname,
+              AddressFamily address_family,
+              HostResolverFlags host_resolver_flags,
+              AddressList* addrlist,
+              int* os_error) override {
     base::AutoLock lock(lock_);
     capture_list_.push_back(ResolveKey(hostname, address_family));
     ++num_requests_waiting_;
@@ -166,7 +167,7 @@ class MockHostResolverProc : public HostResolverProc {
   }
 
  protected:
-  virtual ~MockHostResolverProc() {}
+  ~MockHostResolverProc() override {}
 
  private:
   mutable base::Lock lock_;
@@ -181,7 +182,7 @@ class MockHostResolverProc : public HostResolverProc {
 };
 
 bool AddressListContains(const AddressList& list, const std::string& address,
-                         int port) {
+                         uint16 port) {
   IPAddressNumber ip;
   bool rv = ParseIPLiteralToNumber(address, &ip);
   DCHECK(rv);
@@ -249,7 +250,7 @@ class Request {
   bool completed() const { return result_ != ERR_IO_PENDING; }
   bool pending() const { return handle_ != NULL; }
 
-  bool HasAddress(const std::string& address, int port) const {
+  bool HasAddress(const std::string& address, uint16 port) const {
     return AddressListContains(list_, address, port);
   }
 
@@ -258,7 +259,7 @@ class Request {
     return list_.size();
   }
 
-  bool HasOneAddress(const std::string& address, int port) const {
+  bool HasOneAddress(const std::string& address, uint16 port) const {
     return HasAddress(address, port) && (NumberOfAddresses() == 1u);
   }
 
@@ -361,11 +362,11 @@ class LookupAttemptHostResolverProc : public HostResolverProc {
   int resolved_attempt_number() { return resolved_attempt_number_; }
 
   // HostResolverProc methods.
-  virtual int Resolve(const std::string& host,
-                      AddressFamily address_family,
-                      HostResolverFlags host_resolver_flags,
-                      AddressList* addrlist,
-                      int* os_error) OVERRIDE {
+  int Resolve(const std::string& host,
+              AddressFamily address_family,
+              HostResolverFlags host_resolver_flags,
+              AddressList* addrlist,
+              int* os_error) override {
     bool wait_for_right_attempt_to_complete = true;
     {
       base::AutoLock auto_lock(lock_);
@@ -401,7 +402,7 @@ class LookupAttemptHostResolverProc : public HostResolverProc {
   }
 
  protected:
-  virtual ~LookupAttemptHostResolverProc() {}
+  ~LookupAttemptHostResolverProc() override {}
 
  private:
   int attempt_number_to_resolve_;
@@ -439,7 +440,7 @@ class HostResolverImplTest : public testing::Test {
  protected:
   // A Request::Handler which is a proxy to the HostResolverImplTest fixture.
   struct Handler : public Request::Handler {
-    virtual ~Handler() {}
+    ~Handler() override {}
 
     // Proxy functions so that classes derived from Handler can access them.
     Request* CreateRequest(const HostResolver::RequestInfo& info,
@@ -460,11 +461,9 @@ class HostResolverImplTest : public testing::Test {
   };
 
   // testing::Test implementation:
-  virtual void SetUp() OVERRIDE {
-    CreateResolver();
-  }
+  void SetUp() override { CreateResolver(); }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     if (resolver_.get())
       EXPECT_EQ(0u, resolver_->num_running_dispatcher_jobs_for_tests());
     EXPECT_FALSE(proc_->HasBlockedRequests());
@@ -532,6 +531,10 @@ class HostResolverImplTest : public testing::Test {
     return HostResolverImpl::kMaximumDnsFailures;
   }
 
+  bool IsIPv6Reachable(const BoundNetLog& net_log) {
+    return resolver_->IsIPv6Reachable(net_log);
+  }
+
   scoped_refptr<MockHostResolverProc> proc_;
   scoped_ptr<HostResolverImpl> resolver_;
   ScopedVector<Request> requests_;
@@ -550,6 +553,17 @@ TEST_F(HostResolverImplTest, AsynchronousLookup) {
   EXPECT_TRUE(req->HasOneAddress("192.168.1.42", 80));
 
   EXPECT_EQ("just.testing", proc_->GetCaptureList()[0].hostname);
+}
+
+TEST_F(HostResolverImplTest, LocalhostLookup) {
+  proc_->SignalMultiple(1u);
+  Request* req = CreateRequest("foo.localhost", 80);
+  EXPECT_EQ(ERR_IO_PENDING, req->Resolve());
+  EXPECT_EQ(OK, req->WaitForResult());
+
+  EXPECT_TRUE(req->HasOneAddress("127.0.0.1", 80));
+
+  EXPECT_EQ("localhost.", proc_->GetCaptureList()[0].hostname);
 }
 
 TEST_F(HostResolverImplTest, EmptyListMeansNameNotResolved) {
@@ -732,7 +746,7 @@ TEST_F(HostResolverImplTest, CanceledRequestsReleaseJobSlots) {
 
 TEST_F(HostResolverImplTest, CancelWithinCallback) {
   struct MyHandler : public Handler {
-    virtual void Handle(Request* req) OVERRIDE {
+    void Handle(Request* req) override {
       // Port 80 is the first request that the callback will be invoked for.
       // While we are executing within that callback, cancel the other requests
       // in the job and start another request.
@@ -761,7 +775,7 @@ TEST_F(HostResolverImplTest, CancelWithinCallback) {
 
 TEST_F(HostResolverImplTest, DeleteWithinCallback) {
   struct MyHandler : public Handler {
-    virtual void Handle(Request* req) OVERRIDE {
+    void Handle(Request* req) override {
       EXPECT_EQ("a", req->info().hostname());
       EXPECT_EQ(80, req->info().port());
 
@@ -787,7 +801,7 @@ TEST_F(HostResolverImplTest, DeleteWithinCallback) {
 
 TEST_F(HostResolverImplTest, DeleteWithinAbortedCallback) {
   struct MyHandler : public Handler {
-    virtual void Handle(Request* req) OVERRIDE {
+    void Handle(Request* req) override {
       EXPECT_EQ("a", req->info().hostname());
       EXPECT_EQ(80, req->info().port());
 
@@ -827,7 +841,7 @@ TEST_F(HostResolverImplTest, DeleteWithinAbortedCallback) {
 
 TEST_F(HostResolverImplTest, StartWithinCallback) {
   struct MyHandler : public Handler {
-    virtual void Handle(Request* req) OVERRIDE {
+    void Handle(Request* req) override {
       if (req->index() == 0) {
         // On completing the first request, start another request for "a".
         // Since caching is disabled, this will result in another async request.
@@ -858,7 +872,7 @@ TEST_F(HostResolverImplTest, StartWithinCallback) {
 
 TEST_F(HostResolverImplTest, BypassCache) {
   struct MyHandler : public Handler {
-    virtual void Handle(Request* req) OVERRIDE {
+    void Handle(Request* req) override {
       if (req->index() == 0) {
         // On completing the first request, start another request for "a".
         // Since caching is enabled, this should complete synchronously.
@@ -890,7 +904,8 @@ TEST_F(HostResolverImplTest, BypassCache) {
   EXPECT_EQ(2u, proc_->GetCaptureList().size());
 }
 
-// Test that IP address changes flush the cache.
+// Test that IP address changes flush the cache but initial DNS config reads do
+// not.
 TEST_F(HostResolverImplTest, FlushCacheOnIPAddressChange) {
   proc_->SignalMultiple(2u);  // One before the flush, one after.
 
@@ -898,6 +913,11 @@ TEST_F(HostResolverImplTest, FlushCacheOnIPAddressChange) {
   EXPECT_EQ(ERR_IO_PENDING, req->Resolve());
   EXPECT_EQ(OK, req->WaitForResult());
 
+  req = CreateRequest("host1", 75);
+  EXPECT_EQ(OK, req->Resolve());  // Should complete synchronously.
+
+  // Verify initial DNS config read does not flush cache.
+  NetworkChangeNotifier::NotifyObserversOfInitialDNSConfigReadForTests();
   req = CreateRequest("host1", 75);
   EXPECT_EQ(OK, req->Resolve());  // Should complete synchronously.
 
@@ -925,6 +945,20 @@ TEST_F(HostResolverImplTest, AbortOnIPAddressChanged) {
 
   EXPECT_EQ(ERR_NETWORK_CHANGED, req->WaitForResult());
   EXPECT_EQ(0u, resolver_->GetHostCache()->size());
+}
+
+// Test that initial DNS config read signals do not abort pending requests.
+TEST_F(HostResolverImplTest, DontAbortOnInitialDNSConfigRead) {
+  Request* req = CreateRequest("host1", 70);
+  EXPECT_EQ(ERR_IO_PENDING, req->Resolve());
+
+  EXPECT_TRUE(proc_->WaitFor(1u));
+  // Triggering initial DNS config read signal.
+  NetworkChangeNotifier::NotifyObserversOfInitialDNSConfigReadForTests();
+  base::MessageLoop::current()->RunUntilIdle();  // Notification happens async.
+  proc_->SignalAll();
+
+  EXPECT_EQ(OK, req->WaitForResult());
 }
 
 // Obey pool constraints after IP address has changed.
@@ -956,7 +990,7 @@ TEST_F(HostResolverImplTest, ObeyPoolConstraintsAfterIPAddressChange) {
 // will not be aborted.
 TEST_F(HostResolverImplTest, AbortOnlyExistingRequestsOnIPAddressChange) {
   struct MyHandler : public Handler {
-    virtual void Handle(Request* req) OVERRIDE {
+    void Handle(Request* req) override {
       // Start new request for a different hostname to ensure that the order
       // of jobs in HostResolverImpl is not stable.
       std::string hostname;
@@ -1321,6 +1355,80 @@ TEST_F(HostResolverImplTest, MultipleAttempts) {
   EXPECT_EQ(resolver_proc->resolved_attempt_number(), kAttemptNumberToResolve);
 }
 
+// If a host resolves to a list that includes 127.0.53.53, this is treated as
+// an error. 127.0.53.53 is a localhost address, however it has been given a
+// special significance by ICANN to help surfance name collision resulting from
+// the new gTLDs.
+TEST_F(HostResolverImplTest, NameCollision127_0_53_53) {
+  proc_->AddRuleForAllFamilies("single", "127.0.53.53");
+  proc_->AddRuleForAllFamilies("multiple", "127.0.0.1,127.0.53.53");
+  proc_->AddRuleForAllFamilies("ipv6", "::127.0.53.53");
+  proc_->AddRuleForAllFamilies("not_reserved1", "53.53.0.127");
+  proc_->AddRuleForAllFamilies("not_reserved2", "127.0.53.54");
+  proc_->AddRuleForAllFamilies("not_reserved3", "10.0.53.53");
+  proc_->SignalMultiple(6u);
+
+  Request* request;
+
+  request = CreateRequest("single");
+  EXPECT_EQ(ERR_IO_PENDING, request->Resolve());
+  EXPECT_EQ(ERR_ICANN_NAME_COLLISION, request->WaitForResult());
+
+  request = CreateRequest("multiple");
+  EXPECT_EQ(ERR_IO_PENDING, request->Resolve());
+  EXPECT_EQ(ERR_ICANN_NAME_COLLISION, request->WaitForResult());
+
+  // Resolving an IP literal of 127.0.53.53 however is allowed.
+  EXPECT_EQ(OK, CreateRequest("127.0.53.53")->Resolve());
+
+  // Moreover the address should not be recognized when embedded in an IPv6
+  // address.
+  request = CreateRequest("ipv6");
+  EXPECT_EQ(ERR_IO_PENDING, request->Resolve());
+  EXPECT_EQ(OK, request->WaitForResult());
+
+  // Try some other IPs which are similar, but NOT an exact match on
+  // 127.0.53.53.
+  request = CreateRequest("not_reserved1");
+  EXPECT_EQ(ERR_IO_PENDING, request->Resolve());
+  EXPECT_EQ(OK, request->WaitForResult());
+
+  request = CreateRequest("not_reserved2");
+  EXPECT_EQ(ERR_IO_PENDING, request->Resolve());
+  EXPECT_EQ(OK, request->WaitForResult());
+
+  request = CreateRequest("not_reserved3");
+  EXPECT_EQ(ERR_IO_PENDING, request->Resolve());
+  EXPECT_EQ(OK, request->WaitForResult());
+}
+
+TEST_F(HostResolverImplTest, IsIPv6Reachable) {
+  // Verify that two consecutive calls return the same value.
+  TestNetLog net_log;
+  BoundNetLog bound_net_log = BoundNetLog::Make(&net_log, NetLog::SOURCE_NONE);
+  bool result1 = IsIPv6Reachable(bound_net_log);
+  bool result2 = IsIPv6Reachable(bound_net_log);
+  EXPECT_EQ(result1, result2);
+
+  // Filter reachability check events and verify that there are two of them.
+  TestNetLogEntry::List event_list;
+  net_log.GetEntries(&event_list);
+  TestNetLogEntry::List probe_event_list;
+  for (const auto& event : event_list) {
+    if (event.type == NetLog::TYPE_HOST_RESOLVER_IMPL_IPV6_REACHABILITY_CHECK) {
+      probe_event_list.push_back(event);
+    }
+  }
+  ASSERT_EQ(2U, probe_event_list.size());
+
+  // Verify that the first request was not cached and the second one was.
+  bool cached;
+  EXPECT_TRUE(probe_event_list[0].GetBooleanValue("cached", &cached));
+  EXPECT_FALSE(cached);
+  EXPECT_TRUE(probe_event_list[1].GetBooleanValue("cached", &cached));
+  EXPECT_TRUE(cached);
+}
+
 DnsConfig CreateValidDnsConfig() {
   IPAddressNumber dns_ip;
   bool rv = ParseIPLiteralToNumber("192.168.1.0", &dns_ip);
@@ -1339,7 +1447,7 @@ class HostResolverImplDnsTest : public HostResolverImplTest {
 
  protected:
   // testing::Test implementation:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     AddDnsRule("nx", dns_protocol::kTypeA, MockDnsClientRule::FAIL, false);
     AddDnsRule("nx", dns_protocol::kTypeAAAA, MockDnsClientRule::FAIL, false);
     AddDnsRule("ok", dns_protocol::kTypeA, MockDnsClientRule::OK, false);
@@ -1379,9 +1487,9 @@ class HostResolverImplDnsTest : public HostResolverImplTest {
   }
 
   // HostResolverImplTest implementation:
-  virtual void CreateResolverWithLimitsAndParams(
+  void CreateResolverWithLimitsAndParams(
       size_t max_concurrent_resolves,
-      const HostResolverImpl::ProcTaskParams& params) OVERRIDE {
+      const HostResolverImpl::ProcTaskParams& params) override {
     HostResolverImpl::Options options = DefaultOptions();
     options.max_concurrent_resolves = max_concurrent_resolves;
     resolver_.reset(new HostResolverImpl(options, NULL));

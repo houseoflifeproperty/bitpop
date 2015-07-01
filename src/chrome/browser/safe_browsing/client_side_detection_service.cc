@@ -119,12 +119,12 @@ ClientSideDetectionService::~ClientSideDetectionService() {
 // static
 ClientSideDetectionService* ClientSideDetectionService::Create(
     net::URLRequestContextGetter* request_context_getter) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return new ClientSideDetectionService(request_context_getter);
 }
 
 void ClientSideDetectionService::SetEnabledAndRefreshState(bool enabled) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   SendModelToRenderers();  // always refresh the renderer state
   if (enabled == enabled_)
     return;
@@ -167,7 +167,7 @@ void ClientSideDetectionService::SetEnabledAndRefreshState(bool enabled) {
 void ClientSideDetectionService::SendClientReportPhishingRequest(
     ClientPhishingRequest* verdict,
     const ClientReportPhishingRequestCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&ClientSideDetectionService::StartClientReportPhishingRequest,
@@ -177,7 +177,7 @@ void ClientSideDetectionService::SendClientReportPhishingRequest(
 void ClientSideDetectionService::SendClientReportMalwareRequest(
     ClientMalwareRequest* verdict,
     const ClientReportMalwareRequestCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&ClientSideDetectionService::StartClientReportMalwareRequest,
@@ -188,7 +188,7 @@ bool ClientSideDetectionService::IsPrivateIPAddress(
     const std::string& ip_address) const {
   net::IPAddressNumber ip_number;
   if (!net::ParseIPLiteralToNumber(ip_address, &ip_number)) {
-    VLOG(2) << "Unable to parse IP address: '" << ip_address << "'";
+    DVLOG(2) << "Unable to parse IP address: '" << ip_address << "'";
     // Err on the side of safety and assume this might be private.
     return true;
   }
@@ -223,7 +223,7 @@ void ClientSideDetectionService::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(type == content::NOTIFICATION_RENDERER_PROCESS_CREATED);
   if (!model_.get()) {
     // Model might not be ready or maybe there was an error.
@@ -241,11 +241,11 @@ void ClientSideDetectionService::SendModelToProcess(
   Profile* profile = Profile::FromBrowserContext(process->GetBrowserContext());
   std::string model;
   if (profile->GetPrefs()->GetBoolean(prefs::kSafeBrowsingEnabled)) {
-    VLOG(2) << "Sending phishing model to RenderProcessHost @" << process;
+    DVLOG(2) << "Sending phishing model to RenderProcessHost @" << process;
     model = model_str_;
   } else {
-    VLOG(2) << "Disabling client-side phishing detection for "
-            << "RenderProcessHost @" << process;
+    DVLOG(2) << "Disabling client-side phishing detection for "
+             << "RenderProcessHost @" << process;
   }
   process->Send(new SafeBrowsingMsg_SetPhishingModel(model));
 }
@@ -259,8 +259,8 @@ void ClientSideDetectionService::SendModelToRenderers() {
 }
 
 void ClientSideDetectionService::ScheduleFetchModel(int64 delay_ms) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kSbDisableAutoUpdate))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSbDisableAutoUpdate))
     return;
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
@@ -273,9 +273,9 @@ void ClientSideDetectionService::StartFetchModel() {
   if (enabled_) {
     // Start fetching the model either from the cache or possibly from the
     // network if the model isn't in the cache.
-    model_fetcher_.reset(net::URLFetcher::Create(
-        0 /* ID used for testing */, GURL(kClientModelUrl),
-        net::URLFetcher::GET, this));
+    model_fetcher_ = net::URLFetcher::Create(0 /* ID used for testing */,
+                                             GURL(kClientModelUrl),
+                                             net::URLFetcher::GET, this);
     model_fetcher_->SetRequestContext(request_context_getter_.get());
     model_fetcher_->Start();
   }
@@ -308,7 +308,7 @@ void ClientSideDetectionService::EndFetchModel(ClientModelStatus status) {
 void ClientSideDetectionService::StartClientReportPhishingRequest(
     ClientPhishingRequest* verdict,
     const ClientReportPhishingRequestCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   scoped_ptr<ClientPhishingRequest> request(verdict);
 
   if (!enabled_) {
@@ -320,16 +320,16 @@ void ClientSideDetectionService::StartClientReportPhishingRequest(
   std::string request_data;
   if (!request->SerializeToString(&request_data)) {
     UMA_HISTOGRAM_COUNTS("SBClientPhishing.RequestNotSerialized", 1);
-    VLOG(1) << "Unable to serialize the CSD request. Proto file changed?";
+    DVLOG(1) << "Unable to serialize the CSD request. Proto file changed?";
     if (!callback.is_null())
       callback.Run(GURL(request->url()), false);
     return;
   }
 
-  net::URLFetcher* fetcher = net::URLFetcher::Create(
-      0 /* ID used for testing */,
-      GetClientReportUrl(kClientReportPhishingUrl),
-      net::URLFetcher::POST, this);
+  net::URLFetcher* fetcher =
+      net::URLFetcher::Create(0 /* ID used for testing */,
+                              GetClientReportUrl(kClientReportPhishingUrl),
+                              net::URLFetcher::POST, this).release();
 
   // Remember which callback and URL correspond to the current fetcher object.
   ClientReportInfo* info = new ClientReportInfo;
@@ -349,7 +349,7 @@ void ClientSideDetectionService::StartClientReportPhishingRequest(
 void ClientSideDetectionService::StartClientReportMalwareRequest(
     ClientMalwareRequest* verdict,
     const ClientReportMalwareRequestCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   scoped_ptr<ClientMalwareRequest> request(verdict);
 
   if (!enabled_) {
@@ -367,10 +367,10 @@ void ClientSideDetectionService::StartClientReportMalwareRequest(
     return;
   }
 
-  net::URLFetcher* fetcher = net::URLFetcher::Create(
-      0 /* ID used for testing */,
-      GetClientReportUrl(kClientReportMalwareUrl),
-      net::URLFetcher::POST, this);
+  net::URLFetcher* fetcher =
+      net::URLFetcher::Create(0 /* ID used for testing */,
+                              GetClientReportUrl(kClientReportMalwareUrl),
+                              net::URLFetcher::POST, this).release();
 
   // Remember which callback and URL correspond to the current fetcher object.
   ClientMalwareReportInfo* info = new ClientMalwareReportInfo;

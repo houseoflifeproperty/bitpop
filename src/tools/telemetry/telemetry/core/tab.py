@@ -19,16 +19,23 @@ class Tab(web_contents.WebContents):
       # Evaluates 1+1 in the tab's JavaScript context.
       tab.Evaluate('1+1')
   """
-  def __init__(self, inspector_backend, backend_list):
-    super(Tab, self).__init__(inspector_backend, backend_list)
+  def __init__(self, inspector_backend, tab_list_backend, browser):
+    super(Tab, self).__init__(inspector_backend)
+    self._tab_list_backend = tab_list_backend
+    self._browser = browser
 
   @property
   def browser(self):
     """The browser in which this tab resides."""
-    return self._inspector_backend.browser
+    return self._browser
 
   @property
   def url(self):
+    """Returns the URL of the tab, as reported by devtools.
+
+    Raises:
+      devtools_http.DevToolsClientConnectionError
+    """
     return self._inspector_backend.url
 
   @property
@@ -41,6 +48,11 @@ class Tab(web_contents.WebContents):
       'node_count': integer,
       'event_listener_count': integer
     }
+
+    Raises:
+      inspector_memory.InspectorMemoryException
+      exceptions.TimeoutException
+      exceptions.DevtoolsTargetCrashException
     """
     dom_counters = self._inspector_backend.GetDOMStats(
         timeout=DEFAULT_TAB_TIMEOUT)
@@ -58,15 +70,28 @@ class Tab(web_contents.WebContents):
     Please note: this is asynchronous. There is a delay between this call
     and the page's documentVisibilityState becoming 'visible', and yet more
     delay until the actual tab is visible to the user. None of these delays
-    are included in this call."""
-    self._backend_list.ActivateTab(self._inspector_backend.debugger_url)
+    are included in this call.
+
+    Raises:
+      devtools_http.DevToolsClientConnectionError
+      devtools_client_backend.TabNotFoundError
+      tab_list_backend.TabUnexpectedResponseException
+    """
+    self._tab_list_backend.ActivateTab(self.id)
 
   def Close(self):
     """Closes this tab.
 
     Not all browsers or browser versions support this method.
-    Be sure to check browser.supports_tab_control."""
-    self._backend_list.CloseTab(self._inspector_backend.debugger_url)
+    Be sure to check browser.supports_tab_control.
+
+    Raises:
+      devtools_http.DevToolsClientConnectionError
+      devtools_client_backend.TabNotFoundError
+      tab_list_backend.TabUnexpectedResponseException
+      exceptions.TimeoutException
+    """
+    self._tab_list_backend.CloseTab(self.id)
 
   @property
   def screenshot_supported(self):
@@ -78,6 +103,10 @@ class Tab(web_contents.WebContents):
 
     Returns:
       A telemetry.core.Bitmap.
+    Raises:
+      exceptions.WebSocketDisconnected
+      exceptions.TimeoutException
+      exceptions.DevtoolsTargetCrashException
     """
     return self._inspector_backend.Screenshot(timeout)
 
@@ -91,6 +120,12 @@ class Tab(web_contents.WebContents):
 
     TODO(tonyg): It is possible that the z-index hack here might not work for
     all pages. If this happens, DevTools also provides a method for this.
+
+    Raises:
+      exceptions.EvaluateException
+      exceptions.WebSocketDisconnected
+      exceptions.TimeoutException
+      exceptions.DevtoolsTargetCrashException
     """
     self.ExecuteJavaScript("""
       (function() {
@@ -114,7 +149,14 @@ class Tab(web_contents.WebContents):
         '!!window.__telemetry_screen_%d' % int(color), 5)
 
   def ClearHighlight(self, color):
-    """Clears a highlight of the given bitmap.RgbaColor."""
+    """Clears a highlight of the given bitmap.RgbaColor.
+
+    Raises:
+      exceptions.EvaluateException
+      exceptions.WebSocketDisconnected
+      exceptions.TimeoutException
+      exceptions.DevtoolsTargetCrashException
+    """
     self.ExecuteJavaScript("""
       (function() {
         document.body.removeChild(window.__telemetry_screen_%d);
@@ -142,6 +184,13 @@ class Tab(web_contents.WebContents):
       min_bitrate_mbps: The minimum caputre bitrate in MegaBits Per Second.
           The platform is free to deliver a higher bitrate if it can do so
           without increasing overhead.
+
+    Raises:
+      exceptions.EvaluateException
+      exceptions.WebSocketDisconnected
+      exceptions.TimeoutException
+      exceptions.DevtoolsTargetCrashException
+      ValueError: If the required |min_bitrate_mbps| can't be achieved.
     """
     self.Highlight(highlight_bitmap)
     self.browser.platform.StartVideoCapture(min_bitrate_mbps)
@@ -162,30 +211,24 @@ class Tab(web_contents.WebContents):
     """
     return self.browser.platform.StopVideoCapture()
 
-  def WaitForNavigate(self, timeout=DEFAULT_TAB_TIMEOUT):
-    """Waits for the navigation to complete.
-
-    The current page is expect to be in a navigation.
-    This function returns when the navigation is complete or when
-    the timeout has been exceeded.
-    """
-    self._inspector_backend.WaitForNavigate(timeout)
-
-  def Navigate(self, url, script_to_evaluate_on_commit=None,
-               timeout=DEFAULT_TAB_TIMEOUT):
-    """Navigates to url.
-
-    If |script_to_evaluate_on_commit| is given, the script source string will be
-    evaluated when the navigation is committed. This is after the context of
-    the page exists, but before any script on the page itself has executed.
-    """
-    self._inspector_backend.Navigate(url, script_to_evaluate_on_commit, timeout)
-
   def GetCookieByName(self, name, timeout=DEFAULT_TAB_TIMEOUT):
-    """Returns the value of the cookie by the given |name|."""
+    """Returns the value of the cookie by the given |name|.
+
+    Raises:
+      exceptions.WebSocketDisconnected
+      exceptions.TimeoutException
+      exceptions.DevtoolsTargetCrashException
+    """
     return self._inspector_backend.GetCookieByName(name, timeout)
 
   def CollectGarbage(self):
+    """Forces a garbage collection.
+
+    Raises:
+      exceptions.WebSocketDisconnected
+      exceptions.TimeoutException
+      exceptions.DevtoolsTargetCrashException
+    """
     self._inspector_backend.CollectGarbage()
 
   def ClearCache(self, force):
@@ -195,6 +238,13 @@ class Tab(web_contents.WebContents):
       force: Iff true, navigates to about:blank which destroys the previous
           renderer, ensuring that even "live" resources in the memory cache are
           cleared.
+
+    Raises:
+      exceptions.EvaluateException
+      exceptions.WebSocketDisconnected
+      exceptions.TimeoutException
+      exceptions.DevtoolsTargetCrashException
+      errors.DeviceUnresponsiveError
     """
     self.browser.platform.FlushDnsCache()
     self.ExecuteJavaScript("""

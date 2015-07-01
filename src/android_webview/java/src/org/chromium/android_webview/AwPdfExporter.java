@@ -4,6 +4,7 @@
 
 package org.chromium.android_webview;
 
+import android.annotation.SuppressLint;
 import android.os.CancellationSignal;
 import android.os.ParcelFileDescriptor;
 import android.print.PrintAttributes;
@@ -18,6 +19,7 @@ import org.chromium.base.JNINamespace;
  * Export the android webview as a PDF.
  * @TODO(sgurun) explain the ownership of this class and its native counterpart
  */
+@SuppressLint("NewApi")  // Printing requires API level 19.
 @JNINamespace("android_webview")
 public class AwPdfExporter {
 
@@ -90,8 +92,8 @@ public class AwPdfExporter {
         int horizontalDpi = attributes.getResolution().getHorizontalDpi();
         int verticalDpi = attributes.getResolution().getVerticalDpi();
         if (horizontalDpi != verticalDpi) {
-            Log.w(TAG, "Horizontal and vertical DPIs differ. Using horizontal DPI " +
-                    " hDpi=" + horizontalDpi + " vDPI=" + verticalDpi);
+            Log.w(TAG, "Horizontal and vertical DPIs differ. Using horizontal DPI "
+                    + " hDpi=" + horizontalDpi + " vDPI=" + verticalDpi);
         }
         return horizontalDpi;
     }

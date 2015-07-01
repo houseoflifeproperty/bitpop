@@ -5,8 +5,7 @@
 package org.chromium.chrome.unit_tests_apk;
 
 import org.chromium.chrome.browser.ChromiumApplication;
-import org.chromium.chrome.browser.PKCS11AuthenticationManager;
-import org.chromium.chrome.browser.Tab;
+import org.chromium.chrome.browser.smartcard.PKCS11AuthenticationManager;
 
 /**
  * A stub implementation of the chrome application to be used in chrome unit_tests.
@@ -14,23 +13,8 @@ import org.chromium.chrome.browser.Tab;
 public class ChromeNativeTestApplication extends ChromiumApplication {
 
     @Override
-    protected void openProtectedContentSettings() {
-    }
-
-    @Override
-    protected void showSyncSettings() {
-    }
-
-    @Override
-    protected void showAutofillSettings() {
-    }
-
-    @Override
-    protected void showTermsOfServiceDialog() {
-    }
-
-    @Override
-    protected void openClearBrowsingData(Tab tab) {
+    public String getSettingsActivityName() {
+        return null;
     }
 
     @Override
@@ -41,5 +25,9 @@ public class ChromeNativeTestApplication extends ChromiumApplication {
     @Override
     protected PKCS11AuthenticationManager getPKCS11AuthenticationManager() {
         return null;
+    }
+
+    @Override
+    public void initCommandLine() {
     }
 }

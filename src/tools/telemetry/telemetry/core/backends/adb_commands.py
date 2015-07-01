@@ -26,11 +26,14 @@ try:
 except Exception:
   ports = None
 from pylib.device import device_utils  # pylint: disable=F0401
+from pylib.utils import apk_helper  # pylint: disable=F0401
 
 
 def IsAndroidSupported():
   return device_utils != None
 
+def GetPackageName(apk_path):
+  return apk_helper.GetPackageName(apk_path)
 
 def GetAttachedDevices():
   """Returns a list of attached, online android devices.
@@ -66,9 +69,7 @@ class AdbCommands(object):
     return getattr(self._device.old_interface, name)
 
   def Forward(self, local, remote):
-    ret = self._device.old_interface.Adb().SendCommand(
-        'forward %s %s' % (local, remote))
-    assert ret == ''
+    self._device.adb.Forward(local, remote)
 
   def IsUserBuild(self):
     return self._device.GetProp('ro.build.type') == 'user'
@@ -105,9 +106,11 @@ def SetupPrebuiltTools(adb):
   if platform.GetHostPlatform().GetOSName() == 'linux':
     host_tools.append('host_forwarder')
 
-  has_device_prebuilt = adb.device().GetProp('ro.product.cpu.abi').startswith(
-      'armeabi')
+  arch_name = adb.device().GetABI()
+  has_device_prebuilt = (arch_name.startswith('armeabi')
+                         or arch_name.startswith('arm64'))
   if not has_device_prebuilt:
+    logging.warning('Unknown architecture type: %s' % arch_name)
     return all([support_binaries.FindLocallyBuiltPath(t) for t in device_tools])
 
   build_type = None
@@ -124,7 +127,10 @@ def SetupPrebuiltTools(adb):
         os.makedirs(os.path.dirname(dest))
       platform_name = ('android' if t in device_tools else
                        platform.GetHostPlatform().GetOSName())
-      prebuilt_path = support_binaries.FindPath(executable, platform_name)
+      bin_arch_name = (arch_name if t in device_tools else
+                       platform.GetHostPlatform().GetArchName())
+      prebuilt_path = support_binaries.FindPath(
+          executable, bin_arch_name, platform_name)
       if not prebuilt_path or not os.path.exists(prebuilt_path):
         raise NotImplementedError("""
 %s must be checked into cloud storage.

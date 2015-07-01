@@ -24,23 +24,21 @@ class NfcTagChromeOS;
 class NfcNdefTagTechnologyChromeOS : public device::NfcNdefTagTechnology,
                                      public NfcRecordClient::Observer {
  public:
-  virtual ~NfcNdefTagTechnologyChromeOS();
+  ~NfcNdefTagTechnologyChromeOS() override;
 
   // device::NfcNdefTagTechnology overrides.
-  virtual void AddObserver(device::NfcNdefTagTechnology::Observer* observer)
-    OVERRIDE;
-  virtual void RemoveObserver(device::NfcNdefTagTechnology::Observer* observer)
-    OVERRIDE;
-  virtual const device::NfcNdefMessage& GetNdefMessage() const OVERRIDE;
-  virtual void WriteNdef(const device::NfcNdefMessage& message,
-                         const base::Closure& callback,
-                         const ErrorCallback& error_callback) OVERRIDE;
+  void AddObserver(device::NfcNdefTagTechnology::Observer* observer) override;
+  void RemoveObserver(
+      device::NfcNdefTagTechnology::Observer* observer) override;
+  const device::NfcNdefMessage& GetNdefMessage() const override;
+  void WriteNdef(const device::NfcNdefMessage& message,
+                 const base::Closure& callback,
+                 const ErrorCallback& error_callback) override;
 
   // NfcRecordClient::Observer overrides.
-  virtual void RecordAdded(const dbus::ObjectPath& object_path) OVERRIDE;
-  virtual void RecordRemoved(const dbus::ObjectPath& object_path) OVERRIDE;
-  virtual void RecordPropertiesReceived(
-      const dbus::ObjectPath& object_path) OVERRIDE;
+  void RecordAdded(const dbus::ObjectPath& object_path) override;
+  void RecordRemoved(const dbus::ObjectPath& object_path) override;
+  void RecordPropertiesReceived(const dbus::ObjectPath& object_path) override;
 
  private:
   friend class NfcTagChromeOS;

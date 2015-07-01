@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -134,7 +134,6 @@ class PeerConnectionEndToEndTest
                     "caller")),
         callee_(new rtc::RefCountedObject<PeerConnectionTestWrapper>(
                     "callee")) {
-    rtc::InitializeSSL(NULL);
   }
 
   void CreatePcs() {
@@ -262,10 +261,6 @@ class PeerConnectionEndToEndTest
                    kMaxWait);
   }
 
-  ~PeerConnectionEndToEndTest() {
-    rtc::CleanupSSL();
-  }
-
  protected:
   rtc::scoped_refptr<PeerConnectionTestWrapper> caller_;
   rtc::scoped_refptr<PeerConnectionTestWrapper> callee_;
@@ -277,7 +272,13 @@ class PeerConnectionEndToEndTest
 // https://code.google.com/p/webrtc/issues/detail?id=1205 for details.
 #if !defined(THREAD_SANITIZER)
 
-TEST_F(PeerConnectionEndToEndTest, Call) {
+// Flaky on Windows. Disabled per issue 4464.
+#ifdef WEBRTC_WIN
+#define MAYBE_Call DISABLED_Call
+#else
+#define MAYBE_Call Call
+#endif
+TEST_F(PeerConnectionEndToEndTest, MAYBE_Call) {
   CreatePcs();
   GetAndAddUserMedia();
   Negotiate();
@@ -325,7 +326,14 @@ TEST_F(PeerConnectionEndToEndTest, CreateDataChannelBeforeNegotiate) {
 
 // Verifies that a DataChannel created after the negotiation can transition to
 // "OPEN" and transfer data.
-TEST_F(PeerConnectionEndToEndTest, CreateDataChannelAfterNegotiate) {
+#if defined(MEMORY_SANITIZER)
+// Fails under MemorySanitizer:
+// See https://code.google.com/p/webrtc/issues/detail?id=3980.
+#define MAYBE_CreateDataChannelAfterNegotiate DISABLED_CreateDataChannelAfterNegotiate
+#else
+#define MAYBE_CreateDataChannelAfterNegotiate CreateDataChannelAfterNegotiate
+#endif
+TEST_F(PeerConnectionEndToEndTest, MAYBE_CreateDataChannelAfterNegotiate) {
   MAYBE_SKIP_TEST(rtc::SSLStreamAdapter::HaveDtlsSrtp);
 
   CreatePcs();

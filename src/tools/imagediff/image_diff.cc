@@ -397,7 +397,7 @@ int DiffImages(const base::FilePath& file1, const base::FilePath& file2,
 // paths as non-wide strings anyway.
 base::FilePath FilePathFromASCII(const std::string& str) {
 #if defined(OS_WIN)
-  return base::FilePath(base::ASCIIToWide(str));
+  return base::FilePath(base::ASCIIToUTF16(str));
 #else
   return base::FilePath(str);
 #endif
@@ -405,8 +405,9 @@ base::FilePath FilePathFromASCII(const std::string& str) {
 
 int main(int argc, const char* argv[]) {
   base::EnableTerminationOnHeapCorruption();
-  CommandLine::Init(argc, argv);
-  const CommandLine& parsed_command_line = *CommandLine::ForCurrentProcess();
+  base::CommandLine::Init(argc, argv);
+  const base::CommandLine& parsed_command_line =
+      *base::CommandLine::ForCurrentProcess();
   bool histograms = parsed_command_line.HasSwitch(kOptionCompareHistograms);
   if (parsed_command_line.HasSwitch(kOptionPollStdin)) {
     // Watch stdin for filenames.
@@ -432,7 +433,7 @@ int main(int argc, const char* argv[]) {
     return 0;
   }
 
-  const CommandLine::StringVector& args = parsed_command_line.GetArgs();
+  const base::CommandLine::StringVector& args = parsed_command_line.GetArgs();
   if (parsed_command_line.HasSwitch(kOptionGenerateDiff)) {
     if (args.size() == 3) {
       return DiffImages(base::FilePath(args[0]),

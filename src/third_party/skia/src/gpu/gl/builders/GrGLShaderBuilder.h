@@ -8,22 +8,15 @@
 #ifndef GrGLShaderBuilder_DEFINED
 #define GrGLShaderBuilder_DEFINED
 
+#include "SkTArray.h"
+#include "gl/GrGLProcessor.h"
 #include "gl/GrGLProgramDesc.h"
-#include "gl/GrGLProgramEffects.h"
-#include "gl/GrGLSL.h"
 #include "gl/GrGLProgramDataManager.h"
-#include "GrBackendProcessorFactory.h"
-#include "GrColor.h"
-#include "GrProcessor.h"
-#include "SkTypes.h"
 
 #include <stdarg.h>
 
 class GrGLContextInfo;
-class GrProcessorStage;
-class GrGLProgramDesc;
 class GrGLProgramBuilder;
-class GrGLFullProgramBuilder;
 
 /**
   base class for all shaders builders
@@ -32,6 +25,7 @@ class GrGLShaderBuilder {
 public:
     typedef GrGLProcessor::TransformedCoordsArray TransformedCoordsArray;
     typedef GrGLProcessor::TextureSampler TextureSampler;
+
     GrGLShaderBuilder(GrGLProgramBuilder* program);
 
     void addInput(GrGLShaderVar i) { fInputs.push_back(i); }
@@ -80,16 +74,16 @@ public:
     void codeAppendf(const char format[], ...) SK_PRINTF_LIKE(2, 3) {
        va_list args;
        va_start(args, format);
-       fCode.appendVAList(format, args);
+       this->code().appendVAList(format, args);
        va_end(args);
     }
 
-    void codeAppend(const char* str) { fCode.append(str); }
+    void codeAppend(const char* str) { this->code().append(str); }
 
     void codePrependf(const char format[], ...) SK_PRINTF_LIKE(2, 3) {
        va_list args;
        va_start(args, format);
-       fCode.prependVAList(format, args);
+       this->code().prependVAList(format, args);
        va_end(args);
     }
 
@@ -112,7 +106,7 @@ public:
     GrGLProgramBuilder* getProgramBuilder() { return fProgramBuilder; }
 
     /**
-     * Helper for begining and ending a block in the fragment code.
+     * Helper for begining and ending a block in the shader code.
      */
     class ShaderBlock {
     public:
@@ -127,7 +121,10 @@ public:
     private:
         GrGLShaderBuilder* fBuilder;
     };
+
 protected:
+    typedef GrTAllocator<GrGLShaderVar> VarArray;
+    void appendDecls(const VarArray& vars, SkString* out) const;
 
     /*
      * this super low level function is just for use internally to builders
@@ -142,10 +139,58 @@ protected:
      */
     void addFeature(uint32_t featureBit, const char* extensionName);
 
-    typedef GrTAllocator<GrGLShaderVar> VarArray;
+    enum InterfaceQualifier {
+        kOut_InterfaceQualifier,
+        kLastInterfaceQualifier = kOut_InterfaceQualifier
+    };
+
+    /*
+     * A low level function to build default layout qualifiers.
+     *
+     *   e.g. layout(param1, param2, ...) out;
+     *
+     * GLSL allows default layout qualifiers for in, out, and uniform.
+     */
+    void addLayoutQualifier(const char* param, InterfaceQualifier);
+
+    void compileAndAppendLayoutQualifiers();
+
+    void nextStage() {
+        fShaderStrings.push_back();
+        fCompilerStrings.push_back(this->code().c_str());
+        fCompilerStringLengths.push_back((int)this->code().size());
+        fCodeIndex++;
+    }
+
+    SkString& versionDecl() { return fShaderStrings[kVersionDecl]; }
+    SkString& extensions() { return fShaderStrings[kExtensions]; }
+    SkString& precisionQualifier() { return fShaderStrings[kPrecisionQualifier]; }
+    SkString& layoutQualifiers() { return fShaderStrings[kLayoutQualifiers]; }
+    SkString& uniforms() { return fShaderStrings[kUniforms]; }
+    SkString& inputs() { return fShaderStrings[kInputs]; }
+    SkString& outputs() { return fShaderStrings[kOutputs]; }
+    SkString& functions() { return fShaderStrings[kFunctions]; }
+    SkString& main() { return fShaderStrings[kMain]; }
+    SkString& code() { return fShaderStrings[fCodeIndex]; }
+    bool finalize(GrGLuint programId, GrGLenum type, SkTDArray<GrGLuint>* shaderIds);
+
+    enum {
+        kVersionDecl,
+        kExtensions,
+        kPrecisionQualifier,
+        kLayoutQualifiers,
+        kUniforms,
+        kInputs,
+        kOutputs,
+        kFunctions,
+        kMain,
+        kCode,
+    };
 
     GrGLProgramBuilder* fProgramBuilder;
-
+    SkSTArray<kCode, const char*, true> fCompilerStrings;
+    SkSTArray<kCode, int, true> fCompilerStringLengths;
+    SkSTArray<kCode, SkString> fShaderStrings;
     SkString fCode;
     SkString fFunctions;
     SkString fExtensions;
@@ -153,22 +198,10 @@ protected:
     VarArray fInputs;
     VarArray fOutputs;
     uint32_t fFeaturesAddedMask;
-};
+    SkSTArray<1, SkString> fLayoutParams[kLastInterfaceQualifier + 1];
+    int fCodeIndex;
+    bool fFinalized;
 
-
-/*
- * Full Shader builder is the base class for shaders which are only accessible through full program
- * builder, ie vertex, geometry, and later TCU / TES.  Using this base class, they can access the
- * full program builder functionality through the full program pointer
- */
-class GrGLFullShaderBuilder : public GrGLShaderBuilder {
-public:
-    GrGLFullShaderBuilder(GrGLFullProgramBuilder* program);
-
-    GrGLFullProgramBuilder* fullProgramBuilder() { return fFullProgramBuilder; }
-protected:
-    GrGLFullProgramBuilder* fFullProgramBuilder;
-private:
-    typedef GrGLShaderBuilder INHERITED;
+    friend class GrGLProgramBuilder;
 };
 #endif

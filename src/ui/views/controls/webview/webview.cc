@@ -7,16 +7,15 @@
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "ipc/ipc_message.h"
 #include "ui/accessibility/ax_enums.h"
 #include "ui/accessibility/ax_view_state.h"
-#include "ui/aura/window.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/events/event.h"
-#include "ui/views/accessibility/native_view_accessibility.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/views_delegate.h"
@@ -31,17 +30,16 @@ const char WebView::kViewClassName[] = "WebView";
 
 WebView::WebView(content::BrowserContext* browser_context)
     : holder_(new NativeViewHost()),
+      observing_render_process_host_(nullptr),
       embed_fullscreen_widget_mode_enabled_(false),
       is_embedding_fullscreen_widget_(false),
       browser_context_(browser_context),
       allow_accelerators_(false) {
   AddChildView(holder_);  // Takes ownership of |holder_|.
-  NativeViewAccessibility::RegisterWebView(this);
 }
 
 WebView::~WebView() {
   SetWebContents(NULL);  // Make sure all necessary tear-down takes place.
-  NativeViewAccessibility::UnregisterWebView(this);
 }
 
 content::WebContents* WebView::GetWebContents() {
@@ -58,6 +56,14 @@ void WebView::SetWebContents(content::WebContents* replacement) {
     return;
   DetachWebContents();
   WebContentsObserver::Observe(replacement);
+  if (observing_render_process_host_) {
+    observing_render_process_host_->RemoveObserver(this);
+    observing_render_process_host_ = nullptr;
+  }
+  if (web_contents() && web_contents()->GetRenderProcessHost()) {
+    observing_render_process_host_ = web_contents()->GetRenderProcessHost();
+    observing_render_process_host_->AddObserver(this);
+  }
   // web_contents() now returns |replacement| from here onwards.
   SetFocusable(!!web_contents());
   if (wc_owner_ != replacement)
@@ -69,7 +75,7 @@ void WebView::SetWebContents(content::WebContents* replacement) {
     DCHECK(!is_embedding_fullscreen_widget_);
   }
   AttachWebContents();
-  NotifyMaybeTextInputClientChanged();
+  NotifyMaybeTextInputClientAndAccessibilityChanged();
 }
 
 void WebView::SetEmbedFullscreenWidgetMode(bool enable) {
@@ -88,10 +94,8 @@ void WebView::SetFastResize(bool fast_resize) {
   holder_->set_fast_resize(fast_resize);
 }
 
-void WebView::OnWebContentsFocused(content::WebContents* web_contents) {
-  FocusManager* focus_manager = GetFocusManager();
-  if (focus_manager)
-    focus_manager->SetFocusedView(this);
+void WebView::SetResizeBackgroundColor(SkColor resize_background_color) {
+  holder_->set_resize_background_color(resize_background_color);
 }
 
 void WebView::SetPreferredSize(const gfx::Size& preferred_size) {
@@ -114,11 +118,12 @@ ui::TextInputClient* WebView::GetTextInputClient() {
   // needs to be updated.
   if (switches::IsTextInputFocusManagerEnabled() &&
       web_contents() && !web_contents()->IsBeingDestroyed()) {
+    const content::RenderViewHost* host = web_contents()->GetRenderViewHost();
     content::RenderWidgetHostView* host_view =
         is_embedding_fullscreen_widget_ ?
         web_contents()->GetFullscreenRenderWidgetHostView() :
         web_contents()->GetRenderWidgetHostView();
-    if (host_view)
+    if (host && host->IsRenderViewLive() && host_view)
       return host_view->GetTextInputClient();
   }
   return NULL;
@@ -200,6 +205,21 @@ bool WebView::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
   return web_contents() && !web_contents()->IsCrashed();
 }
 
+bool WebView::OnMousePressed(const ui::MouseEvent& event) {
+  // A left-click within WebView is a request to focus.  The area within the
+  // native view child is excluded since it will be handling mouse pressed
+  // events itself (http://crbug.com/436192).
+  if (event.IsOnlyLeftMouseButton() && HitTestPoint(event.location())) {
+    gfx::Point location_in_holder = event.location();
+    ConvertPointToTarget(this, holder_, &location_in_holder);
+    if (!holder_->HitTestPoint(location_in_holder)) {
+      RequestFocus();
+      return true;
+    }
+  }
+  return View::OnMousePressed(event);
+}
+
 void WebView::OnFocus() {
   if (web_contents())
     web_contents()->Focus();
@@ -211,7 +231,7 @@ void WebView::AboutToRequestFocusFromTabTraversal(bool reverse) {
 }
 
 void WebView::GetAccessibleState(ui::AXViewState* state) {
-  state->role = ui::AX_ROLE_GROUP;
+  state->role = ui::AX_ROLE_WEB_VIEW;
 }
 
 gfx::NativeViewAccessible WebView::GetNativeViewAccessible() {
@@ -232,13 +252,22 @@ gfx::Size WebView::GetPreferredSize() const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// WebView, content::WebContentsDelegate implementation:
+// WebView, content::RenderProcessHostObserver implementation:
 
-void WebView::WebContentsFocused(content::WebContents* web_contents) {
-  DCHECK(wc_owner_.get());
-  // The WebView is only the delegate of WebContentses it creates itself.
-  OnWebContentsFocused(wc_owner_.get());
+void WebView::RenderProcessExited(content::RenderProcessHost* host,
+                                  base::TerminationStatus status,
+                                  int exit_code) {
+  NotifyMaybeTextInputClientAndAccessibilityChanged();
 }
+
+void WebView::RenderProcessHostDestroyed(content::RenderProcessHost* host) {
+  DCHECK_EQ(host, observing_render_process_host_);
+  observing_render_process_host_->RemoveObserver(this);
+  observing_render_process_host_ = nullptr;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// WebView, content::WebContentsDelegate implementation:
 
 bool WebView::EmbedsFullscreenWidget() const {
   DCHECK(wc_owner_.get());
@@ -248,12 +277,12 @@ bool WebView::EmbedsFullscreenWidget() const {
 ////////////////////////////////////////////////////////////////////////////////
 // WebView, content::WebContentsObserver implementation:
 
-void WebView::RenderViewDeleted(content::RenderViewHost* render_view_host) {
-  NotifyMaybeTextInputClientChanged();
+void WebView::RenderViewReady() {
+  NotifyMaybeTextInputClientAndAccessibilityChanged();
 }
 
-void WebView::RenderProcessGone(base::TerminationStatus status) {
-  NotifyMaybeTextInputClientChanged();
+void WebView::RenderViewDeleted(content::RenderViewHost* render_view_host) {
+  NotifyMaybeTextInputClientAndAccessibilityChanged();
 }
 
 void WebView::RenderViewHostChanged(content::RenderViewHost* old_host,
@@ -261,7 +290,15 @@ void WebView::RenderViewHostChanged(content::RenderViewHost* old_host,
   FocusManager* const focus_manager = GetFocusManager();
   if (focus_manager && focus_manager->GetFocusedView() == this)
     OnFocus();
-  NotifyMaybeTextInputClientChanged();
+  NotifyMaybeTextInputClientAndAccessibilityChanged();
+}
+
+void WebView::WebContentsDestroyed() {
+  if (observing_render_process_host_) {
+    observing_render_process_host_->RemoveObserver(this);
+    observing_render_process_host_ = nullptr;
+  }
+  NotifyMaybeTextInputClientAndAccessibilityChanged();
 }
 
 void WebView::DidShowFullscreenWidget(int routing_id) {
@@ -280,11 +317,17 @@ void WebView::DidToggleFullscreenModeForTab(bool entered_fullscreen) {
 }
 
 void WebView::DidAttachInterstitialPage() {
-  NotifyMaybeTextInputClientChanged();
+  NotifyMaybeTextInputClientAndAccessibilityChanged();
 }
 
 void WebView::DidDetachInterstitialPage() {
-  NotifyMaybeTextInputClientChanged();
+  NotifyMaybeTextInputClientAndAccessibilityChanged();
+}
+
+void WebView::OnWebContentsFocused() {
+  FocusManager* focus_manager = GetFocusManager();
+  if (focus_manager)
+    focus_manager->SetFocusedView(this);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -303,13 +346,7 @@ void WebView::AttachWebContents() {
   if (holder_->native_view() == view_to_attach)
     return;
 
-  // The WCV needs to be parented before making it visible.
   holder_->Attach(view_to_attach);
-
-  // Fullscreen widgets are not parented by a WebContentsView. Their visibility
-  // is controlled by content i.e. (RenderWidgetHost)
-  if (!is_embedding_fullscreen_widget_)
-    view_to_attach->Show();
 
   // The view will not be focused automatically when it is attached, so we need
   // to pass on focus to it if the FocusManager thinks the view is focused. Note
@@ -328,11 +365,6 @@ void WebView::AttachWebContents() {
 
 void WebView::DetachWebContents() {
   if (web_contents()) {
-    // Fullscreen widgets are not parented by a WebContentsView. Their
-    // visibility is controlled by content i.e. (RenderWidgetHost).
-    if (!is_embedding_fullscreen_widget_)
-      web_contents()->GetNativeView()->Hide();
-
     holder_->Detach();
 #if defined(OS_WIN)
     if (!is_embedding_fullscreen_widget_)
@@ -357,14 +389,19 @@ void WebView::ReattachForFullscreenChange(bool enter_fullscreen) {
     // the same.  So, do not change attachment.
     OnBoundsChanged(bounds());
   }
-  NotifyMaybeTextInputClientChanged();
+  NotifyMaybeTextInputClientAndAccessibilityChanged();
 }
 
-void WebView::NotifyMaybeTextInputClientChanged() {
+void WebView::NotifyMaybeTextInputClientAndAccessibilityChanged() {
   // Update the TextInputClient as needed; see GetTextInputClient().
   FocusManager* const focus_manager = GetFocusManager();
   if (focus_manager)
     focus_manager->OnTextInputClientChanged(this);
+
+#if defined(OS_CHROMEOS)
+  if (web_contents())
+    NotifyAccessibilityEvent(ui::AX_EVENT_CHILDREN_CHANGED, false);
+#endif  // defined OS_CHROMEOS
 }
 
 content::WebContents* WebView::CreateWebContents(

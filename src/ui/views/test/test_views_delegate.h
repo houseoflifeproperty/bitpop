@@ -17,7 +17,7 @@ namespace views {
 class TestViewsDelegate : public ViewsDelegate {
  public:
   TestViewsDelegate();
-  virtual ~TestViewsDelegate();
+  ~TestViewsDelegate() override;
 
   // If set to |true|, forces widgets that do not provide a native widget to use
   // DesktopNativeWidgetAura instead of whatever the default native widget would
@@ -30,20 +30,26 @@ class TestViewsDelegate : public ViewsDelegate {
     use_transparent_windows_ = transparent;
   }
 
+  // Allows tests to provide a ContextFactory via the ViewsDelegate interface.
+  void set_context_factory(ui::ContextFactory* context_factory) {
+    context_factory_ = context_factory;
+  }
+
   // ViewsDelegate:
-  virtual void OnBeforeWidgetInit(
-      Widget::InitParams* params,
-      internal::NativeWidgetDelegate* delegate) OVERRIDE;
+#if defined(OS_WIN)
+  HICON GetSmallWindowIcon() const override;
+#endif
+  void OnBeforeWidgetInit(Widget::InitParams* params,
+                          internal::NativeWidgetDelegate* delegate) override;
+  ui::ContextFactory* GetContextFactory() override;
 
  private:
+  ui::ContextFactory* context_factory_;
   bool use_desktop_native_widgets_;
-
   bool use_transparent_windows_;
 
 #if defined(USE_AURA)
   scoped_ptr<wm::WMState> wm_state_;
-
-  ui::ContextFactory* context_factory_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(TestViewsDelegate);

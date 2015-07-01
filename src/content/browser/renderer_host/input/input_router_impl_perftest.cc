@@ -28,26 +28,26 @@ namespace {
 class NullInputAckHandler : public InputAckHandler {
  public:
   NullInputAckHandler() : ack_count_(0) {}
-  virtual ~NullInputAckHandler() {}
+  ~NullInputAckHandler() override {}
 
   // InputAckHandler
-  virtual void OnKeyboardEventAck(const NativeWebKeyboardEvent& event,
-                                  InputEventAckState ack_result) OVERRIDE {
+  void OnKeyboardEventAck(const NativeWebKeyboardEvent& event,
+                          InputEventAckState ack_result) override {
     ++ack_count_;
   }
-  virtual void OnWheelEventAck(const MouseWheelEventWithLatencyInfo& event,
-                               InputEventAckState ack_result) OVERRIDE {
+  void OnWheelEventAck(const MouseWheelEventWithLatencyInfo& event,
+                       InputEventAckState ack_result) override {
     ++ack_count_;
   }
-  virtual void OnTouchEventAck(const TouchEventWithLatencyInfo& event,
-                               InputEventAckState ack_result) OVERRIDE {
+  void OnTouchEventAck(const TouchEventWithLatencyInfo& event,
+                       InputEventAckState ack_result) override {
     ++ack_count_;
   }
-  virtual void OnGestureEventAck(const GestureEventWithLatencyInfo& event,
-                                 InputEventAckState ack_result) OVERRIDE {
+  void OnGestureEventAck(const GestureEventWithLatencyInfo& event,
+                         InputEventAckState ack_result) override {
     ++ack_count_;
   }
-  virtual void OnUnexpectedEventAck(UnexpectedEventAckType type) OVERRIDE {
+  void OnUnexpectedEventAck(UnexpectedEventAckType type) override {
     ++ack_count_;
   }
 
@@ -66,28 +66,28 @@ class NullInputAckHandler : public InputAckHandler {
 class NullInputRouterClient : public InputRouterClient {
  public:
   NullInputRouterClient() {}
-  virtual ~NullInputRouterClient() {}
+  ~NullInputRouterClient() override {}
 
   // InputRouterClient
-  virtual InputEventAckState FilterInputEvent(
+  InputEventAckState FilterInputEvent(
       const blink::WebInputEvent& input_event,
-      const ui::LatencyInfo& latency_info) OVERRIDE {
+      const ui::LatencyInfo& latency_info) override {
     return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
   }
-  virtual void IncrementInFlightEventCount() OVERRIDE {}
-  virtual void DecrementInFlightEventCount() OVERRIDE {}
-  virtual void OnHasTouchEventHandlers(bool has_handlers) OVERRIDE {}
-  virtual void DidFlush() OVERRIDE {}
-  virtual void SetNeedsFlush() OVERRIDE {}
-  virtual void DidOverscroll(const DidOverscrollParams& params) OVERRIDE {}
+  void IncrementInFlightEventCount() override {}
+  void DecrementInFlightEventCount() override {}
+  void OnHasTouchEventHandlers(bool has_handlers) override {}
+  void DidFlush() override {}
+  void DidOverscroll(const DidOverscrollParams& params) override {}
+  void DidStopFlinging() override {}
 };
 
 class NullIPCSender : public IPC::Sender {
  public:
   NullIPCSender() : sent_count_(0) {}
-  virtual ~NullIPCSender() {}
+  ~NullIPCSender() override {}
 
-  virtual bool Send(IPC::Message* message) OVERRIDE {
+  bool Send(IPC::Message* message) override {
     delete message;
     ++sent_count_;
     return true;
@@ -108,8 +108,8 @@ class NullIPCSender : public IPC::Sender {
 // TODO(jdduke): Use synthetic gesture pipeline, crbug.com/344598.
 typedef std::vector<WebGestureEvent> Gestures;
 Gestures BuildScrollSequence(size_t steps,
-                             gfx::Vector2dF origin,
-                             gfx::Vector2dF distance) {
+                             const gfx::Vector2dF& origin,
+                             const gfx::Vector2dF& distance) {
   Gestures gestures;
   const gfx::Vector2dF delta = ScaleVector2d(distance, 1.f / steps);
 
@@ -135,8 +135,8 @@ Gestures BuildScrollSequence(size_t steps,
 
 typedef std::vector<WebTouchEvent> Touches;
 Touches BuildTouchSequence(size_t steps,
-                           gfx::Vector2dF origin,
-                           gfx::Vector2dF distance) {
+                           const gfx::Vector2dF& origin,
+                           const gfx::Vector2dF& distance) {
   Touches touches;
   const gfx::Vector2dF delta = ScaleVector2d(distance, 1.f / steps);
 
@@ -197,11 +197,11 @@ class InputEventTimer {
 class InputRouterImplPerfTest : public testing::Test {
  public:
   InputRouterImplPerfTest() : last_input_id_(0) {}
-  virtual ~InputRouterImplPerfTest() {}
+  ~InputRouterImplPerfTest() override {}
 
  protected:
   // testing::Test
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     sender_.reset(new NullIPCSender());
     client_.reset(new NullInputRouterClient());
     ack_handler_.reset(new NullInputAckHandler());
@@ -212,7 +212,7 @@ class InputRouterImplPerfTest : public testing::Test {
                                             InputRouterImpl::Config()));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     base::MessageLoop::current()->RunUntilIdle();
 
     input_router_.reset();
@@ -261,10 +261,8 @@ class InputRouterImplPerfTest : public testing::Test {
     ui::LatencyInfo latency;
     latency.AddLatencyNumber(
         ui::INPUT_EVENT_LATENCY_SCROLL_UPDATE_ORIGINAL_COMPONENT, 1, 0);
-    latency.AddLatencyNumber(
-        ui::INPUT_EVENT_LATENCY_SCROLL_UPDATE_RWH_COMPONENT,
-        1,
-        NextLatencyID());
+    latency.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT, 1,
+                             NextLatencyID());
     return latency;
   }
 
@@ -300,8 +298,8 @@ class InputRouterImplPerfTest : public testing::Test {
 
   void SimulateTouchAndScrollEventSequence(const char* test_name,
                                            size_t steps,
-                                           gfx::Vector2dF origin,
-                                           gfx::Vector2dF distance,
+                                           const gfx::Vector2dF& origin,
+                                           const gfx::Vector2dF& distance,
                                            size_t iterations) {
     OnHasTouchEventHandlers(true);
 

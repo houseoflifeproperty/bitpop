@@ -21,6 +21,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/test/browser_test_utils.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -32,7 +33,7 @@ const char* kSimpleArticlePath = "/dom_distiller/simple_article.html";
 
 class DomDistillerTabUtilsBrowserTest : public InProcessBrowserTest {
  public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitch(switches::kEnableDomDistiller);
   }
 };
@@ -45,8 +46,8 @@ class WebContentsMainFrameHelper : public content::WebContentsObserver {
     content::WebContentsObserver::Observe(web_contents);
   }
 
-  virtual void DidFinishLoad(content::RenderFrameHost* render_frame_host,
-                             const GURL& validated_url) OVERRIDE {
+  void DidFinishLoad(content::RenderFrameHost* render_frame_host,
+                     const GURL& validated_url) override {
     if (!render_frame_host->GetParent() &&
         validated_url.scheme() == kDomDistillerScheme)
       callback_.Run();
@@ -56,7 +57,14 @@ class WebContentsMainFrameHelper : public content::WebContentsObserver {
   base::Closure callback_;
 };
 
-IN_PROC_BROWSER_TEST_F(DomDistillerTabUtilsBrowserTest, TestSwapWebContents) {
+#if (defined(OS_LINUX) && defined(OS_CHROMEOS))
+#define MAYBE_TestSwapWebContents DISABLED_TestSwapWebContents
+#else
+#define MAYBE_TestSwapWebContents TestSwapWebContents
+#endif
+
+IN_PROC_BROWSER_TEST_F(DomDistillerTabUtilsBrowserTest,
+                       MAYBE_TestSwapWebContents) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   content::WebContents* initial_web_contents =
@@ -84,6 +92,55 @@ IN_PROC_BROWSER_TEST_F(DomDistillerTabUtilsBrowserTest, TestSwapWebContents) {
       after_web_contents->GetLastCommittedURL().SchemeIs(kDomDistillerScheme));
   EXPECT_EQ("Test Page Title",
             base::UTF16ToUTF8(after_web_contents->GetTitle()));
+}
+
+IN_PROC_BROWSER_TEST_F(DomDistillerTabUtilsBrowserTest,
+                       TestDistillIntoWebContents) {
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+
+  content::WebContents* source_web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  const GURL& article_url = embedded_test_server()->GetURL(kSimpleArticlePath);
+
+  // This blocks until the navigation has completely finished.
+  ui_test_utils::NavigateToURL(browser(), article_url);
+
+  // Create destination WebContents.
+  content::WebContents::CreateParams create_params(
+      source_web_contents->GetBrowserContext());
+  content::WebContents* destination_web_contents =
+      content::WebContents::Create(create_params);
+  DCHECK(destination_web_contents);
+
+  browser()->tab_strip_model()->AppendWebContents(destination_web_contents,
+                                                  true);
+  ASSERT_EQ(destination_web_contents,
+            browser()->tab_strip_model()->GetWebContentsAt(1));
+
+  DistillAndView(source_web_contents, destination_web_contents);
+
+  // Wait until the destination WebContents has fully navigated.
+  base::RunLoop new_url_loaded_runner;
+  scoped_ptr<WebContentsMainFrameHelper> distilled_page_loaded(
+      new WebContentsMainFrameHelper(destination_web_contents,
+                                     new_url_loaded_runner.QuitClosure()));
+  new_url_loaded_runner.Run();
+
+  // Verify that the source WebContents is showing the original article.
+  EXPECT_EQ(article_url, source_web_contents->GetLastCommittedURL());
+  EXPECT_EQ("Test Page Title",
+            base::UTF16ToUTF8(source_web_contents->GetTitle()));
+
+  // Verify the destination WebContents is showing distilled content.
+  EXPECT_TRUE(destination_web_contents->GetLastCommittedURL().SchemeIs(
+      kDomDistillerScheme));
+  EXPECT_EQ("Test Page Title",
+            base::UTF16ToUTF8(destination_web_contents->GetTitle()));
+
+  content::WebContentsDestroyedWatcher destroyed_watcher(
+      destination_web_contents);
+  browser()->tab_strip_model()->CloseWebContentsAt(1, 0);
+  destroyed_watcher.Wait();
 }
 
 }  // namespace dom_distiller

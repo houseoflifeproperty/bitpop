@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/thread_task_runner_handle.h"
 #include "chrome/browser/apps/ephemeral_app_launcher.h"
 #include "chrome/browser/apps/ephemeral_app_service.h"
 #include "chrome/browser/extensions/extension_install_checker.h"
@@ -21,7 +21,7 @@
 #include "extensions/browser/extension_util.h"
 #include "extensions/browser/management_policy.h"
 #include "extensions/browser/process_manager.h"
-#include "extensions/common/switches.h"
+#include "extensions/browser/test_extension_registry_observer.h"
 #include "extensions/test/extension_test_message_listener.h"
 
 using extensions::Extension;
@@ -58,16 +58,15 @@ class ExtensionInstallCheckerMock : public extensions::ExtensionInstallChecker {
       : extensions::ExtensionInstallChecker(profile),
         requirements_error_(requirements_error) {}
 
-  virtual ~ExtensionInstallCheckerMock() {}
+  ~ExtensionInstallCheckerMock() override {}
 
  private:
-  virtual void CheckRequirements() OVERRIDE {
+  void CheckRequirements() override {
     // Simulate an asynchronous operation.
-    base::MessageLoopProxy::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
         base::Bind(&ExtensionInstallCheckerMock::RequirementsErrorCheckDone,
-                   base::Unretained(this),
-                   current_sequence_number()));
+                   base::Unretained(this), current_sequence_number()));
   }
 
   void RequirementsErrorCheckDone(int sequence_number) {
@@ -103,8 +102,8 @@ class EphemeralAppLauncherForTest : public EphemeralAppLauncher {
  private:
   // Override necessary functions for testing.
 
-  virtual scoped_ptr<extensions::ExtensionInstallChecker> CreateInstallChecker()
-      OVERRIDE {
+  scoped_ptr<extensions::ExtensionInstallChecker> CreateInstallChecker()
+      override {
     if (requirements_check_error_.empty()) {
       return EphemeralAppLauncher::CreateInstallChecker();
     } else {
@@ -114,19 +113,19 @@ class EphemeralAppLauncherForTest : public EphemeralAppLauncher {
     }
   }
 
-  virtual scoped_ptr<ExtensionInstallPrompt> CreateInstallUI() OVERRIDE {
+  scoped_ptr<ExtensionInstallPrompt> CreateInstallUI() override {
     install_prompt_created_ = true;
     return EphemeralAppLauncher::CreateInstallUI();
   }
 
-  virtual scoped_ptr<extensions::WebstoreInstaller::Approval> CreateApproval()
-      const OVERRIDE {
+  scoped_ptr<extensions::WebstoreInstaller::Approval> CreateApproval()
+      const override {
     install_initiated_ = true;
     return EphemeralAppLauncher::CreateApproval();
   }
 
  private:
-  virtual ~EphemeralAppLauncherForTest() {}
+  ~EphemeralAppLauncherForTest() override {}
   friend class base::RefCountedThreadSafe<EphemeralAppLauncherForTest>;
 
   mutable bool install_initiated_;
@@ -174,12 +173,12 @@ class ManagementPolicyMock : public extensions::ManagementPolicy::Provider {
  public:
   ManagementPolicyMock() {}
 
-  virtual std::string GetDebugPolicyProviderName() const OVERRIDE {
+  std::string GetDebugPolicyProviderName() const override {
     return "ManagementPolicyMock";
   }
 
-  virtual bool UserMayLoad(const Extension* extension,
-                           base::string16* error) const OVERRIDE {
+  bool UserMayLoad(const Extension* extension,
+                   base::string16* error) const override {
     return false;
   }
 };
@@ -195,7 +194,7 @@ class EphemeralAppLauncherTest : public WebstoreInstallerTest {
                               kAppDomain,
                               kNonAppDomain) {}
 
-  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     WebstoreInstallerTest::SetUpCommandLine(command_line);
 
     // Make event pages get suspended immediately.
@@ -203,10 +202,10 @@ class EphemeralAppLauncherTest : public WebstoreInstallerTest {
     extensions::ProcessManager::SetEventPageSuspendingTimeForTesting(1);
 
     // Enable ephemeral apps flag.
-    command_line->AppendSwitch(switches::kEnableEphemeralApps);
+    command_line->AppendSwitch(switches::kEnableEphemeralAppsInWebstore);
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     WebstoreInstallerTest::SetUpOnMainThread();
 
     // Disable ephemeral apps immediately after they stop running in tests.
@@ -304,7 +303,7 @@ class EphemeralAppLauncherTest : public WebstoreInstallerTest {
 
 class EphemeralAppLauncherTestDisabled : public EphemeralAppLauncherTest {
  public:
-  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     // Skip EphemeralAppLauncherTest as it enables the feature.
     WebstoreInstallerTest::SetUpCommandLine(command_line);
   }
@@ -322,9 +321,8 @@ IN_PROC_BROWSER_TEST_F(EphemeralAppLauncherTestDisabled, FeatureDisabled) {
 // ephemerally and launched without prompting the user.
 IN_PROC_BROWSER_TEST_F(EphemeralAppLauncherTest,
                        LaunchAppWithNoPermissionWarnings) {
-  content::WindowedNotificationObserver unloaded_signal(
-      extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
-      content::Source<Profile>(profile()));
+  extensions::TestExtensionRegistryObserver observer(
+      ExtensionRegistry::Get(profile()));
 
   scoped_refptr<EphemeralAppLauncherForTest> launcher(
       new EphemeralAppLauncherForTest(kDefaultAppId, profile()));
@@ -335,7 +333,7 @@ IN_PROC_BROWSER_TEST_F(EphemeralAppLauncherTest,
   EXPECT_FALSE(launcher->install_prompt_created());
 
   // Ephemeral apps are unloaded after they stop running.
-  unloaded_signal.Wait();
+  observer.WaitForExtensionUnloaded();
 
   // After an app has been installed ephemerally, it can be launched again
   // without installing from the web store.
@@ -451,11 +449,13 @@ IN_PROC_BROWSER_TEST_F(EphemeralAppLauncherTest, BlockedByPolicy) {
   EXPECT_FALSE(GetInstalledExtension(kDefaultAppId));
 }
 
+// The blacklist relies on safe-browsing database infrastructure.
+#if defined(SAFE_BROWSING_DB_LOCAL)
 // Verifies that an app blacklisted for malware is not installed ephemerally.
 IN_PROC_BROWSER_TEST_F(EphemeralAppLauncherTest, BlacklistedForMalware) {
   // Mock a BLACKLISTED_MALWARE return status.
   extensions::TestBlacklist blacklist_tester(
-      ExtensionSystem::Get(profile())->blacklist());
+      extensions::Blacklist::Get(profile()));
   blacklist_tester.SetBlacklistState(
       kDefaultAppId, extensions::BLACKLISTED_MALWARE, false);
 
@@ -468,13 +468,14 @@ IN_PROC_BROWSER_TEST_F(EphemeralAppLauncherTest, BlacklistedForMalware) {
 IN_PROC_BROWSER_TEST_F(EphemeralAppLauncherTest, BlacklistStateUnknown) {
   // Mock a BLACKLISTED_MALWARE return status.
   extensions::TestBlacklist blacklist_tester(
-      ExtensionSystem::Get(profile())->blacklist());
+      extensions::Blacklist::Get(profile()));
   blacklist_tester.SetBlacklistState(
       kDefaultAppId, extensions::BLACKLISTED_UNKNOWN, false);
 
   RunLaunchTest(kDefaultAppId, webstore_install::SUCCESS, true);
   ValidateAppInstalledEphemerally(kDefaultAppId);
 }
+#endif
 
 // Verifies that an app with unsupported requirements is not installed
 // ephemerally.

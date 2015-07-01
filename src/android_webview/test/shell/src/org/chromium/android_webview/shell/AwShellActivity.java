@@ -32,13 +32,18 @@ import org.chromium.android_webview.AwBrowserContext;
 import org.chromium.android_webview.AwBrowserProcess;
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.AwContentsClient;
+import org.chromium.android_webview.AwContentsStatics;
 import org.chromium.android_webview.AwDevToolsServer;
 import org.chromium.android_webview.AwSettings;
 import org.chromium.android_webview.test.AwTestContainerView;
 import org.chromium.android_webview.test.NullContentsClient;
+import org.chromium.base.CommandLine;
 import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.content_public.browser.NavigationController;
 import org.chromium.content_public.browser.WebContents;
+
+import java.net.URI;
+import java.net.URISyntaxException;
 
 /**
  * This is a lightweight activity for tests that only require WebView functionality.
@@ -54,6 +59,11 @@ public class AwShellActivity extends Activity {
     private EditText mUrlTextView;
     private ImageButton mPrevButton;
     private ImageButton mNextButton;
+
+    // This is the same as data_reduction_proxy::switches::kEnableDataReductionProxy.
+    private static final String ENABLE_DATA_REDUCTION_PROXY = "enable-spdy-proxy-auth";
+    // This is the same as data_reduction_proxy::switches::kDataReductionProxyKey.
+    private static final String DATA_REDUCTION_PROXY_KEY = "spdy-proxy-auth-value";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -82,6 +92,14 @@ public class AwShellActivity extends Activity {
         mAwTestContainerView.getAwContents().loadUrl(new LoadUrlParams(startupUrl));
         AwContents.setShouldDownloadFavicons();
         mUrlTextView.setText(startupUrl);
+
+        if (CommandLine.getInstance().hasSwitch(ENABLE_DATA_REDUCTION_PROXY)) {
+            String key = CommandLine.getInstance().getSwitchValue(DATA_REDUCTION_PROXY_KEY);
+            if (key != null && !key.isEmpty()) {
+                AwContentsStatics.setDataReductionProxyKey(key);
+                AwContentsStatics.setDataReductionProxyEnabled(true);
+            }
+        }
     }
 
     private AwTestContainerView createAwTestContainerView() {
@@ -129,14 +147,21 @@ public class AwShellActivity extends Activity {
         };
 
         SharedPreferences sharedPreferences =
-            getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE);
+                getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE);
         if (mBrowserContext == null) {
             mBrowserContext = new AwBrowserContext(sharedPreferences);
         }
         final AwSettings awSettings = new AwSettings(this /*context*/,
-                false /*isAccessFromFileURLsGrantedByDefault*/, true /*supportsLegacyQuirks*/);
+                false /*isAccessFromFileURLsGrantedByDefault*/, false /*supportsLegacyQuirks*/);
         // Required for WebGL conformance tests.
         awSettings.setMediaPlaybackRequiresUserGesture(false);
+        // Allow zoom and fit contents to screen
+        awSettings.setBuiltInZoomControls(true);
+        awSettings.setDisplayZoomControls(false);
+        awSettings.setUseWideViewPort(true);
+        awSettings.setLoadWithOverviewMode(true);
+        awSettings.setLayoutAlgorithm(android.webkit.WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING);
+
         testContainerView.initialize(new AwContents(mBrowserContext, testContainerView,
                 testContainerView.getContext(), testContainerView.getInternalAccessDelegate(),
                 testContainerView.getNativeGLDelegate(), awContentsClient, awSettings));
@@ -167,14 +192,24 @@ public class AwShellActivity extends Activity {
         mUrlTextView.setOnEditorActionListener(new OnEditorActionListener() {
             @Override
             public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
-                if ((actionId != EditorInfo.IME_ACTION_GO) && (event == null ||
-                        event.getKeyCode() != KeyEvent.KEYCODE_ENTER ||
-                        event.getAction() != KeyEvent.ACTION_DOWN)) {
+                if ((actionId != EditorInfo.IME_ACTION_GO) && (event == null
+                        || event.getKeyCode() != KeyEvent.KEYCODE_ENTER
+                        || event.getAction() != KeyEvent.ACTION_DOWN)) {
                     return false;
                 }
 
-                mAwTestContainerView.getAwContents().loadUrl(
-                        new LoadUrlParams(mUrlTextView.getText().toString()));
+                String url = mUrlTextView.getText().toString();
+                try {
+                    URI uri = new URI(url);
+                    if (uri.getScheme() == null) {
+                        url = "http://" + uri.toString();
+                    } else {
+                        url = uri.toString();
+                    }
+                } catch (URISyntaxException e) {
+                    // Ignore syntax errors.
+                }
+                mAwTestContainerView.getAwContents().loadUrl(new LoadUrlParams(url));
                 mUrlTextView.clearFocus();
                 setKeyboardVisibilityForUrl(false);
                 mAwTestContainerView.requestFocus();

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_TEST_PLUGIN_PLUGIN_WINDOWED_TEST_H
-#define CONTENT_TEST_PLUGIN_PLUGIN_WINDOWED_TEST_H
+#ifndef CONTENT_TEST_PLUGIN_PLUGIN_WINDOWED_TEST_H_
+#define CONTENT_TEST_PLUGIN_PLUGIN_WINDOWED_TEST_H_
 
 #include "content/test/plugin/plugin_test.h"
 
@@ -14,15 +14,15 @@ namespace NPAPIClient {
 class WindowedPluginTest : public PluginTest {
  public:
   WindowedPluginTest(NPP id, NPNetscapeFuncs *host_functions);
-  ~WindowedPluginTest();
+  ~WindowedPluginTest() override;
 
  private:
   static LRESULT CALLBACK WindowProc(
       HWND window, UINT message, WPARAM wparam, LPARAM lparam);
   static void CallJSFunction(WindowedPluginTest*, const char*);
 
-  virtual NPError SetWindow(NPWindow* pNPWindow);
-  virtual NPError Destroy();
+  NPError SetWindow(NPWindow* pNPWindow) override;
+  NPError Destroy() override;
 
   HWND window_;
   bool done_;
@@ -30,4 +30,4 @@ class WindowedPluginTest : public PluginTest {
 
 }  // namespace NPAPIClient
 
-#endif  // CONTENT_TEST_PLUGIN_PLUGIN_WINDOWED_TEST_H
+#endif  // CONTENT_TEST_PLUGIN_PLUGIN_WINDOWED_TEST_H_

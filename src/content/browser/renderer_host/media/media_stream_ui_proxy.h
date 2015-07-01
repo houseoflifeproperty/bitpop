@@ -38,7 +38,7 @@ class CONTENT_EXPORT MediaStreamUIProxy {
   // WebContentsDelegate::RequestMediaAccessPermission(). The specified
   // |response_callback| is called when the WebContentsDelegate approves or
   // denies request.
-  virtual void RequestAccess(const MediaStreamRequest& request,
+  virtual void RequestAccess(scoped_ptr<MediaStreamRequest> request,
                              const ResponseCallback& response_callback);
 
   // Checks if we have permission to access the microphone or camera. Note that
@@ -90,23 +90,22 @@ class CONTENT_EXPORT MediaStreamUIProxy {
 class CONTENT_EXPORT FakeMediaStreamUIProxy : public MediaStreamUIProxy {
  public:
   explicit FakeMediaStreamUIProxy();
-  virtual ~FakeMediaStreamUIProxy();
+  ~FakeMediaStreamUIProxy() override;
 
   void SetAvailableDevices(const MediaStreamDevices& devices);
   void SetMicAccess(bool access);
   void SetCameraAccess(bool access);
 
   // MediaStreamUIProxy overrides.
-  virtual void RequestAccess(
-      const MediaStreamRequest& request,
-      const ResponseCallback& response_callback) OVERRIDE;
-  virtual void CheckAccess(const GURL& security_origin,
-                           MediaStreamType type,
-                           int render_process_id,
-                           int render_frame_id,
-                           const base::Callback<void(bool)>& callback) OVERRIDE;
-  virtual void OnStarted(const base::Closure& stop_callback,
-                         const WindowIdCallback& window_id_callback) OVERRIDE;
+  void RequestAccess(scoped_ptr<MediaStreamRequest> request,
+                     const ResponseCallback& response_callback) override;
+  void CheckAccess(const GURL& security_origin,
+                   MediaStreamType type,
+                   int render_process_id,
+                   int render_frame_id,
+                   const base::Callback<void(bool)>& callback) override;
+  void OnStarted(const base::Closure& stop_callback,
+                 const WindowIdCallback& window_id_callback) override;
 
  private:
   // This is used for RequestAccess().

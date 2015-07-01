@@ -37,15 +37,33 @@
 
 namespace blink {
 
-MIDIInput* MIDIInput::create(MIDIAccess* access, const String& id, const String& manufacturer, const String& name, const String& version)
+using PortState = MIDIAccessor::MIDIPortState;
+
+MIDIInput* MIDIInput::create(MIDIAccess* access, const String& id, const String& manufacturer, const String& name, const String& version, PortState state)
 {
     ASSERT(access);
-    return adoptRefCountedGarbageCollectedWillBeNoop(new MIDIInput(access, id, manufacturer, name, version));
+    MIDIInput* input = new MIDIInput(access, id, manufacturer, name, version, state);
+    input->suspendIfNeeded();
+    return input;
 }
 
-MIDIInput::MIDIInput(MIDIAccess* access, const String& id, const String& manufacturer, const String& name, const String& version)
-    : MIDIPort(access, id, manufacturer, name, MIDIPortTypeInput, version)
+MIDIInput::MIDIInput(MIDIAccess* access, const String& id, const String& manufacturer, const String& name, const String& version, PortState state)
+    : MIDIPort(access, id, manufacturer, name, TypeInput, version, state)
 {
+}
+
+EventListener* MIDIInput::onmidimessage()
+{
+    return getAttributeEventListener(EventTypeNames::midimessage);
+}
+
+void MIDIInput::setOnmidimessage(PassRefPtr<EventListener> listener)
+{
+    // Implicit open. It does nothing if the port is already opened.
+    // See http://www.w3.org/TR/webmidi/#widl-MIDIPort-open-Promise-MIDIPort
+    open();
+
+    setAttributeEventListener(EventTypeNames::midimessage, listener);
 }
 
 void MIDIInput::didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp)
@@ -55,16 +73,19 @@ void MIDIInput::didReceiveMIDIData(unsigned portIndex, const unsigned char* data
     if (!length)
         return;
 
+    if (getConnection() != ConnectionStateOpen)
+        return;
+
     // Drop sysex message here when the client does not request it. Note that this is not a security check but an
     // automatic filtering for clients that do not want sysex message. Also note that sysex message will never be sent
     // unless the current process has an explicit permission to handle sysex message.
     if (data[0] == 0xf0 && !midiAccess()->sysexEnabled())
         return;
-    RefPtr<Uint8Array> array = Uint8Array::create(data, length);
+    RefPtr<DOMUint8Array> array = DOMUint8Array::create(data, length);
     dispatchEvent(MIDIMessageEvent::create(timeStamp, array));
 }
 
-void MIDIInput::trace(Visitor* visitor)
+DEFINE_TRACE(MIDIInput)
 {
     MIDIPort::trace(visitor);
 }

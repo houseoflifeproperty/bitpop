@@ -7,7 +7,7 @@
 
 #include "ash/wm/gestures/shelf_gesture_handler.h"
 #include "ui/events/event_handler.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace ash {
 class ShelfLayoutManager;
@@ -17,10 +17,10 @@ class ShelfLayoutManager;
 class ShelfBezelEventFilter : public ui::EventHandler {
  public:
   explicit ShelfBezelEventFilter(ShelfLayoutManager* shelf);
-  virtual ~ShelfBezelEventFilter();
+  ~ShelfBezelEventFilter() override;
 
   // Overridden from ui::EventHandler:
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  void OnGestureEvent(ui::GestureEvent* event) override;
 
  private:
   bool IsShelfOnBezel(const gfx::Rect& screen,

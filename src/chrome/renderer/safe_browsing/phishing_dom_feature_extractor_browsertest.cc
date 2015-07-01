@@ -71,9 +71,9 @@ class PhishingDOMFeatureExtractorTest : public InProcessBrowserTest {
  protected:
   PhishingDOMFeatureExtractorTest() : weak_factory_(this) {}
 
-  virtual ~PhishingDOMFeatureExtractorTest() {}
+  ~PhishingDOMFeatureExtractorTest() override {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitch(switches::kSingleProcess);
 #if defined(OS_WIN)
     // Don't want to try to create a GPU process.
@@ -81,7 +81,7 @@ class PhishingDOMFeatureExtractorTest : public InProcessBrowserTest {
 #endif
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     extractor_.reset(new PhishingDOMFeatureExtractor(
         content::RenderView::FromRoutingID(kRenderViewRoutingId), &clock_));
 
@@ -157,7 +157,7 @@ class PhishingDOMFeatureExtractorTest : public InProcessBrowserTest {
     http_response->set_code(net::HTTP_OK);
     http_response->set_content_type("text/html");
     http_response->set_content(it->second);
-    return http_response.PassAs<net::test_server::HttpResponse>();
+    return http_response.Pass();
   }
 
   GURL GetURL(const std::string& host, const std::string& path) {
@@ -292,8 +292,14 @@ IN_PROC_BROWSER_TEST_F(PhishingDOMFeatureExtractorTest, LinkFeatures) {
   ExpectFeatureMapsAreEqual(features, expected_features);
 }
 
+// Flaky on Win/Linux.  https://crbug.com/373155.
+#if defined(OS_WIN) || defined(OS_LINUX)
+#define MAYBE_ScriptAndImageFeatures DISABLED_ScriptAndImageFeatures
+#else
+#define MAYBE_ScriptAndImageFeatures ScriptAndImageFeatures
+#endif
 IN_PROC_BROWSER_TEST_F(PhishingDOMFeatureExtractorTest,
-                       ScriptAndImageFeatures) {
+                       MAYBE_ScriptAndImageFeatures) {
   // This test doesn't exercise the extraction timing.
   EXPECT_CALL(clock_, Now()).WillRepeatedly(Return(base::TimeTicks::Now()));
 
@@ -394,7 +400,13 @@ IN_PROC_BROWSER_TEST_F(PhishingDOMFeatureExtractorTest, SubFrames) {
   ExpectFeatureMapsAreEqual(features, expected_features);
 }
 
-IN_PROC_BROWSER_TEST_F(PhishingDOMFeatureExtractorTest, Continuation) {
+// Test flakes with LSAN enabled. See http://crbug.com/373155.
+#if defined(LEAK_SANITIZER)
+#define MAYBE_Continuation DISABLED_Continuation
+#else
+#define MAYBE_Continuation Continuation
+#endif
+IN_PROC_BROWSER_TEST_F(PhishingDOMFeatureExtractorTest, MAYBE_Continuation) {
   // For this test, we'll cause the feature extraction to run multiple
   // iterations by incrementing the clock.
 

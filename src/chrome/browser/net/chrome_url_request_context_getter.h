@@ -37,9 +37,9 @@ class ChromeURLRequestContextGetter : public net::URLRequestContextGetter {
   // GetIOMessageLoopProxy however can be called from any thread.
   //
   // net::URLRequestContextGetter implementation.
-  virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE;
-  virtual scoped_refptr<base::SingleThreadTaskRunner>
-      GetNetworkTaskRunner() const OVERRIDE;
+  net::URLRequestContext* GetURLRequestContext() override;
+  scoped_refptr<base::SingleThreadTaskRunner> GetNetworkTaskRunner()
+      const override;
 
   // Create an instance for use with an 'original' (non-OTR) profile. This is
   // expected to get called on the UI thread.
@@ -79,12 +79,12 @@ class ChromeURLRequestContextGetter : public net::URLRequestContextGetter {
       const ProfileIOData* profile_io_data,
       const StoragePartitionDescriptor& partition_descriptor);
 
-  // Discard reference to URLRequestContext.
-  // Access only from the IO thread.
-  void Invalidate();
+  // Discard reference to URLRequestContext and inform observers of shutdown.
+  // Must be called before destruction. May only be called on IO thread.
+  void NotifyContextShuttingDown();
 
  private:
-  virtual ~ChromeURLRequestContextGetter();
+  ~ChromeURLRequestContextGetter() override;
 
   // Deferred logic for creating a URLRequestContext.
   // Access only from the IO thread.

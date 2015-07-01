@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_RENDERER_PEPPER_PEPPER_FILE_IO_HOST_H_
-#define CONTENT_RENDERER_PEPPER_PEPPER_FILE_IO_HOST_H_
+#ifndef CONTENT_BROWSER_RENDERER_HOST_PEPPER_PEPPER_FILE_IO_HOST_H_
+#define CONTENT_BROWSER_RENDERER_HOST_PEPPER_PEPPER_FILE_IO_HOST_H_
 
 #include <string>
 
@@ -38,12 +38,12 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
   PepperFileIOHost(BrowserPpapiHostImpl* host,
                    PP_Instance instance,
                    PP_Resource resource);
-  virtual ~PepperFileIOHost();
+  ~PepperFileIOHost() override;
 
   // ppapi::host::ResourceHost override.
-  virtual int32_t OnResourceMessageReceived(
+  int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
-      ppapi::host::HostMessageContext* context) OVERRIDE;
+      ppapi::host::HostMessageContext* context) override;
 
   struct UIThreadStuff {
     UIThreadStuff();
@@ -139,4 +139,4 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
 
 }  // namespace content
 
-#endif  // CONTENT_RENDERER_PEPPER_PEPPER_FILE_IO_HOST_H_
+#endif  // CONTENT_BROWSER_RENDERER_HOST_PEPPER_PEPPER_FILE_IO_HOST_H_

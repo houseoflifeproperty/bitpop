@@ -25,6 +25,9 @@ process will stop and this list must be updated.
 
 # If there is a temporary license-related issue with a particular third_party
 # directory, please put it here, with a comment linking to the bug entry.
+#
+# Please always use forward slashes '/' as path separators, even if you are
+# on Windows.
 KNOWN_ISSUES = [
 ]
 
@@ -42,6 +45,7 @@ KNOWN_INCOMPATIBLE = {
         'third_party/elfutils',
         'third_party/instrumented_libraries',
         'third_party/liblouis',
+        'third_party/llvm',
         'third_party/speech-dispatcher',
         'third_party/sudden_motion_sensor',
         'third_party/swiftshader',

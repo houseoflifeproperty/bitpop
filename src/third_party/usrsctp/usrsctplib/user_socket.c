@@ -1380,7 +1380,7 @@ sbreserve_locked(struct sockbuf *sb, u_long cc, struct socket *so)
 {
 	SOCKBUF_LOCK_ASSERT(sb);
 	sb->sb_mbmax = (u_int)min(cc * sb_efficiency, sb_max);
-	sb->sb_hiwat = cc;
+	sb->sb_hiwat = (u_int)cc;
 	if (sb->sb_lowat > (int)sb->sb_hiwat)
 		sb->sb_lowat = (int)sb->sb_hiwat;
 	return (1);
@@ -1936,7 +1936,7 @@ usrsctp_get_non_blocking(struct socket *so)
 		return (-1);
 	}
 	SOCK_LOCK(so);
-	if (so->so_state | SS_NBIO) {
+	if (so->so_state & SS_NBIO) {
 		result = 1;
 	} else {
 		result = 0;
@@ -2345,6 +2345,12 @@ userspace_getsockopt(struct socket *so, int level, int option_name,
 }
 
 int
+usrsctp_set_ulpinfo(struct socket *so, void *ulp_info)
+{
+	return (register_ulp_info(so, ulp_info));
+}
+
+int
 usrsctp_bindx(struct socket *so, struct sockaddr *addrs, int addrcnt, int flags)
 {
 	struct sctp_getaddresses *gaddrs;
@@ -2449,7 +2455,7 @@ usrsctp_bindx(struct socket *so, struct sockaddr *addrs, int addrcnt, int flags)
 	for (i = 0; i < addrcnt; i++) {
 #ifndef HAVE_SA_LEN
 		size_t sa_len;
-#endif 
+#endif
 		memset(gaddrs, 0, argsz);
 		gaddrs->sget_assoc_id = 0;
 #ifdef HAVE_SA_LEN
@@ -2556,6 +2562,7 @@ usrsctp_connectx(struct socket *so,
 				return (-1);
 			}
 #endif
+#ifdef INET
 			if (IN6_IS_ADDR_V4MAPPED(&((struct sockaddr_in6 *)at)->sin6_addr)) {
 				in6_sin6_2_sin((struct sockaddr_in *)cpto, (struct sockaddr_in6 *)at);
 				cpto = ((caddr_t)cpto + sizeof(struct sockaddr_in));
@@ -2565,6 +2572,11 @@ usrsctp_connectx(struct socket *so,
 				cpto = ((caddr_t)cpto + sizeof(struct sockaddr_in6));
 				len += sizeof(struct sockaddr_in6);
 			}
+#else
+			memcpy(cpto, at, sizeof(struct sockaddr_in6));
+			cpto = ((caddr_t)cpto + sizeof(struct sockaddr_in6));
+			len += sizeof(struct sockaddr_in6);
+#endif
 			at = (struct sockaddr *)((caddr_t)at + sizeof(struct sockaddr_in6));
 			break;
 #endif
@@ -2987,7 +2999,7 @@ void sctp_userspace_ip6_output(int *result, struct mbuf *o_pak,
 	memset((void *)&dst, 0, sizeof(struct sockaddr_in6));
 	dst.sin6_family = AF_INET6;
 	dst.sin6_addr = ip6->ip6_dst;
-#ifdef HAVE_SIN6_LEN 
+#ifdef HAVE_SIN6_LEN
 	dst.sin6_len = sizeof(struct sockaddr_in6);
 #endif
 
@@ -3157,7 +3169,7 @@ usrsctp_dumppacket(void *buf, size_t len, int outbound)
 	strncpy_s(dump_buf + pos, strlen(HEADER) + 1, HEADER, strlen(HEADER));
 #else
 	strcpy(dump_buf + pos, HEADER);
-#endif	
+#endif
 	pos += strlen(HEADER);
 	packet = (char *)buf;
 	for (i = 0; i < len; i++) {

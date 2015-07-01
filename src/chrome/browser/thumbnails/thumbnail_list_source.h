@@ -19,6 +19,10 @@ namespace base {
 class RefCountedMemory;
 }
 
+namespace history {
+class TopSites;
+}
+
 namespace thumbnails {
 class ThumbnailService;
 }
@@ -32,22 +36,24 @@ class ThumbnailListSource : public content::URLDataSource {
   explicit ThumbnailListSource(Profile* profile);
 
   // content::URLDataSource implementation.
-  virtual std::string GetSource() const OVERRIDE;
-  virtual void StartDataRequest(
+  std::string GetSource() const override;
+  // Called on the IO thread.
+  void StartDataRequest(
       const std::string& path,
       int render_process_id,
       int render_frame_id,
-      const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
-  virtual std::string GetMimeType(const std::string& path) const OVERRIDE;
-  virtual base::MessageLoop* MessageLoopForRequestPath(
-      const std::string& path) const OVERRIDE;
-  virtual bool ShouldServiceRequest(
-      const net::URLRequest* request) const OVERRIDE;
-  virtual bool ShouldReplaceExistingSource() const OVERRIDE;
+      const content::URLDataSource::GotDataCallback& callback) override;
+
+  std::string GetMimeType(const std::string& path) const override;
+  base::MessageLoop* MessageLoopForRequestPath(
+      const std::string& path) const override;
+  bool ShouldServiceRequest(const net::URLRequest* request) const override;
+  bool ShouldReplaceExistingSource() const override;
 
  private:
-  virtual ~ThumbnailListSource();
+  ~ThumbnailListSource() override;
 
+  // Called on the IO thread.
   void OnMostVisitedURLsAvailable(
     const content::URLDataSource::GotDataCallback& callback,
     const history::MostVisitedURLList& mvurl_list);
@@ -55,8 +61,7 @@ class ThumbnailListSource : public content::URLDataSource {
   // ThumbnailService.
   scoped_refptr<thumbnails::ThumbnailService> thumbnail_service_;
 
-  // Only used when servicing requests on the UI thread.
-  Profile* const profile_;
+  scoped_refptr<history::TopSites> top_sites_;
 
   // For callbacks may be run after destruction.
   base::WeakPtrFactory<ThumbnailListSource> weak_ptr_factory_;

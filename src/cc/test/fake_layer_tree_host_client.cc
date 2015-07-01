@@ -21,25 +21,27 @@ FakeLayerTreeHostClient::FakeLayerTreeHostClient(RendererOptions options)
 
 FakeLayerTreeHostClient::~FakeLayerTreeHostClient() {}
 
-void FakeLayerTreeHostClient::RequestNewOutputSurface(bool fallback) {
+void FakeLayerTreeHostClient::RequestNewOutputSurface() {
   DCHECK(host_);
   scoped_ptr<OutputSurface> surface;
   if (use_software_rendering_) {
     if (use_delegating_renderer_) {
       surface = FakeOutputSurface::CreateDelegatingSoftware(
-                    make_scoped_ptr(new SoftwareOutputDevice))
-                    .PassAs<OutputSurface>();
+          make_scoped_ptr(new SoftwareOutputDevice));
     } else {
       surface = FakeOutputSurface::CreateSoftware(
-                    make_scoped_ptr(new SoftwareOutputDevice))
-                    .PassAs<OutputSurface>();
+          make_scoped_ptr(new SoftwareOutputDevice));
     }
   } else if (use_delegating_renderer_) {
-    surface = FakeOutputSurface::CreateDelegating3d().PassAs<OutputSurface>();
+    surface = FakeOutputSurface::CreateDelegating3d();
   } else {
-    surface = FakeOutputSurface::Create3d().PassAs<OutputSurface>();
+    surface = FakeOutputSurface::Create3d();
   }
   host_->SetOutputSurface(surface.Pass());
+}
+
+void FakeLayerTreeHostClient::DidFailToInitializeOutputSurface() {
+  RequestNewOutputSurface();
 }
 
 }  // namespace cc

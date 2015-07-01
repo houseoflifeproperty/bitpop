@@ -4,6 +4,7 @@
 
 #include "remoting/protocol/fake_authenticator.h"
 
+#include "base/callback_helpers.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "net/base/io_buffer.h"
@@ -82,11 +83,9 @@ void FakeChannelAuthenticator::OnAuthBytesRead(int result) {
 }
 
 void FakeChannelAuthenticator::CallDoneCallback() {
-  DoneCallback callback = done_callback_;
-  done_callback_.Reset();
   if (result_ != net::OK)
     socket_.reset();
-  callback.Run(result_, socket_.Pass());
+  base::ResetAndReturn(&done_callback_).Run(result_, socket_.Pass());
 }
 
 FakeAuthenticator::FakeAuthenticator(
@@ -168,7 +167,7 @@ scoped_ptr<buzz::XmlElement> FakeAuthenticator::GetNextMessage() {
 scoped_ptr<ChannelAuthenticator>
 FakeAuthenticator::CreateChannelAuthenticator() const {
   EXPECT_EQ(ACCEPTED, state());
-  return scoped_ptr<ChannelAuthenticator>(
+  return make_scoped_ptr(
       new FakeChannelAuthenticator(action_ != REJECT_CHANNEL, async_));
 }
 

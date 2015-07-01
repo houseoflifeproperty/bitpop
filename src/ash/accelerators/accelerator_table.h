@@ -53,21 +53,21 @@ namespace ash {
 enum AcceleratorAction {
   ACCESSIBLE_FOCUS_NEXT,
   ACCESSIBLE_FOCUS_PREVIOUS,
-  BRIGHTNESS_DOWN,
-  BRIGHTNESS_UP,
   CYCLE_BACKWARD_MRU,
   CYCLE_FORWARD_MRU,
+  DEBUG_PRINT_LAYER_HIERARCHY,
+  DEBUG_PRINT_VIEW_HIERARCHY,
+  DEBUG_PRINT_WINDOW_HIERARCHY,
+  DEBUG_TOGGLE_ROOT_WINDOW_FULL_SCREEN,
+  DEBUG_TOGGLE_DESKTOP_BACKGROUND_MODE,
   DEBUG_TOGGLE_DEVICE_SCALE_FACTOR,
   DEBUG_TOGGLE_SHOW_DEBUG_BORDERS,
   DEBUG_TOGGLE_SHOW_FPS_COUNTER,
   DEBUG_TOGGLE_SHOW_PAINT_RECTS,
-  DISABLE_CAPS_LOCK,
   EXIT,
   FOCUS_NEXT_PANE,
   FOCUS_PREVIOUS_PANE,
   FOCUS_SHELF,
-  KEYBOARD_BRIGHTNESS_DOWN,
-  KEYBOARD_BRIGHTNESS_UP,
   LAUNCH_APP_0,
   LAUNCH_APP_1,
   LAUNCH_APP_2,
@@ -77,8 +77,6 @@ enum AcceleratorAction {
   LAUNCH_APP_6,
   LAUNCH_APP_7,
   LAUNCH_LAST_APP,
-  LOCK_PRESSED,
-  LOCK_RELEASED,
   MAGNIFY_SCREEN_ZOOM_IN,
   MAGNIFY_SCREEN_ZOOM_OUT,
   MEDIA_NEXT_TRACK,
@@ -89,13 +87,8 @@ enum AcceleratorAction {
   NEW_WINDOW,
   NEXT_IME,
   OPEN_FEEDBACK_PAGE,
-  POWER_PRESSED,
-  POWER_RELEASED,
   PREVIOUS_IME,
-  PRINT_LAYER_HIERARCHY,
   PRINT_UI_HIERARCHIES,
-  PRINT_VIEW_HIERARCHY,
-  PRINT_WINDOW_HIERARCHY,
   RESTORE_TAB,
   ROTATE_SCREEN,
   ROTATE_WINDOW,
@@ -106,19 +99,39 @@ enum AcceleratorAction {
   SHOW_MESSAGE_CENTER_BUBBLE,
   SHOW_SYSTEM_TRAY_BUBBLE,
   SHOW_TASK_MANAGER,
-  SILENCE_SPOKEN_FEEDBACK,
-  SWAP_PRIMARY_DISPLAY,
   SWITCH_IME,  // Switch to another IME depending on the accelerator.
   TAKE_PARTIAL_SCREENSHOT,
   TAKE_SCREENSHOT,
   TOGGLE_APP_LIST,
-  TOGGLE_CAPS_LOCK,
-  TOGGLE_CAPS_LOCK_BY_ALT_LWIN,
-  TOGGLE_DESKTOP_BACKGROUND_MODE,
   TOGGLE_FULLSCREEN,
   TOGGLE_MAXIMIZED,
   TOGGLE_OVERVIEW,
-  TOGGLE_ROOT_WINDOW_FULL_SCREEN,
+  WINDOW_MINIMIZE,
+  WINDOW_POSITION_CENTER,
+  WINDOW_CYCLE_SNAP_DOCK_LEFT,
+  WINDOW_CYCLE_SNAP_DOCK_RIGHT,
+#if defined(OS_CHROMEOS)
+  BRIGHTNESS_DOWN,
+  BRIGHTNESS_UP,
+  DEBUG_ADD_REMOVE_DISPLAY,
+  DISABLE_CAPS_LOCK,
+  DISABLE_GPU_WATCHDOG,
+  KEYBOARD_BRIGHTNESS_DOWN,
+  KEYBOARD_BRIGHTNESS_UP,
+  LOCK_PRESSED,
+  LOCK_RELEASED,
+  LOCK_SCREEN,
+  OPEN_CROSH,
+  OPEN_FILE_MANAGER,
+  OPEN_GET_HELP,
+  POWER_PRESSED,
+  POWER_RELEASED,
+  SILENCE_SPOKEN_FEEDBACK,
+  SWAP_PRIMARY_DISPLAY,
+  SWITCH_TO_NEXT_USER,
+  SWITCH_TO_PREVIOUS_USER,
+  TOGGLE_CAPS_LOCK,
+  TOGGLE_MIRROR_MODE,
   TOGGLE_SPOKEN_FEEDBACK,
   TOGGLE_TOUCH_VIEW_TESTING,
   TOGGLE_WIFI,
@@ -128,19 +141,6 @@ enum AcceleratorAction {
   VOLUME_DOWN,
   VOLUME_MUTE,
   VOLUME_UP,
-  WINDOW_MINIMIZE,
-  WINDOW_POSITION_CENTER,
-  WINDOW_SNAP_LEFT,
-  WINDOW_SNAP_RIGHT,
-#if defined(OS_CHROMEOS)
-  ADD_REMOVE_DISPLAY,
-  TOGGLE_MIRROR_MODE,
-  DISABLE_GPU_WATCHDOG,
-  LOCK_SCREEN,
-  OPEN_CROSH,
-  OPEN_FILE_MANAGER,
-  SWITCH_TO_NEXT_USER,
-  SWITCH_TO_PREVIOUS_USER,
 #else
   DUMMY_FOR_RESERVED,
 #endif
@@ -157,14 +157,9 @@ struct AcceleratorData {
 ASH_EXPORT extern const AcceleratorData kAcceleratorData[];
 ASH_EXPORT extern const size_t kAcceleratorDataLength;
 
-#if !defined(NDEBUG)
-// Accelerators useful when running on desktop. Debug build only.
-ASH_EXPORT extern const AcceleratorData kDesktopAcceleratorData[];
-ASH_EXPORT extern const size_t kDesktopAcceleratorDataLength;
-#endif
-
-// Debug accelerators enabled only when "Debugging keyboard shortcuts" flag
-// (--ash-debug-shortcuts) is enabled.
+// Debug accelerators. Debug accelerators are only enabled when the "Debugging
+// keyboard shortcuts" flag (--ash-debug-shortcuts) is enabled. Debug actions
+// are always run (similar to reserved actions).
 ASH_EXPORT extern const AcceleratorData kDebugAcceleratorData[];
 ASH_EXPORT extern const size_t kDebugAcceleratorDataLength;
 
@@ -176,12 +171,6 @@ ASH_EXPORT extern const size_t kPreferredActionsLength;
 // Actions that are always handled in Ash.
 ASH_EXPORT extern const AcceleratorAction kReservedActions[];
 ASH_EXPORT extern const size_t kReservedActionsLength;
-
-// Actions that should be handled very early in Ash unless the current target
-// window is full-screen, these actions are only handled if
-// DebugShortcutsEnabled is true (command line switch 'ash-debug-shortcuts').
-ASH_EXPORT extern const AcceleratorAction kReservedDebugActions[];
-ASH_EXPORT extern const size_t kReservedDebugActionsLength;
 
 // Actions allowed while user is not signed in or screen is locked.
 ASH_EXPORT extern const AcceleratorAction kActionsAllowedAtLoginOrLockScreen[];

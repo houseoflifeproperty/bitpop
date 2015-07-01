@@ -4,19 +4,18 @@
 
 #include "base/command_line.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/crx_file/id_util.h"
-#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extensions_client.h"
 #include "extensions/test/extension_test_message_listener.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 
-const std::string kAllUrlsTarget =
-    "files/extensions/api_test/all_urls/index.html";
+const std::string kAllUrlsTarget = "/extensions/api_test/all_urls/index.html";
 
 typedef ExtensionApiTest AllUrlsApiTest;
 
@@ -29,7 +28,8 @@ typedef ExtensionApiTest AllUrlsApiTest;
 IN_PROC_BROWSER_TEST_F(AllUrlsApiTest, MAYBE_WhitelistedExtension) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
 
@@ -46,12 +46,12 @@ IN_PROC_BROWSER_TEST_F(AllUrlsApiTest, MAYBE_WhitelistedExtension) {
   extensions::ExtensionsClient::Get()->SetScriptingWhitelist(whitelist);
 
   // Then load extensions.
-  ExtensionService* service = extensions::ExtensionSystem::Get(
-      browser()->profile())->extension_service();
-  const size_t size_before = service->extensions()->size();
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(browser()->profile());
+  const size_t size_before = registry->enabled_extensions().size();
   ASSERT_TRUE(LoadExtension(extension_dir1));
   ASSERT_TRUE(LoadExtension(extension_dir2));
-  EXPECT_EQ(size_before + 2, service->extensions()->size());
+  EXPECT_EQ(size_before + 2, registry->enabled_extensions().size());
 
   std::string url;
 
@@ -88,8 +88,8 @@ IN_PROC_BROWSER_TEST_F(AllUrlsApiTest, MAYBE_WhitelistedExtension) {
   ASSERT_TRUE(listener4b.WaitUntilSatisfied());
 
   // Now verify we can script a regular http page.
-  ASSERT_TRUE(test_server()->Start());
-  GURL page_url = test_server()->GetURL(kAllUrlsTarget);
+  ASSERT_TRUE(StartEmbeddedTestServer());
+  GURL page_url = embedded_test_server()->GetURL(kAllUrlsTarget);
   ExtensionTestMessageListener listener5a("content script: " + page_url.spec(),
                                           false);
   ExtensionTestMessageListener listener5b("execute: " + page_url.spec(), false);
@@ -107,16 +107,16 @@ IN_PROC_BROWSER_TEST_F(AllUrlsApiTest, RegularExtensions) {
   base::FilePath extension_dir2 = test_data_dir_.AppendASCII("all_urls")
                                           .AppendASCII("execute_script");
 
-  ExtensionService* service = extensions::ExtensionSystem::Get(
-      browser()->profile())->extension_service();
-  const size_t size_before = service->extensions()->size();
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(browser()->profile());
+  const size_t size_before = registry->enabled_extensions().size();
   ASSERT_TRUE(LoadExtension(extension_dir1));
   ASSERT_TRUE(LoadExtension(extension_dir2));
-  EXPECT_EQ(size_before + 2, service->extensions()->size());
+  EXPECT_EQ(size_before + 2, registry->enabled_extensions().size());
 
   // Now verify we can script a regular http page.
-  ASSERT_TRUE(test_server()->Start());
-  GURL page_url = test_server()->GetURL(kAllUrlsTarget);
+  ASSERT_TRUE(StartEmbeddedTestServer());
+  GURL page_url = embedded_test_server()->GetURL(kAllUrlsTarget);
   ExtensionTestMessageListener listener1a("content script: " + page_url.spec(),
                                           false);
   ExtensionTestMessageListener listener1b("execute: " + page_url.spec(), false);

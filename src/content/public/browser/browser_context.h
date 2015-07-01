@@ -10,12 +10,14 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/supports_user_data.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/zoom_level_delegate.h"
 #include "content/public/common/push_messaging_status.h"
 
 class GURL;
 
 namespace base {
 class FilePath;
+class Time;
 }
 
 namespace storage {
@@ -37,6 +39,7 @@ class BrowserPluginGuestManager;
 class DownloadManager;
 class DownloadManagerDelegate;
 class IndexedDBContext;
+class PermissionManager;
 class PushMessagingService;
 class ResourceContext;
 class SiteInstance;
@@ -50,9 +53,9 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
  public:
   static DownloadManager* GetDownloadManager(BrowserContext* browser_context);
 
-  // Returns BrowserContext specific external mount points. It may return NULL
-  // if the context doesn't have any BrowserContext specific external mount
-  // points. Currenty, non-NULL value is returned only on ChromeOS.
+  // Returns BrowserContext specific external mount points. It may return
+  // nullptr if the context doesn't have any BrowserContext specific external
+  // mount points. Currenty, non-nullptr value is returned only on ChromeOS.
   static storage::ExternalMountPoints* GetMountPoints(BrowserContext* context);
 
   static content::StoragePartition* GetStoragePartition(
@@ -82,10 +85,18 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
 
   typedef base::Callback<void(scoped_ptr<BlobHandle>)> BlobCallback;
 
-  // |callback| returns a NULL scoped_ptr on failure.
+  // |callback| returns a nullptr scoped_ptr on failure.
   static void CreateMemoryBackedBlob(BrowserContext* browser_context,
                                      const char* data, size_t length,
                                      const BlobCallback& callback);
+
+  // |callback| returns a nullptr scoped_ptr on failure.
+  static void CreateFileBackedBlob(BrowserContext* browser_context,
+                                   const base::FilePath& path,
+                                   int64_t offset,
+                                   int64_t size,
+                                   const base::Time& expected_modification_time,
+                                   const BlobCallback& callback);
 
   // Delivers a push message with |data| to the Service Worker identified by
   // |origin| and |service_worker_registration_id|.
@@ -94,7 +105,9 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
       const GURL& origin,
       int64 service_worker_registration_id,
       const std::string& data,
-      const base::Callback<void(PushMessagingStatus)>& callback);
+      const base::Callback<void(PushDeliveryStatus)>& callback);
+
+  static void NotifyWillBeDestroyed(BrowserContext* browser_context);
 
   // Ensures that the corresponding ResourceContext is initialized. Normally the
   // BrowserContext initializs the corresponding getters when its objects are
@@ -107,7 +120,12 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // across the next restart.
   static void SaveSessionState(BrowserContext* browser_context);
 
-  virtual ~BrowserContext();
+  ~BrowserContext() override;
+
+  // Creates a delegate to initialize a HostZoomMap and persist its information.
+  // This is called during creation of each StoragePartition.
+  virtual scoped_ptr<ZoomLevelDelegate> CreateZoomLevelDelegate(
+      const base::FilePath& partition_path) = 0;
 
   // Returns the path of the directory where this context's data is stored.
   virtual base::FilePath GetPath() const = 0;
@@ -147,38 +165,29 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
 
   // Returns the DownloadManagerDelegate for this context. This will be called
   // once per context. The embedder owns the delegate and is responsible for
-  // ensuring that it outlives DownloadManager. It's valid to return NULL.
+  // ensuring that it outlives DownloadManager. It's valid to return nullptr.
   virtual DownloadManagerDelegate* GetDownloadManagerDelegate() = 0;
 
   // Returns the guest manager for this context.
   virtual BrowserPluginGuestManager* GetGuestManager() = 0;
 
-  // Returns a special storage policy implementation, or NULL.
+  // Returns a special storage policy implementation, or nullptr.
   virtual storage::SpecialStoragePolicy* GetSpecialStoragePolicy() = 0;
 
   // Returns a push messaging service. The embedder owns the service, and is
   // responsible for ensuring that it outlives RenderProcessHost. It's valid to
-  // return NULL.
+  // return nullptr.
   virtual PushMessagingService* GetPushMessagingService() = 0;
 
   // Returns the SSL host state decisions for this context. The context may
-  // return NULL, implementing the default exception storage strategy.
+  // return nullptr, implementing the default exception storage strategy.
   virtual SSLHostStateDelegate* GetSSLHostStateDelegate() = 0;
+
+  // Returns the PermissionManager associated with that context if any, nullptr
+  // otherwise.
+  virtual PermissionManager* GetPermissionManager() = 0;
 };
 
 }  // namespace content
-
-#if defined(COMPILER_GCC)
-namespace BASE_HASH_NAMESPACE {
-
-template<>
-struct hash<content::BrowserContext*> {
-  std::size_t operator()(content::BrowserContext* const& p) const {
-    return reinterpret_cast<std::size_t>(p);
-  }
-};
-
-}  // namespace BASE_HASH_NAMESPACE
-#endif
 
 #endif  // CONTENT_PUBLIC_BROWSER_BROWSER_CONTEXT_H_

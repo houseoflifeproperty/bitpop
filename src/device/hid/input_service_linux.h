@@ -45,6 +45,9 @@ class InputServiceLinux : public base::MessageLoop::DestructionObserver {
     bool is_touchscreen : 1;
   };
 
+
+  using DeviceMap = base::hash_map<std::string, InputDeviceInfo>;
+
   class Observer {
    public:
     virtual ~Observer() {}
@@ -53,6 +56,7 @@ class InputServiceLinux : public base::MessageLoop::DestructionObserver {
   };
 
   InputServiceLinux();
+  ~InputServiceLinux() override;
 
   static InputServiceLinux* GetInstance();
   static bool HasInstance();
@@ -70,23 +74,20 @@ class InputServiceLinux : public base::MessageLoop::DestructionObserver {
   bool GetDeviceInfo(const std::string& id, InputDeviceInfo* info) const;
 
   // Implements base::MessageLoop::DestructionObserver
-  virtual void WillDestroyCurrentMessageLoop() OVERRIDE;
+  void WillDestroyCurrentMessageLoop() override;
 
  protected:
-  virtual ~InputServiceLinux();
 
   void AddDevice(const InputDeviceInfo& info);
   void RemoveDevice(const std::string& id);
 
   bool CalledOnValidThread() const;
 
- private:
-  friend struct base::DefaultDeleter<InputServiceLinux>;
-
-  typedef base::hash_map<std::string, InputDeviceInfo> DeviceMap;
-
   DeviceMap devices_;
   ObserverList<Observer> observers_;
+
+ private:
+  friend struct base::DefaultDeleter<InputServiceLinux>;
 
   base::ThreadChecker thread_checker_;
 

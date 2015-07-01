@@ -21,8 +21,11 @@ class BookmarkSyncPromoView : public views::StyledLabelListener,
 
  private:
   // views::StyledLabelListener:
-  virtual void StyledLabelLinkClicked(const gfx::Range& range,
-                                      int event_flags) OVERRIDE;
+  void StyledLabelLinkClicked(const gfx::Range& range,
+                              int event_flags) override;
+
+  // views::View:
+  const char* GetClassName() const override;
 
   // Delegate, to handle clicks on the sign in link.
   BookmarkBubbleDelegate* delegate_;

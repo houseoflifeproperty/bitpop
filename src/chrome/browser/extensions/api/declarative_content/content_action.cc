@@ -19,6 +19,7 @@
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/declarative_user_script_manager.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
@@ -74,10 +75,10 @@ class ShowPageAction : public ContentAction {
   }
 
   // Implementation of ContentAction:
-  virtual Type GetType() const OVERRIDE { return ACTION_SHOW_PAGE_ACTION; }
-  virtual void Apply(const std::string& extension_id,
-                     const base::Time& extension_install_time,
-                     ApplyInfo* apply_info) const OVERRIDE {
+  Type GetType() const override { return ACTION_SHOW_PAGE_ACTION; }
+  void Apply(const std::string& extension_id,
+             const base::Time& extension_install_time,
+             ApplyInfo* apply_info) const override {
     ExtensionAction* action =
         GetPageAction(apply_info->browser_context, extension_id);
     action->DeclarativeShow(ExtensionTabUtil::GetTabId(apply_info->tab));
@@ -85,12 +86,12 @@ class ShowPageAction : public ContentAction {
         action, apply_info->tab, apply_info->browser_context);
   }
   // The page action is already showing, so nothing needs to be done here.
-  virtual void Reapply(const std::string& extension_id,
-                       const base::Time& extension_install_time,
-                       ApplyInfo* apply_info) const OVERRIDE {}
-  virtual void Revert(const std::string& extension_id,
-                      const base::Time& extension_install_time,
-                      ApplyInfo* apply_info) const OVERRIDE {
+  void Reapply(const std::string& extension_id,
+               const base::Time& extension_install_time,
+               ApplyInfo* apply_info) const override {}
+  void Revert(const std::string& extension_id,
+              const base::Time& extension_install_time,
+              ApplyInfo* apply_info) const override {
     if (ExtensionAction* action =
             GetPageAction(apply_info->browser_context, extension_id)) {
       action->UndoDeclarativeShow(ExtensionTabUtil::GetTabId(apply_info->tab));
@@ -111,7 +112,7 @@ class ShowPageAction : public ContentAction {
     return ExtensionActionManager::Get(browser_context)
         ->GetPageAction(*extension);
   }
-  virtual ~ShowPageAction() {}
+  ~ShowPageAction() override {}
 
   DISALLOW_COPY_AND_ASSIGN(ShowPageAction);
 };
@@ -130,10 +131,10 @@ class SetIcon : public ContentAction {
       bool* bad_message);
 
   // Implementation of ContentAction:
-  virtual Type GetType() const OVERRIDE { return ACTION_SET_ICON; }
-  virtual void Apply(const std::string& extension_id,
-                     const base::Time& extension_install_time,
-                     ApplyInfo* apply_info) const OVERRIDE {
+  Type GetType() const override { return ACTION_SET_ICON; }
+  void Apply(const std::string& extension_id,
+             const base::Time& extension_install_time,
+             ApplyInfo* apply_info) const override {
     Profile* profile = Profile::FromBrowserContext(apply_info->browser_context);
     ExtensionAction* action = GetExtensionAction(profile, extension_id);
     if (action) {
@@ -145,13 +146,13 @@ class SetIcon : public ContentAction {
     }
   }
 
-  virtual void Reapply(const std::string& extension_id,
-                       const base::Time& extension_install_time,
-                       ApplyInfo* apply_info) const OVERRIDE {}
+  void Reapply(const std::string& extension_id,
+               const base::Time& extension_install_time,
+               ApplyInfo* apply_info) const override {}
 
-  virtual void Revert(const std::string& extension_id,
-                      const base::Time& extension_install_time,
-                      ApplyInfo* apply_info) const OVERRIDE {
+  void Revert(const std::string& extension_id,
+              const base::Time& extension_install_time,
+              ApplyInfo* apply_info) const override {
     Profile* profile = Profile::FromBrowserContext(apply_info->browser_context);
     ExtensionAction* action = GetExtensionAction(profile, extension_id);
     if (action) {
@@ -183,7 +184,7 @@ class SetIcon : public ContentAction {
     }
     return NULL;
   }
-  virtual ~SetIcon() {}
+  ~SetIcon() override {}
 
   gfx::Image icon_;
   ActionInfo::Type action_type_;
@@ -349,11 +350,12 @@ RequestContentScript::RequestContentScript(
     content::BrowserContext* browser_context,
     const Extension* extension,
     const ScriptData& script_data) {
-  InitScript(extension, script_data);
+  HostID host_id(HostID::EXTENSIONS, extension->id());
+  InitScript(host_id, extension, script_data);
 
-  master_ =
-      ExtensionSystem::Get(browser_context)->
-      GetDeclarativeUserScriptMasterByExtension(extension->id());
+  master_ = ExtensionSystem::Get(browser_context)
+                ->declarative_user_script_manager()
+                ->GetDeclarativeUserScriptMasterByID(host_id);
   AddScript();
 }
 
@@ -361,7 +363,8 @@ RequestContentScript::RequestContentScript(
     DeclarativeUserScriptMaster* master,
     const Extension* extension,
     const ScriptData& script_data) {
-  InitScript(extension, script_data);
+  HostID host_id(HostID::EXTENSIONS, extension->id());
+  InitScript(host_id, extension, script_data);
 
   master_ = master;
   AddScript();
@@ -372,10 +375,11 @@ RequestContentScript::~RequestContentScript() {
   master_->RemoveScript(script_);
 }
 
-void RequestContentScript::InitScript(const Extension* extension,
+void RequestContentScript::InitScript(const HostID& host_id,
+                                      const Extension* extension,
                                       const ScriptData& script_data) {
   script_.set_id(UserScript::GenerateUserScriptID());
-  script_.set_extension_id(extension->id());
+  script_.set_host_id(host_id);
   script_.set_run_location(UserScript::BROWSER_DRIVEN);
   script_.set_match_all_frames(script_data.all_frames);
   script_.set_match_about_blank(script_data.match_about_blank);

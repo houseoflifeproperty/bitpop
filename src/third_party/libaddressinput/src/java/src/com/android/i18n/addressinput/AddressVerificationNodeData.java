@@ -26,30 +26,29 @@ import java.util.Map;
  * as a single string using '~' to separate the elements of the array, depending on the
  * AddressDataKey.
  */
-public class AddressVerificationNodeData {
+public final class AddressVerificationNodeData {
+  private final Map<AddressDataKey, String> map;
 
-    private final Map<AddressDataKey, String> mMap;
+  public AddressVerificationNodeData(Map<AddressDataKey, String> map) {
+    Util.checkNotNull("Cannot construct StandardNodeData with null map");
+    this.map = map;
+  }
 
-    public AddressVerificationNodeData(Map<AddressDataKey, String> map) {
-        Util.checkNotNull("Cannot construct StandardNodeData with null map");
-        mMap = map;
-    }
+  /**
+   * Iterates through the map.
+   */
+  public Iterator<AddressDataKey> iterator() {
+    return map.keySet().iterator();
+  }
 
-    /**
-     * Iterates through the map.
-     */
-    public Iterator<AddressDataKey> iterator() {
-        return mMap.keySet().iterator();
-    }
+  public boolean containsKey(AddressDataKey key) {
+    return map.containsKey(key);
+  }
 
-    public boolean containsKey(AddressDataKey key) {
-        return mMap.containsKey(key);
-    }
-
-    /**
-     * Gets the value for a particular key in the map.
-     */
-    public String get(AddressDataKey key) {
-        return mMap.get(key);
-    }
+  /**
+   * Gets the value for a particular key in the map.
+   */
+  public String get(AddressDataKey key) {
+    return map.get(key);
+  }
 }

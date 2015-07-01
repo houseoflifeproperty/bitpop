@@ -31,9 +31,12 @@
 #ifndef DOMWebSocket_h
 #define DOMWebSocket_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventListener.h"
+#include "core/events/EventTarget.h"
 #include "modules/EventTargetModules.h"
+#include "modules/ModulesExport.h"
 #include "modules/websockets/WebSocketChannel.h"
 #include "modules/websockets/WebSocketChannelClient.h"
 #include "platform/Timer.h"
@@ -41,14 +44,21 @@
 #include "platform/weborigin/KURL.h"
 #include "wtf/Deque.h"
 #include "wtf/Forward.h"
-#include "wtf/text/AtomicStringHash.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
+#include "wtf/text/WTFString.h"
+#include <stdint.h>
 
 namespace blink {
 
 class Blob;
+class DOMArrayBuffer;
+class DOMArrayBufferView;
 class ExceptionState;
+class ExecutionContext;
+class StringOrStringSequence;
 
-class DOMWebSocket : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<DOMWebSocket>, public EventTargetWithInlineData, public ActiveDOMObject, public WebSocketChannelClient {
+class MODULES_EXPORT DOMWebSocket : public RefCountedGarbageCollectedEventTargetWithInlineData<DOMWebSocket>, public ActiveDOMObject, public WebSocketChannelClient {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<DOMWebSocket>);
     DEFINE_WRAPPERTYPEINFO();
     USING_GARBAGE_COLLECTED_MIXIN(DOMWebSocket);
@@ -58,8 +68,7 @@ public:
     // lifetime management is designed assuming the V8 holds a ref on it while
     // hasPendingActivity() returns true.
     static DOMWebSocket* create(ExecutionContext*, const String& url, ExceptionState&);
-    static DOMWebSocket* create(ExecutionContext*, const String& url, const String& protocol, ExceptionState&);
-    static DOMWebSocket* create(ExecutionContext*, const String& url, const Vector<String>& protocols, ExceptionState&);
+    static DOMWebSocket* create(ExecutionContext*, const String& url, const StringOrStringSequence& protocols, ExceptionState&);
     virtual ~DOMWebSocket();
 
     enum State {
@@ -72,8 +81,8 @@ public:
     void connect(const String& url, const Vector<String>& protocols, ExceptionState&);
 
     void send(const String& message, ExceptionState&);
-    void send(ArrayBuffer*, ExceptionState&);
-    void send(ArrayBufferView*, ExceptionState&);
+    void send(DOMArrayBuffer*, ExceptionState&);
+    void send(DOMArrayBufferView*, ExceptionState&);
     void send(Blob*, ExceptionState&);
 
     // To distinguish close method call with the code parameter from one
@@ -87,7 +96,7 @@ public:
 
     const KURL& url() const;
     State readyState() const;
-    unsigned long bufferedAmount() const;
+    unsigned bufferedAmount() const;
 
     String protocol() const;
     String extensions() const;
@@ -101,28 +110,28 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(close);
 
     // EventTarget functions.
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
+    virtual ExecutionContext* executionContext() const override;
 
     // ActiveDOMObject functions.
-    virtual void contextDestroyed() OVERRIDE;
+    virtual void contextDestroyed() override;
     // Prevent this instance from being collected while it's not in CLOSED
     // state.
-    virtual bool hasPendingActivity() const OVERRIDE;
-    virtual void suspend() OVERRIDE;
-    virtual void resume() OVERRIDE;
-    virtual void stop() OVERRIDE;
+    virtual bool hasPendingActivity() const override;
+    virtual void suspend() override;
+    virtual void resume() override;
+    virtual void stop() override;
 
     // WebSocketChannelClient functions.
-    virtual void didConnect(const String& subprotocol, const String& extensions) OVERRIDE;
-    virtual void didReceiveMessage(const String& message) OVERRIDE;
-    virtual void didReceiveBinaryData(PassOwnPtr<Vector<char> >) OVERRIDE;
-    virtual void didReceiveMessageError() OVERRIDE;
-    virtual void didConsumeBufferedAmount(unsigned long) OVERRIDE;
-    virtual void didStartClosingHandshake() OVERRIDE;
-    virtual void didClose(ClosingHandshakeCompletionStatus, unsigned short code, const String& reason) OVERRIDE;
+    virtual void didConnect(const String& subprotocol, const String& extensions) override;
+    virtual void didReceiveTextMessage(const String& message) override;
+    virtual void didReceiveBinaryMessage(PassOwnPtr<Vector<char>>) override;
+    virtual void didError() override;
+    virtual void didConsumeBufferedAmount(uint64_t) override;
+    virtual void didStartClosingHandshake() override;
+    virtual void didClose(ClosingHandshakeCompletionStatus, unsigned short code, const String& reason) override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
     static bool isValidSubprotocolString(const String&);
 
@@ -131,7 +140,7 @@ protected:
 
 private:
     // FIXME: This should inherit blink::EventQueue.
-    class EventQueue FINAL : public GarbageCollectedFinalized<EventQueue> {
+    class EventQueue final : public GarbageCollectedFinalized<EventQueue> {
     public:
         static EventQueue* create(EventTarget* target)
         {
@@ -150,7 +159,7 @@ private:
         void resume();
         void stop();
 
-        void trace(Visitor*);
+        DECLARE_TRACE();
 
     private:
         enum State {
@@ -167,8 +176,8 @@ private:
         void resumeTimerFired(Timer<EventQueue>*);
 
         State m_state;
-        EventTarget* m_target;
-        WillBeHeapDeque<RefPtrWillBeMember<Event> > m_events;
+        RawPtrWillBeMember<EventTarget> m_target;
+        WillBeHeapDeque<RefPtrWillBeMember<Event>> m_events;
         Timer<EventQueue> m_resumeTimer;
     };
 
@@ -178,6 +187,13 @@ private:
         WebSocketSendTypeArrayBufferView,
         WebSocketSendTypeBlob,
         WebSocketSendTypeMax,
+    };
+
+    enum WebSocketReceiveType {
+        WebSocketReceiveTypeString,
+        WebSocketReceiveTypeArrayBuffer,
+        WebSocketReceiveTypeBlob,
+        WebSocketReceiveTypeMax,
     };
 
     // This function is virtual for unittests.
@@ -195,11 +211,9 @@ private:
     // not.
     void closeInternal(int, const String&, ExceptionState&);
 
-    size_t getFramingOverhead(size_t payloadSize);
-
     // Updates m_bufferedAmountAfterClose given the amount of data passed to
     // send() method after the state changed to CLOSING or CLOSED.
-    void updateBufferedAmountAfterClose(unsigned long);
+    void updateBufferedAmountAfterClose(uint64_t);
     void reflectBufferedAmountConsumption(Timer<DOMWebSocket>*);
 
     void releaseChannel();
@@ -213,11 +227,11 @@ private:
 
     State m_state;
     KURL m_url;
-    unsigned long m_bufferedAmount;
+    uint64_t m_bufferedAmount;
     // The consumed buffered amount that will be reflected to m_bufferedAmount
     // later. It will be cleared once reflected.
-    unsigned long m_consumedBufferedAmount;
-    unsigned long m_bufferedAmountAfterClose;
+    uint64_t m_consumedBufferedAmount;
+    uint64_t m_bufferedAmountAfterClose;
     BinaryType m_binaryType;
     // The subprotocol the server selected.
     String m_subprotocol;

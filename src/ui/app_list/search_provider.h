@@ -25,7 +25,7 @@ class APP_LIST_EXPORT SearchProvider {
   virtual ~SearchProvider();
 
   // Invoked to start a query.
-  virtual void Start(const base::string16& query) = 0;
+  virtual void Start(bool is_voice_query, const base::string16& query) = 0;
 
   // Invoked to stop the current query and no more results changes.
   virtual void Stop() = 0;
@@ -33,9 +33,6 @@ class APP_LIST_EXPORT SearchProvider {
   void set_result_changed_callback(const ResultChangedCallback& callback) {
     result_changed_callback_ = callback;
   }
-
-  // TODO(mukai): Fix the ownership and copying of the results.
-  void ReleaseResult(std::vector<SearchResult*>* results);
 
   const Results& results() const { return results_; }
 

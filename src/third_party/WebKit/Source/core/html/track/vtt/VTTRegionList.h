@@ -34,7 +34,7 @@
 
 namespace blink {
 
-class VTTRegionList FINAL : public RefCountedWillBeGarbageCollected<VTTRegionList>, public ScriptWrappable {
+class VTTRegionList final : public RefCountedWillBeGarbageCollected<VTTRegionList>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<VTTRegionList> create()
@@ -50,12 +50,12 @@ public:
     void add(PassRefPtrWillBeRawPtr<VTTRegion>);
     bool remove(VTTRegion*);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     VTTRegionList();
 
-    WillBeHeapVector<RefPtrWillBeMember<VTTRegion> > m_list;
+    WillBeHeapVector<RefPtrWillBeMember<VTTRegion>> m_list;
 };
 
 } // namespace blink

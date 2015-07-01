@@ -10,7 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "content/child/child_thread.h"
+#include "content/child/child_thread_impl.h"
 #include "content/common/content_export.h"
 #include "content/public/utility/utility_thread.h"
 
@@ -20,29 +20,31 @@ class FilePath;
 
 namespace content {
 class BlinkPlatformImpl;
+class UtilityBlinkPlatformImpl;
+
+#if defined(COMPILER_MSVC)
+// See explanation for other RenderViewHostImpl which is the same issue.
+#pragma warning(push)
+#pragma warning(disable: 4250)
+#endif
 
 // This class represents the background thread where the utility task runs.
 class UtilityThreadImpl : public UtilityThread,
-                          public ChildThread {
+                          public ChildThreadImpl {
  public:
   UtilityThreadImpl();
   // Constructor that's used when running in single process mode.
-  explicit UtilityThreadImpl(const std::string& channel_name);
-  virtual ~UtilityThreadImpl();
-  virtual void Shutdown() OVERRIDE;
+  explicit UtilityThreadImpl(const InProcessChildThreadParams& params);
+  ~UtilityThreadImpl() override;
+  void Shutdown() override;
 
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
-  virtual void ReleaseProcessIfNeeded() OVERRIDE;
-#if defined(OS_WIN)
-  virtual void PreCacheFont(const LOGFONT& log_font) OVERRIDE;
-  virtual void ReleaseCachedFonts() OVERRIDE;
-#endif
+  void ReleaseProcessIfNeeded() override;
 
  private:
   void Init();
 
   // ChildThread implementation.
-  virtual bool OnControlMessageReceived(const IPC::Message& msg) OVERRIDE;
+  bool OnControlMessageReceived(const IPC::Message& msg) override;
 
   // IPC message handlers.
   void OnBatchModeStarted();
@@ -55,13 +57,14 @@ class UtilityThreadImpl : public UtilityThread,
   // True when we're running in batch mode.
   bool batch_mode_;
 
-  // True if running in single process mode.
-  bool single_process_;
-
-  scoped_ptr<BlinkPlatformImpl> webkit_platform_support_;
+  scoped_ptr<UtilityBlinkPlatformImpl> blink_platform_impl_;
 
   DISALLOW_COPY_AND_ASSIGN(UtilityThreadImpl);
 };
+
+#if defined(COMPILER_MSVC)
+#pragma warning(pop)
+#endif
 
 }  // namespace content
 

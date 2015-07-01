@@ -9,38 +9,40 @@
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/path_service.h"
 #include "base/prefs/json_pref_store.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/dom_distiller/profile_utils.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/chrome_url_request_context_getter.h"
 #include "chrome/browser/net/pref_proxy_config_tracker.h"
 #include "chrome/browser/net/proxy_service_factory.h"
+#include "chrome/browser/permissions/permission_manager.h"
+#include "chrome/browser/permissions/permission_manager_factory.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ssl/chrome_ssl_host_state_delegate.h"
 #include "chrome/browser/ssl/chrome_ssl_host_state_delegate_factory.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
+#include "chrome/browser/ui/zoom/chrome_zoom_level_otr_delegate.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/ui/zoom/zoom_event_manager.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/host_zoom_map.h"
@@ -72,10 +74,18 @@
 #endif
 
 #if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_special_storage_policy.h"
+#include "components/guest_view/browser/guest_view_manager.h"
 #include "extensions/browser/api/web_request/web_request_api.h"
 #include "extensions/browser/extension_system.h"
-#include "extensions/browser/guest_view/guest_view_manager.h"
 #include "extensions/common/extension.h"
+#endif
+
+#if defined(ENABLE_SUPERVISED_USERS)
+#include "chrome/browser/content_settings/content_settings_supervised_provider.h"
+#include "chrome/browser/supervised_user/supervised_user_settings_service.h"
+#include "chrome/browser/supervised_user/supervised_user_settings_service_factory.h"
 #endif
 
 using content::BrowserThread;
@@ -126,14 +136,13 @@ void OffTheRecordProfileImpl::Init() {
   BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(
       this);
 
+  set_is_guest_profile(
+      profile_->GetPath() == ProfileManager::GetGuestProfilePath());
+
   // Guest profiles may always be OTR. Check IncognitoModePrefs otherwise.
   DCHECK(profile_->IsGuestSession() ||
          IncognitoModePrefs::GetAvailability(profile_->GetPrefs()) !=
              IncognitoModePrefs::DISABLED);
-
-#if defined(OS_ANDROID) || defined(OS_IOS)
-  UseSystemProxy();
-#endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
   // TODO(oshima): Remove the need to eagerly initialize the request context
   // getter. chromeos::OnlineAttempt is illegally trying to access this
@@ -143,7 +152,7 @@ void OffTheRecordProfileImpl::Init() {
   GetRequestContext();
 #endif  // defined(OS_CHROMEOS)
 
-  InitHostZoomMap();
+  TrackZoomLevelsFromParent();
 
 #if defined(ENABLE_PLUGINS)
   ChromePluginServiceFilter::GetInstance()->RegisterResourceContext(
@@ -199,45 +208,53 @@ void OffTheRecordProfileImpl::InitIoData() {
   io_data_.reset(new OffTheRecordProfileIOData::Handle(this));
 }
 
-void OffTheRecordProfileImpl::InitHostZoomMap() {
+void OffTheRecordProfileImpl::TrackZoomLevelsFromParent() {
+  DCHECK_NE(INCOGNITO_PROFILE, profile_->GetProfileType());
+
+  // Here we only want to use zoom levels stored in the main-context's default
+  // storage partition. We're not interested in zoom levels in special
+  // partitions, e.g. those used by WebViewGuests.
   HostZoomMap* host_zoom_map = HostZoomMap::GetDefaultForBrowserContext(this);
   HostZoomMap* parent_host_zoom_map =
       HostZoomMap::GetDefaultForBrowserContext(profile_);
   host_zoom_map->CopyFrom(parent_host_zoom_map);
-  // Observe parent's HZM change for propagating change of parent's
-  // change to this HZM.
-  zoom_subscription_ = parent_host_zoom_map->AddZoomLevelChangedCallback(
-      base::Bind(&OffTheRecordProfileImpl::OnZoomLevelChanged,
+  // Observe parent profile's HostZoomMap changes so they can also be applied
+  // to this profile's HostZoomMap.
+  track_zoom_subscription_ = parent_host_zoom_map->AddZoomLevelChangedCallback(
+      base::Bind(&OffTheRecordProfileImpl::OnParentZoomLevelChanged,
                  base::Unretained(this)));
+  if (!profile_->GetZoomLevelPrefs())
+    return;
+
+  // Also track changes to the parent profile's default zoom level.
+  parent_default_zoom_level_subscription_ =
+      profile_->GetZoomLevelPrefs()->RegisterDefaultZoomLevelCallback(
+          base::Bind(&OffTheRecordProfileImpl::UpdateDefaultZoomLevel,
+                     base::Unretained(this)));
 }
 
-#if defined(OS_ANDROID) || defined(OS_IOS)
-void OffTheRecordProfileImpl::UseSystemProxy() {
-  // Force the use of the system-assigned proxy when off the record.
-  const char kProxyMode[] = "mode";
-  const char kProxyServer[] = "server";
-  const char kProxyBypassList[] = "bypass_list";
-  const char kProxyPacUrl[] = "pac_url";
-  DictionaryPrefUpdate update(prefs_, prefs::kProxy);
-  base::DictionaryValue* dict = update.Get();
-  dict->SetString(kProxyMode, ProxyModeToString(ProxyPrefs::MODE_SYSTEM));
-  dict->SetString(kProxyPacUrl, "");
-  dict->SetString(kProxyServer, "");
-  dict->SetString(kProxyBypassList, "");
-}
-#endif  // defined(OS_ANDROID) || defined(OS_IOS)
-
-std::string OffTheRecordProfileImpl::GetProfileName() {
-  // Incognito profile should not return the profile name.
+std::string OffTheRecordProfileImpl::GetProfileUserName() const {
+  // Incognito profile should not return the username.
   return std::string();
 }
 
 Profile::ProfileType OffTheRecordProfileImpl::GetProfileType() const {
+#if !defined(OS_CHROMEOS)
+  return profile_->IsGuestSession() ? GUEST_PROFILE : INCOGNITO_PROFILE;
+#else
   return INCOGNITO_PROFILE;
+#endif
 }
 
 base::FilePath OffTheRecordProfileImpl::GetPath() const {
   return profile_->GetPath();
+}
+
+scoped_ptr<content::ZoomLevelDelegate>
+OffTheRecordProfileImpl::CreateZoomLevelDelegate(
+    const base::FilePath& partition_path) {
+  return make_scoped_ptr(new chrome::ChromeZoomLevelOTRDelegate(
+      ui_zoom::ZoomEventManager::GetForBrowserContext(this)->GetWeakPtr()));
 }
 
 scoped_refptr<base::SequencedTaskRunner>
@@ -275,7 +292,21 @@ bool OffTheRecordProfileImpl::IsSupervised() {
   return GetOriginalProfile()->IsSupervised();
 }
 
+bool OffTheRecordProfileImpl::IsChild() {
+  // TODO(treib): If we ever allow incognito for child accounts, evaluate
+  // whether we want to just return false here.
+  return GetOriginalProfile()->IsChild();
+}
+
+bool OffTheRecordProfileImpl::IsLegacySupervised() {
+  return GetOriginalProfile()->IsLegacySupervised();
+}
+
 PrefService* OffTheRecordProfileImpl::GetPrefs() {
+  return prefs_;
+}
+
+const PrefService* OffTheRecordProfileImpl::GetPrefs() const {
   return prefs_;
 }
 
@@ -355,6 +386,7 @@ net::SSLConfigService* OffTheRecordProfileImpl::GetSSLConfigService() {
 }
 
 HostContentSettingsMap* OffTheRecordProfileImpl::GetHostContentSettingsMap() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // Retrieve the host content settings map of the parent profile in order to
   // ensure the preferences have been migrated.
   profile_->GetHostContentSettingsMap();
@@ -368,13 +400,22 @@ HostContentSettingsMap* OffTheRecordProfileImpl::GetHostContentSettingsMap() {
           host_content_settings_map_.get());
     }
 #endif
+#if defined(ENABLE_SUPERVISED_USERS)
+    SupervisedUserSettingsService* supervised_service =
+        SupervisedUserSettingsServiceFactory::GetForProfile(this);
+    scoped_ptr<content_settings::SupervisedProvider> supervised_provider(
+        new content_settings::SupervisedProvider(supervised_service));
+    host_content_settings_map_->RegisterProvider(
+        HostContentSettingsMap::SUPERVISED_PROVIDER,
+        supervised_provider.Pass());
+#endif
   }
   return host_content_settings_map_.get();
 }
 
 content::BrowserPluginGuestManager* OffTheRecordProfileImpl::GetGuestManager() {
 #if defined(ENABLE_EXTENSIONS)
-  return extensions::GuestViewManager::FromBrowserContext(this);
+  return guest_view::GuestViewManager::FromBrowserContext(this);
 #else
   return NULL;
 #endif
@@ -382,7 +423,11 @@ content::BrowserPluginGuestManager* OffTheRecordProfileImpl::GetGuestManager() {
 
 storage::SpecialStoragePolicy*
 OffTheRecordProfileImpl::GetSpecialStoragePolicy() {
+#if defined(ENABLE_EXTENSIONS)
   return GetExtensionSpecialStoragePolicy();
+#else
+  return NULL;
+#endif
 }
 
 content::PushMessagingService*
@@ -396,20 +441,18 @@ OffTheRecordProfileImpl::GetSSLHostStateDelegate() {
   return ChromeSSLHostStateDelegateFactory::GetForProfile(this);
 }
 
+// TODO(mlamouri): we should all these BrowserContext implementation to Profile
+// instead of repeating them inside all Profile implementations.
+content::PermissionManager* OffTheRecordProfileImpl::GetPermissionManager() {
+  return PermissionManagerFactory::GetForProfile(this);
+}
+
 bool OffTheRecordProfileImpl::IsSameProfile(Profile* profile) {
   return (profile == this) || (profile == profile_);
 }
 
 Time OffTheRecordProfileImpl::GetStartTime() const {
   return start_time_;
-}
-
-history::TopSites* OffTheRecordProfileImpl::GetTopSitesWithoutCreating() {
-  return NULL;
-}
-
-history::TopSites* OffTheRecordProfileImpl::GetTopSites() {
-  return NULL;
 }
 
 void OffTheRecordProfileImpl::SetExitType(ExitType exit_type) {
@@ -491,13 +534,12 @@ class GuestSessionProfile : public OffTheRecordProfileImpl {
  public:
   explicit GuestSessionProfile(Profile* real_profile)
       : OffTheRecordProfileImpl(real_profile) {
+    set_is_guest_profile(true);
   }
 
-  virtual ProfileType GetProfileType() const OVERRIDE {
-    return GUEST_PROFILE;
-  }
+  ProfileType GetProfileType() const override { return GUEST_PROFILE; }
 
-  virtual void InitChromeOSPreferences() OVERRIDE {
+  void InitChromeOSPreferences() override {
     chromeos_preferences_.reset(new chromeos::Preferences());
     chromeos_preferences_->Init(
         this, user_manager::UserManager::Get()->GetActiveUser());
@@ -521,21 +563,30 @@ Profile* Profile::CreateOffTheRecordProfile() {
   return profile;
 }
 
-void OffTheRecordProfileImpl::OnZoomLevelChanged(
+void OffTheRecordProfileImpl::OnParentZoomLevelChanged(
     const HostZoomMap::ZoomLevelChange& change) {
   HostZoomMap* host_zoom_map = HostZoomMap::GetDefaultForBrowserContext(this);
   switch (change.mode) {
     case HostZoomMap::ZOOM_CHANGED_TEMPORARY_ZOOM:
-       return;
+      return;
     case HostZoomMap::ZOOM_CHANGED_FOR_HOST:
-       host_zoom_map->SetZoomLevelForHost(change.host, change.zoom_level);
-       return;
+      host_zoom_map->SetZoomLevelForHost(change.host, change.zoom_level);
+      return;
     case HostZoomMap::ZOOM_CHANGED_FOR_SCHEME_AND_HOST:
-       host_zoom_map->SetZoomLevelForHostAndScheme(change.scheme,
-           change.host,
-           change.zoom_level);
-       return;
+      host_zoom_map->SetZoomLevelForHostAndScheme(change.scheme,
+          change.host,
+          change.zoom_level);
+      return;
+    case HostZoomMap::PAGE_SCALE_IS_ONE_CHANGED:
+      return;
   }
+}
+
+void OffTheRecordProfileImpl::UpdateDefaultZoomLevel() {
+  HostZoomMap* host_zoom_map = HostZoomMap::GetDefaultForBrowserContext(this);
+  double default_zoom_level =
+      profile_->GetZoomLevelPrefs()->GetDefaultZoomLevelPref();
+  host_zoom_map->SetDefaultZoomLevel(default_zoom_level);
 }
 
 PrefProxyConfigTracker* OffTheRecordProfileImpl::CreateProxyConfigTracker() {

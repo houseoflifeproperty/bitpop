@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/time/time.h"
 #include "components/password_manager/core/browser/password_store_default.h"
 
@@ -34,8 +35,6 @@ class PasswordStoreX : public password_manager::PasswordStoreDefault {
   // with return values rather than implicit consumer notification.
   class NativeBackend {
    public:
-    typedef std::vector<autofill::PasswordForm*> PasswordFormList;
-
     virtual ~NativeBackend() {}
 
     virtual bool Init() = 0;
@@ -59,50 +58,50 @@ class PasswordStoreX : public password_manager::PasswordStoreDefault {
         base::Time delete_end,
         password_manager::PasswordStoreChangeList* changes) = 0;
 
+    // The three methods below overwrite |forms| with all stored credentials
+    // matching |form|, all stored non-blacklisted credentials, and all stored
+    // blacklisted credentials, respectively. On success, they return true.
     virtual bool GetLogins(const autofill::PasswordForm& form,
-                           PasswordFormList* forms) = 0;
-    virtual bool GetAutofillableLogins(PasswordFormList* forms) = 0;
-    virtual bool GetBlacklistLogins(PasswordFormList* forms) = 0;
+                           ScopedVector<autofill::PasswordForm>* forms)
+        WARN_UNUSED_RESULT = 0;
+    virtual bool GetAutofillableLogins(
+        ScopedVector<autofill::PasswordForm>* forms) WARN_UNUSED_RESULT = 0;
+    virtual bool GetBlacklistLogins(ScopedVector<autofill::PasswordForm>* forms)
+        WARN_UNUSED_RESULT = 0;
   };
 
   // Takes ownership of |login_db| and |backend|. |backend| may be NULL in which
   // case this PasswordStoreX will act the same as PasswordStoreDefault.
   PasswordStoreX(scoped_refptr<base::SingleThreadTaskRunner> main_thread_runner,
                  scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner,
-                 password_manager::LoginDatabase* login_db,
+                 scoped_ptr<password_manager::LoginDatabase> login_db,
                  NativeBackend* backend);
 
  private:
   friend class PasswordStoreXTest;
 
-  virtual ~PasswordStoreX();
+  ~PasswordStoreX() override;
 
   // Implements PasswordStore interface.
-  virtual password_manager::PasswordStoreChangeList AddLoginImpl(
-      const autofill::PasswordForm& form) OVERRIDE;
-  virtual password_manager::PasswordStoreChangeList UpdateLoginImpl(
-      const autofill::PasswordForm& form) OVERRIDE;
-  virtual password_manager::PasswordStoreChangeList RemoveLoginImpl(
-      const autofill::PasswordForm& form) OVERRIDE;
-  virtual password_manager::PasswordStoreChangeList
-      RemoveLoginsCreatedBetweenImpl(base::Time delete_begin,
-                                     base::Time delete_end) OVERRIDE;
-  virtual password_manager::PasswordStoreChangeList
-      RemoveLoginsSyncedBetweenImpl(base::Time delete_begin,
-                                    base::Time delete_end) OVERRIDE;
-  virtual void GetLoginsImpl(
+  password_manager::PasswordStoreChangeList AddLoginImpl(
+      const autofill::PasswordForm& form) override;
+  password_manager::PasswordStoreChangeList UpdateLoginImpl(
+      const autofill::PasswordForm& form) override;
+  password_manager::PasswordStoreChangeList RemoveLoginImpl(
+      const autofill::PasswordForm& form) override;
+  password_manager::PasswordStoreChangeList RemoveLoginsCreatedBetweenImpl(
+      base::Time delete_begin,
+      base::Time delete_end) override;
+  password_manager::PasswordStoreChangeList RemoveLoginsSyncedBetweenImpl(
+      base::Time delete_begin,
+      base::Time delete_end) override;
+  ScopedVector<autofill::PasswordForm> FillMatchingLogins(
       const autofill::PasswordForm& form,
-      AuthorizationPromptPolicy prompt_policy,
-      const ConsumerCallbackRunner& callback_runner) OVERRIDE;
-  virtual void GetAutofillableLoginsImpl(GetLoginsRequest* request) OVERRIDE;
-  virtual void GetBlacklistLoginsImpl(GetLoginsRequest* request) OVERRIDE;
-  virtual bool FillAutofillableLogins(
-      std::vector<autofill::PasswordForm*>* forms) OVERRIDE;
-  virtual bool FillBlacklistLogins(
-      std::vector<autofill::PasswordForm*>* forms) OVERRIDE;
-
-  // Sort logins by origin, like the ORDER BY clause in login_database.cc.
-  void SortLoginsByOrigin(NativeBackend::PasswordFormList* list);
+      AuthorizationPromptPolicy prompt_policy) override;
+  bool FillAutofillableLogins(
+      ScopedVector<autofill::PasswordForm>* forms) override;
+  bool FillBlacklistLogins(
+      ScopedVector<autofill::PasswordForm>* forms) override;
 
   // Check to see whether migration is necessary, and perform it if so.
   void CheckMigration();

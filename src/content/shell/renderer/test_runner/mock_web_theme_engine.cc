@@ -4,6 +4,8 @@
 
 #include "content/shell/renderer/test_runner/mock_web_theme_engine.h"
 
+#if !defined(OS_MACOSX)
+
 #include "base/logging.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
@@ -626,7 +628,9 @@ void MockWebThemeEngine::paint(blink::WebCanvas* canvas,
                 extraParams->progressBar.valueRectHeight);
         }
 
-        tofill.intersect(irect, tofill);
+        if (!tofill.intersect(irect))
+            tofill.setEmpty();
+
         paint.setColor(edgeColor);
         paint.setStyle(SkPaint::kFill_Style);
         canvas->drawIRect(tofill, paint);
@@ -642,3 +646,5 @@ void MockWebThemeEngine::paint(blink::WebCanvas* canvas,
 }
 
 }  // namespace content
+
+#endif  // !defined(OS_MACOSX)

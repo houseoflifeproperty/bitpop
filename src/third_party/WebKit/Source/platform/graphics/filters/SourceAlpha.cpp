@@ -21,22 +21,18 @@
 #include "config.h"
 #include "platform/graphics/filters/SourceAlpha.h"
 
-#include "platform/graphics/Color.h"
-#include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
-#include "platform/graphics/filters/SourceGraphic.h"
 #include "platform/text/TextStream.h"
 #include "third_party/skia/include/effects/SkColorFilterImageFilter.h"
 #include "third_party/skia/include/effects/SkColorMatrixFilter.h"
-#include "wtf/StdLibExtras.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
-PassRefPtr<SourceAlpha> SourceAlpha::create(Filter* filter)
+PassRefPtrWillBeRawPtr<SourceAlpha> SourceAlpha::create(FilterEffect* sourceEffect)
 {
-    return adoptRef(new SourceAlpha(filter));
+    return adoptRefWillBeNoop(new SourceAlpha(sourceEffect));
 }
 
 const AtomicString& SourceAlpha::effectName()
@@ -45,38 +41,21 @@ const AtomicString& SourceAlpha::effectName()
     return s_effectName;
 }
 
-FloatRect SourceAlpha::determineAbsolutePaintRect(const FloatRect& requestedRect)
+SourceAlpha::SourceAlpha(FilterEffect* sourceEffect)
+    : FilterEffect(sourceEffect->filter())
 {
-    FloatRect srcRect = filter()->sourceImageRect();
-    srcRect.intersect(requestedRect);
-    addAbsolutePaintRect(srcRect);
-    return srcRect;
+    setOperatingColorSpace(sourceEffect->operatingColorSpace());
+    inputEffects().append(sourceEffect);
 }
 
-void SourceAlpha::applySoftware()
+FloatRect SourceAlpha::determineAbsolutePaintRect(const FloatRect& requestedRect)
 {
-    ImageBuffer* resultImage = createImageBufferResult();
-    Filter* filter = this->filter();
-    if (!resultImage || !filter->sourceImage())
-        return;
-
-    setIsAlphaImage(true);
-
-    FloatRect imageRect(FloatPoint(), absolutePaintRect().size());
-    GraphicsContext* filterContext = resultImage->context();
-    filterContext->fillRect(imageRect, Color::black);
-
-    IntRect srcRect = filter->sourceImageRect();
-    if (ImageBuffer* sourceImageBuffer = filter->sourceImage()) {
-        filterContext->drawImageBuffer(sourceImageBuffer,
-            FloatRect(IntPoint(srcRect.location() - absolutePaintRect().location()), sourceImageBuffer->size()),
-            0, CompositeDestinationIn);
-    }
+    return inputEffect(0)->determineAbsolutePaintRect(requestedRect);
 }
 
 PassRefPtr<SkImageFilter> SourceAlpha::createImageFilter(SkiaImageFilterBuilder* builder)
 {
-    RefPtr<SkImageFilter> sourceGraphic(builder->build(builder->sourceGraphic(), operatingColorSpace()));
+    RefPtr<SkImageFilter> sourceGraphic(builder->build(inputEffect(0), operatingColorSpace()));
     SkScalar matrix[20] = {
         0, 0, 0, 0, 0,
         0, 0, 0, 0, 0,

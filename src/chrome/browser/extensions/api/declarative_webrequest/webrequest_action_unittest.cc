@@ -9,7 +9,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/path_service.h"
 #include "base/test/values_test_util.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -76,7 +75,7 @@ class WebRequestActionWithThreadsTest : public testing::Test {
       : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP) {}
 
  protected:
-  virtual void SetUp() OVERRIDE;
+  void SetUp() override;
 
   // Creates a URL request for URL |url_string|, and applies the actions from
   // |action_set| as if they were triggered by the extension with
@@ -92,6 +91,10 @@ class WebRequestActionWithThreadsTest : public testing::Test {
   // executable for http://clients1.google.com.
   void CheckActionNeedsAllUrls(const char* action, RequestStage stage);
 
+ private:
+  content::TestBrowserThreadBundle thread_bundle_;
+
+ protected:
   net::TestURLRequestContext context_;
 
   // An extension with *.com host permissions and the DWR permission.
@@ -99,9 +102,6 @@ class WebRequestActionWithThreadsTest : public testing::Test {
   // An extension with host permissions for all URLs and the DWR permission.
   scoped_refptr<Extension> extension_all_urls_;
   scoped_refptr<InfoMap> extension_info_map_;
-
- private:
-  content::TestBrowserThreadBundle thread_bundle_;
 };
 
 void WebRequestActionWithThreadsTest::SetUp() {
@@ -142,7 +142,7 @@ bool WebRequestActionWithThreadsTest::ActionWorksOnRequest(
     const WebRequestActionSet* action_set,
     RequestStage stage) {
   scoped_ptr<net::URLRequest> regular_request(context_.CreateRequest(
-      GURL(url_string), net::DEFAULT_PRIORITY, NULL, NULL));
+      GURL(url_string), net::DEFAULT_PRIORITY, NULL));
   std::list<LinkedPtrEventResponseDelta> deltas;
   scoped_refptr<net::HttpResponseHeaders> headers(
       new net::HttpResponseHeaders(""));
@@ -558,7 +558,7 @@ TEST(WebRequestActionTest, GetName) {
       " \"lowerPriorityThan\": 123,"
       " \"hasTag\": \"some_tag\""
       "}]";
-  const char* kExpectedNames[] = {
+  const char* const kExpectedNames[] = {
     "declarativeWebRequest.RedirectRequest",
     "declarativeWebRequest.RedirectByRegEx",
     "declarativeWebRequest.SetRequestHeader",

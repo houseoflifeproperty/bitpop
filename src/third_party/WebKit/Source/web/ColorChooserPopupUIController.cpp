@@ -47,7 +47,6 @@ enum ColorPickerPopupAction {
 ColorChooserPopupUIController::ColorChooserPopupUIController(LocalFrame* frame, ChromeClientImpl* chromeClient, ColorChooserClient* client)
     : ColorChooserUIController(frame, client)
     , m_chromeClient(chromeClient)
-    , m_client(client)
     , m_popup(0)
     , m_locale(Locale::defaultLocale())
 {
@@ -55,6 +54,8 @@ ColorChooserPopupUIController::ColorChooserPopupUIController(LocalFrame* frame, 
 
 ColorChooserPopupUIController::~ColorChooserPopupUIController()
 {
+    closePopup();
+    // ~ColorChooserUIController ends the ColorChooser.
 }
 
 void ColorChooserPopupUIController::openUI()
@@ -69,8 +70,8 @@ void ColorChooserPopupUIController::endChooser()
 {
     if (m_chooser)
         m_chooser->endChooser();
-    if (m_popup)
-        closePopup();
+
+    closePopup();
 }
 
 AXObject* ColorChooserPopupUIController::rootAXObject()
@@ -89,7 +90,7 @@ void ColorChooserPopupUIController::writeDocument(SharedBuffer* data)
     Vector<String> suggestionValues;
     for (unsigned i = 0; i < suggestions.size(); i++)
         suggestionValues.append(suggestions[i].color.serialized());
-    IntRect anchorRectInScreen = m_chromeClient->rootViewToScreen(m_client->elementRectRelativeToRootView());
+    IntRect anchorRectInScreen = m_chromeClient->viewportToScreen(m_client->elementRectRelativeToViewport());
 
     PagePopupClient::addString("<!DOCTYPE html><head><meta charset='UTF-8'><style>\n", data);
     data->append(Platform::current()->loadResource("pickerCommon.css"));
@@ -146,7 +147,7 @@ Element& ColorChooserPopupUIController::ownerElement()
 void ColorChooserPopupUIController::openPopup()
 {
     ASSERT(!m_popup);
-    m_popup = m_chromeClient->openPagePopup(this, m_client->elementRectRelativeToRootView());
+    m_popup = m_chromeClient->openPagePopup(this);
 }
 
 void ColorChooserPopupUIController::closePopup()

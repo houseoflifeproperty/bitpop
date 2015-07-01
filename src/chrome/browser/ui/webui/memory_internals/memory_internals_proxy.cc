@@ -37,7 +37,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
 #include "chrome/browser/printing/background_printing_manager.h"
 #endif
 
@@ -52,15 +52,12 @@ class ProcessDetails : public MemoryDetails {
   typedef base::Callback<void(const ProcessData&)> DataCallback;
   explicit ProcessDetails(const DataCallback& callback)
       : callback_(callback) {}
+
   // MemoryDetails:
-  virtual void OnDetailsAvailable() OVERRIDE {
-    const std::vector<ProcessData>& browser_processes = processes();
-    // [0] means Chrome.
-    callback_.Run(browser_processes[0]);
-  }
+  void OnDetailsAvailable() override { callback_.Run(*ChromeBrowser()); }
 
  private:
-  virtual ~ProcessDetails() {}
+  ~ProcessDetails() override {}
 
   DataCallback callback_;
 
@@ -87,8 +84,11 @@ void GetAllWebContents(std::set<content::WebContents*>* web_contents) {
   for (TabModelList::const_iterator iter = TabModelList::begin();
        iter != TabModelList::end(); ++iter) {
     TabModel* model = *iter;
-    for (int i = 0; i < model->GetTabCount(); ++i)
-      web_contents->insert(model->GetWebContentsAt(i));
+    for (int i = 0; i < model->GetTabCount(); ++i) {
+      content::WebContents* tab_web_contents = model->GetWebContentsAt(i);
+      if (tab_web_contents)
+        web_contents->insert(tab_web_contents);
+    }
   }
 #else
   for (TabContentsIterator iter; !iter.done(); iter.Next())
@@ -106,7 +106,7 @@ void GetAllWebContents(std::set<content::WebContents*>* web_contents) {
         prerender_manager->GetAllPrerenderingContents();
     web_contents->insert(contentses.begin(), contentses.end());
   }
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
   // Add all the pages being background printed.
   printing::BackgroundPrintingManager* printing_manager =
       g_browser_process->background_printing_manager();
@@ -129,7 +129,7 @@ class RendererDetails : public content::NotificationObserver {
     registrar_.Add(this, chrome::NOTIFICATION_RENDERER_V8_HEAP_STATS_COMPUTED,
                    content::NotificationService::AllSources());
   }
-  virtual ~RendererDetails() {}
+  ~RendererDetails() override {}
 
   void Request() {
     for (std::set<content::WebContents*>::iterator iter = web_contents_.begin();
@@ -157,9 +157,9 @@ class RendererDetails : public content::NotificationObserver {
 
  private:
   // NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     const base::ProcessId* pid =
         content::Source<const base::ProcessId>(source).ptr();
     const ChromeRenderMessageFilter::V8HeapStatsDetails* v8_heap =
@@ -199,7 +199,7 @@ void MemoryInternalsProxy::StartFetch(const base::ListValue* list) {
   information_->Clear();
   scoped_refptr<ProcessDetails> process(new ProcessDetails(
       base::Bind(&MemoryInternalsProxy::OnProcessAvailable, this)));
-  process->StartFetch(MemoryDetails::SKIP_USER_METRICS);
+  process->StartFetch(MemoryDetails::FROM_CHROME_ONLY);
 }
 
 MemoryInternalsProxy::~MemoryInternalsProxy() {}
@@ -211,8 +211,11 @@ void MemoryInternalsProxy::RequestRendererDetails() {
   for (TabModelList::const_iterator iter = TabModelList::begin();
        iter != TabModelList::end(); ++iter) {
     TabModel* model = *iter;
-    for (int i = 0; i < model->GetTabCount(); ++i)
-      renderer_details_->AddWebContents(model->GetWebContentsAt(i));
+    for (int i = 0; i < model->GetTabCount(); ++i) {
+      content::WebContents* tab_web_contents = model->GetWebContentsAt(i);
+      if (tab_web_contents)
+        renderer_details_->AddWebContents(tab_web_contents);
+    }
   }
 #else
   for (TabContentsIterator iter; !iter.done(); iter.Next())
@@ -290,10 +293,12 @@ void MemoryInternalsProxy::ConvertTabsInformation(
   for (std::set<content::WebContents*>::const_iterator
            iter = web_contents.begin(); iter != web_contents.end(); ++iter) {
     content::WebContents* web = *iter;
-    const base::ProcessId pid = base::GetProcId(
-        web->GetRenderProcessHost()->GetHandle());
+    content::RenderProcessHost* process_host = web->GetRenderProcessHost();
+    if (!process_host)
+        continue;
 
     // Find which process renders the web contents.
+    const base::ProcessId pid = base::GetProcId(process_host->GetHandle());
     base::DictionaryValue* process = FindProcessFromPid(processes, pid);
     if (!process)
       continue;

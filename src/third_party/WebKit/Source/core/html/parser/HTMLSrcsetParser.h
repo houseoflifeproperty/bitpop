@@ -32,9 +32,12 @@
 #ifndef HTMLSrcsetParser_h
 #define HTMLSrcsetParser_h
 
+#include "core/CoreExport.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
+
+class Document;
 
 enum { UninitializedDescriptor = -1 };
 
@@ -129,11 +132,11 @@ private:
     OriginAttribute m_originAttribute;
 };
 
-ImageCandidate bestFitSourceForSrcsetAttribute(float deviceScaleFactor, unsigned sourceSize, const String& srcsetAttribute);
+ImageCandidate bestFitSourceForSrcsetAttribute(float deviceScaleFactor, float sourceSize, const String& srcsetAttribute, Document* = nullptr);
 
-ImageCandidate bestFitSourceForImageAttributes(float deviceScaleFactor, unsigned sourceSize, const String& srcAttribute, const String& srcsetAttribute);
+CORE_EXPORT ImageCandidate bestFitSourceForImageAttributes(float deviceScaleFactor, float sourceSize, const String& srcAttribute, const String& srcsetAttribute, Document* = nullptr);
 
-String bestFitSourceForImageAttributes(float deviceScaleFactor, unsigned sourceSize, const String& srcAttribute, ImageCandidate& srcsetImageCandidate);
+String bestFitSourceForImageAttributes(float deviceScaleFactor, float sourceSize, const String& srcAttribute, ImageCandidate& srcsetImageCandidate);
 
 }
 

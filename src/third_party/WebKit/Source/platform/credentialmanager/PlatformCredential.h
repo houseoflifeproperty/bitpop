@@ -21,7 +21,10 @@ public:
     const String& name() const { return m_name; }
     const KURL& avatarURL() const { return m_avatarURL; }
 
-    virtual void trace(Visitor*) { }
+    virtual bool isLocal() { return false; }
+    virtual bool isFederated() { return false; }
+
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
 protected:
     PlatformCredential(const String& id, const String& name, const KURL& avatarURL);

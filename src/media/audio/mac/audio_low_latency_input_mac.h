@@ -42,6 +42,7 @@
 #include "base/cancelable_callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
+#include "base/time/time.h"
 #include "media/audio/agc_audio_stream.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_parameters.h"
@@ -62,24 +63,26 @@ class AUAudioInputStream : public AgcAudioStream<AudioInputStream> {
                      AudioDeviceID audio_device_id);
   // The dtor is typically called by the AudioManager only and it is usually
   // triggered by calling AudioInputStream::Close().
-  virtual ~AUAudioInputStream();
+  ~AUAudioInputStream() override;
 
   // Implementation of AudioInputStream.
-  virtual bool Open() OVERRIDE;
-  virtual void Start(AudioInputCallback* callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual double GetMaxVolume() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual double GetVolume() OVERRIDE;
-  virtual bool IsMuted() OVERRIDE;
+  bool Open() override;
+  void Start(AudioInputCallback* callback) override;
+  void Stop() override;
+  void Close() override;
+  double GetMaxVolume() override;
+  void SetVolume(double volume) override;
+  double GetVolume() override;
+  bool IsMuted() override;
 
   // Returns the current hardware sample rate for the default input device.
   MEDIA_EXPORT static int HardwareSampleRate();
 
   bool started() const { return started_; }
-  AudioUnit audio_unit() { return audio_unit_; }
+  AudioUnit audio_unit() const { return audio_unit_; }
   AudioBufferList* audio_buffer_list() { return &audio_buffer_list_; }
+  AudioDeviceID device_id() const { return input_device_id_; }
+  size_t requested_buffer_size() const { return number_of_frames_; }
 
  private:
   // AudioOutputUnit callback.
@@ -154,6 +157,12 @@ class AUAudioInputStream : public AgcAudioStream<AudioInputStream> {
 
   // Used to defer Start() to workaround http://crbug.com/160920.
   base::CancelableClosure deferred_start_cb_;
+
+  // Contains time of last successful call to AudioUnitRender().
+  // Initialized first time in Start() and then updated for each valid
+  // audio buffer. Used to detect long error sequences and to take actions
+  // if length of error sequence is above a certain limit.
+  base::TimeTicks last_success_time_;
 
   DISALLOW_COPY_AND_ASSIGN(AUAudioInputStream);
 };

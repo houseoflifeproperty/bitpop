@@ -41,9 +41,9 @@ namespace {
 class MockDaemonListener : public IPC::Listener {
  public:
   MockDaemonListener() {}
-  virtual ~MockDaemonListener() {}
+  ~MockDaemonListener() override {}
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   MOCK_METHOD1(OnDesktopAttached, void(IPC::PlatformFileForTransit));
   MOCK_METHOD1(OnChannelConnected, void(int32));
@@ -56,9 +56,9 @@ class MockDaemonListener : public IPC::Listener {
 class MockNetworkListener : public IPC::Listener {
  public:
   MockNetworkListener() {}
-  virtual ~MockNetworkListener() {}
+  ~MockNetworkListener() override {}
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   MOCK_METHOD1(OnChannelConnected, void(int32));
   MOCK_METHOD0(OnChannelError, void());
@@ -95,11 +95,11 @@ bool MockNetworkListener::OnMessageReceived(const IPC::Message& message) {
 class DesktopProcessTest : public testing::Test {
  public:
   DesktopProcessTest();
-  virtual ~DesktopProcessTest();
+  ~DesktopProcessTest() override;
 
   // testing::Test overrides
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   // MockDaemonListener mocks
   void ConnectNetworkChannel(IPC::PlatformFileForTransit desktop_process);
@@ -225,7 +225,7 @@ webrtc::DesktopCapturer* DesktopProcessTest::CreateVideoCapturer() {
 void DesktopProcessTest::DisconnectChannels() {
   daemon_channel_.reset();
   network_channel_.reset();
-  io_task_runner_ = NULL;
+  io_task_runner_ = nullptr;
 }
 
 void DesktopProcessTest::PostDisconnectChannels() {
@@ -262,10 +262,9 @@ void DesktopProcessTest::RunDesktopProcess() {
       .WillRepeatedly(Return(false));
 
   DesktopProcess desktop_process(ui_task_runner, io_task_runner_, channel_name);
-  EXPECT_TRUE(desktop_process.Start(
-      desktop_environment_factory.PassAs<DesktopEnvironmentFactory>()));
+  EXPECT_TRUE(desktop_process.Start(desktop_environment_factory.Pass()));
 
-  ui_task_runner = NULL;
+  ui_task_runner = nullptr;
   run_loop.Run();
 }
 

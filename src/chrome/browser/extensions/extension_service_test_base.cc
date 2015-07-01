@@ -7,8 +7,8 @@
 #include "base/command_line.h"
 #include "base/files/file_util.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
+#include "base/thread_task_runner_handle.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_garbage_collector_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -19,6 +19,7 @@
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_context.h"
@@ -33,6 +34,9 @@ namespace extensions {
 
 namespace {
 
+// By default, we run on the IO loop.
+const int kThreadOptions = content::TestBrowserThreadBundle::IO_MAINLOOP;
+
 // Create a testing profile according to |params|.
 scoped_ptr<TestingProfile> BuildTestingProfile(
     const ExtensionServiceTestBase::ExtensionServiceInitParams& params) {
@@ -43,7 +47,7 @@ scoped_ptr<TestingProfile> BuildTestingProfile(
   // TestingPrefServiceSyncable instance.
   if (!params.pref_file.empty()) {
     factory.SetUserPrefsFile(params.pref_file,
-                             base::MessageLoopProxy::current().get());
+                             base::ThreadTaskRunnerHandle::Get().get());
     scoped_refptr<user_prefs::PrefRegistrySyncable> registry(
         new user_prefs::PrefRegistrySyncable);
     scoped_ptr<PrefServiceSyncable> prefs(
@@ -68,10 +72,11 @@ ExtensionServiceTestBase::ExtensionServiceInitParams::
       profile_is_supervised(false) {
 }
 
-// Our message loop may be used in tests which require it to be an IO loop.
 ExtensionServiceTestBase::ExtensionServiceTestBase()
-    : service_(NULL),
-      thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP),
+    : thread_bundle_(new content::TestBrowserThreadBundle(kThreadOptions)),
+      service_(NULL),
+      testing_local_state_(TestingBrowserProcess::GetGlobal()),
+      did_reset_thread_bundle_(false),
       registry_(NULL) {
   base::FilePath test_data_dir;
   if (!PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir)) {
@@ -82,6 +87,11 @@ ExtensionServiceTestBase::ExtensionServiceTestBase()
 }
 
 ExtensionServiceTestBase::~ExtensionServiceTestBase() {
+  // Parts of destruction have to happen on an IO thread, so if the thread
+  // bundle is reset, we need to change it back.
+  if (did_reset_thread_bundle_)
+    ResetThreadBundle(kThreadOptions);
+
   // Why? Because |profile_| has to be destroyed before |at_exit_manager_|, but
   // is declared above it in the class definition since it's protected.
   profile_.reset();
@@ -170,9 +180,10 @@ void ExtensionServiceTestBase::InitializeExtensionServiceWithUpdater() {
   service_->updater()->Start();
 }
 
-void ExtensionServiceTestBase::InitializeProcessManager() {
-  static_cast<extensions::TestExtensionSystem*>(
-      ExtensionSystem::Get(profile_.get()))->CreateProcessManager();
+void ExtensionServiceTestBase::ResetThreadBundle(int options) {
+  did_reset_thread_bundle_ = true;
+  thread_bundle_.reset();
+  thread_bundle_.reset(new content::TestBrowserThreadBundle(options));
 }
 
 void ExtensionServiceTestBase::SetUp() {
@@ -210,7 +221,7 @@ void ExtensionServiceTestBase::CreateExtensionService(
                                      params.autoupdate_enabled);
 
   service_->SetFileTaskRunnerForTesting(
-      base::MessageLoopProxy::current().get());
+      base::ThreadTaskRunnerHandle::Get().get());
   service_->set_extensions_enabled(true);
   service_->set_show_extensions_prompts(false);
   service_->set_install_updates_when_idle_for_test(false);

@@ -4,6 +4,6 @@
 
 this.oninstall = function(event) {
     event.waitUntil(new Promise(function(resolve, reject) {
-        setTimeout(reject, 5);
+        setTimeout(function() { reject("Rejecting oninstall event"); }, 5);
     }));
 };

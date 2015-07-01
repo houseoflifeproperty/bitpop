@@ -8,6 +8,7 @@
 #include <cmath>
 
 #include "base/command_line.h"
+#include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -17,6 +18,7 @@
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/extensions/extension_util.h"
+#include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search/search.h"
@@ -33,10 +35,9 @@
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/bookmark_sub_menu_model.h"
+#include "chrome/browser/ui/toolbar/component_toolbar_actions_factory.h"
 #include "chrome/browser/ui/toolbar/encoding_menu_controller.h"
 #include "chrome/browser/ui/toolbar/recent_tabs_sub_menu_model.h"
-#include "chrome/browser/ui/zoom/zoom_controller.h"
-#include "chrome/browser/ui/zoom/zoom_event_manager.h"
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -46,6 +47,8 @@
 #include "chrome/grit/generated_resources.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/common/profile_management_switches.h"
+#include "components/ui/zoom/zoom_controller.h"
+#include "components/ui/zoom/zoom_event_manager.h"
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
@@ -92,6 +95,42 @@ base::string16 GetUpgradeDialogMenuItemName() {
     return l10n_util::GetStringUTF16(IDS_UPDATE_NOW);
   }
 }
+
+#if defined(OS_WIN)
+bool GetRestartMenuItemIfRequired(const chrome::HostDesktopType& desktop_type,
+                                  int* command_id,
+                                  int* string_id) {
+  if (base::win::GetVersion() == base::win::VERSION_WIN8 ||
+      base::win::GetVersion() == base::win::VERSION_WIN8_1) {
+    if (desktop_type != chrome::HOST_DESKTOP_TYPE_ASH) {
+      *command_id = IDC_WIN8_METRO_RESTART;
+      *string_id = IDS_WIN8_METRO_RESTART;
+    } else {
+      *command_id = IDC_WIN_DESKTOP_RESTART;
+      *string_id = IDS_WIN_DESKTOP_RESTART;
+    }
+    return true;
+  }
+
+  // Windows 7 ASH mode is only supported in DEBUG for now.
+#if !defined(NDEBUG)
+  // Windows 8 can support ASH mode using WARP, but Windows 7 requires a working
+  // GPU compositor.
+  if (base::win::GetVersion() == base::win::VERSION_WIN7 &&
+      content::GpuDataManager::GetInstance()->CanUseGpuBrowserCompositor()) {
+    if (desktop_type != chrome::HOST_DESKTOP_TYPE_ASH) {
+      *command_id = IDC_WIN_CHROMEOS_RESTART;
+      *string_id = IDS_WIN_CHROMEOS_RESTART;
+    } else {
+      *command_id = IDC_WIN_DESKTOP_RESTART;
+      *string_id = IDS_WIN_DESKTOP_RESTART;
+    }
+    return true;
+  }
+#endif
+  return false;
+}
+#endif
 
 }  // namespace
 
@@ -194,8 +233,6 @@ class WrenchMenuModel::HelpMenuModel : public ui::SimpleMenuModel {
       : SimpleMenuModel(delegate) {
     Build(browser);
   }
-  virtual ~HelpMenuModel() {
-  }
 
  private:
   void Build(Browser* browser) {
@@ -239,28 +276,39 @@ void ToolsMenuModel::Build(Browser* browser) {
     show_create_shortcuts = false;
 #endif
 
-  if (extensions::util::IsStreamlinedHostedAppsEnabled()) {
-    AddItemWithStringId(IDC_CREATE_HOSTED_APP, IDS_CREATE_HOSTED_APP);
-    AddSeparator(ui::NORMAL_SEPARATOR);
-  } else if (show_create_shortcuts) {
-    AddItemWithStringId(IDC_CREATE_SHORTCUTS, IDS_CREATE_SHORTCUTS);
-    AddSeparator(ui::NORMAL_SEPARATOR);
-  }
-
+  AddItemWithStringId(IDC_CLEAR_BROWSING_DATA, IDS_CLEAR_BROWSING_DATA);
   AddItemWithStringId(IDC_MANAGE_EXTENSIONS, IDS_SHOW_EXTENSIONS);
 
   if (chrome::CanOpenTaskManager())
     AddItemWithStringId(IDC_TASK_MANAGER, IDS_TASK_MANAGER);
 
-  AddItemWithStringId(IDC_CLEAR_BROWSING_DATA, IDS_CLEAR_BROWSING_DATA);
+  if (extensions::util::IsNewBookmarkAppsEnabled()) {
+#if defined(OS_MACOSX)
+    int string_id = IDS_ADD_TO_APPLICATIONS;
+#elif defined(OS_WIN)
+    int string_id = IDS_ADD_TO_TASKBAR;
+#else
+    int string_id = IDS_ADD_TO_DESKTOP;
+#endif
+#if defined(USE_ASH)
+    if (browser->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH)
+      string_id = IDS_ADD_TO_SHELF;
+#endif
+    AddItemWithStringId(IDC_CREATE_HOSTED_APP, string_id);
+  } else if (show_create_shortcuts) {
+    AddItemWithStringId(IDC_CREATE_SHORTCUTS, IDS_CREATE_SHORTCUTS);
+  }
 
-  AddSeparator(ui::NORMAL_SEPARATOR);
+#if defined(OS_CHROMEOS)
+  AddItemWithStringId(IDC_TAKE_SCREENSHOT, IDS_TAKE_SCREENSHOT);
+#endif
 
   encoding_menu_model_.reset(new EncodingMenuModel(browser));
   AddSubMenuWithStringId(IDC_ENCODING_MENU, IDS_ENCODING_MENU,
                          encoding_menu_model_.get());
-  AddItemWithStringId(IDC_VIEW_SOURCE, IDS_VIEW_SOURCE);
+  AddSeparator(ui::NORMAL_SEPARATOR);
   AddItemWithStringId(IDC_DEV_TOOLS, IDS_DEV_TOOLS);
+  AddItemWithStringId(IDC_VIEW_SOURCE, IDS_VIEW_SOURCE);
   AddItemWithStringId(IDC_DEV_TOOLS_CONSOLE, IDS_DEV_TOOLS_CONSOLE);
   AddItemWithStringId(IDC_DEV_TOOLS_DEVICES, IDS_DEV_TOOLS_DEVICES);
 
@@ -276,21 +324,17 @@ void ToolsMenuModel::Build(Browser* browser) {
 WrenchMenuModel::WrenchMenuModel(ui::AcceleratorProvider* provider,
                                  Browser* browser)
     : ui::SimpleMenuModel(this),
+      uma_action_recorded_(false),
       provider_(provider),
       browser_(browser),
       tab_strip_model_(browser_->tab_strip_model()) {
   Build();
   UpdateZoomControls();
 
-  content_zoom_subscription_ =
-      content::HostZoomMap::GetDefaultForBrowserContext(browser->profile())
+  browser_zoom_subscription_ =
+      ui_zoom::ZoomEventManager::GetForBrowserContext(browser->profile())
           ->AddZoomLevelChangedCallback(base::Bind(
               &WrenchMenuModel::OnZoomLevelChanged, base::Unretained(this)));
-
-  browser_zoom_subscription_ = ZoomEventManager::GetForBrowserContext(
-      browser->profile())->AddZoomLevelChangedCallback(
-          base::Bind(&WrenchMenuModel::OnZoomLevelChanged,
-                     base::Unretained(this)));
 
   tab_strip_model_->AddObserver(this);
 
@@ -404,17 +448,307 @@ void WrenchMenuModel::ExecuteCommand(int command_id, int event_flags) {
     }
   }
 
-  if (command_id == IDC_HELP_PAGE_VIA_MENU)
-    content::RecordAction(UserMetricsAction("ShowHelpTabViaWrenchMenu"));
+  LogMenuMetrics(command_id);
+  chrome::ExecuteCommand(browser_, command_id);
+}
 
-  if (command_id == IDC_FULLSCREEN) {
-    // We issue the UMA command here and not in BrowserCommandController or even
-    // FullscreenController since we want to be able to distinguish this event
-    // and a menu which is under development.
-    content::RecordAction(UserMetricsAction("EnterFullScreenWithWrenchMenu"));
+void WrenchMenuModel::LogMenuMetrics(int command_id) {
+  base::TimeDelta delta = timer_.Elapsed();
+
+  switch (command_id) {
+    case IDC_NEW_TAB:
+      if (!uma_action_recorded_)
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.NewTab", delta);
+      LogMenuAction(MENU_ACTION_NEW_TAB);
+      break;
+    case IDC_NEW_WINDOW:
+      if (!uma_action_recorded_)
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.NewWindow", delta);
+      LogMenuAction(MENU_ACTION_NEW_WINDOW);
+      break;
+    case IDC_NEW_INCOGNITO_WINDOW:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.NewIncognitoWindow",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_NEW_INCOGNITO_WINDOW);
+      break;
+
+    // Bookmarks sub menu.
+    case IDC_SHOW_BOOKMARK_BAR:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.ShowBookmarkBar",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_SHOW_BOOKMARK_BAR);
+      break;
+    case IDC_SHOW_BOOKMARK_MANAGER:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.ShowBookmarkMgr",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_SHOW_BOOKMARK_MANAGER);
+      break;
+    case IDC_IMPORT_SETTINGS:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.ImportSettings",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_IMPORT_SETTINGS);
+      break;
+    case IDC_BOOKMARK_PAGE:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.BookmarkPage",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_BOOKMARK_PAGE);
+      break;
+    case IDC_BOOKMARK_ALL_TABS:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.BookmarkAllTabs",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_BOOKMARK_ALL_TABS);
+      break;
+    case IDC_PIN_TO_START_SCREEN:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.PinToStartScreen",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_PIN_TO_START_SCREEN);
+      break;
+
+    // Recent tabs menu.
+    case IDC_RESTORE_TAB:
+      if (!uma_action_recorded_)
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.RestoreTab", delta);
+      LogMenuAction(MENU_ACTION_RESTORE_TAB);
+      break;
+
+    // Windows.
+    case IDC_WIN_DESKTOP_RESTART:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.WinDesktopRestart",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_WIN_DESKTOP_RESTART);
+      break;
+    case IDC_WIN8_METRO_RESTART:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.Win8MetroRestart",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_WIN8_METRO_RESTART);
+      break;
+
+    case IDC_WIN_CHROMEOS_RESTART:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.ChromeOSRestart",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_WIN_CHROMEOS_RESTART);
+      break;
+    case IDC_DISTILL_PAGE:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.DistillPage",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_DISTILL_PAGE);
+      break;
+    case IDC_SAVE_PAGE:
+      if (!uma_action_recorded_)
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.SavePage", delta);
+      LogMenuAction(MENU_ACTION_SAVE_PAGE);
+      break;
+    case IDC_FIND:
+      if (!uma_action_recorded_)
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.Find", delta);
+      LogMenuAction(MENU_ACTION_FIND);
+      break;
+    case IDC_PRINT:
+      if (!uma_action_recorded_)
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.Print", delta);
+      LogMenuAction(MENU_ACTION_PRINT);
+      break;
+
+    // Edit menu.
+    case IDC_CUT:
+      if (!uma_action_recorded_)
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.Cut", delta);
+      LogMenuAction(MENU_ACTION_CUT);
+      break;
+    case IDC_COPY:
+      if (!uma_action_recorded_)
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.Copy", delta);
+      LogMenuAction(MENU_ACTION_COPY);
+      break;
+    case IDC_PASTE:
+      if (!uma_action_recorded_)
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.Paste", delta);
+      LogMenuAction(MENU_ACTION_PASTE);
+      break;
+
+    // Tools menu.
+    case IDC_CREATE_HOSTED_APP:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.CreateHostedApp",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_CREATE_HOSTED_APP);
+      break;
+    case IDC_CREATE_SHORTCUTS:
+      if (!uma_action_recorded_)
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.CreateShortcuts",
+                                   delta);
+      LogMenuAction(MENU_ACTION_CREATE_SHORTCUTS);
+      break;
+    case IDC_MANAGE_EXTENSIONS:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.ManageExtensions",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_MANAGE_EXTENSIONS);
+      break;
+    case IDC_TASK_MANAGER:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.TaskManager",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_TASK_MANAGER);
+      break;
+    case IDC_CLEAR_BROWSING_DATA:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.ClearBrowsingData",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_CLEAR_BROWSING_DATA);
+      break;
+    case IDC_VIEW_SOURCE:
+      if (!uma_action_recorded_)
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.ViewSource", delta);
+      LogMenuAction(MENU_ACTION_VIEW_SOURCE);
+      break;
+    case IDC_DEV_TOOLS:
+      if (!uma_action_recorded_)
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.DevTools", delta);
+      LogMenuAction(MENU_ACTION_DEV_TOOLS);
+      break;
+    case IDC_DEV_TOOLS_CONSOLE:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.DevToolsConsole",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_DEV_TOOLS_CONSOLE);
+      break;
+    case IDC_DEV_TOOLS_DEVICES:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.DevToolsDevices",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_DEV_TOOLS_DEVICES);
+      break;
+    case IDC_PROFILING_ENABLED:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.ProfilingEnabled",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_PROFILING_ENABLED);
+      break;
+
+    // Zoom menu
+    case IDC_ZOOM_MINUS:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.ZoomMinus", delta);
+        LogMenuAction(MENU_ACTION_ZOOM_MINUS);
+      }
+      break;
+    case IDC_ZOOM_PLUS:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.ZoomPlus", delta);
+        LogMenuAction(MENU_ACTION_ZOOM_PLUS);
+      }
+      break;
+    case IDC_FULLSCREEN:
+      content::RecordAction(UserMetricsAction("EnterFullScreenWithWrenchMenu"));
+
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.EnterFullScreen",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_FULLSCREEN);
+      break;
+
+    case IDC_SHOW_HISTORY:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.ShowHistory",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_SHOW_HISTORY);
+      break;
+    case IDC_SHOW_DOWNLOADS:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.ShowDownloads",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_SHOW_DOWNLOADS);
+      break;
+    case IDC_SHOW_SYNC_SETUP:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.ShowSyncSetup",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_SHOW_SYNC_SETUP);
+      break;
+    case IDC_OPTIONS:
+      if (!uma_action_recorded_)
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.Settings", delta);
+      LogMenuAction(MENU_ACTION_OPTIONS);
+      break;
+    case IDC_ABOUT:
+      if (!uma_action_recorded_)
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.About", delta);
+      LogMenuAction(MENU_ACTION_ABOUT);
+      break;
+
+    // Help menu.
+    case IDC_HELP_PAGE_VIA_MENU:
+      content::RecordAction(UserMetricsAction("ShowHelpTabViaWrenchMenu"));
+
+      if (!uma_action_recorded_)
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.HelpPage", delta);
+      LogMenuAction(MENU_ACTION_HELP_PAGE_VIA_MENU);
+      break;
+  #if defined(GOOGLE_CHROME_BUILD)
+    case IDC_FEEDBACK:
+      if (!uma_action_recorded_)
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.Feedback", delta);
+      LogMenuAction(MENU_ACTION_FEEDBACK);
+      break;
+  #endif
+
+    case IDC_TOGGLE_REQUEST_TABLET_SITE:
+      if (!uma_action_recorded_) {
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.RequestTabletSite",
+                                   delta);
+      }
+      LogMenuAction(MENU_ACTION_TOGGLE_REQUEST_TABLET_SITE);
+      break;
+    case IDC_EXIT:
+      if (!uma_action_recorded_)
+        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.Exit", delta);
+      LogMenuAction(MENU_ACTION_EXIT);
+      break;
   }
 
-  chrome::ExecuteCommand(browser_, command_id);
+  if (!uma_action_recorded_) {
+    UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction", delta);
+    uma_action_recorded_ = true;
+  }
+}
+
+void WrenchMenuModel::LogMenuAction(int action_id) {
+  UMA_HISTOGRAM_ENUMERATION("WrenchMenu.MenuAction", action_id,
+                            LIMIT_MENU_ACTION);
 }
 
 bool WrenchMenuModel::IsCommandIdChecked(int command_id) const {
@@ -460,7 +794,8 @@ bool WrenchMenuModel::IsCommandIdVisible(int command_id) const {
       return false;
 #endif
     case IDC_UPGRADE_DIALOG:
-      return UpgradeDetector::GetInstance()->notify_upgrade();
+      return browser_defaults::kShowUpgradeMenuItem &&
+          UpgradeDetector::GetInstance()->notify_upgrade();
 #if !defined(OS_LINUX) || defined(USE_AURA)
     case IDC_BOOKMARK_PAGE:
       return !chrome::ShouldRemoveBookmarkThisPageUI(browser_->profile());
@@ -517,29 +852,43 @@ WrenchMenuModel::WrenchMenuModel()
 }
 
 bool WrenchMenuModel::ShouldShowNewIncognitoWindowMenuItem() {
-  if (browser_->profile()->IsSupervised() ||
+  if (browser_->profile()->IsGuestSession() ||
       // BITPOP:
       browser_->profile()->IsProtectedModeEnabled()
       // />
       )
     return false;
 
-  return !browser_->profile()->IsGuestSession();
+  return IncognitoModePrefs::GetAvailability(browser_->profile()->GetPrefs()) !=
+      IncognitoModePrefs::DISABLED;
 }
 
+// Note: When adding new menu items please place under an appropriate section.
+// Menu is organised as follows:
+// - Extension toolbar overflow.
+// - Global browser errors and warnings.
+// - Tabs and windows.
+// - Places previously been e.g. History, bookmarks, recent tabs.
+// - Page actions e.g. zoom, edit, find, print.
+// - Learn about the browser and global customisation e.g. settings, help.
+// - Browser relaunch, quit.
 void WrenchMenuModel::Build() {
-#if defined(OS_WIN)
-  AddItem(IDC_VIEW_INCOMPATIBILITIES,
-      l10n_util::GetStringUTF16(IDS_VIEW_INCOMPATIBILITIES));
-  EnumerateModulesModel* model =
-      EnumerateModulesModel::GetInstance();
-  if (model->modules_to_notify_about() > 0 ||
-      model->confirmed_bad_modules_detected() > 0)
-    AddSeparator(ui::NORMAL_SEPARATOR);
-#endif
-
   if (extensions::FeatureSwitch::extension_action_redesign()->IsEnabled())
     CreateExtensionToolbarOverflowMenu();
+
+  AddItem(IDC_VIEW_INCOMPATIBILITIES,
+      l10n_util::GetStringUTF16(IDS_VIEW_INCOMPATIBILITIES));
+  SetIcon(GetIndexOfCommandId(IDC_VIEW_INCOMPATIBILITIES),
+          ui::ResourceBundle::GetSharedInstance().
+              GetNativeImageNamed(IDR_INPUT_ALERT_MENU));
+
+  if (IsCommandIdVisible(IDC_UPGRADE_DIALOG))
+    AddItem(IDC_UPGRADE_DIALOG, GetUpgradeDialogMenuItemName());
+
+  if (AddGlobalErrorMenuItems() ||
+      IsCommandIdVisible(IDC_VIEW_INCOMPATIBILITIES) ||
+      IsCommandIdVisible(IDC_UPGRADE_DIALOG))
+    AddSeparator(ui::NORMAL_SEPARATOR);
 
   AddItemWithStringId(IDC_NEW_TAB, IDS_NEW_TAB);
   AddItemWithStringId(IDC_NEW_WINDOW,
@@ -547,13 +896,13 @@ void WrenchMenuModel::Build() {
       browser_->profile()->IsProtectedModeEnabled() ?
           IDS_PROTECTED_MODE_NEW_WINDOW : IDS_NEW_WINDOW);
       // />
-
   if (ShouldShowNewIncognitoWindowMenuItem())
     AddItemWithStringId(IDC_NEW_INCOGNITO_WINDOW, IDS_NEW_INCOGNITO_WINDOW);
 
-  bookmark_sub_menu_model_.reset(new BookmarkSubMenuModel(this, browser_));
-  AddSubMenuWithStringId(IDC_BOOKMARKS_MENU, IDS_BOOKMARKS_MENU,
-                         bookmark_sub_menu_model_.get());
+  AddSeparator(ui::NORMAL_SEPARATOR);
+
+  AddItemWithStringId(IDC_SHOW_HISTORY, IDS_SHOW_HISTORY);
+  AddItemWithStringId(IDC_SHOW_DOWNLOADS, IDS_SHOW_DOWNLOADS);
 
   if (!browser_->profile()->IsOffTheRecord()) {
     recent_tabs_sub_menu_model_.reset(new RecentTabsSubMenuModel(provider_,
@@ -563,56 +912,45 @@ void WrenchMenuModel::Build() {
                            recent_tabs_sub_menu_model_.get());
   }
 
-#if defined(OS_WIN)
-  if (base::win::GetVersion() >= base::win::VERSION_WIN8 &&
-      content::GpuDataManager::GetInstance()->CanUseGpuBrowserCompositor()) {
-    if (browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH) {
-      // ASH/Metro mode, add the 'Relaunch Chrome in desktop mode'.
-      AddSeparator(ui::NORMAL_SEPARATOR);
-      AddItemWithStringId(IDC_WIN_DESKTOP_RESTART, IDS_WIN_DESKTOP_RESTART);
-    } else {
-      AddSeparator(ui::NORMAL_SEPARATOR);
-      AddItemWithStringId(IDC_WIN8_METRO_RESTART, IDS_WIN8_METRO_RESTART);
-    }
+  if (!browser_->profile()->IsGuestSession()) {
+    bookmark_sub_menu_model_.reset(new BookmarkSubMenuModel(this, browser_));
+    AddSubMenuWithStringId(IDC_BOOKMARKS_MENU, IDS_BOOKMARKS_MENU,
+                           bookmark_sub_menu_model_.get());
   }
-#endif
+
+  CreateZoomMenu();
+
+  AddItemWithStringId(IDC_PRINT, IDS_PRINT);
+  AddItemWithStringId(IDC_SAVE_PAGE, IDS_SAVE_PAGE);
+  AddItemWithStringId(IDC_FIND, IDS_FIND);
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableDomDistiller))
+    AddItemWithStringId(IDC_DISTILL_PAGE, IDS_DISTILL_PAGE);
+  tools_menu_model_.reset(new ToolsMenuModel(this, browser_));
+  AddSubMenuWithStringId(
+      IDC_MORE_TOOLS_MENU, IDS_MORE_TOOLS_MENU, tools_menu_model_.get());
 
   // Append the full menu including separators. The final separator only gets
   // appended when this is a touch menu - otherwise it would get added twice.
   CreateCutCopyPasteMenu();
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableDomDistiller)) {
-    AddItemWithStringId(IDC_DISTILL_PAGE, IDS_DISTILL_PAGE);
-  }
-
-  AddItemWithStringId(IDC_SAVE_PAGE, IDS_SAVE_PAGE);
-  AddItemWithStringId(IDC_FIND, IDS_FIND);
-  AddItemWithStringId(IDC_PRINT, IDS_PRINT);
-
-  tools_menu_model_.reset(new ToolsMenuModel(this, browser_));
-  CreateZoomMenu();
-
-  AddItemWithStringId(IDC_SHOW_HISTORY, IDS_SHOW_HISTORY);
-  AddItemWithStringId(IDC_SHOW_DOWNLOADS, IDS_SHOW_DOWNLOADS);
-  AddSeparator(ui::NORMAL_SEPARATOR);
+  AddItemWithStringId(IDC_OPTIONS, IDS_SETTINGS);
 
 #if !defined(OS_CHROMEOS)
   if (!switches::IsNewAvatarMenu()) {
     // No "Sign in to Chromium..." menu item on ChromeOS.
     SigninManager* signin = SigninManagerFactory::GetForProfile(
         browser_->profile()->GetOriginalProfile());
-    if (signin && signin->IsSigninAllowed()) {
-      const base::string16 short_product_name =
-          l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME);
-      AddItem(IDC_SHOW_SYNC_SETUP, l10n_util::GetStringFUTF16(
-          IDS_SYNC_MENU_PRE_SYNCED_LABEL, short_product_name));
-      AddSeparator(ui::NORMAL_SEPARATOR);
+    if (signin && signin->IsSigninAllowed() &&
+        signin_ui_util::GetSignedInServiceErrors(
+            browser_->profile()->GetOriginalProfile()).empty()) {
+      AddItem(IDC_SHOW_SYNC_SETUP,
+              l10n_util::GetStringFUTF16(
+                  IDS_SYNC_MENU_PRE_SYNCED_LABEL,
+                  l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME)));
     }
   }
 #endif
-
-  AddItemWithStringId(IDC_OPTIONS, IDS_SETTINGS);
 
 // On ChromeOS we don't want the about menu option.
 #if !defined(OS_CHROMEOS)
@@ -626,26 +964,22 @@ void WrenchMenuModel::Build() {
 #endif
 
 #if defined(OS_CHROMEOS)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           chromeos::switches::kEnableRequestTabletSite))
     AddCheckItemWithStringId(IDC_TOGGLE_REQUEST_TABLET_SITE,
                              IDS_TOGGLE_REQUEST_TABLET_SITE);
 #endif
 
-  if (browser_defaults::kShowUpgradeMenuItem)
-    AddItem(IDC_UPGRADE_DIALOG, GetUpgradeDialogMenuItemName());
-
 #if defined(OS_WIN)
-  SetIcon(GetIndexOfCommandId(IDC_VIEW_INCOMPATIBILITIES),
-          ui::ResourceBundle::GetSharedInstance().
-              GetNativeImageNamed(IDR_INPUT_ALERT_MENU));
+  int command_id = IDC_WIN_DESKTOP_RESTART;
+  int string_id = IDS_WIN_DESKTOP_RESTART;
+  if (GetRestartMenuItemIfRequired(browser_->host_desktop_type(),
+                                   &command_id,
+                                   &string_id)) {
+    AddSeparator(ui::NORMAL_SEPARATOR);
+    AddItemWithStringId(command_id, string_id);
+  }
 #endif
-
-  AddGlobalErrorMenuItems();
-
-  AddSeparator(ui::NORMAL_SEPARATOR);
-  AddSubMenuWithStringId(
-      IDC_ZOOM_MENU, IDS_MORE_TOOLS_MENU, tools_menu_model_.get());
 
   bool show_exit_menu = browser_defaults::kShowExitMenuItem;
 #if defined(OS_WIN)
@@ -657,11 +991,10 @@ void WrenchMenuModel::Build() {
     AddSeparator(ui::NORMAL_SEPARATOR);
     AddItemWithStringId(IDC_EXIT, IDS_EXIT);
   }
-
-  RemoveTrailingSeparators();
+  uma_action_recorded_ = false;
 }
 
-void WrenchMenuModel::AddGlobalErrorMenuItems() {
+bool WrenchMenuModel::AddGlobalErrorMenuItems() {
   // TODO(sail): Currently we only build the wrench menu once per browser
   // window. This means that if a new error is added after the menu is built
   // it won't show in the existing wrench menu. To fix this we need to some
@@ -674,6 +1007,7 @@ void WrenchMenuModel::AddGlobalErrorMenuItems() {
       browser_->profile()->GetOriginalProfile());
   const GlobalErrorService::GlobalErrorList& errors =
       GlobalErrorServiceFactory::GetForProfile(browser_->profile())->errors();
+  bool menu_items_added = false;
   for (GlobalErrorService::GlobalErrorList::const_iterator
        it = errors.begin(); it != errors.end(); ++it) {
     GlobalError* error = *it;
@@ -699,41 +1033,37 @@ void WrenchMenuModel::AddGlobalErrorMenuItems() {
         SetIcon(GetIndexOfCommandId(error->MenuItemCommandID()),
                 image);
       }
+      menu_items_added = true;
     }
   }
+  return menu_items_added;
 }
 
 void WrenchMenuModel::CreateExtensionToolbarOverflowMenu() {
-#if defined(TOOLKIT_VIEWS)
-  AddItem(IDC_EXTENSIONS_OVERFLOW_MENU, base::string16());
-  // We only add the separator if there are > 0 items to show in the overflow.
-  extensions::ExtensionToolbarModel* toolbar_model =
-      extensions::ExtensionToolbarModel::Get(browser_->profile());
-  // A count of -1 means all actions are visible.
-  if (toolbar_model->GetVisibleIconCount() != -1)
+  // We only add the extensions overflow container if there are any icons that
+  // aren't shown in the main container or if there are component actions.
+  // TODO(apacible): Remove check for component actions when
+  // ExtensionToolbarModel can support them.
+  if (!extensions::ExtensionToolbarModel::Get(browser_->profile())->
+          all_icons_visible() ||
+      ComponentToolbarActionsFactory::GetInstance()->
+          GetNumComponentActions() > 0) {
+    AddItem(IDC_EXTENSIONS_OVERFLOW_MENU, base::string16());
     AddSeparator(ui::UPPER_SEPARATOR);
-#endif  // defined(TOOLKIT_VIEWS)
+  }
 }
 
 void WrenchMenuModel::CreateCutCopyPasteMenu() {
   AddSeparator(ui::LOWER_SEPARATOR);
 
-#if defined(OS_POSIX) && !defined(TOOLKIT_VIEWS)
   // WARNING: Mac does not use the ButtonMenuItemModel, but instead defines the
-  // layout for this menu item in Toolbar.xib. It does, however, use the
+  // layout for this menu item in WrenchMenu.xib. It does, however, use the
   // command_id value from AddButtonItem() to identify this special item.
   edit_menu_item_model_.reset(new ui::ButtonMenuItemModel(IDS_EDIT, this));
   edit_menu_item_model_->AddGroupItemWithStringId(IDC_CUT, IDS_CUT);
   edit_menu_item_model_->AddGroupItemWithStringId(IDC_COPY, IDS_COPY);
   edit_menu_item_model_->AddGroupItemWithStringId(IDC_PASTE, IDS_PASTE);
   AddButtonItem(IDC_EDIT_MENU, edit_menu_item_model_.get());
-#else
-  // WARNING: views/wrench_menu assumes these items are added in this order. If
-  // you change the order you'll need to update wrench_menu as well.
-  AddItemWithStringId(IDC_CUT, IDS_CUT);
-  AddItemWithStringId(IDC_COPY, IDS_COPY);
-  AddItemWithStringId(IDC_PASTE, IDS_PASTE);
-#endif
 
   AddSeparator(ui::UPPER_SEPARATOR);
 }
@@ -742,37 +1072,27 @@ void WrenchMenuModel::CreateZoomMenu() {
   // This menu needs to be enclosed by separators.
   AddSeparator(ui::LOWER_SEPARATOR);
 
-#if defined(OS_POSIX) && !defined(TOOLKIT_VIEWS)
   // WARNING: Mac does not use the ButtonMenuItemModel, but instead defines the
-  // layout for this menu item in Toolbar.xib. It does, however, use the
+  // layout for this menu item in WrenchMenu.xib. It does, however, use the
   // command_id value from AddButtonItem() to identify this special item.
   zoom_menu_item_model_.reset(
       new ui::ButtonMenuItemModel(IDS_ZOOM_MENU, this));
-  zoom_menu_item_model_->AddGroupItemWithStringId(
-      IDC_ZOOM_MINUS, IDS_ZOOM_MINUS2);
-  zoom_menu_item_model_->AddButtonLabel(IDC_ZOOM_PERCENT_DISPLAY,
-                                        IDS_ZOOM_PLUS2);
-  zoom_menu_item_model_->AddGroupItemWithStringId(
-      IDC_ZOOM_PLUS, IDS_ZOOM_PLUS2);
-  zoom_menu_item_model_->AddSpace();
-  zoom_menu_item_model_->AddItemWithImage(
-      IDC_FULLSCREEN, IDR_FULLSCREEN_MENU_BUTTON);
+  zoom_menu_item_model_->AddGroupItemWithStringId(IDC_ZOOM_MINUS,
+                                                  IDS_ZOOM_MINUS2);
+  zoom_menu_item_model_->AddGroupItemWithStringId(IDC_ZOOM_PLUS,
+                                                  IDS_ZOOM_PLUS2);
+  zoom_menu_item_model_->AddItemWithImage(IDC_FULLSCREEN,
+                                          IDR_FULLSCREEN_MENU_BUTTON);
   AddButtonItem(IDC_ZOOM_MENU, zoom_menu_item_model_.get());
-#else
-  // WARNING: views/wrench_menu assumes these items are added in this order. If
-  // you change the order you'll need to update wrench_menu as well.
-  AddItemWithStringId(IDC_ZOOM_MINUS, IDS_ZOOM_MINUS);
-  AddItemWithStringId(IDC_ZOOM_PLUS, IDS_ZOOM_PLUS);
-  AddItemWithStringId(IDC_FULLSCREEN, IDS_FULLSCREEN);
-#endif
 
   AddSeparator(ui::UPPER_SEPARATOR);
 }
 
 void WrenchMenuModel::UpdateZoomControls() {
   int zoom_percent = 100;
-  if (browser_->tab_strip_model()->GetActiveWebContents()) {
-    zoom_percent = ZoomController::FromWebContents(
+  if (browser_->tab_strip_model() &&
+      browser_->tab_strip_model()->GetActiveWebContents()) {
+    zoom_percent = ui_zoom::ZoomController::FromWebContents(
                        browser_->tab_strip_model()->GetActiveWebContents())
                        ->GetZoomPercent();
   }

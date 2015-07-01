@@ -174,7 +174,7 @@ void ExternalProcessImporterClient::OnHistoryImportGroup(
 
   history_rows_.insert(history_rows_.end(), history_rows_group.begin(),
                        history_rows_group.end());
-  if (history_rows_.size() == total_history_rows_count_)
+  if (history_rows_.size() >= total_history_rows_count_)
     bridge_->SetHistoryItems(history_rows_,
                              static_cast<importer::VisitSource>(visit_source));
 }
@@ -207,7 +207,7 @@ void ExternalProcessImporterClient::OnBookmarksImportGroup(
   // total_bookmarks_count_:
   bookmarks_.insert(bookmarks_.end(), bookmarks_group.begin(),
                     bookmarks_group.end());
-  if (bookmarks_.size() == total_bookmarks_count_)
+  if (bookmarks_.size() >= total_bookmarks_count_)
     bridge_->AddBookmarks(bookmarks_, bookmarks_first_folder_name_);
 }
 
@@ -221,13 +221,13 @@ void ExternalProcessImporterClient::OnFaviconsImportStart(
 }
 
 void ExternalProcessImporterClient::OnFaviconsImportGroup(
-    const std::vector<ImportedFaviconUsage>& favicons_group) {
+    const favicon_base::FaviconUsageDataList& favicons_group) {
   if (cancelled_)
     return;
 
   favicons_.insert(favicons_.end(), favicons_group.begin(),
                     favicons_group.end());
-  if (favicons_.size() == total_favicons_count_)
+  if (favicons_.size() >= total_favicons_count_)
     bridge_->SetFavicons(favicons_);
 }
 
@@ -240,11 +240,11 @@ void ExternalProcessImporterClient::OnPasswordFormImportReady(
 }
 
 void ExternalProcessImporterClient::OnKeywordsImportReady(
-    const std::vector<importer::URLKeywordInfo>& url_keywords,
+    const std::vector<importer::SearchEngineInfo>& search_engines,
     bool unique_on_host_and_path) {
   if (cancelled_)
     return;
-  bridge_->SetKeywords(url_keywords, unique_on_host_and_path);
+  bridge_->SetKeywords(search_engines, unique_on_host_and_path);
 }
 
 void ExternalProcessImporterClient::OnFirefoxSearchEngineDataReceived(
@@ -272,7 +272,7 @@ void ExternalProcessImporterClient::OnAutofillFormDataImportGroup(
   autofill_form_data_.insert(autofill_form_data_.end(),
                              autofill_form_data_entry_group.begin(),
                              autofill_form_data_entry_group.end());
-  if (autofill_form_data_.size() == total_autofill_form_data_entry_count_)
+  if (autofill_form_data_.size() >= total_autofill_form_data_entry_count_)
     bridge_->SetAutofillFormData(autofill_form_data_);
 }
 
@@ -312,6 +312,8 @@ void ExternalProcessImporterClient::StartProcessOnIOThread(
   utility_process_host_ = UtilityProcessHost::Create(
       this, BrowserThread::GetMessageLoopProxyForThread(thread_id).get())
       ->AsWeakPtr();
+  utility_process_host_->SetName(l10n_util::GetStringUTF16(
+      IDS_UTILITY_PROCESS_PROFILE_IMPORTER_NAME));
   utility_process_host_->DisableSandbox();
 
 #if defined(OS_MACOSX)

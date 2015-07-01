@@ -3,9 +3,6 @@
 // found in the LICENSE file.
 
 var enabled_app, disabled_app, enabled_extension, packaged_app;
-var isMac = /Mac/.test(navigator.platform);
-var streamlinedHostedAppsEnabled =
-    (location.href.indexOf("streamlined-hosted-apps") != -1);
 var allLaunchTypes = ["OPEN_AS_REGULAR_TAB",
                       "OPEN_AS_PINNED_TAB",
                       "OPEN_AS_WINDOW",
@@ -33,14 +30,12 @@ function getAvailableLaunchTypes(app) {
   }
 
   types.push("OPEN_AS_REGULAR_TAB");
-
-  if (!isMac)
-    types.push("OPEN_AS_WINDOW");
-
-  if (!streamlinedHostedAppsEnabled) {
+  types.push("OPEN_AS_WINDOW");
+  if (navigator.userAgent.indexOf("Mac") != -1) {
     types.push("OPEN_AS_PINNED_TAB");
     types.push("OPEN_FULL_SCREEN");
   }
+
   return types;
 }
 
@@ -68,6 +63,13 @@ function testSetAllLaunchTypes(app) {
     } else {
       testSetLaunchType(app.id, type, null, function() {
         chrome.management.get(app.id, function(item) {
+          if (navigator.userAgent.indexOf("Mac") != -1) {
+            // In the current configuration, with the new bookmark app flow
+            // disabled, hosted apps set to open in a window on Mac will open
+            // instead in a tab.
+            if (item.type != 'packaged_app' && type == 'OPEN_AS_WINDOW')
+              type = 'OPEN_AS_REGULAR_TAB';
+          }
           assertEq(type, item.launchType);
           setNextLaunchType();
         });

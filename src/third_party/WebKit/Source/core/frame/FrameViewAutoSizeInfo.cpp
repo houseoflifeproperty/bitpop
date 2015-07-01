@@ -7,8 +7,8 @@
 
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/rendering/RenderBox.h"
-#include "core/rendering/RenderView.h"
+#include "core/layout/LayoutBox.h"
+#include "core/layout/LayoutView.h"
 
 namespace blink {
 
@@ -20,9 +20,11 @@ FrameViewAutoSizeInfo::FrameViewAutoSizeInfo(FrameView* view)
     ASSERT(m_frameView);
 }
 
-FrameViewAutoSizeInfo::~FrameViewAutoSizeInfo()
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(FrameViewAutoSizeInfo);
+
+DEFINE_TRACE(FrameViewAutoSizeInfo)
 {
-    removeAutoSizeMode();
+    visitor->trace(m_frameView);
 }
 
 void FrameViewAutoSizeInfo::configureAutoSizeMode(const IntSize& minSize, const IntSize& maxSize)
@@ -37,22 +39,6 @@ void FrameViewAutoSizeInfo::configureAutoSizeMode(const IntSize& minSize, const 
     m_minAutoSize = minSize;
     m_maxAutoSize = maxSize;
     m_didRunAutosize = false;
-
-    m_frameView->setLayoutSizeFixedToFrameSize(true);
-    m_frameView->setNeedsLayout();
-    m_frameView->scheduleRelayout();
-}
-
-void FrameViewAutoSizeInfo::removeAutoSizeMode()
-{
-    m_frameView->setLayoutSizeFixedToFrameSize(false);
-    m_frameView->setNeedsLayout();
-    m_frameView->scheduleRelayout();
-
-    // Since autosize mode forces the scrollbar mode, change them to being auto.
-    m_frameView->setVerticalScrollbarLock(false);
-    m_frameView->setHorizontalScrollbarLock(false);
-    m_frameView->setScrollbarModes(ScrollbarAuto, ScrollbarAuto);
 }
 
 void FrameViewAutoSizeInfo::autoSizeIfNeeded()
@@ -83,17 +69,17 @@ void FrameViewAutoSizeInfo::autoSizeIfNeeded()
         // Update various sizes including contentsSize, scrollHeight, etc.
         document->updateLayoutIgnorePendingStylesheets();
 
-        RenderView* renderView = document->renderView();
-        if (!renderView)
+        LayoutView* layoutView = document->layoutView();
+        if (!layoutView)
             return;
 
-        int width = renderView->minPreferredLogicalWidth();
+        int width = layoutView->minPreferredLogicalWidth();
 
-        RenderBox* documentRenderBox = documentElement->renderBox();
-        if (!documentRenderBox)
+        LayoutBox* documentLayoutBox = documentElement->layoutBox();
+        if (!documentLayoutBox)
             return;
 
-        int height = documentRenderBox->scrollHeight();
+        int height = documentLayoutBox->scrollHeight();
         IntSize newSize(width, height);
 
         // Check to see if a scrollbar is needed for a given dimension and
@@ -101,7 +87,7 @@ void FrameViewAutoSizeInfo::autoSizeIfNeeded()
         // Since the dimensions are only for the view rectangle, once a
         // dimension exceeds the maximum, there is no need to increase it further.
         if (newSize.width() > m_maxAutoSize.width()) {
-            RefPtr<Scrollbar> localHorizontalScrollbar = m_frameView->horizontalScrollbar();
+            RefPtrWillBeRawPtr<Scrollbar> localHorizontalScrollbar = m_frameView->horizontalScrollbar();
             if (!localHorizontalScrollbar)
                 localHorizontalScrollbar = m_frameView->createScrollbar(HorizontalScrollbar);
             if (!localHorizontalScrollbar->isOverlayScrollbar())
@@ -110,7 +96,7 @@ void FrameViewAutoSizeInfo::autoSizeIfNeeded()
             // Don't bother checking for a vertical scrollbar because the width is at
             // already greater the maximum.
         } else if (newSize.height() > m_maxAutoSize.height()) {
-            RefPtr<Scrollbar> localVerticalScrollbar = m_frameView->verticalScrollbar();
+            RefPtrWillBeRawPtr<Scrollbar> localVerticalScrollbar = m_frameView->verticalScrollbar();
             if (!localVerticalScrollbar)
                 localVerticalScrollbar = m_frameView->createScrollbar(VerticalScrollbar);
             if (!localVerticalScrollbar->isOverlayScrollbar())

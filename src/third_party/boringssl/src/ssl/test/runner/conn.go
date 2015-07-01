@@ -29,27 +29,38 @@ type Conn struct {
 	isClient bool
 
 	// constant after handshake; protected by handshakeMutex
-	handshakeMutex    sync.Mutex // handshakeMutex < in.Mutex, out.Mutex, errMutex
-	handshakeErr      error      // error resulting from handshake
-	vers              uint16     // TLS version
-	haveVers          bool       // version has been negotiated
-	config            *Config    // configuration passed to constructor
-	handshakeComplete bool
-	didResume         bool // whether this connection was a session resumption
-	cipherSuite       uint16
-	ocspResponse      []byte // stapled OCSP response
-	peerCertificates  []*x509.Certificate
+	handshakeMutex       sync.Mutex // handshakeMutex < in.Mutex, out.Mutex, errMutex
+	handshakeErr         error      // error resulting from handshake
+	vers                 uint16     // TLS version
+	haveVers             bool       // version has been negotiated
+	config               *Config    // configuration passed to constructor
+	handshakeComplete    bool
+	didResume            bool // whether this connection was a session resumption
+	extendedMasterSecret bool // whether this session used an extended master secret
+	cipherSuite          *cipherSuite
+	ocspResponse         []byte // stapled OCSP response
+	peerCertificates     []*x509.Certificate
 	// verifiedChains contains the certificate chains that we built, as
 	// opposed to the ones presented by the server.
 	verifiedChains [][]*x509.Certificate
 	// serverName contains the server name indicated by the client, if any.
-	serverName string
+	serverName                 string
+	clientRandom, serverRandom [32]byte
+	masterSecret               [48]byte
 
 	clientProtocol         string
 	clientProtocolFallback bool
 	usedALPN               bool
 
+	// verify_data values for the renegotiation extension.
+	clientVerify []byte
+	serverVerify []byte
+
 	channelID *ecdsa.PublicKey
+
+	srtpProtectionProfile uint16
+
+	clientVersion uint16
 
 	// input/output
 	in, out  halfConn     // in.Mutex < out.Mutex
@@ -60,10 +71,18 @@ type Conn struct {
 	// DTLS state
 	sendHandshakeSeq uint16
 	recvHandshakeSeq uint16
-	handMsg          []byte // pending assembled handshake message
-	handMsgLen       int    // handshake message length, not including the header
+	handMsg          []byte   // pending assembled handshake message
+	handMsgLen       int      // handshake message length, not including the header
+	pendingFragments [][]byte // pending outgoing handshake fragments.
 
 	tmp [16]byte
+}
+
+func (c *Conn) init() {
+	c.in.isDTLS = c.isDTLS
+	c.out.isDTLS = c.isDTLS
+	c.in.config = c.config
+	c.out.config = c.config
 }
 
 // Access to net.Conn methods.
@@ -115,6 +134,7 @@ type halfConn struct {
 
 	nextCipher interface{} // next encryption state
 	nextMac    macFunction // next MAC algorithm
+	nextSeq    [6]byte     // next epoch's starting sequence number in DTLS
 
 	// used to save allocating a new buffer for each MAC.
 	inDigestBuf, outDigestBuf []byte
@@ -128,9 +148,10 @@ func (hc *halfConn) setErrorLocked(err error) error {
 }
 
 func (hc *halfConn) error() error {
-	hc.Lock()
+	// This should be locked, but I've removed it for the renegotiation
+	// tests since we don't concurrently read and write the same tls.Conn
+	// in any case during testing.
 	err := hc.err
-	hc.Unlock()
 	return err
 }
 
@@ -158,29 +179,45 @@ func (hc *halfConn) changeCipherSpec(config *Config) error {
 }
 
 // incSeq increments the sequence number.
-func (hc *halfConn) incSeq() {
+func (hc *halfConn) incSeq(isOutgoing bool) {
 	limit := 0
+	increment := uint64(1)
 	if hc.isDTLS {
 		// Increment up to the epoch in DTLS.
 		limit = 2
+
+		if isOutgoing && hc.config.Bugs.SequenceNumberIncrement != 0 {
+			increment = hc.config.Bugs.SequenceNumberIncrement
+		}
 	}
 	for i := 7; i >= limit; i-- {
-		hc.seq[i]++
-		if hc.seq[i] != 0 {
-			return
-		}
+		increment += uint64(hc.seq[i])
+		hc.seq[i] = byte(increment)
+		increment >>= 8
 	}
 
 	// Not allowed to let sequence number wrap.
 	// Instead, must renegotiate before it does.
 	// Not likely enough to bother.
+	if increment != 0 {
+		panic("TLS: sequence number wraparound")
+	}
+}
+
+// incNextSeq increments the starting sequence number for the next epoch.
+func (hc *halfConn) incNextSeq() {
+	for i := len(hc.nextSeq) - 1; i >= 0; i-- {
+		hc.nextSeq[i]++
+		if hc.nextSeq[i] != 0 {
+			return
+		}
+	}
 	panic("TLS: sequence number wraparound")
 }
 
-// incEpoch resets the sequence number. In DTLS, it increments the
-// epoch half of the sequence number.
+// incEpoch resets the sequence number. In DTLS, it also increments the epoch
+// half of the sequence number.
 func (hc *halfConn) incEpoch() {
-	limit := 0
 	if hc.isDTLS {
 		for i := 1; i >= 0; i-- {
 			hc.seq[i]++
@@ -191,11 +228,14 @@ func (hc *halfConn) incEpoch() {
 				panic("TLS: epoch number wraparound")
 			}
 		}
-		limit = 2
-	}
-	seq := hc.seq[limit:]
-	for i := range seq {
-		seq[i] = 0
+		copy(hc.seq[2:], hc.nextSeq[:])
+		for i := range hc.nextSeq {
+			hc.nextSeq[i] = 0
+		}
+	} else {
+		for i := range hc.seq {
+			hc.seq[i] = 0
+		}
 	}
 }
 
@@ -298,13 +338,16 @@ func (hc *halfConn) decrypt(b *block) (ok bool, prefixLen int, alertValue alert)
 		switch c := hc.cipher.(type) {
 		case cipher.Stream:
 			c.XORKeyStream(payload, payload)
-		case cipher.AEAD:
-			explicitIVLen = 8
-			if len(payload) < explicitIVLen {
-				return false, 0, alertBadRecordMAC
+		case *tlsAead:
+			nonce := seq
+			if c.explicitNonce {
+				explicitIVLen = 8
+				if len(payload) < explicitIVLen {
+					return false, 0, alertBadRecordMAC
+				}
+				nonce = payload[:8]
+				payload = payload[8:]
 			}
-			nonce := payload[:8]
-			payload = payload[8:]
 
 			var additionalData [13]byte
 			copy(additionalData[:], seq)
@@ -374,7 +417,7 @@ func (hc *halfConn) decrypt(b *block) (ok bool, prefixLen int, alertValue alert)
 		}
 		hc.inDigestBuf = localMAC
 	}
-	hc.incSeq()
+	hc.incSeq(false)
 
 	return true, recordHeaderLen + explicitIVLen, 0
 }
@@ -428,10 +471,13 @@ func (hc *halfConn) encrypt(b *block, explicitIVLen int) (bool, alert) {
 		switch c := hc.cipher.(type) {
 		case cipher.Stream:
 			c.XORKeyStream(payload, payload)
-		case cipher.AEAD:
+		case *tlsAead:
 			payloadLen := len(b.data) - recordHeaderLen - explicitIVLen
 			b.resize(len(b.data) + c.Overhead())
-			nonce := b.data[recordHeaderLen : recordHeaderLen+explicitIVLen]
+			nonce := hc.seq[:]
+			if c.explicitNonce {
+				nonce = b.data[recordHeaderLen : recordHeaderLen+explicitIVLen]
+			}
 			payload := b.data[recordHeaderLen+explicitIVLen:]
 			payload = payload[:payloadLen]
 
@@ -461,7 +507,7 @@ func (hc *halfConn) encrypt(b *block, explicitIVLen int) (bool, alert) {
 	n := len(b.data) - recordHeaderLen
 	b.data[recordHeaderLen-2] = byte(n >> 8)
 	b.data[recordHeaderLen-1] = byte(n)
-	hc.incSeq()
+	hc.incSeq(true)
 
 	return true, 0
 }
@@ -602,9 +648,16 @@ func (c *Conn) doReadRecord(want recordType) (recordType, *block, error) {
 
 	vers := uint16(b.data[1])<<8 | uint16(b.data[2])
 	n := int(b.data[3])<<8 | int(b.data[4])
-	if c.haveVers && vers != c.vers {
-		c.sendAlert(alertProtocolVersion)
-		return 0, nil, c.in.setErrorLocked(fmt.Errorf("tls: received record with version %x when expecting version %x", vers, c.vers))
+	if c.haveVers {
+		if vers != c.vers {
+			c.sendAlert(alertProtocolVersion)
+			return 0, nil, c.in.setErrorLocked(fmt.Errorf("tls: received record with version %x when expecting version %x", vers, c.vers))
+		}
+	} else {
+		if expect := c.config.Bugs.ExpectInitialRecordVersion; expect != 0 && vers != expect {
+			c.sendAlert(alertProtocolVersion)
+			return 0, nil, c.in.setErrorLocked(fmt.Errorf("tls: received record with version %x when expecting version %x", vers, expect))
+		}
 	}
 	if n > maxCiphertext {
 		c.sendAlert(alertRecordOverflow)
@@ -650,7 +703,7 @@ func (c *Conn) doReadRecord(want recordType) (recordType, *block, error) {
 func (c *Conn) readRecord(want recordType) error {
 	// Caller must be in sync with connection:
 	// handshake data if handshake not yet completed,
-	// else application data.  (We don't support renegotiation.)
+	// else application data.
 	switch want {
 	default:
 		c.sendAlert(alertInternalError)
@@ -724,7 +777,12 @@ Again:
 	case recordTypeHandshake:
 		// TODO(rsc): Should at least pick off connection close.
 		if typ != want {
-			return c.in.setErrorLocked(c.sendAlert(alertNoRenegotiation))
+			// A client might need to process a HelloRequest from
+			// the server, thus receiving a handshake message when
+			// application data is expected is ok.
+			if !c.isClient {
+				return c.in.setErrorLocked(c.sendAlert(alertNoRenegotiation))
+			}
 		}
 		c.hand.Write(data)
 	}
@@ -745,7 +803,12 @@ func (c *Conn) sendAlertLocked(err alert) error {
 		c.tmp[0] = alertLevelError
 	}
 	c.tmp[1] = byte(err)
-	c.writeRecord(recordTypeAlert, c.tmp[0:2])
+	if c.config.Bugs.FragmentAlert {
+		c.writeRecord(recordTypeAlert, c.tmp[0:1])
+		c.writeRecord(recordTypeAlert, c.tmp[1:2])
+	} else {
+		c.writeRecord(recordTypeAlert, c.tmp[0:2])
+	}
 	// closeNotify is a special case in that it isn't an error:
 	if err != alertCloseNotify {
 		return c.out.setErrorLocked(&net.OpError{Op: "local error", Err: err})
@@ -774,6 +837,13 @@ func (c *Conn) writeV2Record(data []byte) (n int, err error) {
 // to the connection and updates the record layer state.
 // c.out.Mutex <= L.
 func (c *Conn) writeRecord(typ recordType, data []byte) (n int, err error) {
+	if typ != recordTypeAlert && c.config.Bugs.SendWarningAlerts != 0 {
+		alert := make([]byte, 2)
+		alert[0] = alertLevelWarning
+		alert[1] = byte(c.config.Bugs.SendWarningAlerts)
+		c.writeRecord(recordTypeAlert, alert)
+	}
+
 	if c.isDTLS {
 		return c.dtlsWriteRecord(typ, data)
 	}
@@ -808,7 +878,7 @@ func (c *Conn) writeRecord(typ recordType, data []byte) (n int, err error) {
 			}
 		}
 		if explicitIVLen == 0 {
-			if _, ok := c.out.cipher.(cipher.AEAD); ok {
+			if aead, ok := c.out.cipher.(*tlsAead); ok && aead.explicitNonce {
 				explicitIVLen = 8
 				// The AES-GCM construction in TLS has an
 				// explicit nonce so that the nonce can be
@@ -907,6 +977,8 @@ func (c *Conn) readHandshake() (interface{}, error) {
 
 	var m handshakeMessage
 	switch data[0] {
+	case typeHelloRequest:
+		m = new(helloRequestMsg)
 	case typeClientHello:
 		m = &clientHelloMsg{
 			isDTLS: c.isDTLS,
@@ -958,6 +1030,67 @@ func (c *Conn) readHandshake() (interface{}, error) {
 	return m, nil
 }
 
+// skipPacket processes all the DTLS records in packet. It updates
+// sequence number expectations but otherwise ignores them.
+func (c *Conn) skipPacket(packet []byte) error {
+	for len(packet) > 0 {
+		// Dropped packets are completely ignored save to update
+		// expected sequence numbers for this and the next epoch. (We
+		// don't assert on the contents of the packets both for
+		// simplicity and because a previous test with one shorter
+		// timeout schedule would have done so.)
+		epoch := packet[3:5]
+		seq := packet[5:11]
+		length := uint16(packet[11])<<8 | uint16(packet[12])
+		if bytes.Equal(c.in.seq[:2], epoch) {
+			if !bytes.Equal(c.in.seq[2:], seq) {
+				return errors.New("tls: sequence mismatch")
+			}
+			c.in.incSeq(false)
+		} else {
+			if !bytes.Equal(c.in.nextSeq[:], seq) {
+				return errors.New("tls: sequence mismatch")
+			}
+			c.in.incNextSeq()
+		}
+		packet = packet[13+length:]
+	}
+	return nil
+}
+
+// simulatePacketLoss simulates the loss of a handshake leg from the
+// peer based on the schedule in c.config.Bugs. If resendFunc is
+// non-nil, it is called after each simulated timeout to retransmit
+// handshake messages from the local end. This is used in cases where
+// the peer retransmits on a stale Finished rather than a timeout.
+func (c *Conn) simulatePacketLoss(resendFunc func()) error {
+	if len(c.config.Bugs.TimeoutSchedule) == 0 {
+		return nil
+	}
+	if !c.isDTLS {
+		return errors.New("tls: TimeoutSchedule may only be set in DTLS")
+	}
+	if c.config.Bugs.PacketAdaptor == nil {
+		return errors.New("tls: TimeoutSchedule set without PacketAdapter")
+	}
+	for _, timeout := range c.config.Bugs.TimeoutSchedule {
+		// Simulate a timeout.
+		packets, err := c.config.Bugs.PacketAdaptor.SendReadTimeout(timeout)
+		if err != nil {
+			return err
+		}
+		for _, packet := range packets {
+			if err := c.skipPacket(packet); err != nil {
+				return err
+			}
+		}
+		if resendFunc != nil {
+			resendFunc()
+		}
+	}
+	return nil
+}
+
 // Write writes data to the connection.
 func (c *Conn) Write(b []byte) (int, error) {
 	if err := c.Handshake(); err != nil {
@@ -973,6 +1106,10 @@ func (c *Conn) Write(b []byte) (int, error) {
 
 	if !c.handshakeComplete {
 		return 0, alertInternalError
+	}
+
+	if c.config.Bugs.SendSpuriousAlert != 0 {
+		c.sendAlertLocked(c.config.Bugs.SendSpuriousAlert)
 	}
 
 	// SSL 3.0 and TLS 1.0 are susceptible to a chosen-plaintext
@@ -999,6 +1136,35 @@ func (c *Conn) Write(b []byte) (int, error) {
 	return n + m, c.out.setErrorLocked(err)
 }
 
+func (c *Conn) handleRenegotiation() error {
+	c.handshakeComplete = false
+	if !c.isClient {
+		panic("renegotiation should only happen for a client")
+	}
+
+	msg, err := c.readHandshake()
+	if err != nil {
+		return err
+	}
+	_, ok := msg.(*helloRequestMsg)
+	if !ok {
+		c.sendAlert(alertUnexpectedMessage)
+		return alertUnexpectedMessage
+	}
+
+	return c.Handshake()
+}
+
+func (c *Conn) Renegotiate() error {
+	if !c.isClient {
+		helloReq := new(helloRequestMsg)
+		c.writeRecord(recordTypeHandshake, helloReq.marshal())
+	}
+
+	c.handshakeComplete = false
+	return c.Handshake()
+}
+
 // Read can be made to time out and return a net.Error with Timeout() == true
 // after a fixed time limit; see SetDeadline and SetReadDeadline.
 func (c *Conn) Read(b []byte) (n int, err error) {
@@ -1017,6 +1183,14 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 			if err := c.readRecord(recordTypeApplicationData); err != nil {
 				// Soft error, like EAGAIN
 				return 0, err
+			}
+			if c.hand.Len() > 0 {
+				// We received handshake bytes, indicating the
+				// start of a renegotiation.
+				if err := c.handleRenegotiation(); err != nil {
+					return 0, err
+				}
+				continue
 			}
 		}
 		if err := c.in.err; err != nil {
@@ -1091,6 +1265,9 @@ func (c *Conn) Handshake() error {
 	} else {
 		c.handshakeErr = c.serverHandshake()
 	}
+	if c.handshakeErr == nil && c.config.Bugs.SendInvalidRecordType {
+		c.writeRecord(recordType(42), []byte("invalid record"))
+	}
 	return c.handshakeErr
 }
 
@@ -1107,11 +1284,12 @@ func (c *Conn) ConnectionState() ConnectionState {
 		state.DidResume = c.didResume
 		state.NegotiatedProtocolIsMutual = !c.clientProtocolFallback
 		state.NegotiatedProtocolFromALPN = c.usedALPN
-		state.CipherSuite = c.cipherSuite
+		state.CipherSuite = c.cipherSuite.id
 		state.PeerCertificates = c.peerCertificates
 		state.VerifiedChains = c.verifiedChains
 		state.ServerName = c.serverName
 		state.ChannelID = c.channelID
+		state.SRTPProtectionProfile = c.srtpProtectionProfile
 	}
 
 	return state
@@ -1139,4 +1317,29 @@ func (c *Conn) VerifyHostname(host string) error {
 		return errors.New("tls: handshake has not yet been performed")
 	}
 	return c.peerCertificates[0].VerifyHostname(host)
+}
+
+// ExportKeyingMaterial exports keying material from the current connection
+// state, as per RFC 5705.
+func (c *Conn) ExportKeyingMaterial(length int, label, context []byte, useContext bool) ([]byte, error) {
+	c.handshakeMutex.Lock()
+	defer c.handshakeMutex.Unlock()
+	if !c.handshakeComplete {
+		return nil, errors.New("tls: handshake has not yet been performed")
+	}
+
+	seedLen := len(c.clientRandom) + len(c.serverRandom)
+	if useContext {
+		seedLen += 2 + len(context)
+	}
+	seed := make([]byte, 0, seedLen)
+	seed = append(seed, c.clientRandom[:]...)
+	seed = append(seed, c.serverRandom[:]...)
+	if useContext {
+		seed = append(seed, byte(len(context)>>8), byte(len(context)))
+		seed = append(seed, context...)
+	}
+	result := make([]byte, length)
+	prfForVersion(c.vers, c.cipherSuite)(result, c.masterSecret[:], label, seed)
+	return result, nil
 }

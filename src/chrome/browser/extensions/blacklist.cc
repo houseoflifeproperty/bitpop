@@ -11,13 +11,15 @@
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
 #include "base/prefs/pref_service.h"
+#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/blacklist_factory.h"
 #include "chrome/browser/extensions/blacklist_state_fetcher.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
-#include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/extension_prefs.h"
@@ -34,7 +36,7 @@ namespace {
 class LazySafeBrowsingDatabaseManager {
  public:
   LazySafeBrowsingDatabaseManager() {
-#if defined(FULL_SAFE_BROWSING) || defined(MOBILE_SAFE_BROWSING)
+#if defined(SAFE_BROWSING_DB_LOCAL)
     if (g_browser_process && g_browser_process->safe_browsing_service()) {
       instance_ =
           g_browser_process->safe_browsing_service()->database_manager();
@@ -72,7 +74,7 @@ class SafeBrowsingClientImpl
   SafeBrowsingClientImpl(
       const std::set<std::string>& extension_ids,
       const OnResultCallback& callback)
-      : callback_message_loop_(base::MessageLoopProxy::current()),
+      : callback_task_runner_(base::ThreadTaskRunnerHandle::Get()),
         callback_(callback) {
     BrowserThread::PostTask(
         BrowserThread::IO,
@@ -84,7 +86,7 @@ class SafeBrowsingClientImpl
 
  private:
   friend class base::RefCountedThreadSafe<SafeBrowsingClientImpl>;
-  virtual ~SafeBrowsingClientImpl() {}
+  ~SafeBrowsingClientImpl() override {}
 
   // Pass |database_manager| as a parameter to avoid touching
   // SafeBrowsingService on the IO thread.
@@ -93,7 +95,7 @@ class SafeBrowsingClientImpl
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
     if (database_manager->CheckExtensionIDs(extension_ids, this)) {
       // Definitely not blacklisted. Callback immediately.
-      callback_message_loop_->PostTask(
+      callback_task_runner_->PostTask(
           FROM_HERE,
           base::Bind(callback_, std::set<std::string>()));
       return;
@@ -103,14 +105,13 @@ class SafeBrowsingClientImpl
     AddRef();  // Balanced in OnCheckExtensionsResult
   }
 
-  virtual void OnCheckExtensionsResult(
-      const std::set<std::string>& hits) OVERRIDE {
+  void OnCheckExtensionsResult(const std::set<std::string>& hits) override {
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
-    callback_message_loop_->PostTask(FROM_HERE, base::Bind(callback_, hits));
+    callback_task_runner_->PostTask(FROM_HERE, base::Bind(callback_, hits));
     Release();  // Balanced in StartCheck.
   }
 
-  scoped_refptr<base::MessageLoopProxy> callback_message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> callback_task_runner_;
   OnResultCallback callback_;
 
   DISALLOW_COPY_AND_ASSIGN(SafeBrowsingClientImpl);
@@ -182,12 +183,17 @@ Blacklist::Blacklist(ExtensionPrefs* prefs) {
 Blacklist::~Blacklist() {
 }
 
+// static
+Blacklist* Blacklist::Get(content::BrowserContext* context) {
+  return BlacklistFactory::GetForBrowserContext(context);
+}
+
 void Blacklist::GetBlacklistedIDs(const std::set<std::string>& ids,
                                   const GetBlacklistedIDsCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (ids.empty() || !g_database_manager.Get().get().get()) {
-    base::MessageLoopProxy::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE, base::Bind(callback, BlacklistStateMap()));
     return;
   }

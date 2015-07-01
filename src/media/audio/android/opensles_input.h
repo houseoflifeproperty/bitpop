@@ -31,19 +31,19 @@ class OpenSLESInputStream : public AudioInputStream {
   OpenSLESInputStream(AudioManagerAndroid* manager,
                       const AudioParameters& params);
 
-  virtual ~OpenSLESInputStream();
+  ~OpenSLESInputStream() override;
 
   // Implementation of AudioInputStream.
-  virtual bool Open() OVERRIDE;
-  virtual void Start(AudioInputCallback* callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual double GetMaxVolume() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual double GetVolume() OVERRIDE;
-  virtual void SetAutomaticGainControl(bool enabled) OVERRIDE;
-  virtual bool GetAutomaticGainControl() OVERRIDE;
-  virtual bool IsMuted() OVERRIDE;
+  bool Open() override;
+  void Start(AudioInputCallback* callback) override;
+  void Stop() override;
+  void Close() override;
+  double GetMaxVolume() override;
+  void SetVolume(double volume) override;
+  double GetVolume() override;
+  bool SetAutomaticGainControl(bool enabled) override;
+  bool GetAutomaticGainControl() override;
+  bool IsMuted() override;
 
  private:
   bool CreateRecorder();

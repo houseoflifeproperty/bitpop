@@ -8,7 +8,10 @@
 
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_appcache_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_cookie_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_database_helper.h"
@@ -17,13 +20,18 @@
 #include "chrome/browser/browsing_data/browsing_data_local_storage_helper.h"
 #include "chrome/browser/browsing_data/cookies_tree_model.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/content_settings/content_settings_utils.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/prerender/prerender_manager.h"
+#include "chrome/browser/content_settings/chrome_content_settings_utils.h"
+#include "chrome/browser/media/media_capture_devices_dispatcher.h"
+#include "chrome/browser/media/media_stream_capture_indicator.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
+#include "components/content_settings/content/common/content_settings_messages.h"
 #include "components/content_settings/core/browser/content_settings_details.h"
+#include "components/content_settings/core/browser/content_settings_utils.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
+#include "components/rappor/rappor_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_details.h"
@@ -34,6 +42,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cookies/canonical_cookie.h"
 #include "storage/common/fileapi/file_system_types.h"
 
@@ -44,6 +53,34 @@ using content::RenderViewHost;
 using content::WebContents;
 
 DEFINE_WEB_CONTENTS_USER_DATA_KEY(TabSpecificContentSettings);
+
+namespace {
+
+// Returns the object given a render frame's id.
+TabSpecificContentSettings* GetForFrame(int render_process_id,
+                                        int render_frame_id) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  content::RenderFrameHost* frame = content::RenderFrameHost::FromID(
+      render_process_id, render_frame_id);
+  WebContents* web_contents = WebContents::FromRenderFrameHost(frame);
+  if (!web_contents)
+    return nullptr;
+
+  return TabSpecificContentSettings::FromWebContents(web_contents);
+}
+
+ContentSettingsUsagesState::CommittedDetails GetCommittedDetails(
+    const content::LoadCommittedDetails& details) {
+  ContentSettingsUsagesState::CommittedDetails committed_details;
+  committed_details.current_url_valid = !!details.entry;
+  if (details.entry)
+    committed_details.current_url = details.entry->GetURL();
+  committed_details.previous_url = details.previous_url;
+  return committed_details;
+}
+
+}  // namespace
 
 TabSpecificContentSettings::SiteDataObserver::SiteDataObserver(
     TabSpecificContentSettings* tab_specific_content_settings)
@@ -62,20 +99,33 @@ void TabSpecificContentSettings::SiteDataObserver::ContentSettingsDestroyed() {
 
 TabSpecificContentSettings::TabSpecificContentSettings(WebContents* tab)
     : content::WebContentsObserver(tab),
-      profile_(Profile::FromBrowserContext(tab->GetBrowserContext())),
-      allowed_local_shared_objects_(profile_),
-      blocked_local_shared_objects_(profile_),
-      geolocation_usages_state_(profile_, CONTENT_SETTINGS_TYPE_GEOLOCATION),
-      midi_usages_state_(profile_, CONTENT_SETTINGS_TYPE_MIDI_SYSEX),
+      allowed_local_shared_objects_(
+          Profile::FromBrowserContext(tab->GetBrowserContext())),
+      blocked_local_shared_objects_(
+          Profile::FromBrowserContext(tab->GetBrowserContext())),
+      geolocation_usages_state_(
+          Profile::FromBrowserContext(tab->GetBrowserContext())
+              ->GetHostContentSettingsMap(),
+          CONTENT_SETTINGS_TYPE_GEOLOCATION,
+          prefs::kAcceptLanguages,
+          Profile::FromBrowserContext(tab->GetBrowserContext())->GetPrefs()),
+      midi_usages_state_(
+          Profile::FromBrowserContext(tab->GetBrowserContext())
+              ->GetHostContentSettingsMap(),
+          CONTENT_SETTINGS_TYPE_MIDI_SYSEX,
+          prefs::kAcceptLanguages,
+          Profile::FromBrowserContext(tab->GetBrowserContext())->GetPrefs()),
       pending_protocol_handler_(ProtocolHandler::EmptyProtocolHandler()),
       previous_protocol_handler_(ProtocolHandler::EmptyProtocolHandler()),
       pending_protocol_handler_setting_(CONTENT_SETTING_DEFAULT),
       load_plugins_link_enabled_(true),
+      microphone_camera_state_(MICROPHONE_CAMERA_NOT_ACCESSED),
       observer_(this) {
   ClearBlockedContentSettingsExceptForCookies();
   ClearCookieSpecificContentSettings();
 
-  observer_.Add(profile_->GetHostContentSettingsMap());
+  observer_.Add(Profile::FromBrowserContext(tab->GetBrowserContext())
+                    ->GetHostContentSettingsMap());
 }
 
 TabSpecificContentSettings::~TabSpecificContentSettings() {
@@ -83,6 +133,7 @@ TabSpecificContentSettings::~TabSpecificContentSettings() {
       SiteDataObserver, observer_list_, ContentSettingsDestroyed());
 }
 
+// static
 TabSpecificContentSettings* TabSpecificContentSettings::Get(
     int render_process_id, int render_view_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -99,27 +150,13 @@ TabSpecificContentSettings* TabSpecificContentSettings::Get(
   return TabSpecificContentSettings::FromWebContents(web_contents);
 }
 
-TabSpecificContentSettings* TabSpecificContentSettings::GetForFrame(
-    int render_process_id, int render_frame_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  content::RenderFrameHost* frame = content::RenderFrameHost::FromID(
-      render_process_id, render_frame_id);
-  WebContents* web_contents = WebContents::FromRenderFrameHost(frame);
-  if (!web_contents)
-    return NULL;
-
-  return TabSpecificContentSettings::FromWebContents(web_contents);
-}
-
 // static
 void TabSpecificContentSettings::CookiesRead(int render_process_id,
                                              int render_frame_id,
                                              const GURL& url,
                                              const GURL& frame_url,
                                              const net::CookieList& cookie_list,
-                                             bool blocked_by_policy,
-                                             bool is_for_blocking_resource) {
+                                             bool blocked_by_policy) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   TabSpecificContentSettings* settings =
       GetForFrame(render_process_id, render_frame_id);
@@ -127,14 +164,6 @@ void TabSpecificContentSettings::CookiesRead(int render_process_id,
     settings->OnCookiesRead(url, frame_url, cookie_list,
                             blocked_by_policy);
   }
-  prerender::PrerenderManager::RecordCookieEvent(
-      render_process_id,
-      render_frame_id,
-      url,
-      frame_url,
-      is_for_blocking_resource,
-      prerender::PrerenderContents::COOKIE_EVENT_SEND,
-      &cookie_list);
 }
 
 // static
@@ -152,14 +181,6 @@ void TabSpecificContentSettings::CookieChanged(
   if (settings)
     settings->OnCookieChanged(url, frame_url, cookie_line, options,
                               blocked_by_policy);
-  prerender::PrerenderManager::RecordCookieEvent(
-      render_process_id,
-      render_frame_id,
-      url,
-      frame_url,
-      false /*is_critical_request*/,
-      prerender::PrerenderContents::COOKIE_EVENT_CHANGE,
-      NULL);
 }
 
 // static
@@ -216,6 +237,20 @@ void TabSpecificContentSettings::FileSystemAccessed(int render_process_id,
     settings->OnFileSystemAccessed(url, blocked_by_policy);
 }
 
+// static
+void TabSpecificContentSettings::ServiceWorkerAccessed(int render_process_id,
+                                                       int render_frame_id,
+                                                       const GURL& scope,
+                                                       bool blocked_by_policy) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  DCHECK(scope.is_valid());
+
+  TabSpecificContentSettings* settings =
+      GetForFrame(render_process_id, render_frame_id);
+  if (settings)
+    settings->OnServiceWorkerAccessed(scope, blocked_by_policy);
+}
+
 bool TabSpecificContentSettings::IsContentBlocked(
     ContentSettingsType content_type) const {
   DCHECK(content_type != CONTENT_SETTINGS_TYPE_GEOLOCATION)
@@ -270,26 +305,28 @@ bool TabSpecificContentSettings::IsContentAllowed(
 }
 
 void TabSpecificContentSettings::OnContentBlocked(ContentSettingsType type) {
+  OnContentBlockedWithDetail(type, base::string16());
+}
+
+void TabSpecificContentSettings::OnContentBlockedWithDetail(
+    ContentSettingsType type,
+    const base::string16& details) {
   DCHECK(type != CONTENT_SETTINGS_TYPE_GEOLOCATION)
       << "Geolocation settings handled by OnGeolocationPermissionSet";
+  DCHECK(type != CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC &&
+         type != CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA)
+      << "Media stream settings handled by OnMediaStreamPermissionSet";
   if (type < 0 || type >= CONTENT_SETTINGS_NUM_TYPES)
     return;
 
-  // Media is different from other content setting types since it allows new
-  // setting to kick in without reloading the page, and the UI for media is
-  // always reflecting the newest permission setting.
-  switch (type) {
-    case CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC:
-    case CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA:
-#if defined(OS_ANDROID)
-    case CONTENT_SETTINGS_TYPE_PROTECTED_MEDIA_IDENTIFIER:
-#endif
-      content_allowed_[type] = false;
-      break;
-    default:
-      content_allowed_[type] = true;
-      break;
-  }
+  // TODO(robwu): Should this be restricted to cookies only?
+  // In the past, content_allowed_ was set to false, but this logic was inverted
+  // in https://codereview.chromium.org/13375004 to fix an issue with the cookie
+  // permission UI. This unconditional assignment seems incorrect, because the
+  // flag will now always be true after calling either OnContentBlocked or
+  // OnContentAllowed. Consequently IsContentAllowed will always return true
+  // for every supported setting that is not handled elsewhere.
+  content_allowed_[type] = true;
 
 #if defined(OS_ANDROID)
   if (type == CONTENT_SETTINGS_TYPE_POPUPS) {
@@ -302,6 +339,12 @@ void TabSpecificContentSettings::OnContentBlocked(ContentSettingsType type) {
   }
 #endif
 
+  if (type == CONTENT_SETTINGS_TYPE_PLUGINS && !details.empty() &&
+      std::find(blocked_plugin_names_.begin(), blocked_plugin_names_.end(),
+                details) == blocked_plugin_names_.end()) {
+    blocked_plugin_names_.push_back(details);
+  }
+
   if (!content_blocked_[type]) {
     content_blocked_[type] = true;
     // TODO: it would be nice to have a way of mocking this in tests.
@@ -309,29 +352,42 @@ void TabSpecificContentSettings::OnContentBlocked(ContentSettingsType type) {
         chrome::NOTIFICATION_WEB_CONTENT_SETTINGS_CHANGED,
         content::Source<WebContents>(web_contents()),
         content::NotificationService::NoDetails());
+
+    if (type == CONTENT_SETTINGS_TYPE_MIXEDSCRIPT) {
+      content_settings::RecordMixedScriptAction(
+          content_settings::MIXED_SCRIPT_ACTION_DISPLAYED_SHIELD);
+
+      rappor::RapporService* rappor_service =
+          g_browser_process->rappor_service();
+      if (rappor_service) {
+        rappor_service->RecordSample(
+            "ContentSettings.MixedScript.DisplayedShield",
+            rappor::ETLD_PLUS_ONE_RAPPOR_TYPE,
+            net::registry_controlled_domains::GetDomainAndRegistry(
+                base::UTF16ToUTF8(details),
+                net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES));
+      }
+    }
   }
 }
 
 void TabSpecificContentSettings::OnContentAllowed(ContentSettingsType type) {
   DCHECK(type != CONTENT_SETTINGS_TYPE_GEOLOCATION)
       << "Geolocation settings handled by OnGeolocationPermissionSet";
+  DCHECK(type != CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC &&
+         type != CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA)
+      << "Media stream settings handled by OnMediaStreamPermissionSet";
   bool access_changed = false;
-  switch (type) {
-    case CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC:
-    case CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA:
 #if defined(OS_ANDROID)
-    case CONTENT_SETTINGS_TYPE_PROTECTED_MEDIA_IDENTIFIER:
-#endif
-      // The setting for media is overwritten here because media does not need
-      // to reload the page to have the new setting kick in. See issue/175993.
-      if (content_blocked_[type]) {
-        content_blocked_[type] = false;
-        access_changed = true;
-      }
-      break;
-    default:
-      break;
+  if (type == CONTENT_SETTINGS_TYPE_PROTECTED_MEDIA_IDENTIFIER &&
+    content_blocked_[type]) {
+    // content_allowed_[type] is always set to true in OnContentBlocked, so we
+    // have to use content_blocked_ to detect whether the protected media
+    // setting has changed.
+    content_blocked_[type] = false;
+    access_changed = true;
   }
+#endif
 
   if (!content_allowed_[type]) {
     content_allowed_[type] = true;
@@ -420,6 +476,21 @@ void TabSpecificContentSettings::OnLocalStorageAccessed(
   NotifySiteDataObservers();
 }
 
+void TabSpecificContentSettings::OnServiceWorkerAccessed(
+    const GURL& scope,
+    bool blocked_by_policy) {
+  DCHECK(scope.is_valid());
+  if (blocked_by_policy) {
+    blocked_local_shared_objects_.service_workers()->AddServiceWorker(
+        scope.GetOrigin(), std::vector<GURL>(1, scope));
+    OnContentBlocked(CONTENT_SETTINGS_TYPE_COOKIES);
+  } else {
+    allowed_local_shared_objects_.service_workers()->AddServiceWorker(
+        scope.GetOrigin(), std::vector<GURL>(1, scope));
+    OnContentAllowed(CONTENT_SETTINGS_TYPE_COOKIES);
+  }
+}
+
 void TabSpecificContentSettings::OnWebDatabaseAccessed(
     const GURL& url,
     const base::string16& name,
@@ -464,7 +535,7 @@ void TabSpecificContentSettings::OnGeolocationPermissionSet(
       content::NotificationService::NoDetails());
 }
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
 void TabSpecificContentSettings::OnProtectedMediaIdentifierPermissionSet(
     const GURL& requesting_origin,
     bool allowed) {
@@ -478,70 +549,87 @@ void TabSpecificContentSettings::OnProtectedMediaIdentifierPermissionSet(
 
 TabSpecificContentSettings::MicrophoneCameraState
 TabSpecificContentSettings::GetMicrophoneCameraState() const {
-  if (IsContentAllowed(CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC) &&
-      IsContentAllowed(CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA)) {
-    return MICROPHONE_CAMERA_ACCESSED;
-  } else if (IsContentAllowed(CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC)) {
-    return MICROPHONE_ACCESSED;
-  } else if (IsContentAllowed(CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA)) {
-    return CAMERA_ACCESSED;
-  }
+  MicrophoneCameraState state = microphone_camera_state_;
 
-  if (IsContentBlocked(CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC) &&
-      IsContentBlocked(CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA)) {
-    return MICROPHONE_CAMERA_BLOCKED;
-  } else if (IsContentBlocked(CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC)) {
-    return MICROPHONE_BLOCKED;
-  } else if (IsContentBlocked(CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA)) {
-    return CAMERA_BLOCKED;
-  }
+  // Include capture devices in the state if there are still consumers of the
+  // approved media stream.
+  scoped_refptr<MediaStreamCaptureIndicator> media_indicator =
+      MediaCaptureDevicesDispatcher::GetInstance()->
+        GetMediaStreamCaptureIndicator();
+  if (media_indicator->IsCapturingAudio(web_contents()))
+    state |= MICROPHONE_ACCESSED;
+  if (media_indicator->IsCapturingVideo(web_contents()))
+    state |= CAMERA_ACCESSED;
 
-  return MICROPHONE_CAMERA_NOT_ACCESSED;
+  return state;
+}
+
+bool TabSpecificContentSettings::IsMicrophoneCameraStateChanged() const {
+  if ((microphone_camera_state_ & MICROPHONE_ACCESSED) &&
+      ((microphone_camera_state_& MICROPHONE_BLOCKED) ?
+        !IsContentBlocked(CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC) :
+        !IsContentAllowed(CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC)))
+    return true;
+
+  if ((microphone_camera_state_ & CAMERA_ACCESSED) &&
+      ((microphone_camera_state_ & CAMERA_BLOCKED) ?
+        !IsContentBlocked(CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA) :
+        !IsContentAllowed(CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA)))
+    return true;
+
+  PrefService* prefs =
+      Profile::FromBrowserContext(web_contents()->GetBrowserContext())->
+          GetPrefs();
+  scoped_refptr<MediaStreamCaptureIndicator> media_indicator =
+      MediaCaptureDevicesDispatcher::GetInstance()->
+          GetMediaStreamCaptureIndicator();
+
+  if ((microphone_camera_state_ & MICROPHONE_ACCESSED) &&
+      prefs->GetString(prefs::kDefaultAudioCaptureDevice) !=
+      media_stream_selected_audio_device() &&
+      media_indicator->IsCapturingAudio(web_contents()))
+    return true;
+
+  if ((microphone_camera_state_ & CAMERA_ACCESSED) &&
+      prefs->GetString(prefs::kDefaultVideoCaptureDevice) !=
+      media_stream_selected_video_device() &&
+      media_indicator->IsCapturingVideo(web_contents()))
+    return true;
+
+  return false;
 }
 
 void TabSpecificContentSettings::OnMediaStreamPermissionSet(
     const GURL& request_origin,
-    const MediaStreamDevicesController::MediaStreamTypeSettingsMap&
-        request_permissions) {
+    MicrophoneCameraState new_microphone_camera_state,
+    const std::string& media_stream_selected_audio_device,
+    const std::string& media_stream_selected_video_device,
+    const std::string& media_stream_requested_audio_device,
+    const std::string& media_stream_requested_video_device) {
   media_stream_access_origin_ = request_origin;
 
-  MediaStreamDevicesController::MediaStreamTypeSettingsMap::const_iterator it =
-      request_permissions.find(content::MEDIA_DEVICE_AUDIO_CAPTURE);
-  if (it != request_permissions.end()) {
-    media_stream_requested_audio_device_ = it->second.requested_device_id;
-    switch (it->second.permission) {
-      case MediaStreamDevicesController::MEDIA_NONE:
-        NOTREACHED();
-        break;
-      case MediaStreamDevicesController::MEDIA_ALLOWED:
-        OnContentAllowed(CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC);
-        break;
-      // TODO(grunell): UI should show for what reason access has been blocked.
-      case MediaStreamDevicesController::MEDIA_BLOCKED_BY_POLICY:
-      case MediaStreamDevicesController::MEDIA_BLOCKED_BY_USER_SETTING:
-      case MediaStreamDevicesController::MEDIA_BLOCKED_BY_USER:
-        OnContentBlocked(CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC);
-        break;
-    }
+  if (new_microphone_camera_state & MICROPHONE_ACCESSED) {
+    media_stream_requested_audio_device_ = media_stream_requested_audio_device;
+    media_stream_selected_audio_device_ = media_stream_selected_audio_device;
+    bool mic_blocked = (new_microphone_camera_state & MICROPHONE_BLOCKED) != 0;
+    content_allowed_[CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC] = !mic_blocked;
+    content_blocked_[CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC] = mic_blocked;
   }
 
-  it = request_permissions.find(content::MEDIA_DEVICE_VIDEO_CAPTURE);
-  if (it != request_permissions.end()) {
-    media_stream_requested_video_device_ = it->second.requested_device_id;
-    switch (it->second.permission) {
-      case MediaStreamDevicesController::MEDIA_NONE:
-        NOTREACHED();
-        break;
-      case MediaStreamDevicesController::MEDIA_ALLOWED:
-        OnContentAllowed(CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA);
-        break;
-      // TODO(grunell): UI should show for what reason access has been blocked.
-      case MediaStreamDevicesController::MEDIA_BLOCKED_BY_POLICY:
-      case MediaStreamDevicesController::MEDIA_BLOCKED_BY_USER_SETTING:
-      case MediaStreamDevicesController::MEDIA_BLOCKED_BY_USER:
-        OnContentBlocked(CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA);
-        break;
-    }
+  if (new_microphone_camera_state & CAMERA_ACCESSED) {
+    media_stream_requested_video_device_ = media_stream_requested_video_device;
+    media_stream_selected_video_device_ = media_stream_selected_video_device;
+    bool cam_blocked = (new_microphone_camera_state & CAMERA_BLOCKED) != 0;
+    content_allowed_[CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA] = !cam_blocked;
+    content_blocked_[CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA] = cam_blocked;
+  }
+
+  if (microphone_camera_state_ != new_microphone_camera_state) {
+    microphone_camera_state_ = new_microphone_camera_state;
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_WEB_CONTENT_SETTINGS_CHANGED,
+        content::Source<WebContents>(web_contents()),
+        content::NotificationService::NoDetails());
   }
 }
 
@@ -565,6 +653,7 @@ void TabSpecificContentSettings::ClearBlockedContentSettingsExceptForCookies() {
     content_allowed_[i] = false;
     content_blockage_indicated_to_user_[i] = false;
   }
+  microphone_camera_state_ = MICROPHONE_CAMERA_NOT_ACCESSED;
   load_plugins_link_enabled_ = true;
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_WEB_CONTENT_SETTINGS_CHANGED,
@@ -604,29 +693,47 @@ void TabSpecificContentSettings::SetPopupsBlocked(bool blocked) {
       content::NotificationService::NoDetails());
 }
 
-void TabSpecificContentSettings::GeolocationDidNavigate(
-      const content::LoadCommittedDetails& details) {
-  geolocation_usages_state_.DidNavigate(details);
-}
-
-void TabSpecificContentSettings::MidiDidNavigate(
-    const content::LoadCommittedDetails& details) {
-  midi_usages_state_.DidNavigate(details);
-}
-
-void TabSpecificContentSettings::ClearGeolocationContentSettings() {
-  geolocation_usages_state_.ClearStateMap();
-}
-
-void TabSpecificContentSettings::ClearMidiContentSettings() {
-  midi_usages_state_.ClearStateMap();
-}
-
 void TabSpecificContentSettings::SetPepperBrokerAllowed(bool allowed) {
   if (allowed) {
     OnContentAllowed(CONTENT_SETTINGS_TYPE_PPAPI_BROKER);
   } else {
     OnContentBlocked(CONTENT_SETTINGS_TYPE_PPAPI_BROKER);
+  }
+}
+
+void TabSpecificContentSettings::OnContentSettingChanged(
+    const ContentSettingsPattern& primary_pattern,
+    const ContentSettingsPattern& secondary_pattern,
+    ContentSettingsType content_type,
+    std::string resource_identifier) {
+  const ContentSettingsDetails details(
+      primary_pattern, secondary_pattern, content_type, resource_identifier);
+  const NavigationController& controller = web_contents()->GetController();
+  NavigationEntry* entry = controller.GetVisibleEntry();
+  GURL entry_url;
+  if (entry)
+    entry_url = entry->GetURL();
+  if (details.update_all() ||
+      // The visible NavigationEntry is the URL in the URL field of a tab.
+      // Currently this should be matched by the |primary_pattern|.
+      details.primary_pattern().Matches(entry_url)) {
+    Profile* profile =
+        Profile::FromBrowserContext(web_contents()->GetBrowserContext());
+    const HostContentSettingsMap* map = profile->GetHostContentSettingsMap();
+
+    if (content_type == CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC ||
+        content_type == CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA) {
+      const GURL media_origin = media_stream_access_origin();
+      ContentSetting setting = map->GetContentSetting(media_origin,
+                                                      media_origin,
+                                                      content_type,
+                                                      std::string());
+      content_allowed_[content_type] = setting == CONTENT_SETTING_ALLOW;
+      content_blocked_[content_type] = setting == CONTENT_SETTING_BLOCK;
+    }
+    RendererContentSettingRules rules;
+    GetRendererContentSettingRules(map, &rules);
+    Send(new ChromeViewMsg_SetContentSettingRules(rules));
   }
 }
 
@@ -643,7 +750,8 @@ bool TabSpecificContentSettings::OnMessageReceived(
     content::RenderFrameHost* render_frame_host) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(TabSpecificContentSettings, message)
-    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_ContentBlocked, OnContentBlocked)
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_ContentBlocked,
+                        OnContentBlockedWithDetail)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -655,6 +763,7 @@ void TabSpecificContentSettings::DidNavigateMainFrame(
   if (!details.is_in_page) {
     // Clear "blocked" flags.
     ClearBlockedContentSettingsExceptForCookies();
+    blocked_plugin_names_.clear();
     GeolocationDidNavigate(details);
     MidiDidNavigate(details);
   }
@@ -689,31 +798,6 @@ void TabSpecificContentSettings::AppCacheAccessed(const GURL& manifest_url,
   }
 }
 
-void TabSpecificContentSettings::OnContentSettingChanged(
-    const ContentSettingsPattern& primary_pattern,
-    const ContentSettingsPattern& secondary_pattern,
-    ContentSettingsType content_type,
-    std::string resource_identifier) {
-  const ContentSettingsDetails details(
-      primary_pattern, secondary_pattern, content_type, resource_identifier);
-  const NavigationController& controller = web_contents()->GetController();
-  NavigationEntry* entry = controller.GetVisibleEntry();
-  GURL entry_url;
-  if (entry)
-    entry_url = entry->GetURL();
-  if (details.update_all() ||
-      // The visible NavigationEntry is the URL in the URL field of a tab.
-      // Currently this should be matched by the |primary_pattern|.
-      details.primary_pattern().Matches(entry_url)) {
-    Profile* profile =
-        Profile::FromBrowserContext(web_contents()->GetBrowserContext());
-    RendererContentSettingRules rules;
-    GetRendererContentSettingRules(profile->GetHostContentSettingsMap(),
-                                   &rules);
-    Send(new ChromeViewMsg_SetContentSettingRules(rules));
-  }
-}
-
 void TabSpecificContentSettings::AddSiteDataObserver(
     SiteDataObserver* observer) {
   observer_list_.AddObserver(observer);
@@ -726,4 +810,22 @@ void TabSpecificContentSettings::RemoveSiteDataObserver(
 
 void TabSpecificContentSettings::NotifySiteDataObservers() {
   FOR_EACH_OBSERVER(SiteDataObserver, observer_list_, OnSiteDataAccessed());
+}
+
+void TabSpecificContentSettings::ClearGeolocationContentSettings() {
+  geolocation_usages_state_.ClearStateMap();
+}
+
+void TabSpecificContentSettings::ClearMidiContentSettings() {
+  midi_usages_state_.ClearStateMap();
+}
+
+void TabSpecificContentSettings::GeolocationDidNavigate(
+    const content::LoadCommittedDetails& details) {
+  geolocation_usages_state_.DidNavigate(GetCommittedDetails(details));
+}
+
+void TabSpecificContentSettings::MidiDidNavigate(
+    const content::LoadCommittedDetails& details) {
+  midi_usages_state_.DidNavigate(GetCommittedDetails(details));
 }

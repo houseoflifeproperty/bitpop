@@ -11,6 +11,7 @@
 #include <algorithm>
 
 #include "nacl_io/log.h"
+#include "nacl_io/osinttypes.h"
 
 #include "sdk_util/macros.h"
 
@@ -46,7 +47,6 @@ void GetDentsHelper::AddDirent(ino_t ino, const char* name, size_t namelen) {
   dirents_.push_back(dirent());
   dirent& entry = dirents_.back();
   entry.d_ino = ino;
-  entry.d_off = sizeof(dirent);
   entry.d_reclen = sizeof(dirent);
 
   if (namelen == 0)
@@ -72,7 +72,8 @@ Error GetDentsHelper::GetDents(size_t offs,
 
   // If the buffer is too small, fail
   if (size < sizeof(dirent)) {
-    LOG_TRACE("dirent buffer size is too small: %d < %d", size, sizeof(dirent));
+    LOG_TRACE("dirent buffer size is too small: %" PRIuS " < %" PRIuS "",
+        size, sizeof(dirent));
     return EINVAL;
   }
 

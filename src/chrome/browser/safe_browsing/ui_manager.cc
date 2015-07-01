@@ -26,6 +26,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+#include "net/ssl/ssl_info.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 
@@ -57,7 +58,7 @@ SafeBrowsingUIManager::SafeBrowsingUIManager(
 SafeBrowsingUIManager::~SafeBrowsingUIManager() { }
 
 void SafeBrowsingUIManager::StopOnIOThread(bool shutdown) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (shutdown)
     sb_service_ = NULL;
@@ -77,7 +78,7 @@ bool SafeBrowsingUIManager::CanReportStats() const {
 void SafeBrowsingUIManager::OnBlockingPageDone(
     const std::vector<UnsafeResource>& resources,
     bool proceed) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   for (std::vector<UnsafeResource>::const_iterator iter = resources.begin();
        iter != resources.end(); ++iter) {
     const UnsafeResource& resource = *iter;
@@ -95,17 +96,19 @@ void SafeBrowsingUIManager::OnBlockingPageDone(
 
 void SafeBrowsingUIManager::DisplayBlockingPage(
     const UnsafeResource& resource) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  if (!resource.threat_metadata.empty() &&
-      resource.threat_type == SB_THREAT_TYPE_URL_MALWARE) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  if (resource.is_subresource && !resource.is_subframe) {
+    // Sites tagged as serving Unwanted Software should only show a warning for
+    // main-frame or sub-frame resource. Similar warning restrictions should be
+    // applied to malware sites tagged as "landing sites" (see "Types of
+    // Malware sites" under
+    // https://developers.google.com/safe-browsing/developers_guide_v3#UserWarnings).
     safe_browsing::MalwarePatternType proto;
-    // Malware sites tagged as "landing site" should only show a warning for a
-    // main-frame or sub-frame resource. (See "Types of Malware sites" under
-    // https://developers.google.com/safe-browsing/developers_guide_v3#UserWarnings)
-    if (proto.ParseFromString(resource.threat_metadata) &&
-        proto.pattern_type() == safe_browsing::MalwarePatternType::LANDING &&
-        resource.is_subresource && !resource.is_subframe) {
+    if (resource.threat_type == SB_THREAT_TYPE_URL_UNWANTED ||
+        (resource.threat_type == SB_THREAT_TYPE_URL_MALWARE &&
+         !resource.threat_metadata.empty() &&
+         proto.ParseFromString(resource.threat_metadata) &&
+         proto.pattern_type() == safe_browsing::MalwarePatternType::LANDING)) {
       if (!resource.callback.is_null()) {
         BrowserThread::PostTask(
             BrowserThread::IO, FROM_HERE, base::Bind(resource.callback, true));
@@ -115,8 +118,7 @@ void SafeBrowsingUIManager::DisplayBlockingPage(
   }
 
   // Indicate to interested observers that the resource in question matched the
-  // SB filters. If the resource is already whitelisted, OnSafeBrowsingHit
-  // won't be called.
+  // SB filters.
   if (resource.threat_type != SB_THREAT_TYPE_SAFE) {
     FOR_EACH_OBSERVER(Observer, observer_list_, OnSafeBrowsingMatch(resource));
   }
@@ -172,6 +174,7 @@ void SafeBrowsingUIManager::DisplayBlockingPage(
                           resource.is_subresource, resource.threat_type,
                           std::string() /* post_data */);
   }
+
   if (resource.threat_type != SB_THREAT_TYPE_SAFE) {
     FOR_EACH_OBSERVER(Observer, observer_list_, OnSafeBrowsingHit(resource));
   }
@@ -187,7 +190,7 @@ void SafeBrowsingUIManager::ReportSafeBrowsingHit(
     bool is_subresource,
     SBThreatType threat_type,
     const std::string& post_data) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!CanReportStats())
     return;
 
@@ -198,13 +201,25 @@ void SafeBrowsingUIManager::ReportSafeBrowsingHit(
                  threat_type, post_data));
 }
 
+void SafeBrowsingUIManager::ReportInvalidCertificateChain(
+    const std::string& serialized_report,
+    const base::Closure& callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  BrowserThread::PostTaskAndReply(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(
+          &SafeBrowsingUIManager::ReportInvalidCertificateChainOnIOThread, this,
+          serialized_report),
+      callback);
+}
+
 void SafeBrowsingUIManager::AddObserver(Observer* observer) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   observer_list_.AddObserver(observer);
 }
 
 void SafeBrowsingUIManager::RemoveObserver(Observer* observer) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   observer_list_.RemoveObserver(observer);
 }
 
@@ -215,7 +230,7 @@ void SafeBrowsingUIManager::ReportSafeBrowsingHitOnIOThread(
     bool is_subresource,
     SBThreatType threat_type,
     const std::string& post_data) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // The service may delete the ping manager (i.e. when user disabling service,
   // etc). This happens on the IO thread.
@@ -231,11 +246,23 @@ void SafeBrowsingUIManager::ReportSafeBrowsingHitOnIOThread(
       threat_type, post_data);
 }
 
+void SafeBrowsingUIManager::ReportInvalidCertificateChainOnIOThread(
+    const std::string& serialized_report) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  // The service may delete the ping manager (i.e. when user disabling service,
+  // etc). This happens on the IO thread.
+  if (!sb_service_ || !sb_service_->ping_manager())
+    return;
+
+  sb_service_->ping_manager()->ReportInvalidCertificateChain(serialized_report);
+}
+
 // If the user had opted-in to send MalwareDetails, this gets called
 // when the report is ready.
 void SafeBrowsingUIManager::SendSerializedMalwareDetails(
     const std::string& serialized) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // The service may delete the ping manager (i.e. when user disabling service,
   // etc). This happens on the IO thread.
@@ -249,7 +276,7 @@ void SafeBrowsingUIManager::SendSerializedMalwareDetails(
 }
 
 void SafeBrowsingUIManager::UpdateWhitelist(const UnsafeResource& resource) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // Whitelist this domain and warning type for the given tab.
   WhiteListedEntry entry;
   entry.render_process_host_id = resource.render_process_host_id;
@@ -262,7 +289,7 @@ void SafeBrowsingUIManager::UpdateWhitelist(const UnsafeResource& resource) {
 }
 
 bool SafeBrowsingUIManager::IsWhitelisted(const UnsafeResource& resource) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // Check if the user has already ignored our warning for this render_view
   // and domain.
   for (size_t i = 0; i < white_listed_entries_.size(); ++i) {
@@ -290,4 +317,3 @@ bool SafeBrowsingUIManager::IsWhitelisted(const UnsafeResource& resource) {
   }
   return false;
 }
-

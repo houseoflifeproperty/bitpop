@@ -14,7 +14,7 @@
 #include "net/base/net_errors.h"
 #include "net/http/http_byte_range.h"
 #include "net/url_request/url_request_job.h"
-#include "storage/browser/blob/file_stream_reader.h"
+#include "storage/browser/fileapi/file_stream_reader.h"
 #include "storage/browser/fileapi/file_system_url.h"
 
 namespace net {
@@ -29,34 +29,44 @@ namespace chromeos {
 // requests for drive resources and FileSystem.  It exposes content URLs
 // formatted as drive:<drive-file-path>.
 // The methods should be run on IO thread.
+// TODO(hirono): After removing MHTML support, stop to use the special
+// externalfile: scheme and use filesystem: URL directly.  crbug.com/415455
 class ExternalFileURLRequestJob : public net::URLRequestJob {
  public:
+  // Scope of isolated file system.
+  class IsolatedFileSystemScope {
+   public:
+    explicit IsolatedFileSystemScope(const std::string& file_system_id);
+    ~IsolatedFileSystemScope();
+
+   private:
+    std::string file_system_id_;
+    DISALLOW_COPY_AND_ASSIGN(IsolatedFileSystemScope);
+  };
+
   // Callback to take results from an internal helper defined in
   // drive_url_request_job.cc.
-  typedef base::Callback<
-      void(net::Error,
-           const scoped_refptr<storage::FileSystemContext>& file_system_context,
-           const storage::FileSystemURL& file_system_url,
-           const std::string& mime_type)> HelperCallback;
+  typedef base::Callback<void(
+      net::Error,
+      const scoped_refptr<storage::FileSystemContext>& file_system_context,
+      scoped_ptr<IsolatedFileSystemScope> isolated_file_system_scope,
+      const storage::FileSystemURL& file_system_url,
+      const std::string& mime_type)> HelperCallback;
 
   ExternalFileURLRequestJob(void* profile_id,
                             net::URLRequest* request,
                             net::NetworkDelegate* network_delegate);
 
   // net::URLRequestJob overrides:
-  virtual void SetExtraRequestHeaders(
-      const net::HttpRequestHeaders& headers) OVERRIDE;
-  virtual void Start() OVERRIDE;
-  virtual void Kill() OVERRIDE;
-  virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
-  virtual bool IsRedirectResponse(GURL* location,
-                                  int* http_status_code) OVERRIDE;
-  virtual bool ReadRawData(net::IOBuffer* buf,
-                           int buf_size,
-                           int* bytes_read) OVERRIDE;
+  void SetExtraRequestHeaders(const net::HttpRequestHeaders& headers) override;
+  void Start() override;
+  void Kill() override;
+  bool GetMimeType(std::string* mime_type) const override;
+  bool IsRedirectResponse(GURL* location, int* http_status_code) override;
+  bool ReadRawData(net::IOBuffer* buf, int buf_size, int* bytes_read) override;
 
  protected:
-  virtual ~ExternalFileURLRequestJob();
+  ~ExternalFileURLRequestJob() override;
 
  private:
   // Called from an internal helper class defined in drive_url_request_job.cc,
@@ -64,6 +74,7 @@ class ExternalFileURLRequestJob : public net::URLRequestJob {
   void OnHelperResultObtained(
       net::Error error,
       const scoped_refptr<storage::FileSystemContext>& file_system_context,
+      scoped_ptr<IsolatedFileSystemScope> isolated_file_system_scope,
       const storage::FileSystemURL& file_system_url,
       const std::string& mime_type);
 
@@ -84,6 +95,7 @@ class ExternalFileURLRequestJob : public net::URLRequestJob {
   int64 remaining_bytes_;
 
   scoped_refptr<storage::FileSystemContext> file_system_context_;
+  scoped_ptr<IsolatedFileSystemScope> isolated_file_system_scope_;
   storage::FileSystemURL file_system_url_;
   std::string mime_type_;
   scoped_ptr<storage::FileStreamReader> stream_reader_;

@@ -57,26 +57,34 @@ class CONTENT_EXPORT GoogleStreamingRemoteEngine
   static const int kDownstreamUrlFetcherIdForTesting;
 
   explicit GoogleStreamingRemoteEngine(net::URLRequestContextGetter* context);
-  virtual ~GoogleStreamingRemoteEngine();
+  ~GoogleStreamingRemoteEngine() override;
 
   // SpeechRecognitionEngine methods.
-  virtual void SetConfig(const SpeechRecognitionEngineConfig& config) OVERRIDE;
-  virtual void StartRecognition() OVERRIDE;
-  virtual void EndRecognition() OVERRIDE;
-  virtual void TakeAudioChunk(const AudioChunk& data) OVERRIDE;
-  virtual void AudioChunksEnded() OVERRIDE;
-  virtual bool IsRecognitionPending() const OVERRIDE;
-  virtual int GetDesiredAudioChunkDurationMs() const OVERRIDE;
+  void SetConfig(const SpeechRecognitionEngineConfig& config) override;
+  void StartRecognition() override;
+  void EndRecognition() override;
+  void TakeAudioChunk(const AudioChunk& data) override;
+  void AudioChunksEnded() override;
+  bool IsRecognitionPending() const override;
+  int GetDesiredAudioChunkDurationMs() const override;
 
   // net::URLFetcherDelegate methods.
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
-  virtual void OnURLFetchDownloadProgress(const net::URLFetcher* source,
-                                          int64 current, int64 total) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
+  void OnURLFetchDownloadProgress(const net::URLFetcher* source,
+                                  int64 current,
+                                  int64 total) override;
 
  private:
   // Response status codes from the speech recognition webservice.
   static const int kWebserviceStatusNoError;
   static const int kWebserviceStatusErrorNoMatch;
+
+  // Frame type for framed POST data. Do NOT change these. They must match
+  // values the server expects.
+  enum FrameType {
+    FRAME_PREAMBLE_AUDIO = 0,
+    FRAME_RECOGNITION_AUDIO = 1
+  };
 
   // Data types for the internal Finite State Machine (FSM).
   enum FSMState {
@@ -142,15 +150,21 @@ class CONTENT_EXPORT GoogleStreamingRemoteEngine
   std::string GetAcceptedLanguages() const;
   std::string GenerateRequestKey() const;
 
+  // Upload a single chunk of audio data. Handles both unframed and framed
+  // upload formats, and uses the appropriate one.
+  void UploadAudioChunk(const std::string& data, FrameType type, bool is_final);
+
   SpeechRecognitionEngineConfig config_;
   scoped_ptr<net::URLFetcher> upstream_fetcher_;
   scoped_ptr<net::URLFetcher> downstream_fetcher_;
   scoped_refptr<net::URLRequestContextGetter> url_context_;
   scoped_ptr<AudioEncoder> encoder_;
+  scoped_ptr<AudioEncoder> preamble_encoder_;
   ChunkedByteBuffer chunked_byte_buffer_;
   size_t previous_response_length_;
   bool got_last_definitive_result_;
   bool is_dispatching_event_;
+  bool use_framed_post_data_;
   FSMState state_;
 
   DISALLOW_COPY_AND_ASSIGN(GoogleStreamingRemoteEngine);

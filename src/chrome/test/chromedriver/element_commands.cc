@@ -77,21 +77,6 @@ Status SendKeysToElement(
   return SendKeysOnWindow(web_view, key_list, true, &session->sticky_modifiers);
 }
 
-Status ExecuteTouchSingleTapAtom(
-    Session* session,
-    WebView* web_view,
-    const std::string& element_id,
-    const base::DictionaryValue& params,
-    scoped_ptr<base::Value>* value) {
-  base::ListValue args;
-  args.Append(CreateElement(element_id));
-  return web_view->CallFunction(
-      session->GetCurrentFrameId(),
-      webdriver::atoms::asString(webdriver::atoms::TOUCH_SINGLE_TAP),
-      args,
-      value);
-}
-
 }  // namespace
 
 Status ExecuteElementCommand(
@@ -202,23 +187,57 @@ Status ExecuteTouchSingleTap(
     const std::string& element_id,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
-  // Fall back to javascript atom for pre-m30 Chrome.
-  if (session->chrome->GetBrowserInfo()->build_no < 1576)
-    return ExecuteTouchSingleTapAtom(
-        session, web_view, element_id, params, value);
-
   WebPoint location;
   Status status = GetElementClickableLocation(
       session, web_view, element_id, &location);
   if (status.IsError())
     return status;
+  if (session->chrome->GetBrowserInfo()->build_no < 2388) {
+    // TODO(samuong): remove this once we stop supporting M44.
+    std::list<TouchEvent> events;
+    events.push_back(
+        TouchEvent(kTouchStart, location.x, location.y));
+    events.push_back(
+        TouchEvent(kTouchEnd, location.x, location.y));
+    return web_view->DispatchTouchEvents(events);
+  }
+  return web_view->SynthesizeTapGesture(location.x, location.y, 1, false);
+}
 
-  std::list<TouchEvent> events;
-  events.push_back(
-      TouchEvent(kTouchStart, location.x, location.y));
-  events.push_back(
-      TouchEvent(kTouchEnd, location.x, location.y));
-  return web_view->DispatchTouchEvents(events);
+Status ExecuteTouchDoubleTap(
+    Session* session,
+    WebView* web_view,
+    const std::string& element_id,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  if (session->chrome->GetBrowserInfo()->build_no < 2388) {
+    // TODO(samuong): remove this once we stop supporting M44.
+    return Status(kUnknownCommand, "Double tap command requires Chrome 44+");
+  }
+  WebPoint location;
+  Status status = GetElementClickableLocation(
+      session, web_view, element_id, &location);
+  if (status.IsError())
+    return status;
+  return web_view->SynthesizeTapGesture(location.x, location.y, 2, false);
+}
+
+Status ExecuteTouchLongPress(
+    Session* session,
+    WebView* web_view,
+    const std::string& element_id,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  if (session->chrome->GetBrowserInfo()->build_no < 2388) {
+    // TODO(samuong): remove this once we stop supporting M44.
+    return Status(kUnknownCommand, "Long press command requires Chrome 44+");
+  }
+  WebPoint location;
+  Status status = GetElementClickableLocation(
+      session, web_view, element_id, &location);
+  if (status.IsError())
+    return status;
+  return web_view->SynthesizeTapGesture(location.x, location.y, 1, true);
 }
 
 Status ExecuteFlick(
@@ -464,9 +483,10 @@ Status ExecuteGetElementLocationOnceScrolledIntoView(
     const std::string& element_id,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
+  WebPoint offset(0, 0);
   WebPoint location;
   Status status = ScrollElementIntoView(
-      session, web_view, element_id, &location);
+      session, web_view, element_id, &offset, &location);
   if (status.IsError())
     return status;
   value->reset(CreateValueFrom(location));

@@ -64,6 +64,8 @@ class DriverTest(unittest.TestCase):
         self.assertEqual(driver.test_to_uri('foo/bar.html'), 'file://%s/foo/bar.html' % port.layout_tests_dir())
         self.assertEqual(driver.test_to_uri('http/tests/foo.html'), 'http://127.0.0.1:8000/foo.html')
         self.assertEqual(driver.test_to_uri('http/tests/https/bar.html'), 'https://127.0.0.1:8443/https/bar.html')
+        self.assertEqual(driver.test_to_uri('http/tests/bar.https.html'), 'https://127.0.0.1:8443/bar.https.html')
+        self.assertEqual(driver.test_to_uri('http/tests/barhttps.html'), 'http://127.0.0.1:8000/barhttps.html')
 
     def test_uri_to_test(self):
         port = self.make_port()
@@ -71,6 +73,7 @@ class DriverTest(unittest.TestCase):
         self.assertEqual(driver.uri_to_test('file://%s/foo/bar.html' % port.layout_tests_dir()), 'foo/bar.html')
         self.assertEqual(driver.uri_to_test('http://127.0.0.1:8000/foo.html'), 'http/tests/foo.html')
         self.assertEqual(driver.uri_to_test('https://127.0.0.1:8443/https/bar.html'), 'http/tests/https/bar.html')
+        self.assertEqual(driver.uri_to_test('https://127.0.0.1:8443/bar.https.html'), 'http/tests/bar.https.html')
 
     def test_read_block(self):
         port = TestWebKitPort()
@@ -128,7 +131,7 @@ class DriverTest(unittest.TestCase):
         port = TestWebKitPort()
         port._config.build_directory = lambda configuration: '/mock-checkout/out/' + configuration
         driver = Driver(port, 0, pixel_tests=True, no_timeout=True)
-        self.assertEqual(driver.cmd_line(True, []), ['/mock-checkout/out/Release/content_shell', '--no-timeout', '--dump-render-tree', '-'])
+        self.assertEqual(driver.cmd_line(True, []), ['/mock-checkout/out/Release/content_shell', '--no-timeout', '--run-layout-test', '-'])
 
     def test_check_for_driver_crash(self):
         port = TestWebKitPort()

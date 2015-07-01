@@ -27,8 +27,6 @@
 #include "core/html/canvas/DataView.h"
 
 #include "bindings/core/v8/ExceptionState.h"
-#include "bindings/core/v8/custom/V8DataViewCustom.h"
-#include "bindings/core/v8/custom/V8TypedArrayCustom.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/CheckedInt.h"
 #include "wtf/CPU.h"
@@ -45,23 +43,14 @@ union Value {
 
 namespace blink {
 
-PassRefPtr<DataView> DataView::create(unsigned length)
-{
-    RefPtr<ArrayBuffer> buffer = ArrayBuffer::create(length, sizeof(uint8_t));
-    if (!buffer.get())
-        return nullptr;
-    return create(buffer, 0, length);
-}
-
 PassRefPtr<DataView> DataView::create(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned byteLength)
 {
-    if (byteOffset > buffer->byteLength())
-        return nullptr;
+    RELEASE_ASSERT(byteOffset <= buffer->byteLength());
     CheckedInt<uint32_t> checkedOffset(byteOffset);
     CheckedInt<uint32_t> checkedLength(byteLength);
     CheckedInt<uint32_t> checkedMax = checkedOffset + checkedLength;
-    if (!checkedMax.isValid() || checkedMax.value() > buffer->byteLength())
-        return nullptr;
+    RELEASE_ASSERT(checkedMax.isValid());
+    RELEASE_ASSERT(checkedMax.value() <= buffer->byteLength());
     return adoptRef(new DataView(buffer, byteOffset, byteLength));
 }
 
@@ -160,16 +149,6 @@ void DataView::setData(unsigned byteOffset, T value, bool littleEndian, Exceptio
     memcpy(static_cast<char*>(m_baseAddress) + byteOffset, tempValue.bytes, sizeof(T));
 }
 
-int8_t DataView::getInt8(unsigned byteOffset, ExceptionState& exceptionState)
-{
-    return getData<int8_t>(byteOffset, false, exceptionState);
-}
-
-uint8_t DataView::getUint8(unsigned byteOffset, ExceptionState& exceptionState)
-{
-    return getData<uint8_t>(byteOffset, false, exceptionState);
-}
-
 int16_t DataView::getInt16(unsigned byteOffset, bool littleEndian, ExceptionState& exceptionState)
 {
     return getData<int16_t>(byteOffset, littleEndian, exceptionState);
@@ -200,16 +179,6 @@ double DataView::getFloat64(unsigned byteOffset, bool littleEndian, ExceptionSta
     return getData<double>(byteOffset, littleEndian, exceptionState);
 }
 
-void DataView::setInt8(unsigned byteOffset, int8_t value, ExceptionState& exceptionState)
-{
-    setData<int8_t>(byteOffset, value, false, exceptionState);
-}
-
-void DataView::setUint8(unsigned byteOffset, uint8_t value, ExceptionState& exceptionState)
-{
-    setData<uint8_t>(byteOffset, value, false, exceptionState);
-}
-
 void DataView::setInt16(unsigned byteOffset, short value, bool littleEndian, ExceptionState& exceptionState)
 {
     setData<int16_t>(byteOffset, value, littleEndian, exceptionState);
@@ -238,11 +207,6 @@ void DataView::setFloat32(unsigned byteOffset, float value, bool littleEndian, E
 void DataView::setFloat64(unsigned byteOffset, double value, bool littleEndian, ExceptionState& exceptionState)
 {
     setData<double>(byteOffset, value, littleEndian, exceptionState);
-}
-
-v8::Handle<v8::Object> DataView::wrap(v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
-{
-    return V8TypedArray<DataView>::wrap(this, creationContext, isolate);
 }
 
 void DataView::neuter()

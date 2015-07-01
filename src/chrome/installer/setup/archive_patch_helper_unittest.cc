@@ -24,12 +24,12 @@ class ArchivePatchHelperTest : public testing::Test {
     data_dir_.clear();
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // Create a temp directory for testing.
     ASSERT_TRUE(test_dir_.CreateUniqueTempDir());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // Clean up test directory manually so we can fail if it leaks.
     ASSERT_TRUE(test_dir_.Delete());
   }

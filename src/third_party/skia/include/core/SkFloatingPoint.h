@@ -32,8 +32,12 @@ static inline float sk_float_pow(float base, float exp) {
 static inline float sk_float_copysign(float x, float y) {
 // c++11 contains a 'float copysign(float, float)' function in <cmath>.
 // clang-cl reports __cplusplus for clang, not the __cplusplus vc++ version _MSC_VER would report.
-#define SK_BUILD_WITH_CLANG_CL (defined(_MSC_VER) && defined(__clang__))
-#if (!SK_BUILD_WITH_CLANG_CL && __cplusplus >= 201103L) || (defined(_MSC_VER) && _MSC_VER >= 1800)
+#if (defined(_MSC_VER) && defined(__clang__))
+#    define SK_BUILD_WITH_CLANG_CL 1
+#else
+#    define SK_BUILD_WITH_CLANG_CL 0
+#endif
+#if (!SK_BUILD_WITH_CLANG_CL && __cplusplus >= 201103L) || (_MSC_VER >= 1800)
     return copysign(x, y);
 
 // Posix has demanded 'float copysignf(float, float)' (from C99) since Issue 6.
@@ -87,6 +91,16 @@ static inline float sk_float_copysign(float x, float y) {
     #define sk_float_log(x)         logf(x)
 #endif
 
+// can't find log2f on android, but maybe that just a tool bug?
+#ifdef SK_BUILD_FOR_ANDROID
+    static inline float sk_float_log2(float x) {
+        const double inv_ln_2 = 1.44269504088896;
+        return (float)(log(x) * inv_ln_2);
+    }
+#else
+    #define sk_float_log2(x)        log2f(x)
+#endif
+
 #ifdef SK_BUILD_FOR_WIN
     #define sk_float_isfinite(x)    _finite(x)
     #define sk_float_isnan(x)       _isnan(x)
@@ -111,6 +125,13 @@ static inline float sk_float_copysign(float x, float y) {
     #define sk_float_round2int(x)   (int)sk_float_floor((x) + 0.5f)
     #define sk_float_ceil2int(x)    (int)sk_float_ceil(x)
 #endif
+
+#define sk_double_floor(x)          floor(x)
+#define sk_double_round(x)          floor((x) + 0.5)
+#define sk_double_ceil(x)           ceil(x)
+#define sk_double_floor2int(x)      (int)floor(x)
+#define sk_double_round2int(x)      (int)floor((x) + 0.5f)
+#define sk_double_ceil2int(x)       (int)ceil(x)
 
 extern const uint32_t gIEEENotANumber;
 extern const uint32_t gIEEEInfinity;

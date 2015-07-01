@@ -34,6 +34,7 @@
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
 #include "core/dom/ScriptLoader.h"
+#include "core/dom/TemplateContentDocumentFragment.h"
 #include "core/dom/Text.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFormElement.h"
@@ -93,16 +94,13 @@ static unsigned textLengthLimitForContainer(const ContainerNode& node)
 
 static inline bool isAllWhitespace(const String& string)
 {
-    return string.isAllSpecialCharacters<isHTMLSpace<UChar> >();
+    return string.isAllSpecialCharacters<isHTMLSpace<UChar>>();
 }
 
 static inline void insert(HTMLConstructionSiteTask& task)
 {
     if (isHTMLTemplateElement(*task.parent))
         task.parent = toHTMLTemplateElement(task.parent.get())->content();
-
-    if (ContainerNode* parent = task.child->parentNode())
-        parent->parserRemoveChild(*task.child);
 
     if (task.nextChild)
         task.parent->parserInsertBefore(task.child.get(), *task.nextChild);
@@ -148,9 +146,6 @@ static inline void executeInsertTextTask(HTMLConstructionSiteTask& task)
 static inline void executeReparentTask(HTMLConstructionSiteTask& task)
 {
     ASSERT(task.operation == HTMLConstructionSiteTask::Reparent);
-
-    if (ContainerNode* parent = task.child->parentNode())
-        parent->parserRemoveChild(*task.child);
 
     task.parent->parserAppendChild(task.child);
 }
@@ -352,8 +347,9 @@ HTMLConstructionSite::~HTMLConstructionSite()
     ASSERT(m_pendingText.isEmpty());
 }
 
-void HTMLConstructionSite::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLConstructionSite)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_document);
     visitor->trace(m_attachmentRoot);
     visitor->trace(m_head);
@@ -362,6 +358,7 @@ void HTMLConstructionSite::trace(Visitor* visitor)
     visitor->trace(m_activeFormattingElements);
     visitor->trace(m_taskQueue);
     visitor->trace(m_pendingText);
+#endif
 }
 
 void HTMLConstructionSite::detach()
@@ -456,76 +453,76 @@ void HTMLConstructionSite::setCompatibilityModeFromDoctype(const String& name, c
 
     // Check for Quirks Mode.
     if (name != "html"
-        || publicId.startsWith("+//Silmaril//dtd html Pro v0r11 19970101//", false)
-        || publicId.startsWith("-//AdvaSoft Ltd//DTD HTML 3.0 asWedit + extensions//", false)
-        || publicId.startsWith("-//AS//DTD HTML 3.0 asWedit + extensions//", false)
-        || publicId.startsWith("-//IETF//DTD HTML 2.0 Level 1//", false)
-        || publicId.startsWith("-//IETF//DTD HTML 2.0 Level 2//", false)
-        || publicId.startsWith("-//IETF//DTD HTML 2.0 Strict Level 1//", false)
-        || publicId.startsWith("-//IETF//DTD HTML 2.0 Strict Level 2//", false)
-        || publicId.startsWith("-//IETF//DTD HTML 2.0 Strict//", false)
-        || publicId.startsWith("-//IETF//DTD HTML 2.0//", false)
-        || publicId.startsWith("-//IETF//DTD HTML 2.1E//", false)
-        || publicId.startsWith("-//IETF//DTD HTML 3.0//", false)
-        || publicId.startsWith("-//IETF//DTD HTML 3.2 Final//", false)
-        || publicId.startsWith("-//IETF//DTD HTML 3.2//", false)
-        || publicId.startsWith("-//IETF//DTD HTML 3//", false)
-        || publicId.startsWith("-//IETF//DTD HTML Level 0//", false)
-        || publicId.startsWith("-//IETF//DTD HTML Level 1//", false)
-        || publicId.startsWith("-//IETF//DTD HTML Level 2//", false)
-        || publicId.startsWith("-//IETF//DTD HTML Level 3//", false)
-        || publicId.startsWith("-//IETF//DTD HTML Strict Level 0//", false)
-        || publicId.startsWith("-//IETF//DTD HTML Strict Level 1//", false)
-        || publicId.startsWith("-//IETF//DTD HTML Strict Level 2//", false)
-        || publicId.startsWith("-//IETF//DTD HTML Strict Level 3//", false)
-        || publicId.startsWith("-//IETF//DTD HTML Strict//", false)
-        || publicId.startsWith("-//IETF//DTD HTML//", false)
-        || publicId.startsWith("-//Metrius//DTD Metrius Presentational//", false)
-        || publicId.startsWith("-//Microsoft//DTD Internet Explorer 2.0 HTML Strict//", false)
-        || publicId.startsWith("-//Microsoft//DTD Internet Explorer 2.0 HTML//", false)
-        || publicId.startsWith("-//Microsoft//DTD Internet Explorer 2.0 Tables//", false)
-        || publicId.startsWith("-//Microsoft//DTD Internet Explorer 3.0 HTML Strict//", false)
-        || publicId.startsWith("-//Microsoft//DTD Internet Explorer 3.0 HTML//", false)
-        || publicId.startsWith("-//Microsoft//DTD Internet Explorer 3.0 Tables//", false)
-        || publicId.startsWith("-//Netscape Comm. Corp.//DTD HTML//", false)
-        || publicId.startsWith("-//Netscape Comm. Corp.//DTD Strict HTML//", false)
-        || publicId.startsWith("-//O'Reilly and Associates//DTD HTML 2.0//", false)
-        || publicId.startsWith("-//O'Reilly and Associates//DTD HTML Extended 1.0//", false)
-        || publicId.startsWith("-//O'Reilly and Associates//DTD HTML Extended Relaxed 1.0//", false)
-        || publicId.startsWith("-//SoftQuad Software//DTD HoTMetaL PRO 6.0::19990601::extensions to HTML 4.0//", false)
-        || publicId.startsWith("-//SoftQuad//DTD HoTMetaL PRO 4.0::19971010::extensions to HTML 4.0//", false)
-        || publicId.startsWith("-//Spyglass//DTD HTML 2.0 Extended//", false)
-        || publicId.startsWith("-//SQ//DTD HTML 2.0 HoTMetaL + extensions//", false)
-        || publicId.startsWith("-//Sun Microsystems Corp.//DTD HotJava HTML//", false)
-        || publicId.startsWith("-//Sun Microsystems Corp.//DTD HotJava Strict HTML//", false)
-        || publicId.startsWith("-//W3C//DTD HTML 3 1995-03-24//", false)
-        || publicId.startsWith("-//W3C//DTD HTML 3.2 Draft//", false)
-        || publicId.startsWith("-//W3C//DTD HTML 3.2 Final//", false)
-        || publicId.startsWith("-//W3C//DTD HTML 3.2//", false)
-        || publicId.startsWith("-//W3C//DTD HTML 3.2S Draft//", false)
-        || publicId.startsWith("-//W3C//DTD HTML 4.0 Frameset//", false)
-        || publicId.startsWith("-//W3C//DTD HTML 4.0 Transitional//", false)
-        || publicId.startsWith("-//W3C//DTD HTML Experimental 19960712//", false)
-        || publicId.startsWith("-//W3C//DTD HTML Experimental 970421//", false)
-        || publicId.startsWith("-//W3C//DTD W3 HTML//", false)
-        || publicId.startsWith("-//W3O//DTD W3 HTML 3.0//", false)
+        || publicId.startsWith("+//Silmaril//dtd html Pro v0r11 19970101//", TextCaseInsensitive)
+        || publicId.startsWith("-//AdvaSoft Ltd//DTD HTML 3.0 asWedit + extensions//", TextCaseInsensitive)
+        || publicId.startsWith("-//AS//DTD HTML 3.0 asWedit + extensions//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML 2.0 Level 1//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML 2.0 Level 2//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML 2.0 Strict Level 1//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML 2.0 Strict Level 2//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML 2.0 Strict//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML 2.0//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML 2.1E//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML 3.0//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML 3.2 Final//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML 3.2//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML 3//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML Level 0//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML Level 1//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML Level 2//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML Level 3//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML Strict Level 0//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML Strict Level 1//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML Strict Level 2//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML Strict Level 3//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML Strict//", TextCaseInsensitive)
+        || publicId.startsWith("-//IETF//DTD HTML//", TextCaseInsensitive)
+        || publicId.startsWith("-//Metrius//DTD Metrius Presentational//", TextCaseInsensitive)
+        || publicId.startsWith("-//Microsoft//DTD Internet Explorer 2.0 HTML Strict//", TextCaseInsensitive)
+        || publicId.startsWith("-//Microsoft//DTD Internet Explorer 2.0 HTML//", TextCaseInsensitive)
+        || publicId.startsWith("-//Microsoft//DTD Internet Explorer 2.0 Tables//", TextCaseInsensitive)
+        || publicId.startsWith("-//Microsoft//DTD Internet Explorer 3.0 HTML Strict//", TextCaseInsensitive)
+        || publicId.startsWith("-//Microsoft//DTD Internet Explorer 3.0 HTML//", TextCaseInsensitive)
+        || publicId.startsWith("-//Microsoft//DTD Internet Explorer 3.0 Tables//", TextCaseInsensitive)
+        || publicId.startsWith("-//Netscape Comm. Corp.//DTD HTML//", TextCaseInsensitive)
+        || publicId.startsWith("-//Netscape Comm. Corp.//DTD Strict HTML//", TextCaseInsensitive)
+        || publicId.startsWith("-//O'Reilly and Associates//DTD HTML 2.0//", TextCaseInsensitive)
+        || publicId.startsWith("-//O'Reilly and Associates//DTD HTML Extended 1.0//", TextCaseInsensitive)
+        || publicId.startsWith("-//O'Reilly and Associates//DTD HTML Extended Relaxed 1.0//", TextCaseInsensitive)
+        || publicId.startsWith("-//SoftQuad Software//DTD HoTMetaL PRO 6.0::19990601::extensions to HTML 4.0//", TextCaseInsensitive)
+        || publicId.startsWith("-//SoftQuad//DTD HoTMetaL PRO 4.0::19971010::extensions to HTML 4.0//", TextCaseInsensitive)
+        || publicId.startsWith("-//Spyglass//DTD HTML 2.0 Extended//", TextCaseInsensitive)
+        || publicId.startsWith("-//SQ//DTD HTML 2.0 HoTMetaL + extensions//", TextCaseInsensitive)
+        || publicId.startsWith("-//Sun Microsystems Corp.//DTD HotJava HTML//", TextCaseInsensitive)
+        || publicId.startsWith("-//Sun Microsystems Corp.//DTD HotJava Strict HTML//", TextCaseInsensitive)
+        || publicId.startsWith("-//W3C//DTD HTML 3 1995-03-24//", TextCaseInsensitive)
+        || publicId.startsWith("-//W3C//DTD HTML 3.2 Draft//", TextCaseInsensitive)
+        || publicId.startsWith("-//W3C//DTD HTML 3.2 Final//", TextCaseInsensitive)
+        || publicId.startsWith("-//W3C//DTD HTML 3.2//", TextCaseInsensitive)
+        || publicId.startsWith("-//W3C//DTD HTML 3.2S Draft//", TextCaseInsensitive)
+        || publicId.startsWith("-//W3C//DTD HTML 4.0 Frameset//", TextCaseInsensitive)
+        || publicId.startsWith("-//W3C//DTD HTML 4.0 Transitional//", TextCaseInsensitive)
+        || publicId.startsWith("-//W3C//DTD HTML Experimental 19960712//", TextCaseInsensitive)
+        || publicId.startsWith("-//W3C//DTD HTML Experimental 970421//", TextCaseInsensitive)
+        || publicId.startsWith("-//W3C//DTD W3 HTML//", TextCaseInsensitive)
+        || publicId.startsWith("-//W3O//DTD W3 HTML 3.0//", TextCaseInsensitive)
         || equalIgnoringCase(publicId, "-//W3O//DTD W3 HTML Strict 3.0//EN//")
-        || publicId.startsWith("-//WebTechs//DTD Mozilla HTML 2.0//", false)
-        || publicId.startsWith("-//WebTechs//DTD Mozilla HTML//", false)
+        || publicId.startsWith("-//WebTechs//DTD Mozilla HTML 2.0//", TextCaseInsensitive)
+        || publicId.startsWith("-//WebTechs//DTD Mozilla HTML//", TextCaseInsensitive)
         || equalIgnoringCase(publicId, "-/W3C/DTD HTML 4.0 Transitional/EN")
         || equalIgnoringCase(publicId, "HTML")
         || equalIgnoringCase(systemId, "http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd")
-        || (systemId.isEmpty() && publicId.startsWith("-//W3C//DTD HTML 4.01 Frameset//", false))
-        || (systemId.isEmpty() && publicId.startsWith("-//W3C//DTD HTML 4.01 Transitional//", false))) {
+        || (systemId.isEmpty() && publicId.startsWith("-//W3C//DTD HTML 4.01 Frameset//", TextCaseInsensitive))
+        || (systemId.isEmpty() && publicId.startsWith("-//W3C//DTD HTML 4.01 Transitional//", TextCaseInsensitive))) {
         setCompatibilityMode(Document::QuirksMode);
         return;
     }
 
     // Check for Limited Quirks Mode.
-    if (publicId.startsWith("-//W3C//DTD XHTML 1.0 Frameset//", false)
-        || publicId.startsWith("-//W3C//DTD XHTML 1.0 Transitional//", false)
-        || (!systemId.isEmpty() && publicId.startsWith("-//W3C//DTD HTML 4.01 Frameset//", false))
-        || (!systemId.isEmpty() && publicId.startsWith("-//W3C//DTD HTML 4.01 Transitional//", false))) {
+    if (publicId.startsWith("-//W3C//DTD XHTML 1.0 Frameset//", TextCaseInsensitive)
+        || publicId.startsWith("-//W3C//DTD XHTML 1.0 Transitional//", TextCaseInsensitive)
+        || (!systemId.isEmpty() && publicId.startsWith("-//W3C//DTD HTML 4.01 Frameset//", TextCaseInsensitive))
+        || (!systemId.isEmpty() && publicId.startsWith("-//W3C//DTD HTML 4.01 Transitional//", TextCaseInsensitive))) {
         setCompatibilityMode(Document::LimitedQuirksMode);
         return;
     }
@@ -826,36 +823,39 @@ bool HTMLConstructionSite::inQuirksMode()
     return m_inQuirksMode;
 }
 
+
+// Adjusts |task| to match the "adjusted insertion location" determined by the foster parenting algorithm,
+// laid out as the substeps of step 2 of https://html.spec.whatwg.org/#appropriate-place-for-inserting-a-node
 void HTMLConstructionSite::findFosterSite(HTMLConstructionSiteTask& task)
 {
-    // When a node is to be foster parented, the last template element with no table element is below it in the stack of open elements is the foster parent element (NOT the template's parent!)
-    HTMLElementStack::ElementRecord* lastTemplateElement = m_openElements.topmost(templateTag.localName());
-    if (lastTemplateElement && !m_openElements.inTableScope(tableTag)) {
-        task.parent = lastTemplateElement->element();
+    // 2.1
+    HTMLElementStack::ElementRecord* lastTemplate = m_openElements.topmost(templateTag.localName());
+
+    // 2.2
+    HTMLElementStack::ElementRecord* lastTable = m_openElements.topmost(tableTag.localName());
+
+    // 2.3
+    if (lastTemplate && (!lastTable || lastTemplate->isAbove(lastTable))) {
+        task.parent = lastTemplate->element();
         return;
     }
 
-    HTMLElementStack::ElementRecord* lastTableElementRecord = m_openElements.topmost(tableTag.localName());
-    if (lastTableElementRecord) {
-        Element* lastTableElement = lastTableElementRecord->element();
-        ContainerNode* parent;
-        if (lastTableElementRecord->next()->stackItem()->hasTagName(templateTag))
-            parent = lastTableElementRecord->next()->element();
-        else
-            parent = lastTableElement->parentNode();
-
-        // When parsing HTML fragments, we skip step 4.2 ("Let root be a new html element with no attributes") for efficiency,
-        // and instead use the DocumentFragment as a root node. So we must treat the root node (DocumentFragment) as if it is a html element here.
-        if (parent && (parent->isElementNode() || (m_isParsingFragment && parent == m_openElements.rootNode()))) {
-            task.parent = parent;
-            task.nextChild = lastTableElement;
-            return;
-        }
-        task.parent = lastTableElementRecord->next()->element();
+    // 2.4
+    if (!lastTable) {
+        // Fragment case
+        task.parent = m_openElements.rootNode(); // DocumentFragment
         return;
     }
-    // Fragment case
-    task.parent = m_openElements.rootNode(); // DocumentFragment
+
+    // 2.5
+    if (ContainerNode* parent = lastTable->element()->parentNode()) {
+        task.parent = parent;
+        task.nextChild = lastTable->element();
+        return;
+    }
+
+    // 2.6, 2.7
+    task.parent = lastTable->next()->element();
 }
 
 bool HTMLConstructionSite::shouldFosterParent() const
@@ -874,7 +874,7 @@ void HTMLConstructionSite::fosterParent(PassRefPtrWillBeRawPtr<Node> node)
     queueTask(task);
 }
 
-void HTMLConstructionSite::PendingText::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLConstructionSite::PendingText)
 {
     visitor->trace(parent);
     visitor->trace(nextChild);

@@ -15,7 +15,7 @@ class Dictionary;
 class ScriptPromise;
 class ScriptState;
 
-class CredentialsContainer FINAL : public GarbageCollected<CredentialsContainer>, public ScriptWrappable {
+class CredentialsContainer final : public GarbageCollected<CredentialsContainer>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static CredentialsContainer* create();
@@ -26,7 +26,7 @@ public:
     ScriptPromise notifyFailedSignIn(ScriptState*, Credential* = 0);
     ScriptPromise notifySignedOut(ScriptState*);
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
 private:
     CredentialsContainer();

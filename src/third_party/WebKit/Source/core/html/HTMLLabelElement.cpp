@@ -40,6 +40,7 @@ using namespace HTMLNames;
 
 inline HTMLLabelElement::HTMLLabelElement(Document& document, HTMLFormElement* form)
     : HTMLElement(labelTag, document)
+    , m_processingClick(false)
 {
     FormAssociatedElement::associateByParser(form);
 }
@@ -50,7 +51,7 @@ PassRefPtrWillBeRawPtr<HTMLLabelElement> HTMLLabelElement::create(Document& docu
     return labelElement.release();
 }
 
-bool HTMLLabelElement::rendererIsFocusable() const
+bool HTMLLabelElement::layoutObjectIsFocusable() const
 {
     HTMLLabelElement* that = const_cast<HTMLLabelElement*>(this);
     return that->isContentEditable();
@@ -63,11 +64,11 @@ LabelableElement* HTMLLabelElement::control() const
         // Search the children and descendants of the label element for a form element.
         // per http://dev.w3.org/html5/spec/Overview.html#the-label-element
         // the form element must be "labelable form-associated element".
-        for (LabelableElement* element = Traversal<LabelableElement>::next(*this, this); element; element = Traversal<LabelableElement>::next(*element, this)) {
-            if (element->supportLabels())
-                return element;
+        for (LabelableElement& element : Traversal<LabelableElement>::descendantsOf(*this)) {
+            if (element.supportLabels())
+                return &element;
         }
-        return 0;
+        return nullptr;
     }
 
     if (Element* element = treeScope().getElementById(controlId)) {
@@ -75,7 +76,7 @@ LabelableElement* HTMLLabelElement::control() const
             return toLabelableElement(element);
     }
 
-    return 0;
+    return nullptr;
 }
 
 HTMLFormElement* HTMLLabelElement::formOwner() const
@@ -128,9 +129,7 @@ bool HTMLLabelElement::isInInteractiveContent(Node* node) const
 
 void HTMLLabelElement::defaultEventHandler(Event* evt)
 {
-    static bool processingClick = false;
-
-    if (evt->type() == EventTypeNames::click && !processingClick) {
+    if (evt->type() == EventTypeNames::click && !m_processingClick) {
         RefPtrWillBeRawPtr<HTMLElement> element = control();
 
         // If we can't find a control or if the control received the click
@@ -161,7 +160,7 @@ void HTMLLabelElement::defaultEventHandler(Event* evt)
             if (LocalFrame* frame = document().frame()) {
                 // Check if there is a selection and click is not on the
                 // selection.
-                if (frame->selection().isRange() && !frame->eventHandler().mouseDownWasSingleClickInSelection())
+                if (!Position::nodeIsUserSelectNone(this) && frame->selection().isRange() && !frame->eventHandler().mouseDownWasSingleClickInSelection())
                     isLabelTextSelected = true;
                 // If selection is there and is single click i.e. text is
                 // selected by dragging over label text, then return.
@@ -174,7 +173,7 @@ void HTMLLabelElement::defaultEventHandler(Event* evt)
             }
         }
 
-        processingClick = true;
+        m_processingClick = true;
 
         document().updateLayoutIgnorePendingStylesheets();
         if (element->isMouseFocusable()) {
@@ -183,13 +182,13 @@ void HTMLLabelElement::defaultEventHandler(Event* evt)
             // In case of double click or triple click, selection will be there,
             // so do not focus the control element.
             if (!isLabelTextSelected)
-                element->focus(true, FocusTypeMouse);
+                element->focus(true, WebFocusTypeMouse);
         }
 
         // Click the corresponding control.
         element->dispatchSimulatedClick(evt);
 
-        processingClick = false;
+        m_processingClick = false;
 
         evt->setDefaultHandled();
     }
@@ -205,7 +204,7 @@ bool HTMLLabelElement::willRespondToMouseClickEvents()
     return HTMLElement::willRespondToMouseClickEvents();
 }
 
-void HTMLLabelElement::focus(bool, FocusType type)
+void HTMLLabelElement::focus(bool, WebFocusType type)
 {
     // to match other browsers, always restore previous selection
     if (HTMLElement* element = control())
@@ -255,6 +254,11 @@ Node::InsertionNotificationRequest HTMLLabelElement::insertedInto(ContainerNode*
         if (scope == treeScope() && scope.shouldCacheLabelsByForAttribute())
             updateLabel(scope, nullAtom, fastGetAttribute(forAttr));
     }
+
+    // Trigger for elements outside of forms.
+    if (!formOwner() && insertionPoint->inDocument())
+        document().didAssociateFormControl(this);
+
     return result;
 }
 
@@ -267,9 +271,10 @@ void HTMLLabelElement::removedFrom(ContainerNode* insertionPoint)
     }
     HTMLElement::removedFrom(insertionPoint);
     FormAssociatedElement::removedFrom(insertionPoint);
+    document().removeFormAssociation(this);
 }
 
-void HTMLLabelElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLLabelElement)
 {
     HTMLElement::trace(visitor);
     FormAssociatedElement::trace(visitor);

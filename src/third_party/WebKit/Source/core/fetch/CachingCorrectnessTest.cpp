@@ -30,13 +30,12 @@
 
 #include "config.h"
 
+#include "core/fetch/FetchContext.h"
 #include "core/fetch/ImageResource.h"
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ResourcePtr.h"
-#include "core/html/HTMLDocument.h"
-#include "core/loader/DocumentLoader.h"
 #include "platform/network/ResourceRequest.h"
 #include "public/platform/Platform.h"
 #include "wtf/OwnPtr.h"
@@ -59,6 +58,22 @@ const char kOneDayBeforeOriginalRequest[] = "Wed, 24 May 1977 18:30:00 GMT";
 const char kOneDayAfterOriginalRequest[] = "Fri, 26 May 1977 18:30:00 GMT";
 
 const unsigned char kAConstUnsignedCharZero = 0;
+
+class MockFetchContext : public FetchContext {
+public:
+    static PassOwnPtrWillBeRawPtr<MockFetchContext> create()
+    {
+        return adoptPtrWillBeNoop(new MockFetchContext);
+    }
+
+    ~MockFetchContext() { }
+
+    bool allowImage(bool imagesEnabled, const KURL&) const override { return true; }
+    bool canRequest(Resource::Type, const ResourceRequest&, const KURL&, const ResourceLoaderOptions&, bool forPreload, FetchRequest::OriginRestriction) const override { return true; }
+
+private:
+    MockFetchContext() { }
+};
 
 class CachingCorrectnessTest : public ::testing::Test {
 protected:
@@ -141,12 +156,7 @@ private:
         // Save the global memory cache to restore it upon teardown.
         m_globalMemoryCache = replaceMemoryCacheForTesting(MemoryCache::create());
 
-        // Create a ResourceFetcher that has a real DocumentLoader and Document, but is not attached to a LocalFrame.
-        const KURL kDocumentURL(ParsedURLString, "http://document.com/");
-        m_documentLoader = DocumentLoader::create(0, ResourceRequest(kDocumentURL), SubstituteData());
-        m_document = HTMLDocument::create();
-        m_fetcher = ResourceFetcher::create(m_documentLoader.get());
-        m_fetcher->setDocument(m_document.get());
+        m_fetcher = ResourceFetcher::create(MockFetchContext::create());
     }
 
     virtual void TearDown()
@@ -163,10 +173,6 @@ private:
     ProxyPlatform m_proxyPlatform;
 
     OwnPtrWillBePersistent<MemoryCache> m_globalMemoryCache;
-
-    RefPtr<DocumentLoader> m_documentLoader;
-
-    RefPtrWillBePersistent<HTMLDocument> m_document;
     RefPtrWillBePersistent<ResourceFetcher> m_fetcher;
 };
 
@@ -395,7 +401,7 @@ TEST_F(CachingCorrectnessTest, FreshWithFreshRedirect)
 
     // Add the redirect to our request.
     ResourceRequest redirectRequest = ResourceRequest(redirectTargetUrl);
-    firstResource->willSendRequest(redirectRequest, fresh301Response);
+    firstResource->willFollowRedirect(redirectRequest, fresh301Response);
 
     // Add the final response to our request.
     ResourceResponse fresh200Response;
@@ -429,7 +435,7 @@ TEST_F(CachingCorrectnessTest, FreshWithStaleRedirect)
 
     // Add the redirect to our request.
     ResourceRequest redirectRequest = ResourceRequest(redirectTargetUrl);
-    firstResource->willSendRequest(redirectRequest, stale301Response);
+    firstResource->willFollowRedirect(redirectRequest, stale301Response);
 
     // Add the final response to our request.
     ResourceResponse fresh200Response;
@@ -481,7 +487,7 @@ TEST_F(CachingCorrectnessTest, 302RedirectNotImplicitlyFresh)
 
     // Add the redirect to our request.
     ResourceRequest redirectRequest = ResourceRequest(redirectTargetUrl);
-    firstResource->willSendRequest(redirectRequest, fresh302Response);
+    firstResource->willFollowRedirect(redirectRequest, fresh302Response);
 
     // Add the final response to our request.
     ResourceResponse fresh200Response;
@@ -516,7 +522,7 @@ TEST_F(CachingCorrectnessTest, 302RedirectExplicitlyFreshMaxAge)
 
     // Add the redirect to our request.
     ResourceRequest redirectRequest = ResourceRequest(redirectTargetUrl);
-    firstResource->willSendRequest(redirectRequest, fresh302Response);
+    firstResource->willFollowRedirect(redirectRequest, fresh302Response);
 
     // Add the final response to our request.
     ResourceResponse fresh200Response;
@@ -551,7 +557,7 @@ TEST_F(CachingCorrectnessTest, 302RedirectExplicitlyFreshExpires)
 
     // Add the redirect to our request.
     ResourceRequest redirectRequest = ResourceRequest(redirectTargetUrl);
-    firstResource->willSendRequest(redirectRequest, fresh302Response);
+    firstResource->willFollowRedirect(redirectRequest, fresh302Response);
 
     // Add the final response to our request.
     ResourceResponse fresh200Response;

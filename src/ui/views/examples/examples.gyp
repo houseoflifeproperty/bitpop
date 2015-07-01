@@ -51,10 +51,10 @@
         'label_example.h',
         'link_example.cc',
         'link_example.h',
-        'message_box_example.cc',
-        'message_box_example.h',
         'menu_example.cc',
         'menu_example.h',
+        'message_box_example.cc',
+        'message_box_example.h',
         'multiline_example.cc',
         'multiline_example.h',
         'progress_bar_example.cc',
@@ -187,6 +187,11 @@
           'dependencies': [
             '../../../sandbox/sandbox.gyp:sandbox',
             '../../../content/content.gyp:content_startup_helper_win',
+          ],
+        }],
+        ['OS=="win" and component!="shared_library" and win_use_allocator_shim==1', {
+          'dependencies': [
+            '<(DEPTH)/base/allocator/allocator.gyp:allocator',
           ],
         }],
       ],

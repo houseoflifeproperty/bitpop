@@ -14,13 +14,12 @@
 
 namespace printing {
 
-// Android subclass of PrintingContext.  The implementation for this header file
-// resides in Chrome for Android repository.  This class communicates with the
+// Android subclass of PrintingContext. This class communicates with the
 // Java side through JNI.
 class PRINTING_EXPORT PrintingContextAndroid : public PrintingContext {
  public:
   explicit PrintingContextAndroid(Delegate* delegate);
-  virtual ~PrintingContextAndroid();
+  ~PrintingContextAndroid() override;
 
   // Called when the page is successfully written to a PDF using the file
   // descriptor specified, or when the printing operation failed.
@@ -30,23 +29,27 @@ class PRINTING_EXPORT PrintingContextAndroid : public PrintingContext {
   // printing operation is canceled.
   void AskUserForSettingsReply(JNIEnv* env, jobject obj, jboolean success);
 
+  // Called from Java, when a printing process initiated by a script finishes.
+  void ShowSystemDialogDone(JNIEnv* env, jobject obj);
+
   // PrintingContext implementation.
-  virtual void AskUserForSettings(
-      int max_pages,
-      bool has_selection,
-      const PrintSettingsCallback& callback) OVERRIDE;
-  virtual Result UseDefaultSettings() OVERRIDE;
-  virtual gfx::Size GetPdfPaperSizeDeviceUnits() OVERRIDE;
-  virtual Result UpdatePrinterSettings(bool external_preview,
-                                       bool show_system_dialog) OVERRIDE;
-  virtual Result InitWithSettings(const PrintSettings& settings) OVERRIDE;
-  virtual Result NewDocument(const base::string16& document_name) OVERRIDE;
-  virtual Result NewPage() OVERRIDE;
-  virtual Result PageDone() OVERRIDE;
-  virtual Result DocumentDone() OVERRIDE;
-  virtual void Cancel() OVERRIDE;
-  virtual void ReleaseContext() OVERRIDE;
-  virtual gfx::NativeDrawingContext context() const OVERRIDE;
+  void AskUserForSettings(int max_pages,
+                          bool has_selection,
+                          bool is_scripted,
+                          const PrintSettingsCallback& callback) override;
+  Result UseDefaultSettings() override;
+  gfx::Size GetPdfPaperSizeDeviceUnits() override;
+  Result UpdatePrinterSettings(bool external_preview,
+                               bool show_system_dialog,
+                               int page_count) override;
+  Result InitWithSettings(const PrintSettings& settings) override;
+  Result NewDocument(const base::string16& document_name) override;
+  Result NewPage() override;
+  Result PageDone() override;
+  Result DocumentDone() override;
+  void Cancel() override;
+  void ReleaseContext() override;
+  gfx::NativeDrawingContext context() const override;
 
   // Registers JNI bindings for RegisterContext.
   static bool RegisterPrintingContext(JNIEnv* env);

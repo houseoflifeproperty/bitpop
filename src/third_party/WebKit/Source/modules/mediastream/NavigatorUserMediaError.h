@@ -30,7 +30,7 @@
 
 namespace blink {
 
-class NavigatorUserMediaError FINAL : public GarbageCollectedFinalized<NavigatorUserMediaError>, public ScriptWrappable {
+class NavigatorUserMediaError final : public GarbageCollectedFinalized<NavigatorUserMediaError>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     enum Name {
@@ -48,7 +48,7 @@ public:
     const String& message() const { return m_message; }
     const String& constraintName() const { return m_constraintName; }
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     NavigatorUserMediaError(const String& name, const String& message, const String& constraintName)

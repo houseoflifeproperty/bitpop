@@ -38,6 +38,7 @@
 #include "bindings/core/v8/V8Node.h"
 #include "bindings/core/v8/V8Window.h"
 #include "core/HTMLNames.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLAllCollection.h"
 #include "core/html/HTMLCollection.h"
@@ -70,7 +71,7 @@ void V8HTMLDocument::openMethodCustom(const v8::FunctionCallbackInfo<v8::Value>&
                 return;
             // If the open property is not a function throw a type error.
             if (!function->IsFunction()) {
-                V8ThrowException::throwTypeError("open is not a function", info.GetIsolate());
+                V8ThrowException::throwTypeError(info.GetIsolate(), "open is not a function");
                 return;
             }
             // Wrap up the arguments and call the function.

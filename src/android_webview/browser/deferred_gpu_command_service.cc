@@ -6,9 +6,9 @@
 
 #include "android_webview/browser/gl_view_renderer_manager.h"
 #include "android_webview/browser/shared_renderer_state.h"
-#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/synchronization/lock.h"
+#include "base/trace_event/trace_event.h"
 #include "content/public/browser/android/synchronous_compositor.h"
 #include "gpu/command_buffer/service/shader_translator_cache.h"
 
@@ -30,14 +30,14 @@ ScopedAllowGL::ScopedAllowGL() {
   DCHECK(!allow_gl.Get().Get());
   allow_gl.Get().Set(true);
 
-  if (g_service.Get())
+  if (g_service.Get().get())
     g_service.Get()->RunTasks();
 }
 
 ScopedAllowGL::~ScopedAllowGL() {
   allow_gl.Get().Set(false);
 
-  DeferredGpuCommandService* service = g_service.Get();
+  DeferredGpuCommandService* service = g_service.Get().get();
   if (service) {
     service->RunTasks();
     if (service->IdleQueueSize()) {
@@ -48,7 +48,7 @@ ScopedAllowGL::~ScopedAllowGL() {
 
 // static
 void DeferredGpuCommandService::SetInstance() {
-  if (!g_service.Get()) {
+  if (!g_service.Get().get()) {
     g_service.Get() = new DeferredGpuCommandService;
     content::SynchronousCompositor::SetGpuService(g_service.Get());
   }
@@ -152,6 +152,7 @@ DeferredGpuCommandService::shader_translator_cache() {
 }
 
 void DeferredGpuCommandService::RunTasks() {
+  TRACE_EVENT0("android_webview", "DeferredGpuCommandService::RunTasks");
   bool has_more_tasks;
   {
     base::AutoLock lock(tasks_lock_);

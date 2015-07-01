@@ -6,15 +6,14 @@
 
 import logging
 import re
-import subprocess
 
-from telemetry import decorators
+from telemetry.core.backends.chrome import ios_browser_backend
+from telemetry.core.backends.chrome_inspector import inspector_backend
 from telemetry.core import browser
 from telemetry.core import platform
-from telemetry.core import possible_browser
-from telemetry.core.backends.chrome import inspector_backend
-from telemetry.core.backends.chrome import ios_browser_backend
+from telemetry.core.platform import ios_device
 from telemetry.core.platform import ios_platform_backend
+from telemetry.core import possible_browser
 
 
 # Key matches output from ios-webkit-debug-proxy and the value is a readable
@@ -27,20 +26,15 @@ IOS_WEBKIT_DEBUG_PROXY = 'ios_webkit_debug_proxy'
 class PossibleIOSBrowser(possible_browser.PossibleBrowser):
 
   """A running iOS browser instance."""
-  def __init__(self, browser_type, finder_options):
-    super(PossibleIOSBrowser, self).__init__(browser_type, 'ios',
-        finder_options, True)
+  def __init__(self, browser_type, _):
+    super(PossibleIOSBrowser, self).__init__(browser_type, 'ios', True)
 
   # TODO(baxley): Implement the following methods for iOS.
-  def Create(self):
-    backend = ios_browser_backend.IosBrowserBackend(
-        self.finder_options.browser_options)
-    return browser.Browser(backend,
-                           self._platform_backend,
-                           self._archive_path,
-                           self._append_to_existing_wpr,
-                           self._make_javascript_deterministic,
-                           self._credentials_path)
+  def Create(self, finder_options):
+    browser_backend = ios_browser_backend.IosBrowserBackend(
+        self._platform_backend, finder_options.browser_options)
+    return browser.Browser(
+        browser_backend, self._platform_backend, self._credentials_path)
 
   def SupportsOptions(self, finder_options):
     #TODO(baxley): Implement me.
@@ -71,28 +65,19 @@ def FindAllBrowserTypes(_):
   return IOS_BROWSERS.values()
 
 
-@decorators.Cache
-def _IsIosDeviceAttached():
-  devices = subprocess.check_output('system_profiler SPUSBDataType', shell=True)
-  for line in devices.split('\n'):
-    if line and re.match('\s*(iPod|iPhone|iPad):', line):
-      return True
-  return False
-
-
-def FindAllAvailableBrowsers(finder_options):
+def FindAllAvailableBrowsers(finder_options, device):
   """Find all running iOS browsers on connected devices."""
-  if not CanFindAvailableBrowsers():
+  if not isinstance(device, ios_device.IOSDevice):
     return []
 
-  if not _IsIosDeviceAttached():
+  if not CanFindAvailableBrowsers():
     return []
 
   options = finder_options.browser_options
 
   options.browser_type = 'ios-chrome'
-  backend = ios_browser_backend.IosBrowserBackend(options)
   host = platform.GetHostPlatform()
+  backend = ios_browser_backend.IosBrowserBackend(host, options)
   # TODO(baxley): Use idevice to wake up device or log debug statement.
   if not host.IsApplicationRunning(IOS_WEBKIT_DEBUG_PROXY):
     host.LaunchApplication(IOS_WEBKIT_DEBUG_PROXY)
@@ -108,13 +93,17 @@ def FindAllAvailableBrowsers(finder_options):
   debug_urls = backend.GetWebSocketDebuggerUrls(device_urls)
 
   # Get the userAgent for each UIWebView to find the browsers.
-  browser_pattern = ('\)\s(%s)\/(\d+[\.\d]*)\sMobile'
+  browser_pattern = (r'\)\s(%s)\/(\d+[\.\d]*)\sMobile'
                      % '|'.join(IOS_BROWSERS.keys()))
   browser_types = set()
   for url in debug_urls:
-    context = {'webSocketDebuggerUrl':url , 'id':1}
-    inspector = inspector_backend.InspectorBackend(backend, context)
-    res = inspector.EvaluateJavaScript("navigator.userAgent")
+    context = {'webSocketDebuggerUrl': url, 'id': 1}
+    try:
+      inspector = inspector_backend.InspectorBackend(
+          backend.app, backend.devtools_client, context)
+      res = inspector.EvaluateJavaScript("navigator.userAgent")
+    finally:
+      inspector.Disconnect()
     match_browsers = re.search(browser_pattern, res)
     if match_browsers:
       browser_types.add(match_browsers.group(1))

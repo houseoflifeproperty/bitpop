@@ -67,13 +67,11 @@ class NudgeTrackerTest : public ::testing::Test {
   scoped_ptr<InvalidationInterface> BuildInvalidation(
       int64 version,
       const std::string& payload) {
-    return MockInvalidation::Build(version, payload)
-        .PassAs<InvalidationInterface>();
+    return MockInvalidation::Build(version, payload);
   }
 
   static scoped_ptr<InvalidationInterface> BuildUnknownVersionInvalidation() {
-    return MockInvalidation::BuildUnknownVersion()
-        .PassAs<InvalidationInterface>();
+    return MockInvalidation::BuildUnknownVersion();
   }
 
  protected:
@@ -367,6 +365,12 @@ TEST_F(NudgeTrackerTest, IsSyncRequired) {
 
   // Initial sync request.
   nudge_tracker_.RecordInitialSyncRequired(BOOKMARKS);
+  EXPECT_TRUE(nudge_tracker_.IsSyncRequired());
+  nudge_tracker_.RecordSuccessfulSyncCycle();
+  EXPECT_FALSE(nudge_tracker_.IsSyncRequired());
+
+  // Sync request for resolve conflict.
+  nudge_tracker_.RecordCommitConflict(BOOKMARKS);
   EXPECT_TRUE(nudge_tracker_.IsSyncRequired());
   nudge_tracker_.RecordSuccessfulSyncCycle();
   EXPECT_FALSE(nudge_tracker_.IsSyncRequired());
@@ -830,8 +834,7 @@ class NudgeTrackerAckTrackingTest : public NudgeTrackerTest {
     int id = inv->GetTrackingId();
 
     // Send it to the NudgeTracker.
-    nudge_tracker_.RecordRemoteInvalidation(
-        type, inv.PassAs<InvalidationInterface>());
+    nudge_tracker_.RecordRemoteInvalidation(type, inv.Pass());
 
     // Return its ID to the test framework for use in assertions.
     return id;
@@ -844,8 +847,7 @@ class NudgeTrackerAckTrackingTest : public NudgeTrackerTest {
     int id = inv->GetTrackingId();
 
     // Send it to the NudgeTracker.
-    nudge_tracker_.RecordRemoteInvalidation(
-        type, inv.PassAs<InvalidationInterface>());
+    nudge_tracker_.RecordRemoteInvalidation(type, inv.Pass());
 
     // Return its ID to the test framework for use in assertions.
     return id;

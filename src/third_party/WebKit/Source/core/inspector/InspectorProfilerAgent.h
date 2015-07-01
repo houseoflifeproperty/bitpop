@@ -44,34 +44,28 @@ class ExecutionContext;
 class InjectedScriptManager;
 class InspectorFrontend;
 class InspectorOverlay;
-class InstrumentingAgents;
-class ScriptState;
-class ScriptCallStack;
-class ScriptProfile;
 
 
 typedef String ErrorString;
 
-class InspectorProfilerAgent FINAL : public InspectorBaseAgent<InspectorProfilerAgent>, public InspectorBackendDispatcher::ProfilerCommandHandler {
+class InspectorProfilerAgent final : public InspectorBaseAgent<InspectorProfilerAgent, InspectorFrontend::Profiler>, public InspectorBackendDispatcher::ProfilerCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorProfilerAgent);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InspectorProfilerAgent);
 public:
     static PassOwnPtrWillBeRawPtr<InspectorProfilerAgent> create(InjectedScriptManager*, InspectorOverlay*);
     virtual ~InspectorProfilerAgent();
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
     void consoleProfile(ExecutionContext*, const String& title);
     void consoleProfileEnd(const String& title);
 
-    virtual void enable(ErrorString*) OVERRIDE;
-    virtual void disable(ErrorString*) OVERRIDE;
-    virtual void setSamplingInterval(ErrorString*, int) OVERRIDE;
-    virtual void start(ErrorString*) OVERRIDE;
-    virtual void stop(ErrorString*, RefPtr<TypeBuilder::Profiler::CPUProfile>&) OVERRIDE;
+    void enable(ErrorString*) override;
+    void setSamplingInterval(ErrorString*, int) override;
+    void start(ErrorString*) override;
+    void stop(ErrorString*, RefPtr<TypeBuilder::Profiler::CPUProfile>&) override;
 
-    virtual void setFrontend(InspectorFrontend*) OVERRIDE;
-    virtual void clearFrontend() OVERRIDE;
-    virtual void restore() OVERRIDE;
+    void disable(ErrorString*) override;
+    void restore() override;
 
     void willProcessTask();
     void didProcessTask();
@@ -86,7 +80,6 @@ private:
     String nextProfileId();
 
     RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
-    InspectorFrontend::Profiler* m_frontend;
     bool m_recordingCPUProfile;
     class ProfileDescriptor;
     Vector<ProfileDescriptor> m_startedProfiles;
@@ -95,7 +88,7 @@ private:
     typedef HashMap<String, double> ProfileNameIdleTimeMap;
     ProfileNameIdleTimeMap* m_profileNameIdleTimeMap;
     double m_idleStartTime;
-    InspectorOverlay* m_overlay;
+    RawPtrWillBeMember<InspectorOverlay> m_overlay;
 
     void idleStarted();
     void idleFinished();

@@ -14,7 +14,10 @@
 
 #define SK_EventDelayInval "\xd" "n" "\xa" "l"
 
-SkWindow::SkWindow() : fFocusView(NULL) {
+SkWindow::SkWindow()
+    : fSurfaceProps(SkSurfaceProps::kLegacyFontHost_InitType)
+    , fFocusView(NULL)
+{
     fClicks.reset();
     fWaitingOnInval = false;
 
@@ -34,7 +37,7 @@ SkWindow::~SkWindow() {
 
 SkSurface* SkWindow::createSurface() {
     const SkBitmap& bm = this->getBitmap();
-    return SkSurface::NewRasterDirect(bm.info(), bm.getPixels(), bm.rowBytes());
+    return SkSurface::NewRasterDirect(bm.info(), bm.getPixels(), bm.rowBytes(), &fSurfaceProps);
 }
 
 void SkWindow::setMatrix(const SkMatrix& matrix) {
@@ -338,3 +341,26 @@ bool SkWindow::onDispatchClick(int x, int y, Click::State state,
     }
     return handled;
 }
+
+#if SK_SUPPORT_GPU
+
+#include "gl/GrGLInterface.h"
+#include "gl/GrGLUtil.h"
+#include "SkGr.h"
+
+GrRenderTarget* SkWindow::renderTarget(const AttachmentInfo& attachmentInfo,
+        const GrGLInterface* interface, GrContext* grContext) {
+    GrBackendRenderTargetDesc desc;
+    desc.fWidth = SkScalarRoundToInt(this->width());
+    desc.fHeight = SkScalarRoundToInt(this->height());
+    desc.fConfig = kSkia8888_GrPixelConfig;
+    desc.fOrigin = kBottomLeft_GrSurfaceOrigin;
+    desc.fSampleCnt = attachmentInfo.fSampleCount;
+    desc.fStencilBits = attachmentInfo.fStencilBits;
+    GrGLint buffer;
+    GR_GL_GetIntegerv(interface, GR_GL_FRAMEBUFFER_BINDING, &buffer);
+    desc.fRenderTargetHandle = buffer;
+    return grContext->textureProvider()->wrapBackendRenderTarget(desc);
+}
+
+#endif

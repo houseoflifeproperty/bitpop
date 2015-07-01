@@ -15,7 +15,7 @@
 #include "net/base/io_buffer.h"
 #include "net/base/mime_sniffer.h"
 #include "net/base/net_errors.h"
-#include "storage/common/blob/shareable_file_reference.h"
+#include "storage/browser/blob/shareable_file_reference.h"
 
 using storage::ShareableFileReference;
 
@@ -38,7 +38,7 @@ class DependentIOBuffer : public net::WrappedIOBuffer {
         backing_(backing) {
   }
  private:
-  virtual ~DependentIOBuffer() {}
+  ~DependentIOBuffer() override {}
 
   scoped_refptr<net::IOBuffer> backing_;
 };

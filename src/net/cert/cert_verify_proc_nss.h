@@ -17,16 +17,18 @@ class NET_EXPORT_PRIVATE CertVerifyProcNSS : public CertVerifyProc {
  public:
   CertVerifyProcNSS();
 
-  virtual bool SupportsAdditionalTrustAnchors() const OVERRIDE;
+  bool SupportsAdditionalTrustAnchors() const override;
+  bool SupportsOCSPStapling() const override;
 
  protected:
-  virtual ~CertVerifyProcNSS();
+  ~CertVerifyProcNSS() override;
 
   // Like VerifyInternal, but adds a |chain_verify_callback| to override trust
   // decisions. See the documentation for CERTChainVerifyCallback and
   // CERTChainVerifyCallbackFunc in NSS's lib/certdb/certt.h.
   int VerifyInternalImpl(X509Certificate* cert,
                          const std::string& hostname,
+                         const std::string& ocsp_response,
                          int flags,
                          CRLSet* crl_set,
                          const CertificateList& additional_trust_anchors,
@@ -34,12 +36,24 @@ class NET_EXPORT_PRIVATE CertVerifyProcNSS : public CertVerifyProc {
                          CertVerifyResult* verify_result);
 
  private:
-  virtual int VerifyInternal(X509Certificate* cert,
-                             const std::string& hostname,
-                             int flags,
-                             CRLSet* crl_set,
-                             const CertificateList& additional_trust_anchors,
-                             CertVerifyResult* verify_result) OVERRIDE;
+  int VerifyInternal(X509Certificate* cert,
+                     const std::string& hostname,
+                     const std::string& ocsp_response,
+                     int flags,
+                     CRLSet* crl_set,
+                     const CertificateList& additional_trust_anchors,
+                     CertVerifyResult* verify_result) override;
+
+#if defined(USE_NSS_CERTS)
+  using CacheOCSPResponseFromSideChannelFunction =
+      SECStatus (*)(CERTCertDBHandle* handle,
+                    CERTCertificate* cert,
+                    PRTime time,
+                    SECItem* encodedResponse,
+                    void* pwArg);
+  const CacheOCSPResponseFromSideChannelFunction
+      cache_ocsp_response_from_side_channel_;
+#endif
 };
 
 }  // namespace net

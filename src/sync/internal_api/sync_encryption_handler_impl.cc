@@ -174,7 +174,8 @@ bool UnpackKeystoreBootstrapToken(
                                 &decrypted_keystore_bootstrap)) {
     return false;
   }
-  JSONStringValueSerializer json(&decrypted_keystore_bootstrap);
+
+  JSONStringValueDeserializer json(decrypted_keystore_bootstrap);
   scoped_ptr<base::Value> deserialized_keystore_keys(
       json.Deserialize(NULL, NULL));
   if (!deserialized_keystore_keys)
@@ -254,6 +255,10 @@ void SyncEncryptionHandlerImpl::Init() {
                              trans.GetWrappedTrans())) {
     WriteEncryptionStateToNigori(&trans);
   }
+
+  UMA_HISTOGRAM_ENUMERATION("Sync.PassphraseType",
+                            GetPassphraseType(),
+                            PASSPHRASE_TYPE_SIZE);
 
   bool has_pending_keys = UnlockVault(
       trans.GetWrappedTrans()).cryptographer.has_pending_keys();
@@ -828,10 +833,8 @@ void SyncEncryptionHandlerImpl::ReEncryptEverything(
     int64 child_id = passwords_root.GetFirstChildId();
     while (child_id != kInvalidId) {
       WriteNode child(trans);
-      if (child.InitByIdLookup(child_id) != BaseNode::INIT_OK) {
-        NOTREACHED();
-        return;
-      }
+      if (child.InitByIdLookup(child_id) != BaseNode::INIT_OK)
+        break;  // Possible if we failed to decrypt the data for some reason.
       child.SetPasswordSpecifics(child.GetPasswordSpecifics());
       child_id = child.GetSuccessorId();
     }

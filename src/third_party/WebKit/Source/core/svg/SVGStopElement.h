@@ -24,10 +24,11 @@
 #include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGElement.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
-class SVGStopElement FINAL : public SVGElement {
+class SVGStopElement final : public SVGElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGStopElement);
@@ -36,17 +37,17 @@ public:
 
     SVGAnimatedNumber* offset() { return m_offset.get(); }
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
     explicit SVGStopElement(Document&);
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
 
-    RefPtr<SVGAnimatedNumber> m_offset;
+    RefPtrWillBeMember<SVGAnimatedNumber> m_offset;
 };
 
 } // namespace blink

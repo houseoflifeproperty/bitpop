@@ -16,6 +16,7 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/metrics/histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/sequenced_task_runner.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
@@ -23,6 +24,7 @@
 #include "base/task_runner_util.h"
 #include "base/time/time.h"
 #include "net/base/net_util.h"
+#include "storage/browser/quota/client_usage_tracker.h"
 #include "storage/browser/quota/quota_database.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/browser/quota/quota_temporary_storage_evictor.h"
@@ -334,7 +336,7 @@ class UsageAndQuotaCallbackDispatcher
         usage_and_quota_(-1, -1, -1, -1),
         waiting_callbacks_(1) {}
 
-  virtual ~UsageAndQuotaCallbackDispatcher() {}
+  ~UsageAndQuotaCallbackDispatcher() override {}
 
   void WaitForResults(const QuotaManager::UsageAndQuotaCallback& callback) {
     callback_ = callback;
@@ -420,19 +422,19 @@ class UsageAndQuotaCallbackDispatcher
     CheckCompleted();
   }
 
-  virtual void Run() OVERRIDE {
+  void Run() override {
     // We initialize waiting_callbacks to 1 so that we won't run
     // the completion callback until here even some of the callbacks
     // are dispatched synchronously.
     CheckCompleted();
   }
 
-  virtual void Aborted() OVERRIDE {
+  void Aborted() override {
     callback_.Run(kQuotaErrorAbort, UsageAndQuota());
     DeleteSoon();
   }
 
-  virtual void Completed() OVERRIDE {
+  void Completed() override {
     DCHECK(!has_usage_ || usage_and_quota_.usage >= 0);
     DCHECK(!has_global_limited_usage_ ||
            usage_and_quota_.global_limited_usage >= 0);
@@ -474,7 +476,7 @@ class QuotaManager::GetUsageInfoTask : public QuotaTask {
   }
 
  protected:
-  virtual void Run() OVERRIDE {
+  void Run() override {
     remaining_trackers_ = 3;
     // This will populate cached hosts and usage info.
     manager()->GetUsageTracker(kStorageTypeTemporary)->GetGlobalUsage(
@@ -491,12 +493,12 @@ class QuotaManager::GetUsageInfoTask : public QuotaTask {
                    kStorageTypeSyncable));
   }
 
-  virtual void Completed() OVERRIDE {
+  void Completed() override {
     callback_.Run(entries_);
     DeleteSoon();
   }
 
-  virtual void Aborted() OVERRIDE {
+  void Aborted() override {
     callback_.Run(UsageInfoEntries());
     DeleteSoon();
   }
@@ -549,7 +551,7 @@ class QuotaManager::OriginDataDeleter : public QuotaTask {
         weak_factory_(this) {}
 
  protected:
-  virtual void Run() OVERRIDE {
+  void Run() override {
     error_count_ = 0;
     remaining_clients_ = manager()->clients_.size();
     for (QuotaClientList::iterator iter = manager()->clients_.begin();
@@ -567,7 +569,7 @@ class QuotaManager::OriginDataDeleter : public QuotaTask {
     }
   }
 
-  virtual void Completed() OVERRIDE {
+  void Completed() override {
     if (error_count_ == 0) {
       // Only remove the entire origin if we didn't skip any client types.
       if (skipped_clients_ == 0)
@@ -579,7 +581,7 @@ class QuotaManager::OriginDataDeleter : public QuotaTask {
     DeleteSoon();
   }
 
-  virtual void Aborted() OVERRIDE {
+  void Aborted() override {
     callback_.Run(kQuotaErrorAbort);
     DeleteSoon();
   }
@@ -629,7 +631,7 @@ class QuotaManager::HostDataDeleter : public QuotaTask {
         weak_factory_(this) {}
 
  protected:
-  virtual void Run() OVERRIDE {
+  void Run() override {
     error_count_ = 0;
     remaining_clients_ = manager()->clients_.size();
     for (QuotaClientList::iterator iter = manager()->clients_.begin();
@@ -641,7 +643,7 @@ class QuotaManager::HostDataDeleter : public QuotaTask {
     }
   }
 
-  virtual void Completed() OVERRIDE {
+  void Completed() override {
     if (error_count_ == 0) {
       callback_.Run(kQuotaStatusOk);
     } else {
@@ -650,7 +652,7 @@ class QuotaManager::HostDataDeleter : public QuotaTask {
     DeleteSoon();
   }
 
-  virtual void Aborted() OVERRIDE {
+  void Aborted() override {
     callback_.Run(kQuotaErrorAbort);
     DeleteSoon();
   }
@@ -829,6 +831,10 @@ void QuotaManager::GetUsageAndQuotaForWebApps(
     const GURL& origin,
     StorageType type,
     const GetUsageAndQuotaCallback& callback) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/477117 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "477117 QuotaManager::GetUsageAndQuotaForWebApps"));
   if (type != kStorageTypeTemporary &&
       type != kStorageTypePersistent &&
       type != kStorageTypeSyncable) {
@@ -1530,8 +1536,7 @@ void QuotaManager::DidGetPersistentHostQuota(const std::string& host,
                                              const int64* quota,
                                              bool success) {
   DidDatabaseWork(success);
-  persistent_host_quota_callbacks_.Run(
-      host, MakeTuple(kQuotaStatusOk, *quota));
+  persistent_host_quota_callbacks_.Run(host, kQuotaStatusOk, *quota);
 }
 
 void QuotaManager::DidSetPersistentHostQuota(const std::string& host,
@@ -1555,7 +1560,7 @@ void QuotaManager::DidInitialize(int64* temporary_quota_override,
                              kReportHistogramInterval),
                          this, &QuotaManager::ReportHistogram);
 
-  db_initialization_callbacks_.Run(MakeTuple());
+  db_initialization_callbacks_.Run();
   GetTemporaryGlobalQuota(
       base::Bind(&QuotaManager::DidGetInitialTemporaryGlobalQuota,
                  weak_factory_.GetWeakPtr()));
@@ -1599,7 +1604,7 @@ void QuotaManager::DidInitializeTemporaryOriginsInfo(bool success) {
 }
 
 void QuotaManager::DidGetAvailableSpace(int64 space) {
-  available_space_callbacks_.Run(MakeTuple(kQuotaStatusOk, space));
+  available_space_callbacks_.Run(kQuotaStatusOk, space);
 }
 
 void QuotaManager::DidDatabaseWork(bool success) {

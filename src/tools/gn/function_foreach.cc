@@ -9,11 +9,6 @@
 
 namespace functions {
 
-namespace {
-
-
-}  // namespace
-
 const char kForEach[] = "foreach";
 const char kForEach_HelpShort[] =
     "foreach: Iterate over a list.";
@@ -46,6 +41,7 @@ const char kForEach_Help[] =
     "  a\n"
     "  b\n"
     "  c\n";
+
 Value RunForEach(Scope* scope,
                  const FunctionCallNode* function,
                  const ListNode* args_list,
@@ -67,7 +63,7 @@ Value RunForEach(Scope* scope,
 
   // Extract the list, avoid a copy if it's an identifier (common case).
   Value value_storage_for_exec;  // Backing for list_value when we need to exec.
-  const Value* list_value = NULL;
+  const Value* list_value = nullptr;
   const IdentifierNode* list_identifier = args_vector[1]->AsIdentifier();
   if (list_identifier) {
     list_value = scope->GetValue(list_identifier->value().value(), true);
@@ -101,9 +97,9 @@ Value RunForEach(Scope* scope,
   if (old_loop_value_ptr)
     old_loop_value = *old_loop_value_ptr;
 
-  for (size_t i = 0; i < list.size(); i++) {
-    scope->SetValue(loop_var, list[i], function);
-    block->ExecuteBlockInScope(scope, err);
+  for (const auto& cur : list) {
+    scope->SetValue(loop_var, cur, function);
+    block->Execute(scope, err);
     if (err->has_error())
       return Value();
   }

@@ -18,11 +18,10 @@ TEST(ResourcesUtil, SpotCheckIds) {
     int id;
   } kCases[] = {
     // IDRs from chrome/app/theme/theme_resources.grd should be valid.
-    {"IDR_BACK", IDR_BACK},
-    {"IDR_STOP", IDR_STOP},
+    {"IDR_INFOBAR_COOKIE", IDR_INFOBAR_COOKIE},
+    {"IDR_PAGEINFO_BAD", IDR_PAGEINFO_BAD},
     // IDRs from ui/resources/ui_resources.grd should be valid.
     {"IDR_CHECKMARK", IDR_CHECKMARK},
-    {"IDR_THROBBER", IDR_THROBBER},
 #if defined(OS_CHROMEOS)
     // Check IDRs from ui/chromeos/resources/ui_chromeos_resources.grd.
     {"IDR_LOGIN_DEFAULT_USER", IDR_LOGIN_DEFAULT_USER},
@@ -32,6 +31,6 @@ TEST(ResourcesUtil, SpotCheckIds) {
     {"backstar", -1},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kCases); ++i)
+  for (size_t i = 0; i < arraysize(kCases); ++i)
     EXPECT_EQ(kCases[i].id, ResourcesUtil::GetThemeResourceId(kCases[i].name));
 }

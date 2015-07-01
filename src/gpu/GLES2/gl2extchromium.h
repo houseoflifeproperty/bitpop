@@ -103,45 +103,56 @@ typedef GLboolean (GL_APIENTRY PFNGLUNMAPBUFFERCHROMIUM) (GLuint target);
 #endif  /* GL_CHROMIUM_pixel_transfer_buffer_object */
 
 /* GL_CHROMIUM_image */
-#ifndef GL_CHROMIUM_map_image
-#define GL_CHROMIUM_map_image 1
+#ifndef GL_CHROMIUM_image
+#define GL_CHROMIUM_image 1
 
-#ifndef GL_IMAGE_ROWBYTES_CHROMIUM
-#define GL_IMAGE_ROWBYTES_CHROMIUM 0x78F0
-#endif
-
-#ifndef GL_IMAGE_MAP_CHROMIUM
-#define GL_IMAGE_MAP_CHROMIUM 0x78F1
-#endif
-
-#ifndef GL_IMAGE_SCANOUT_CHROMIUM
-#define GL_IMAGE_SCANOUT_CHROMIUM 0x78F2
-#endif
+typedef struct _ClientBuffer* ClientBuffer;
 
 #ifdef GL_GLEXT_PROTOTYPES
-GL_APICALL GLuint GL_APIENTRY glCreateImageCHROMIUM(GLsizei width,
+GL_APICALL GLuint GL_APIENTRY glCreateImageCHROMIUM(ClientBuffer buffer,
+                                                    GLsizei width,
                                                     GLsizei height,
-                                                    GLenum internalformat,
-                                                    GLenum usage);
+                                                    GLenum internalformat);
 GL_APICALL void GL_APIENTRY glDestroyImageCHROMIUM(GLuint image_id);
-GL_APICALL void GL_APIENTRY glGetImageParameterivCHROMIUM(
-    GLuint image_id, GLenum pname, GLint* params);
-GL_APICALL void* GL_APIENTRY glMapImageCHROMIUM(GLuint image_id);
-GL_APICALL void GL_APIENTRY glUnmapImageCHROMIUM(GLuint image_id);
 #endif
 typedef GLuint(GL_APIENTRYP PFNGLCREATEIMAGECHROMIUMPROC)(
+    ClientBuffer buffer,
     GLsizei width,
     GLsizei height,
     GLenum internalformat);
 typedef void (
-    GL_APIENTRYP PFNGLDESTROYIMAGECHROMIUMPROC) (GLuint image_id);
-typedef void (
-    GL_APIENTRYP PFNGLGETIMAGEPARAMETERIVCHROMIUMPROC) (
-    GLuint image_id, GLenum pname, GLint* params);
-typedef void* (GL_APIENTRYP PFNGLMAPIMAGECHROMIUMPROC) (
-    GLuint image_id, GLenum access);
-typedef void (GL_APIENTRYP PFNGLUNMAPIMAGECHROMIUMPROC) (GLuint image_id);
-#endif  /* GL_CHROMIUM_map_image */
+    GL_APIENTRYP PFNGLDESTROYIMAGECHROMIUMPROC)(GLuint image_id);
+#endif  /* GL_CHROMIUM_image */
+
+  /* GL_CHROMIUM_gpu_memory_buffer_image */
+#ifndef GL_CHROMIUM_gpu_memory_buffer_image
+#define GL_CHROMIUM_gpu_memory_buffer_image 1
+
+#ifndef GL_MAP_CHROMIUM
+#define GL_MAP_CHROMIUM 0x78F1
+#endif
+
+#ifndef GL_SCANOUT_CHROMIUM
+#define GL_SCANOUT_CHROMIUM 0x78F2
+#endif
+
+#ifndef GL_RGB_YUV_420_CHROMIUM
+#define GL_RGB_YUV_420_CHROMIUM 0x78FA
+#endif
+
+#ifdef GL_GLEXT_PROTOTYPES
+GL_APICALL GLuint GL_APIENTRY glCreateGpuMemoryBufferImageCHROMIUM(
+    GLsizei width,
+    GLsizei height,
+    GLenum internalformat,
+    GLenum usage);
+#endif
+typedef GLuint(GL_APIENTRYP PFNGLCREATEGPUMEMORYBUFFERIMAGECHROMIUMPROC)(
+    GLsizei width,
+    GLsizei height,
+    GLenum internalformat,
+    GLenum usage);
+#endif  /* GL_CHROMIUM_gpu_memory_buffer_image */
 
 /* GL_CHROMIUM_map_sub */
 #ifndef GL_CHROMIUM_map_sub
@@ -193,7 +204,7 @@ typedef void (GL_APIENTRYP PFNGLREQUESTEXTENSIONCHROMIUMPROC) (
 
 #ifndef GL_GET_ERROR_QUERY_CHROMIUM
 // TODO(gman): Get official numbers for this constants.
-#define GL_GET_ERROR_QUERY_CHROMIUM 0x84F3
+#define GL_GET_ERROR_QUERY_CHROMIUM 0x6003
 #endif
 #endif  /* GL_CHROMIUM_get_error_query */
 
@@ -249,7 +260,7 @@ typedef void (GL_APIENTRYP PFNGLBINDUNIFORMLOCATIONCHROMIUMPROC) (
 
 #ifndef GL_COMMANDS_ISSUED_CHROMIUM
 // TODO(gman): Get official numbers for this constants.
-#define GL_COMMANDS_ISSUED_CHROMIUM 0x84F2
+#define GL_COMMANDS_ISSUED_CHROMIUM 0x6004
 #endif
 #endif  /* GL_CHROMIUM_command_buffer_query */
 
@@ -360,10 +371,10 @@ typedef void (GL_APIENTRYP PFNGLBLITFRAMEBUFFERCHROMIUMPROC) (GLint srcX0, GLint
 #define GL_CHROMIUM_async_pixel_transfers 1
 
 #ifndef GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM
-#define GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM 0x84F5
+#define GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM 0x6005
 #endif
 #ifndef GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM
-#define GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM 0x84F6
+#define GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM 0x6006
 #endif
 #endif  /* GL_CHROMIUM_async_pixel_transfers */
 
@@ -387,13 +398,29 @@ typedef void (GL_APIENTRYP PFNGLBLITFRAMEBUFFERCHROMIUMPROC) (GLint srcX0, GLint
 #define GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM 0x9241
 #endif
 #ifdef GL_GLEXT_PROTOTYPES
-GL_APICALL void GL_APIENTRY glCopyTextureCHROMIUM(
-    GLenum target, GLenum source_id, GLenum dest_id, GLint level,
-    GLint internalformat, GLenum dest_type);
+GL_APICALL void GL_APIENTRY glCopyTextureCHROMIUM(GLenum target,
+                                                  GLenum source_id,
+                                                  GLenum dest_id,
+                                                  GLint internalformat,
+                                                  GLenum dest_type);
+
+GL_APICALL void GL_APIENTRY glCopySubTextureCHROMIUM(GLenum target,
+                                                     GLenum source_id,
+                                                     GLenum dest_id,
+                                                     GLint xoffset,
+                                                     GLint yoffset);
 #endif
-typedef void (GL_APIENTRYP PFNGLCOPYTEXTURECHROMIUMPROC) (
-    GLenum target, GLenum source_id, GLenum dest_id, GLint level,
-    GLint internalformat, GLenum dest_type);
+typedef void(GL_APIENTRYP PFNGLCOPYTEXTURECHROMIUMPROC)(GLenum target,
+                                                        GLenum source_id,
+                                                        GLenum dest_id,
+                                                        GLint internalformat,
+                                                        GLenum dest_type);
+
+typedef void(GL_APIENTRYP PFNGLCOPYSUBTEXTURECHROMIUMPROC)(GLenum target,
+                                                           GLenum source_id,
+                                                           GLenum dest_id,
+                                                           GLint xoffset,
+                                                           GLint yoffset);
 #endif  /* GL_CHROMIUM_copy_texture */
 
 /* GL_CHROMIUM_lose_context */
@@ -448,7 +475,7 @@ typedef GLboolean (GL_APIENTRYP PFNGLENABLEFEATURECHROMIUMPROC) (
 
 #ifndef GL_LATENCY_QUERY_CHROMIUM
 // TODO(gman): Get official numbers for these constants.
-#define GL_LATENCY_QUERY_CHROMIUM 0x84F4
+#define GL_LATENCY_QUERY_CHROMIUM 0x6007
 #endif
 #endif  /* GL_CHROMIUM_command_buffer_latency_query */
 
@@ -616,13 +643,9 @@ typedef void (GL_APIENTRYP PFNGLRESIZECHROMIUMPROC) (
 #ifndef GL_CHROMIUM_get_multiple
 #define GL_CHROMIUM_get_multiple 1
 #ifdef GL_GLEXT_PROTOTYPES
-GL_APICALL void GL_APIENTRY glGetMultipleIntegervCHROMIUM(
-    const GLenum* pnames, GLuint count, GLint* results, GLsizeiptr size);
 GL_APICALL void GL_APIENTRY glGetProgramInfoCHROMIUM(
     GLuint program, GLsizei bufsize, GLsizei* size, void* info);
 #endif
-typedef void (GL_APIENTRYP PFNGLGETMULTIPLEINTEGERVCHROMIUMPROC) (
-   const GLenum* pnames, GLuint count, GLint* results, GLsizeiptr size);
 typedef void (GL_APIENTRYP PFNGLGETPROGRAMINFOCHROMIUMPROC) (
    GLuint program, GLsizei bufsize, GLsizei* size, void* info);
 #endif  /* GL_CHROMIUM_get_multiple */
@@ -679,6 +702,35 @@ typedef void (GL_APIENTRYP PFNGLWAITSYNCPOINTCHROMIUMPROC) (GLuint sync_point);
 #ifndef GL_OVERLAY_TRANSFORM_ROTATE_270_CHROMIUM
 #define GL_OVERLAY_TRANSFORM_ROTATE_270_CHROMIUM 0x924A
 #endif
+
+/* GL_CHROMIUM_subscribe_uniform */
+#ifndef GL_CHROMIUM_subscribe_uniform
+#define GL_CHROMIUM_subscribe_uniform 1
+
+#ifndef GL_SUBSCRIBED_VALUES_BUFFER_CHROMIUM
+#define GL_SUBSCRIBED_VALUES_BUFFER_CHROMIUM 0x924B
+#endif
+
+#ifndef GL_MOUSE_POSITION_CHROMIUM
+#define GL_MOUSE_POSITION_CHROMIUM 0x924C
+#endif
+
+#ifdef GL_GLEXT_PROTOTYPES
+GL_APICALL void GL_APIENTRY
+glGenValuebuffersCHROMIUM(GLsizei n, GLuint* buffers);
+GL_APICALL void GL_APIENTRY
+glDeleteValuebuffersCHROMIUM(GLsizei n, const GLuint* valuebuffers);
+GL_APICALL GLboolean GL_APIENTRY glIsValuebufferCHROMIUM(GLuint valuebuffer);
+GL_APICALL void GL_APIENTRY
+glBindValuebufferCHROMIUM(GLenum target, GLuint valuebuffer);
+GL_APICALL void GL_APIENTRY
+glSubscribeValueCHROMIUM(GLenum target, GLenum subscription);
+GL_APICALL void GL_APIENTRY glPopulateSubscribedValuesCHROMIUM(GLenum target);
+GL_APICALL void GL_APIENTRY glUniformValuebufferCHROMIUM(GLint location,
+                                                         GLenum target,
+                                                         GLenum subscription);
+#endif
+#endif /* GL_CHROMIUM_subscribe_uniform */
 
 #ifdef GL_GLEXT_PROTOTYPES
 GL_APICALL void GL_APIENTRY

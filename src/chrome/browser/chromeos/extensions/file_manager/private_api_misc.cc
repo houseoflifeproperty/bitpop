@@ -4,6 +4,9 @@
 
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_misc.h"
 
+#include <set>
+#include <vector>
+
 #include "ash/frame/frame_util.h"
 #include "base/files/file_path.h"
 #include "base/prefs/pref_service.h"
@@ -12,12 +15,15 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_util.h"
-#include "chrome/browser/chromeos/file_manager/app_installer.h"
+#include "chrome/browser/chromeos/file_manager/fileapi_util.h"
+#include "chrome/browser/chromeos/file_manager/volume_manager.h"
 #include "chrome/browser/chromeos/file_manager/zip_file_creator.h"
+#include "chrome/browser/chromeos/file_system_provider/service.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/drive/event_logger.h"
+#include "chrome/browser/extensions/api/file_handlers/mime_util.h"
 #include "chrome/browser/extensions/devtools_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
@@ -28,6 +34,7 @@
 #include "chrome/browser/ui/ash/multi_user/multi_user_util.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
 #include "chrome/common/extensions/api/file_manager_private.h"
+#include "chrome/common/extensions/api/manifest_types.h"
 #include "chrome/common/pref_names.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
@@ -45,7 +52,6 @@ namespace extensions {
 
 namespace {
 const char kCWSScope[] = "https://www.googleapis.com/auth/chromewebstore";
-const char kGoogleCastApiExtensionId[] = "mafeflapfdfljijmlienjedomfjfmhpd";
 
 // Obtains the current app window.
 AppWindow* GetCurrentAppWindow(ChromeSyncExtensionFunction* function) {
@@ -92,10 +98,10 @@ GetLoggedInProfileInfoList() {
 
   return result_profiles;
 }
-} // namespace
+}  // namespace
 
 bool FileManagerPrivateLogoutUserForReauthenticationFunction::RunSync() {
-  user_manager::User* user =
+  const user_manager::User* user =
       chromeos::ProfileHelper::Get()->GetUserByProfile(GetProfile());
   if (user) {
     user_manager::UserManager::Get()->SaveUserOAuthStatus(
@@ -127,7 +133,7 @@ bool FileManagerPrivateGetPreferencesFunction::RunSync() {
 
   drive::EventLogger* logger = file_manager::util::GetLogger(GetProfile());
   if (logger)
-    logger->Log(logging::LOG_INFO, "%s succeeded.", name().c_str());
+    logger->Log(logging::LOG_INFO, "%s succeeded.", name());
   return true;
 }
 
@@ -148,7 +154,7 @@ bool FileManagerPrivateSetPreferencesFunction::RunSync() {
 
   drive::EventLogger* logger = file_manager::util::GetLogger(GetProfile());
   if (logger)
-    logger->Log(logging::LOG_INFO, "%s succeeded.", name().c_str());
+    logger->Log(logging::LOG_INFO, "%s succeeded.", name());
   return true;
 }
 
@@ -248,54 +254,8 @@ bool FileManagerPrivateInstallWebstoreItemFunction::RunAsync() {
   const scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  if (params->item_id.empty())
-    return false;
-
-  const extensions::WebstoreStandaloneInstaller::Callback callback =
-      base::Bind(
-          &FileManagerPrivateInstallWebstoreItemFunction::OnInstallComplete,
-          this);
-
-  // Only GoogleCastAPI extension can use silent installation.
-  if (params->silent_installation &&
-      params->item_id != kGoogleCastApiExtensionId) {
-    SetError("Only whitelisted items can do silent installation.");
-    return false;
-  }
-
-  scoped_refptr<file_manager::AppInstaller> installer(
-      new file_manager::AppInstaller(GetAssociatedWebContents(),
-                                     params->item_id,
-                                     GetProfile(),
-                                     params->silent_installation,
-                                     callback));
-  // installer will be AddRef()'d in BeginInstall().
-  installer->BeginInstall();
-  return true;
-}
-
-void FileManagerPrivateInstallWebstoreItemFunction::OnInstallComplete(
-    bool success,
-    const std::string& error,
-    extensions::webstore_install::Result result) {
-  drive::EventLogger* logger = file_manager::util::GetLogger(GetProfile());
-  if (success) {
-    if (logger) {
-      logger->Log(logging::LOG_INFO,
-                  "App install succeeded. (item id: %s)",
-                  webstore_item_id_.c_str());
-    }
-  } else {
-    if (logger) {
-      logger->Log(logging::LOG_ERROR,
-                  "App install failed. (item id: %s, reason: %s)",
-                  webstore_item_id_.c_str(),
-                  error.c_str());
-    }
-    SetError(error);
-  }
-
-  SendResponse(success);
+  SetError("Deleted, use chrome.webstoreWidgetPrivate API instead.");
+  return false;
 }
 
 FileManagerPrivateRequestWebStoreAccessTokenFunction::
@@ -342,7 +302,7 @@ bool FileManagerPrivateRequestWebStoreAccessTokenFunction::RunAsync() {
 }
 
 void FileManagerPrivateRequestWebStoreAccessTokenFunction::OnAccessTokenFetched(
-    google_apis::GDataErrorCode code,
+    google_apis::DriveApiErrorCode code,
     const std::string& access_token) {
   drive::EventLogger* logger = file_manager::util::GetLogger(GetProfile());
 
@@ -356,8 +316,8 @@ void FileManagerPrivateRequestWebStoreAccessTokenFunction::OnAccessTokenFetched(
   } else {
     if (logger) {
       logger->Log(logging::LOG_ERROR,
-                  "CWS OAuth token fetch failed. (GDataErrorCode: %s)",
-                  google_apis::GDataErrorCodeToString(code).c_str());
+                  "CWS OAuth token fetch failed. (DriveApiErrorCode: %s)",
+                  google_apis::DriveApiErrorCodeToString(code).c_str());
     }
     SetResult(base::Value::CreateNullValue());
     SendResponse(false);
@@ -365,11 +325,6 @@ void FileManagerPrivateRequestWebStoreAccessTokenFunction::OnAccessTokenFetched(
 }
 
 bool FileManagerPrivateGetProfilesFunction::RunSync() {
-#if defined(USE_ATHENA)
-  // TODO(oshima): Figure out what to do.
-  return false;
-#endif
-
   const std::vector<linked_ptr<api::file_manager_private::ProfileInfo> >&
       profiles = GetLoggedInProfileInfoList();
 
@@ -388,50 +343,6 @@ bool FileManagerPrivateGetProfilesFunction::RunSync() {
       profiles,
       current_profile_id,
       display_profile_id.empty() ? current_profile_id : display_profile_id);
-  return true;
-}
-
-bool FileManagerPrivateVisitDesktopFunction::RunSync() {
-  using api::file_manager_private::VisitDesktop::Params;
-  const scoped_ptr<Params> params(Params::Create(*args_));
-  const std::vector<linked_ptr<api::file_manager_private::ProfileInfo> >&
-      profiles = GetLoggedInProfileInfoList();
-
-  chrome::MultiUserWindowManager* const window_manager =
-      chrome::MultiUserWindowManager::GetInstance();
-  DCHECK(window_manager);
-
-  // Check if the target user is logged-in or not.
-  bool logged_in = false;
-  for (size_t i = 0; i < profiles.size(); ++i) {
-    if (profiles[i]->profile_id == params->profile_id) {
-      logged_in = true;
-      break;
-    }
-  }
-  if (!logged_in) {
-    SetError("The user is not logged-in now.");
-    return false;
-  }
-
-  // Look for the current app window.
-  AppWindow* const app_window = GetCurrentAppWindow(this);
-  if (!app_window) {
-    SetError("Target window is not found.");
-    return false;
-  }
-
-  // Move the window to the user's desktop.
-  window_manager->ShowWindowForUser(app_window->GetNativeWindow(),
-                                    params->profile_id);
-
-  // Check the result.
-  if (!window_manager->IsWindowOnDesktopOfUser(app_window->GetNativeWindow(),
-                                               params->profile_id)) {
-    SetError("The window cannot visit the desktop.");
-    return false;
-  }
-
   return true;
 }
 
@@ -471,6 +382,168 @@ bool FileManagerPrivateOpenInspectorFunction::RunSync() {
       return false;
   }
   return true;
+}
+
+FileManagerPrivateGetMimeTypeFunction::FileManagerPrivateGetMimeTypeFunction() {
+}
+
+FileManagerPrivateGetMimeTypeFunction::
+    ~FileManagerPrivateGetMimeTypeFunction() {
+}
+
+bool FileManagerPrivateGetMimeTypeFunction::RunAsync() {
+  using extensions::api::file_manager_private::GetMimeType::Params;
+  const scoped_ptr<Params> params(Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  // Convert file url to local path.
+  const scoped_refptr<storage::FileSystemContext> file_system_context =
+      file_manager::util::GetFileSystemContextForRenderViewHost(
+          GetProfile(), render_view_host());
+
+  const GURL file_url(params->file_url);
+  storage::FileSystemURL file_system_url(
+      file_system_context->CrackURL(file_url));
+
+  app_file_handler_util::GetMimeTypeForLocalPath(
+      GetProfile(), file_system_url.path(),
+      base::Bind(&FileManagerPrivateGetMimeTypeFunction::OnGetMimeType, this));
+
+  return true;
+}
+
+void FileManagerPrivateGetMimeTypeFunction::OnGetMimeType(
+    const std::string& mimeType) {
+  SetResult(new base::StringValue(mimeType));
+  SendResponse(true);
+}
+
+ExtensionFunction::ResponseAction
+FileManagerPrivateIsPiexLoaderEnabledFunction::Run() {
+#if defined(OFFICIAL_BUILD)
+  return RespondNow(OneArgument(new base::FundamentalValue(true)));
+#else
+  return RespondNow(OneArgument(new base::FundamentalValue(false)));
+#endif
+}
+
+FileManagerPrivateGetProvidingExtensionsFunction::
+    FileManagerPrivateGetProvidingExtensionsFunction()
+    : chrome_details_(this) {
+}
+
+ExtensionFunction::ResponseAction
+FileManagerPrivateGetProvidingExtensionsFunction::Run() {
+  using chromeos::file_system_provider::Service;
+  using chromeos::file_system_provider::ProvidingExtensionInfo;
+  const Service* const service = Service::Get(chrome_details_.GetProfile());
+  const std::vector<ProvidingExtensionInfo> info_list =
+      service->GetProvidingExtensionInfoList();
+
+  using api::file_manager_private::ProvidingExtension;
+  std::vector<linked_ptr<ProvidingExtension>> providing_extensions;
+  for (const auto& info : info_list) {
+    const linked_ptr<ProvidingExtension> providing_extension(
+        new ProvidingExtension);
+    providing_extension->extension_id = info.extension_id;
+    providing_extension->name = info.name;
+    providing_extension->configurable = info.capabilities.configurable();
+    providing_extension->multiple_mounts = info.capabilities.multiple_mounts();
+    switch (info.capabilities.source()) {
+      case SOURCE_FILE:
+        providing_extension->source =
+            api::manifest_types::FILE_SYSTEM_PROVIDER_SOURCE_FILE;
+        break;
+      case SOURCE_DEVICE:
+        providing_extension->source =
+            api::manifest_types::FILE_SYSTEM_PROVIDER_SOURCE_DEVICE;
+        break;
+      case SOURCE_NETWORK:
+        providing_extension->source =
+            api::manifest_types::FILE_SYSTEM_PROVIDER_SOURCE_NETWORK;
+        break;
+    }
+    providing_extensions.push_back(providing_extension);
+  }
+
+  return RespondNow(ArgumentList(
+      api::file_manager_private::GetProvidingExtensions::Results::Create(
+          providing_extensions).Pass()));
+}
+
+FileManagerPrivateAddProvidedFileSystemFunction::
+    FileManagerPrivateAddProvidedFileSystemFunction()
+    : chrome_details_(this) {
+}
+
+ExtensionFunction::ResponseAction
+FileManagerPrivateAddProvidedFileSystemFunction::Run() {
+  using extensions::api::file_manager_private::AddProvidedFileSystem::Params;
+  const scoped_ptr<Params> params(Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  using chromeos::file_system_provider::Service;
+  using chromeos::file_system_provider::ProvidingExtensionInfo;
+  Service* const service = Service::Get(chrome_details_.GetProfile());
+
+  if (!service->RequestMount(params->extension_id))
+    return RespondNow(Error("Failed to request a new mount."));
+
+  return RespondNow(NoArguments());
+}
+
+FileManagerPrivateConfigureVolumeFunction::
+    FileManagerPrivateConfigureVolumeFunction()
+    : chrome_details_(this) {
+}
+
+ExtensionFunction::ResponseAction
+FileManagerPrivateConfigureVolumeFunction::Run() {
+  using extensions::api::file_manager_private::ConfigureVolume::Params;
+  const scoped_ptr<Params> params(Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  using file_manager::VolumeManager;
+  using file_manager::Volume;
+  VolumeManager* const volume_manager =
+      VolumeManager::Get(chrome_details_.GetProfile());
+  base::WeakPtr<Volume> volume =
+      volume_manager->FindVolumeById(params->volume_id);
+  if (!volume.get())
+    return RespondNow(Error("Volume not found."));
+  if (!volume->configurable())
+    return RespondNow(Error("Volume not configurable."));
+
+  switch (volume->type()) {
+    case file_manager::VOLUME_TYPE_PROVIDED: {
+      using chromeos::file_system_provider::Service;
+      Service* const service = Service::Get(chrome_details_.GetProfile());
+      DCHECK(service);
+
+      using chromeos::file_system_provider::ProvidedFileSystemInterface;
+      ProvidedFileSystemInterface* const file_system =
+          service->GetProvidedFileSystem(volume->extension_id(),
+                                         volume->file_system_id());
+      if (file_system)
+        file_system->Configure(base::Bind(
+            &FileManagerPrivateConfigureVolumeFunction::OnCompleted, this));
+      break;
+    }
+    default:
+      NOTIMPLEMENTED();
+  }
+
+  return RespondLater();
+}
+
+void FileManagerPrivateConfigureVolumeFunction::OnCompleted(
+    base::File::Error result) {
+  if (result != base::File::FILE_OK) {
+    Respond(Error("Failed to complete configuration."));
+    return;
+  }
+
+  Respond(NoArguments());
 }
 
 }  // namespace extensions

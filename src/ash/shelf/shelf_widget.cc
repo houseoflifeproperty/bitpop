@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,6 +36,7 @@
 #include "ui/views/accessible_pane_view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/wm/core/coordinate_conversion.h"
 #include "ui/wm/core/easy_resize_window_targeter.h"
 #include "ui/wm/public/activation_client.h"
 
@@ -58,7 +59,7 @@ class DimmerView : public views::View,
   // be performed instantly.
   DimmerView(ash::ShelfWidget* shelf_widget,
              bool disable_dimming_animations_for_test);
-  virtual ~DimmerView();
+  ~DimmerView() override;
 
   // Called by |DimmerEventFilter| when the mouse |hovered| state changes.
   void SetHovered(bool hovered);
@@ -67,21 +68,17 @@ class DimmerView : public views::View,
   void ForceUndimming(bool force);
 
   // views::WidgetDelegate overrides:
-  virtual views::Widget* GetWidget() OVERRIDE {
-    return View::GetWidget();
-  }
-  virtual const views::Widget* GetWidget() const OVERRIDE {
-    return View::GetWidget();
-  }
+  views::Widget* GetWidget() override { return View::GetWidget(); }
+  const views::Widget* GetWidget() const override { return View::GetWidget(); }
 
   // ash::BackgroundAnimatorDelegate overrides:
-  virtual void UpdateBackground(int alpha) OVERRIDE {
+  void UpdateBackground(int alpha) override {
     alpha_ = alpha;
     SchedulePaint();
   }
 
   // views::View overrides:
-  virtual void OnPaintBackground(gfx::Canvas* canvas) OVERRIDE;
+  void OnPaintBackground(gfx::Canvas* canvas) override;
 
   // A function to test the current alpha used.
   int get_dimming_alpha_for_test() { return alpha_; }
@@ -91,11 +88,11 @@ class DimmerView : public views::View,
   class DimmerEventFilter : public ui::EventHandler {
    public:
     explicit DimmerEventFilter(DimmerView* owner);
-    virtual ~DimmerEventFilter();
+    ~DimmerEventFilter() override;
 
     // Overridden from ui::EventHandler:
-    virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
-    virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
+    void OnMouseEvent(ui::MouseEvent* event) override;
+    void OnTouchEvent(ui::TouchEvent* event) override;
 
    private:
     // The owning class.
@@ -175,9 +172,9 @@ void DimmerView::ForceUndimming(bool force) {
 
 void DimmerView::OnPaintBackground(gfx::Canvas* canvas) {
   SkPaint paint;
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
   gfx::ImageSkia shelf_background =
-      *rb.GetImageNamed(IDR_ASH_SHELF_DIMMING).ToImageSkia();
+      *rb->GetImageNamed(IDR_ASH_SHELF_DIMMING).ToImageSkia();
 
   if (shelf_->GetAlignment() != ash::SHELF_ALIGNMENT_BOTTOM) {
     shelf_background = gfx::ImageSkiaOperations::CreateRotatedImage(
@@ -217,7 +214,11 @@ void DimmerView::DimmerEventFilter::OnMouseEvent(ui::MouseEvent* event) {
   if (event->type() != ui::ET_MOUSE_MOVED &&
       event->type() != ui::ET_MOUSE_DRAGGED)
     return;
-  bool inside = owner_->GetBoundsInScreen().Contains(event->root_location());
+
+  gfx::Point screen_point(event->location());
+  ::wm::ConvertPointToScreen(static_cast<aura::Window*>(event->target()),
+                             &screen_point);
+  bool inside = owner_->GetBoundsInScreen().Contains(screen_point);
   if (mouse_inside_ || touch_inside_ != inside || touch_inside_)
     owner_->SetHovered(inside || touch_inside_);
   mouse_inside_ = inside;
@@ -226,8 +227,12 @@ void DimmerView::DimmerEventFilter::OnMouseEvent(ui::MouseEvent* event) {
 void DimmerView::DimmerEventFilter::OnTouchEvent(ui::TouchEvent* event) {
   bool touch_inside = false;
   if (event->type() != ui::ET_TOUCH_RELEASED &&
-      event->type() != ui::ET_TOUCH_CANCELLED)
-    touch_inside = owner_->GetBoundsInScreen().Contains(event->root_location());
+      event->type() != ui::ET_TOUCH_CANCELLED) {
+    gfx::Point screen_point(event->location());
+    ::wm::ConvertPointToScreen(static_cast<aura::Window*>(event->target()),
+                               &screen_point);
+    touch_inside = owner_->GetBoundsInScreen().Contains(screen_point);
+  }
 
   if (mouse_inside_ || touch_inside_ != mouse_inside_ || touch_inside)
     owner_->SetHovered(mouse_inside_ || touch_inside);
@@ -250,7 +255,7 @@ class ShelfWindowTargeter : public wm::EasyResizeWindowTargeter,
     shelf_->AddObserver(this);
   }
 
-  virtual ~ShelfWindowTargeter() {
+  ~ShelfWindowTargeter() override {
     // |shelf_| may have been destroyed by this time.
     if (shelf_)
       shelf_->RemoveObserver(this);
@@ -274,12 +279,9 @@ class ShelfWindowTargeter : public wm::EasyResizeWindowTargeter,
   }
 
   // ash::ShelfLayoutManagerObserver:
-  virtual void WillDeleteShelf() OVERRIDE {
-    shelf_ = NULL;
-  }
+  void WillDeleteShelf() override { shelf_ = NULL; }
 
-  virtual void WillChangeVisibilityState(
-      ash::ShelfVisibilityState new_state) OVERRIDE {
+  void WillChangeVisibilityState(ash::ShelfVisibilityState new_state) override {
     gfx::Insets mouse_insets;
     gfx::Insets touch_insets;
     if (new_state == ash::SHELF_VISIBLE) {
@@ -317,7 +319,7 @@ class ShelfWidget::DelegateView : public views::WidgetDelegate,
                                   public aura::WindowObserver {
  public:
   explicit DelegateView(ShelfWidget* shelf);
-  virtual ~DelegateView();
+  ~DelegateView() override;
 
   void set_focus_cycler(FocusCycler* focus_cycler) {
     focus_cycler_ = focus_cycler;
@@ -334,33 +336,29 @@ class ShelfWidget::DelegateView : public views::WidgetDelegate,
   void SetParentLayer(ui::Layer* layer);
 
   // views::View overrides:
-  virtual void OnPaintBackground(gfx::Canvas* canvas) OVERRIDE;
+  void OnPaintBackground(gfx::Canvas* canvas) override;
 
   // views::WidgetDelegateView overrides:
-  virtual views::Widget* GetWidget() OVERRIDE {
-    return View::GetWidget();
-  }
-  virtual const views::Widget* GetWidget() const OVERRIDE {
-    return View::GetWidget();
-  }
+  views::Widget* GetWidget() override { return View::GetWidget(); }
+  const views::Widget* GetWidget() const override { return View::GetWidget(); }
 
-  virtual bool CanActivate() const OVERRIDE;
-  virtual void Layout() OVERRIDE;
-  virtual void ReorderChildLayers(ui::Layer* parent_layer) OVERRIDE;
+  bool CanActivate() const override;
+  void Layout() override;
+  void ReorderChildLayers(ui::Layer* parent_layer) override;
   // This will be called when the parent local bounds change.
-  virtual void OnBoundsChanged(const gfx::Rect& old_bounds) OVERRIDE;
+  void OnBoundsChanged(const gfx::Rect& old_bounds) override;
 
   // aura::WindowObserver overrides:
   // This will be called when the shelf itself changes its absolute position.
   // Since the |dimmer_| panel needs to be placed in screen coordinates it needs
   // to be repositioned. The difference to the OnBoundsChanged call above is
   // that this gets also triggered when the shelf only moves.
-  virtual void OnWindowBoundsChanged(aura::Window* window,
-                                     const gfx::Rect& old_bounds,
-                                     const gfx::Rect& new_bounds) OVERRIDE;
+  void OnWindowBoundsChanged(aura::Window* window,
+                             const gfx::Rect& old_bounds,
+                             const gfx::Rect& new_bounds) override;
 
   // BackgroundAnimatorDelegate overrides:
-  virtual void UpdateBackground(int alpha) OVERRIDE;
+  void UpdateBackground(int alpha) override;
 
   // Force the shelf to be presented in an undimmed state.
   void ForceUndimming(bool force);
@@ -465,9 +463,9 @@ void ShelfWidget::DelegateView::SetParentLayer(ui::Layer* layer) {
 }
 
 void ShelfWidget::DelegateView::OnPaintBackground(gfx::Canvas* canvas) {
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
   gfx::ImageSkia shelf_background =
-      *rb.GetImageSkiaNamed(IDR_ASH_SHELF_BACKGROUND);
+      *rb->GetImageSkiaNamed(IDR_ASH_SHELF_BACKGROUND);
   if (SHELF_ALIGNMENT_BOTTOM != shelf_->GetAlignment())
     shelf_background = gfx::ImageSkiaOperations::CreateRotatedImage(
         shelf_background,
@@ -500,7 +498,7 @@ void ShelfWidget::DelegateView::OnPaintBackground(gfx::Canvas* canvas) {
     // The part of the shelf background that is in the corner below the docked
     // windows close to the work area is an arched gradient that blends
     // vertically oriented docked background and horizontal shelf.
-    gfx::ImageSkia shelf_corner = *rb.GetImageSkiaNamed(IDR_ASH_SHELF_CORNER);
+    gfx::ImageSkia shelf_corner = *rb->GetImageSkiaNamed(IDR_ASH_SHELF_CORNER);
     if (dock_bounds.x() == 0) {
       shelf_corner = gfx::ImageSkiaOperations::CreateRotatedImage(
           shelf_corner, SkBitmapOperations::ROTATION_90_CW);
@@ -721,14 +719,15 @@ bool ShelfWidget::ShelfAlignmentAllowed() {
       Shell::GetInstance()->system_tray_delegate()->GetUserLoginStatus();
 
   switch (login_status) {
+    case user::LOGGED_IN_LOCKED:
+      // Shelf alignment changes can be requested while being locked, but will
+      // be applied upon unlock.
     case user::LOGGED_IN_USER:
     case user::LOGGED_IN_OWNER:
       return true;
-    case user::LOGGED_IN_LOCKED:
     case user::LOGGED_IN_PUBLIC:
     case user::LOGGED_IN_SUPERVISED:
     case user::LOGGED_IN_GUEST:
-    case user::LOGGED_IN_RETAIL_MODE:
     case user::LOGGED_IN_KIOSK_APP:
     case user::LOGGED_IN_NONE:
       return false;

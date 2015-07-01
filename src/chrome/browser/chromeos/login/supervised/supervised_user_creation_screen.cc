@@ -9,10 +9,12 @@
 #include "base/rand_util.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/camera_detector.h"
+#include "chrome/browser/chromeos/login/error_screens_histogram_helper.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/screen_manager.h"
+#include "chrome/browser/chromeos/login/screens/base_screen_delegate.h"
 #include "chrome/browser/chromeos/login/screens/error_screen.h"
-#include "chrome/browser/chromeos/login/screens/screen_observer.h"
+#include "chrome/browser/chromeos/login/screens/network_error.h"
 #include "chrome/browser/chromeos/login/signin_specifics.h"
 #include "chrome/browser/chromeos/login/supervised/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/supervised/supervised_user_creation_controller.h"
@@ -22,12 +24,14 @@
 #include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/supervised_user/legacy/supervised_user_shared_settings_service.h"
+#include "chrome/browser/supervised_user/legacy/supervised_user_shared_settings_service_factory.h"
+#include "chrome/browser/supervised_user/legacy/supervised_user_sync_service.h"
+#include "chrome/browser/supervised_user/legacy/supervised_user_sync_service_factory.h"
 #include "chrome/browser/supervised_user/supervised_user_constants.h"
-#include "chrome/browser/supervised_user/supervised_user_shared_settings_service.h"
-#include "chrome/browser/supervised_user/supervised_user_shared_settings_service_factory.h"
-#include "chrome/browser/supervised_user/supervised_user_sync_service.h"
-#include "chrome/browser/supervised_user/supervised_user_sync_service_factory.h"
 #include "chrome/grit/generated_resources.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/login/auth/key.h"
 #include "chromeos/login/auth/user_context.h"
 #include "chromeos/network/network_state.h"
@@ -67,17 +71,15 @@ void ConfigureErrorScreen(ErrorScreen* screen,
       NOTREACHED();
       break;
     case NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_OFFLINE:
-      screen->SetErrorState(ErrorScreen::ERROR_STATE_OFFLINE,
-                            std::string());
+      screen->SetErrorState(NetworkError::ERROR_STATE_OFFLINE, std::string());
       break;
     case NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_PORTAL:
-      screen->SetErrorState(ErrorScreen::ERROR_STATE_PORTAL,
+      screen->SetErrorState(NetworkError::ERROR_STATE_PORTAL,
                             network ? network->name() : std::string());
       screen->FixCaptivePortal();
       break;
     case NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_PROXY_AUTH_REQUIRED:
-      screen->SetErrorState(ErrorScreen::ERROR_STATE_PROXY,
-                            std::string());
+      screen->SetErrorState(NetworkError::ERROR_STATE_PROXY, std::string());
       break;
     default:
       NOTREACHED();
@@ -95,17 +97,17 @@ SupervisedUserCreationScreen* SupervisedUserCreationScreen::Get(
 }
 
 SupervisedUserCreationScreen::SupervisedUserCreationScreen(
-    ScreenObserver* observer,
+    BaseScreenDelegate* base_screen_delegate,
     SupervisedUserCreationScreenHandler* actor)
-    : WizardScreen(observer),
+    : BaseScreen(base_screen_delegate),
       actor_(actor),
       on_error_screen_(false),
       manager_signin_in_progress_(false),
       last_page_(kNameOfIntroScreen),
       sync_service_(NULL),
-      image_decoder_(NULL),
       apply_photo_after_decoding_(false),
       selected_image_(0),
+      histogram_helper_(new ErrorScreensHistogramHelper("Supervised")),
       weak_factory_(this) {
   DCHECK(actor_);
   if (actor_)
@@ -118,8 +120,6 @@ SupervisedUserCreationScreen::~SupervisedUserCreationScreen() {
     sync_service_->RemoveObserver(this);
   if (actor_)
     actor_->SetDelegate(NULL);
-  if (image_decoder_.get())
-    image_decoder_->set_delegate(NULL);
   NetworkPortalDetector::Get()->RemoveObserver(this);
 }
 
@@ -143,6 +143,7 @@ void SupervisedUserCreationScreen::Show() {
   if (!on_error_screen_)
     NetworkPortalDetector::Get()->AddAndFireObserver(this);
   on_error_screen_ = false;
+  histogram_helper_->OnScreenShow();
 }
 
 void SupervisedUserCreationScreen::OnPageSelected(const std::string& page) {
@@ -153,13 +154,16 @@ void SupervisedUserCreationScreen::OnPortalDetectionCompleted(
     const NetworkState* network,
     const NetworkPortalDetector::CaptivePortalState& state)  {
   if (state.status == NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_ONLINE) {
-    get_screen_observer()->HideErrorScreen(this);
-  } else {
+    get_base_screen_delegate()->HideErrorScreen(this);
+    histogram_helper_->OnErrorHide();
+  } else if (state.status !=
+             NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_UNKNOWN) {
     on_error_screen_ = true;
-    ErrorScreen* screen = get_screen_observer()->GetErrorScreen();
+    ErrorScreen* screen = get_base_screen_delegate()->GetErrorScreen();
     ConfigureErrorScreen(screen, network, state.status);
-    screen->SetUIState(ErrorScreen::UI_STATE_SUPERVISED);
-    get_screen_observer()->ShowErrorScreen();
+    screen->SetUIState(NetworkError::UI_STATE_SUPERVISED);
+    get_base_screen_delegate()->ShowErrorScreen();
+    histogram_helper_->OnErrorShow(screen->GetErrorState());
   }
 }
 
@@ -194,11 +198,21 @@ std::string SupervisedUserCreationScreen::GetName() const {
 }
 
 void SupervisedUserCreationScreen::AbortFlow() {
+  DBusThreadManager::Get()
+      ->GetSessionManagerClient()
+      ->NotifySupervisedUserCreationFinished();
   controller_->CancelCreation();
 }
 
 void SupervisedUserCreationScreen::FinishFlow() {
+  DBusThreadManager::Get()
+      ->GetSessionManagerClient()
+      ->NotifySupervisedUserCreationFinished();
   controller_->FinishCreation();
+}
+
+void SupervisedUserCreationScreen::HideFlow() {
+  Hide();
 }
 
 void SupervisedUserCreationScreen::AuthenticateManager(
@@ -350,6 +364,9 @@ void SupervisedUserCreationScreen::OnManagerLoginFailure() {
 
 void SupervisedUserCreationScreen::OnManagerFullyAuthenticated(
     Profile* manager_profile) {
+  DBusThreadManager::Get()
+      ->GetSessionManagerClient()
+      ->NotifySupervisedUserCreationStarted();
   manager_signin_in_progress_ = false;
   DCHECK(controller_.get());
   // For manager user, move desktop to locked container so that windows created
@@ -575,29 +592,20 @@ void SupervisedUserCreationScreen::OnGetSupervisedUsers(
 
 void SupervisedUserCreationScreen::OnPhotoTaken(
     const std::string& raw_data) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   user_photo_ = gfx::ImageSkia();
-  if (image_decoder_.get())
-    image_decoder_->set_delegate(NULL);
-  image_decoder_ = new ImageDecoder(this, raw_data,
-                                    ImageDecoder::DEFAULT_CODEC);
-  scoped_refptr<base::MessageLoopProxy> task_runner =
-      content::BrowserThread::GetMessageLoopProxyForThread(
-          content::BrowserThread::UI);
-  image_decoder_->Start(task_runner);
+  ImageDecoder::Cancel(this);
+  ImageDecoder::Start(this, raw_data);
 }
 
 void SupervisedUserCreationScreen::OnImageDecoded(
-    const ImageDecoder* decoder,
     const SkBitmap& decoded_image) {
-  DCHECK_EQ(image_decoder_.get(), decoder);
   user_photo_ = gfx::ImageSkia::CreateFrom1xBitmap(decoded_image);
   if (apply_photo_after_decoding_)
     ApplyPicture();
 }
 
-void SupervisedUserCreationScreen::OnDecodeImageFailed(
-    const ImageDecoder* decoder) {
+void SupervisedUserCreationScreen::OnDecodeImageFailed() {
   NOTREACHED() << "Failed to decode PNG image from WebUI";
 }
 

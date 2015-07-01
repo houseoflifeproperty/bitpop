@@ -29,20 +29,16 @@
 #include "core/dom/Document.h"
 #include "core/html/parser/HTMLDocumentParser.h"
 #include "core/frame/FrameView.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebScheduler.h"
+#include "public/platform/WebThread.h"
+#include "wtf/CurrentTime.h"
 
 namespace blink {
 
-// parserChunkSize is used to define how many tokens the parser will
-// process before checking against parserTimeLimit and possibly yielding.
-// This is a performance optimization to prevent checking after every token.
-const int HTMLParserScheduler::parserChunkSize = 4096;
-
-// parserTimeLimit is the seconds the parser will run in one write() call
-// before yielding. Inline <script> execution can cause it to exceed the limit.
-const double HTMLParserScheduler::parserTimeLimit = 0.2;
-
-ActiveParserSession::ActiveParserSession(Document* document)
-    : m_document(document)
+ActiveParserSession::ActiveParserSession(unsigned& nestingLevel, Document* document)
+    : NestingLevelIncrementer(nestingLevel)
+    , m_document(document)
 {
     if (!m_document)
         return;
@@ -57,15 +53,7 @@ ActiveParserSession::~ActiveParserSession()
 }
 
 PumpSession::PumpSession(unsigned& nestingLevel, Document* document)
-    : NestingLevelIncrementer(nestingLevel)
-    , ActiveParserSession(document)
-    // Setting processedTokens to INT_MAX causes us to check for yields
-    // after any token during any parse where yielding is allowed.
-    // At that time we'll initialize startTime.
-    , processedTokens(INT_MAX)
-    , startTime(0)
-    , needsYield(false)
-    , didSeeScript(false)
+    : ActiveParserSession(nestingLevel, document)
 {
 }
 
@@ -73,45 +61,106 @@ PumpSession::~PumpSession()
 {
 }
 
+SpeculationsPumpSession::SpeculationsPumpSession(unsigned& nestingLevel, Document* document)
+    : ActiveParserSession(nestingLevel, document)
+    , m_startTime(currentTime())
+    , m_processedElementTokens(0)
+{
+}
+
+SpeculationsPumpSession::~SpeculationsPumpSession()
+{
+}
+
+inline double SpeculationsPumpSession::elapsedTime() const
+{
+    return currentTime() - m_startTime;
+}
+
+void SpeculationsPumpSession::addedElementTokens(size_t count)
+{
+    m_processedElementTokens += count;
+}
+
 HTMLParserScheduler::HTMLParserScheduler(HTMLDocumentParser* parser)
     : m_parser(parser)
-    , m_continueNextChunkTimer(this, &HTMLParserScheduler::continueNextChunkTimerFired)
+    , m_cancellableContinueParse(WTF::bind(&HTMLParserScheduler::continueParsing, this))
     , m_isSuspendedWithActiveTimer(false)
 {
 }
 
 HTMLParserScheduler::~HTMLParserScheduler()
 {
-    m_continueNextChunkTimer.stop();
-}
-
-void HTMLParserScheduler::continueNextChunkTimerFired(Timer<HTMLParserScheduler>* timer)
-{
-    ASSERT_UNUSED(timer, timer == &m_continueNextChunkTimer);
-    m_parser->resumeParsingAfterYield();
 }
 
 void HTMLParserScheduler::scheduleForResume()
 {
-    m_continueNextChunkTimer.startOneShot(0, FROM_HERE);
+    ASSERT(!m_isSuspendedWithActiveTimer);
+    Platform::current()->currentThread()->scheduler()->postLoadingTask(FROM_HERE, m_cancellableContinueParse.task());
 }
 
 void HTMLParserScheduler::suspend()
 {
     ASSERT(!m_isSuspendedWithActiveTimer);
-    if (!m_continueNextChunkTimer.isActive())
+    if (!m_cancellableContinueParse.isPending())
         return;
     m_isSuspendedWithActiveTimer = true;
-    m_continueNextChunkTimer.stop();
+    m_cancellableContinueParse.cancel();
 }
 
 void HTMLParserScheduler::resume()
 {
-    ASSERT(!m_continueNextChunkTimer.isActive());
+    ASSERT(!m_cancellableContinueParse.isPending());
     if (!m_isSuspendedWithActiveTimer)
         return;
     m_isSuspendedWithActiveTimer = false;
-    m_continueNextChunkTimer.startOneShot(0, FROM_HERE);
+
+    Platform::current()->currentThread()->scheduler()->postLoadingTask(FROM_HERE, m_cancellableContinueParse.task());
+}
+
+inline bool HTMLParserScheduler::shouldYield(const SpeculationsPumpSession& session, bool startingScript) const
+{
+    if (Platform::current()->currentThread()->scheduler()->shouldYieldForHighPriorityWork())
+        return true;
+
+    const double parserTimeLimit = 0.5;
+    if (session.elapsedTime() > parserTimeLimit)
+        return true;
+
+    // Yield if a lot of DOM work has been done in this session and a script tag is
+    // about to be parsed. This significantly improves render performance for documents
+    // that place their scripts at the bottom of the page. Yielding too often
+    // significantly slows down the parsing so a balance needs to be struck to
+    // only yield when enough changes have happened to make it worthwhile.
+    // Emperical testing shows that anything > ~40 and < ~200 gives all of the benefit
+    // without impacting parser performance, only adding a few yields per page but at
+    // just the right times.
+    const size_t sufficientWork = 50;
+    if (startingScript && session.processedElementTokens() > sufficientWork)
+        return true;
+
+    return false;
+}
+
+bool HTMLParserScheduler::yieldIfNeeded(const SpeculationsPumpSession& session, bool startingScript)
+{
+    if (shouldYield(session, startingScript)) {
+        scheduleForResume();
+        return true;
+    }
+
+    return false;
+}
+
+void HTMLParserScheduler::forceResumeAfterYield()
+{
+    ASSERT(!m_cancellableContinueParse.isPending());
+    m_isSuspendedWithActiveTimer = true;
+}
+
+void HTMLParserScheduler::continueParsing()
+{
+    m_parser->resumeParsingAfterYield();
 }
 
 }

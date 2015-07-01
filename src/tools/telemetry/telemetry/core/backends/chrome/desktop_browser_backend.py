@@ -2,32 +2,44 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import datetime
 import glob
 import heapq
 import logging
 import os
 import os.path
+import re
 import shutil
 import subprocess as subprocess
 import sys
 import tempfile
 import time
 
-from telemetry.core import exceptions
-from telemetry.core import util
 from telemetry.core.backends import browser_backend
 from telemetry.core.backends.chrome import chrome_browser_backend
+from telemetry.core import exceptions
+from telemetry.core import util
 from telemetry.util import path
 from telemetry.util import support_binaries
+
+
+def ParseCrashpadDateTime(date_time_str):
+  # Python strptime does not support time zone parsing, strip it.
+  date_time_parts = date_time_str.split()
+  if len(date_time_parts) >= 3:
+    date_time_str = ' '.join(date_time_parts[:2])
+  return datetime.datetime.strptime(date_time_str, '%Y-%m-%d %H:%M:%S')
 
 
 class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   """The backend for controlling a locally-executed browser instance, on Linux,
   Mac or Windows.
   """
-  def __init__(self, browser_options, executable, flash_path, is_content_shell,
-               browser_directory, output_profile_path, extensions_to_load):
+  def __init__(self, desktop_platform_backend, browser_options, executable,
+               flash_path, is_content_shell, browser_directory,
+               output_profile_path, extensions_to_load):
     super(DesktopBrowserBackend, self).__init__(
+        desktop_platform_backend,
         supports_tab_control=not is_content_shell,
         supports_extensions=not is_content_shell,
         browser_options=browser_options,
@@ -62,14 +74,13 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   def _SetupProfile(self):
     if not self.browser_options.dont_override_profile:
       if self._output_profile_path:
-        # If both |_output_profile_path| and |profile_dir| are specified then
-        # the calling code will throw an exception, so we don't need to worry
-        # about that case here.
         self._tmp_profile_dir = self._output_profile_path
       else:
         self._tmp_profile_dir = tempfile.mkdtemp()
+
       profile_dir = self.browser_options.profile_dir
       if profile_dir:
+        assert self._tmp_profile_dir != profile_dir
         if self._is_content_shell:
           logging.critical('Profiles cannot be used with content shell')
           sys.exit(1)
@@ -96,11 +107,17 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     return r'\\.\pipe\%s_service' % os.path.basename(self._tmp_minidump_dir)
 
   def _StartCrashService(self):
-    os_name = self._browser.platform.GetOSName()
+    os_name = self.browser.platform.GetOSName()
     if os_name != 'win':
       return None
+    arch_name = self.browser.platform.GetArchName()
+    command = support_binaries.FindPath('crash_service', arch_name, os_name)
+    if not command:
+      logging.warning('crash_service.exe not found for %s %s',
+                      arch_name, os_name)
+      return None
     return subprocess.Popen([
-        support_binaries.FindPath('crash_service', os_name),
+        command,
         '--no-window',
         '--dumps-dir=%s' % self._tmp_minidump_dir,
         '--pipe-name=%s' % self._GetCrashServicePipeName()])
@@ -164,7 +181,6 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     logging.info('Requested remote debugging port: %d' % self._port)
     args.append('--remote-debugging-port=%i' % self._port)
     args.append('--enable-crash-reporter-for-testing')
-    args.append('--use-mock-keychain')
     if not self._is_content_shell:
       args.append('--window-size=1280,1024')
       if self._flash_path:
@@ -195,6 +211,9 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
     try:
       self._WaitForBrowserToComeUp()
+      self._InitDevtoolsClientBackend()
+      if self._supports_extensions:
+        self._WaitForExtensionsToLoad()
     except:
       self.Close()
       raise
@@ -231,17 +250,93 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     except IOError:
       return ''
 
-  def _GetMostRecentMinidump(self):
-    dumps = glob.glob(os.path.join(self._tmp_minidump_dir, '*.dmp'))
-    if not dumps:
+  def _GetMostRecentCrashpadMinidump(self):
+    os_name = self.browser.platform.GetOSName()
+    arch_name = self.browser.platform.GetArchName()
+    crashpad_database_util = support_binaries.FindPath(
+        'crashpad_database_util', arch_name, os_name)
+    if not crashpad_database_util:
       return None
-    most_recent_dump = heapq.nlargest(1, dumps, os.path.getmtime)[0]
-    if os.path.getmtime(most_recent_dump) < (time.time() - (5 * 60)):
+
+    report_output = subprocess.check_output([
+        crashpad_database_util, '--database=' + self._tmp_minidump_dir,
+        '--show-pending-reports', '--show-completed-reports',
+        '--show-all-report-info'])
+
+    last_indentation = -1
+    reports_list = []
+    report_dict = {}
+    for report_line in report_output.splitlines():
+      # Report values are grouped together by the same indentation level.
+      current_indentation = 0
+      for report_char in report_line:
+        if not report_char.isspace():
+          break
+        current_indentation += 1
+
+      # Decrease in indentation level indicates a new report is being printed.
+      if current_indentation >= last_indentation:
+        report_key, report_value = report_line.split(':', 1)
+        if report_value:
+          report_dict[report_key.strip()] = report_value.strip()
+      elif report_dict:
+        try:
+          report_time = ParseCrashpadDateTime(report_dict['Creation time'])
+          report_path = report_dict['Path'].strip()
+          reports_list.append((report_time, report_path))
+        except (ValueError, KeyError) as e:
+          logging.warning('Crashpad report expected valid keys'
+                          ' "Path" and "Creation time": %s', e)
+        finally:
+          report_dict = {}
+
+      last_indentation = current_indentation
+
+    # Include the last report.
+    if report_dict:
+      try:
+        report_time = ParseCrashpadDateTime(report_dict['Creation time'])
+        report_path = report_dict['Path'].strip()
+        reports_list.append((report_time, report_path))
+      except (ValueError, KeyError) as e:
+        logging.warning('Crashpad report expected valid keys'
+                          ' "Path" and "Creation time": %s', e)
+
+    if reports_list:
+      _, most_recent_report_path = max(reports_list)
+      return most_recent_report_path
+
+    return None
+
+  def _GetMostRecentMinidump(self):
+    # Crashpad dump layout will be the standard eventually, check it first.
+    most_recent_dump = self._GetMostRecentCrashpadMinidump()
+
+    # Typical breakpad format is simply dump files in a folder.
+    if not most_recent_dump:
+      dumps = glob.glob(os.path.join(self._tmp_minidump_dir, '*.dmp'))
+      if dumps:
+        most_recent_dump = heapq.nlargest(1, dumps, os.path.getmtime)[0]
+
+    # As a sanity check, make sure the crash dump is recent.
+    if (most_recent_dump and
+        os.path.getmtime(most_recent_dump) < (time.time() - (5 * 60))):
       logging.warning('Crash dump is older than 5 minutes. May not be correct.')
+
     return most_recent_dump
 
+  def _IsExecutableStripped(self):
+    if self.browser.platform.GetOSName() == 'mac':
+      symbols = subprocess.check_output(['/usr/bin/nm', self._executable])
+      num_symbols = len(symbols.splitlines())
+      # We assume that if there are more than 10 symbols the executable is not
+      # stripped.
+      return num_symbols < 10
+    else:
+      return False
+
   def _GetStackFromMinidump(self, minidump):
-    os_name = self._browser.platform.GetOSName()
+    os_name = self.browser.platform.GetOSName()
     if os_name == 'win':
       cdb = self._GetCdbPath()
       if not cdb:
@@ -249,11 +344,19 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
         return None
       output = subprocess.check_output([cdb, '-y', self._browser_directory,
                                         '-c', '.ecxr;k30;q', '-z', minidump])
-      stack_start = output.find('ChildEBP')
+      # cdb output can start the stack with "ChildEBP", "Child-SP", and possibly
+      # other things we haven't seen yet. If we can't find the start of the
+      # stack, include output from the beginning.
+      stack_start = 0
+      stack_start_match = re.search("^Child(?:EBP|-SP)", output, re.MULTILINE)
+      if stack_start_match:
+        stack_start = stack_start_match.start()
       stack_end = output.find('quit:')
       return output[stack_start:stack_end]
 
-    stackwalk = support_binaries.FindPath('minidump_stackwalk', os_name)
+    arch_name = self.browser.platform.GetArchName()
+    stackwalk = support_binaries.FindPath(
+        'minidump_stackwalk', arch_name, os_name)
     if not stackwalk:
       logging.warning('minidump_stackwalk binary not found.')
       return None
@@ -282,9 +385,17 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
         os.makedirs(symbol_path)
         shutil.copyfile(symbol, os.path.join(symbol_path, binary + '.sym'))
     else:
-      logging.info('Dumping breakpad symbols')
+
+      # On some platforms generating the symbol table can be very time
+      # consuming, skip it if there's nothing to dump.
+      if self._IsExecutableStripped():
+        logging.info('%s appears to be stripped, skipping symbol dump.' % (
+            self._executable))
+        return
+
+      logging.info('Dumping breakpad symbols.')
       generate_breakpad_symbols_path = os.path.join(
-          util.GetChromiumSrcDir(), "components", "breakpad",
+          util.GetChromiumSrcDir(), "components", "crash",
           "tools", "generate_breakpad_symbols.py")
       cmd = [
           sys.executable,
@@ -306,21 +417,41 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   def GetStackTrace(self):
     most_recent_dump = self._GetMostRecentMinidump()
     if not most_recent_dump:
-      logging.warning('No crash dump found. Returning browser stdout.')
-      return self.GetStandardOutput()
+      return 'No crash dump found. Returning browser stdout:\n' + (
+          self.GetStandardOutput())
 
+    logging.info('minidump found: %s' % most_recent_dump)
     stack = self._GetStackFromMinidump(most_recent_dump)
     if not stack:
-      logging.warning('Failed to symbolize minidump. Returning browser stdout.')
-      return self.GetStandardOutput()
+      return 'Failed to symbolize minidump. Returning browser stdout:\n' + (
+          self.GetStandardOutput())
 
     return stack
 
   def __del__(self):
     self.Close()
 
+  def _TryCooperativeShutdown(self):
+    if self.browser.platform.IsCooperativeShutdownSupported():
+      # Ideally there would be a portable, cooperative shutdown
+      # mechanism for the browser. This seems difficult to do
+      # correctly for all embedders of the content API. The only known
+      # problem with unclean shutdown of the browser process is on
+      # Windows, where suspended child processes frequently leak. For
+      # now, just solve this particular problem. See Issue 424024.
+      if self.browser.platform.CooperativelyShutdown(self._proc, "chrome"):
+        try:
+          util.WaitFor(lambda: not self.IsBrowserRunning(), timeout=5)
+          logging.info('Successfully shut down browser cooperatively')
+        except exceptions.TimeoutException as e:
+          logging.warning('Failed to cooperatively shutdown. ' +
+                          'Proceeding to terminate: ' + str(e))
+
   def Close(self):
     super(DesktopBrowserBackend, self).Close()
+
+    if self.IsBrowserRunning():
+      self._TryCooperativeShutdown()
 
     # Shutdown politely if the profile may be used again.
     if self._output_profile_path and self.IsBrowserRunning():
@@ -328,7 +459,7 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
       try:
         util.WaitFor(lambda: not self.IsBrowserRunning(), timeout=5)
         self._proc = None
-      except util.TimeoutException:
+      except exceptions.TimeoutException:
         logging.warning('Failed to gracefully shutdown. Proceeding to kill.')
 
     # Shutdown aggressively if the above failed or if the profile is temporary.

@@ -21,6 +21,7 @@
 #include "base/debug/dump_without_crashing.h"
 #include "base/environment.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -44,6 +45,19 @@
 
 #pragma intrinsic(_AddressOfReturnAddress)
 #pragma intrinsic(_ReturnAddress)
+
+#ifdef _WIN64
+// See http://msdn.microsoft.com/en-us/library/ddssxxy8.aspx
+typedef struct _UNWIND_INFO {
+  unsigned char Version : 3;
+  unsigned char Flags : 5;
+  unsigned char SizeOfProlog;
+  unsigned char CountOfCodes;
+  unsigned char FrameRegister : 4;
+  unsigned char FrameOffset : 4;
+  ULONG ExceptionHandler;
+} UNWIND_INFO, *PUNWIND_INFO;
+#endif
 
 namespace breakpad {
 
@@ -182,7 +196,9 @@ namespace {
 // process.
 bool DumpDoneCallbackWhenNoCrash(const wchar_t*, const wchar_t*, void*,
                                  EXCEPTION_POINTERS* ex_info,
-                                 MDRawAssertionInfo*, bool) {
+                                 MDRawAssertionInfo*, bool succeeded) {
+  GetCrashReporterClient()->RecordCrashDumpAttemptResult(
+      false /* is_real_crash */, succeeded);
   return true;
 }
 
@@ -194,7 +210,9 @@ bool DumpDoneCallbackWhenNoCrash(const wchar_t*, const wchar_t*, void*,
 // facilities such as the i18n helpers.
 bool DumpDoneCallback(const wchar_t*, const wchar_t*, void*,
                       EXCEPTION_POINTERS* ex_info,
-                      MDRawAssertionInfo*, bool) {
+                      MDRawAssertionInfo*, bool succeeded) {
+  GetCrashReporterClient()->RecordCrashDumpAttemptResult(
+      true /* is_real_crash */, succeeded);
   // Check if the exception is one of the kind which would not be solved
   // by simply restarting chrome. In this case we show a message box with
   // and exit silently. Remember that chrome is in a crashed state so we
@@ -265,6 +283,20 @@ long WINAPI ChromeExceptionFilter(EXCEPTION_POINTERS* info) {
 long WINAPI ServiceExceptionFilter(EXCEPTION_POINTERS* info) {
   DumpDoneCallback(NULL, NULL, NULL, info, NULL, false);
   return EXCEPTION_EXECUTE_HANDLER;
+}
+
+// Installed via base::debug::SetCrashKeyReportingFunctions.
+void SetCrashKeyValueForBaseDebug(const base::StringPiece& key,
+                                  const base::StringPiece& value) {
+  DCHECK(CrashKeysWin::keeper());
+  CrashKeysWin::keeper()->SetCrashKeyValue(base::UTF8ToUTF16(key),
+                                           base::UTF8ToUTF16(value));
+}
+
+// Installed via base::debug::SetCrashKeyReportingFunctions.
+void ClearCrashKeyForBaseDebug(const base::StringPiece& key) {
+  DCHECK(CrashKeysWin::keeper());
+  CrashKeysWin::keeper()->ClearCrashKeyValue(base::UTF8ToUTF16(key));
 }
 
 }  // namespace
@@ -361,6 +393,7 @@ extern "C" int __declspec(dllexport) CrashForException(
   return EXCEPTION_CONTINUE_SEARCH;
 }
 
+#ifndef _WIN64
 static NTSTATUS WINAPI HookNtTerminateProcess(HANDLE ProcessHandle,
                                               NTSTATUS ExitStatus) {
   if (g_breakpad &&
@@ -426,6 +459,7 @@ static void InitTerminateProcessHooks() {
                          old_protect,
                          &old_protect));
 }
+#endif
 
 static void InitPipeNameEnvVar(bool is_per_user_install) {
   scoped_ptr<base::Environment> env(base::Environment::Create());
@@ -440,7 +474,7 @@ static void InitPipeNameEnvVar(bool is_per_user_install) {
       GetCrashReporterClient()->ReportingIsEnforcedByPolicy(
           &crash_reporting_enabled);
 
-  const CommandLine& command = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command = *base::CommandLine::ForCurrentProcess();
   bool use_crash_service = !controlled_by_policy &&
                            (command.HasSwitch(switches::kNoErrorDialogs) ||
                             GetCrashReporterClient()->IsRunningUnattended());
@@ -485,14 +519,14 @@ void InitDefaultCrashCallback(LPTOP_LEVEL_EXCEPTION_FILTER filter) {
 }
 
 void InitCrashReporter(const std::string& process_type_switch) {
-  const CommandLine& command = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command = *base::CommandLine::ForCurrentProcess();
   if (command.HasSwitch(switches::kDisableBreakpad))
     return;
 
   // Disable the message box for assertions.
   _CrtSetReportMode(_CRT_ASSERT, 0);
 
-  std::wstring process_type = base::ASCIIToWide(process_type_switch);
+  base::string16 process_type = base::ASCIIToUTF16(process_type_switch);
   if (process_type.empty())
     process_type = L"browser";
 
@@ -507,9 +541,20 @@ void InitCrashReporter(const std::string& process_type_switch) {
   CrashKeysWin* keeper = new CrashKeysWin();
 
   google_breakpad::CustomClientInfo* custom_info =
-      keeper->GetCustomInfo(exe_path, process_type,
-                            GetProfileType(), CommandLine::ForCurrentProcess(),
+      keeper->GetCustomInfo(exe_path, process_type, GetProfileType(),
+                            base::CommandLine::ForCurrentProcess(),
                             GetCrashReporterClient());
+
+#if !defined(COMPONENT_BUILD)
+  // chrome/common/child_process_logging_win.cc registers crash keys for
+  // chrome.dll. In a component build, that is sufficient as chrome.dll and
+  // chrome.exe share a copy of base (in base.dll).
+  // In a static build, the EXE must separately initialize the crash keys
+  // configuration as it has its own statically linked copy of base.
+  base::debug::SetCrashKeyReportingFunctions(&SetCrashKeyValueForBaseDebug,
+                                             &ClearCrashKeyForBaseDebug);
+  GetCrashReporterClient()->RegisterCrashKeys();
+#endif
 
   google_breakpad::ExceptionHandler::MinidumpCallback callback = NULL;
   LPTOP_LEVEL_EXCEPTION_FILTER default_filter = NULL;
@@ -539,7 +584,7 @@ void InitCrashReporter(const std::string& process_type_switch) {
       InitDefaultCrashCallback(default_filter);
     return;
   }
-  std::wstring pipe_name = base::ASCIIToWide(pipe_name_ascii);
+  base::string16 pipe_name = base::ASCIIToUTF16(pipe_name_ascii);
 
 #ifdef _WIN64
   // The protocol for connecting to the out-of-process Breakpad crash
@@ -600,6 +645,15 @@ void InitCrashReporter(const std::string& process_type_switch) {
   }
 }
 
+void ConsumeInvalidHandleExceptions() {
+  if (g_breakpad) {
+    g_breakpad->set_consume_invalid_handle_exceptions(true);
+  }
+  if (g_dumphandler_no_crash) {
+    g_dumphandler_no_crash->set_consume_invalid_handle_exceptions(true);
+  }
+}
+
 // If the user has disabled crash reporting uploads and restarted Chrome, the
 // restarted instance will still contain the pipe environment variable, which
 // will allow the restarted process to still upload crash reports. This function
@@ -610,5 +664,74 @@ extern "C" void __declspec(dllexport) __cdecl
   scoped_ptr<base::Environment> env(base::Environment::Create());
   env->UnSetVar(kPipeNameVar);
 }
+
+#ifdef _WIN64
+int CrashForExceptionInNonABICompliantCodeRange(
+    PEXCEPTION_RECORD ExceptionRecord,
+    ULONG64 EstablisherFrame,
+    PCONTEXT ContextRecord,
+    PDISPATCHER_CONTEXT DispatcherContext) {
+  EXCEPTION_POINTERS info = { ExceptionRecord, ContextRecord };
+  return CrashForException(&info);
+}
+
+struct ExceptionHandlerRecord {
+  RUNTIME_FUNCTION runtime_function;
+  UNWIND_INFO unwind_info;
+  unsigned char thunk[12];
+};
+
+extern "C" void __declspec(dllexport) __cdecl
+RegisterNonABICompliantCodeRange(void* start, size_t size_in_bytes) {
+  ExceptionHandlerRecord* record =
+      reinterpret_cast<ExceptionHandlerRecord*>(start);
+
+  // We assume that the first page of the code range is executable and
+  // committed and reserved for breakpad. What could possibly go wrong?
+
+  // All addresses are 32bit relative offsets to start.
+  record->runtime_function.BeginAddress = 0;
+  record->runtime_function.EndAddress =
+      base::checked_cast<DWORD>(size_in_bytes);
+  record->runtime_function.UnwindData =
+      offsetof(ExceptionHandlerRecord, unwind_info);
+
+  // Create unwind info that only specifies an exception handler.
+  record->unwind_info.Version = 1;
+  record->unwind_info.Flags = UNW_FLAG_EHANDLER;
+  record->unwind_info.SizeOfProlog = 0;
+  record->unwind_info.CountOfCodes = 0;
+  record->unwind_info.FrameRegister = 0;
+  record->unwind_info.FrameOffset = 0;
+  record->unwind_info.ExceptionHandler =
+      offsetof(ExceptionHandlerRecord, thunk);
+
+  // Hardcoded thunk.
+  // mov imm64, rax
+  record->thunk[0] = 0x48;
+  record->thunk[1] = 0xb8;
+  void* handler = &CrashForExceptionInNonABICompliantCodeRange;
+  memcpy(&record->thunk[2], &handler, 8);
+
+  // jmp rax
+  record->thunk[10] = 0xff;
+  record->thunk[11] = 0xe0;
+
+  // Protect reserved page against modifications.
+  DWORD old_protect;
+  CHECK(VirtualProtect(
+      start, sizeof(ExceptionHandlerRecord), PAGE_EXECUTE_READ, &old_protect));
+  CHECK(RtlAddFunctionTable(
+      &record->runtime_function, 1, reinterpret_cast<DWORD64>(start)));
+}
+
+extern "C" void __declspec(dllexport) __cdecl
+UnregisterNonABICompliantCodeRange(void* start) {
+  ExceptionHandlerRecord* record =
+      reinterpret_cast<ExceptionHandlerRecord*>(start);
+
+  CHECK(RtlDeleteFunctionTable(&record->runtime_function));
+}
+#endif
 
 }  // namespace breakpad

@@ -86,8 +86,11 @@ class GoogleServiceAuthError {
     // application error.
     SERVICE_ERROR = 12,
 
+    // The password is valid but web login is required to get a token.
+    WEB_LOGIN_REQUIRED = 13,
+
     // The number of known error states.
-    NUM_STATES = 13,
+    NUM_STATES = 14,
   };
 
   // Additional data for CAPTCHA_REQUIRED errors.
@@ -136,6 +139,7 @@ class GoogleServiceAuthError {
 
   // For test only.
   bool operator==(const GoogleServiceAuthError &b) const;
+  bool operator!=(const GoogleServiceAuthError &b) const;
 
   // Construct a GoogleServiceAuthError from a State with no additional data.
   explicit GoogleServiceAuthError(State s);
@@ -182,6 +186,11 @@ class GoogleServiceAuthError {
 
   // Returns a message describing the error.
   std::string ToString() const;
+
+  // Check if this is error may go away simply by trying again.  Except for the
+  // NONE case, these are mutually exclusive.
+  bool IsPersistentError() const;
+  bool IsTransientError() const;
 
  private:
   GoogleServiceAuthError(State s, int error);

@@ -10,7 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_export.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
 #include "net/socket/server_socket.h"
 #include "net/socket/tcp_socket.h"
 
@@ -19,13 +19,13 @@ namespace net {
 class NET_EXPORT_PRIVATE TCPServerSocket : public ServerSocket {
  public:
   TCPServerSocket(NetLog* net_log, const NetLog::Source& source);
-  virtual ~TCPServerSocket();
+  ~TCPServerSocket() override;
 
   // net::ServerSocket implementation.
-  virtual int Listen(const IPEndPoint& address, int backlog) OVERRIDE;
-  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
-  virtual int Accept(scoped_ptr<StreamSocket>* socket,
-                     const CompletionCallback& callback) OVERRIDE;
+  int Listen(const IPEndPoint& address, int backlog) override;
+  int GetLocalAddress(IPEndPoint* address) const override;
+  int Accept(scoped_ptr<StreamSocket>* socket,
+             const CompletionCallback& callback) override;
 
  private:
   // Converts |accepted_socket_| and stores the result in

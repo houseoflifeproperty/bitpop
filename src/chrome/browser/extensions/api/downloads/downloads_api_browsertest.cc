@@ -23,7 +23,6 @@
 #include "chrome/browser/extensions/browser_action_test_util.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
-#include "chrome/browser/history/download_row.h"
 #include "chrome/browser/net/url_request_mock_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -40,11 +39,11 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/download_test_observer.h"
-#include "content/test/net/url_request_slow_download_job.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/notification_types.h"
 #include "net/base/data_url.h"
 #include "net/base/net_util.h"
+#include "net/test/url_request/url_request_slow_download_job.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_job.h"
@@ -59,7 +58,6 @@ using content::BrowserContext;
 using content::BrowserThread;
 using content::DownloadItem;
 using content::DownloadManager;
-using content::URLRequestSlowDownloadJob;
 
 namespace errors = download_extension_errors;
 
@@ -85,7 +83,7 @@ class DownloadsEventsListener : public content::NotificationObserver {
                    content::NotificationService::AllSources());
   }
 
-  virtual ~DownloadsEventsListener() {
+  ~DownloadsEventsListener() override {
     registrar_.Remove(this,
                       extensions::NOTIFICATION_EXTENSION_DOWNLOADS_EVENT,
                       content::NotificationService::AllSources());
@@ -94,7 +92,6 @@ class DownloadsEventsListener : public content::NotificationObserver {
 
   void ClearEvents() {
     STLDeleteElements(&events_);
-    events_.clear();
   }
 
   class Event {
@@ -174,9 +171,9 @@ class DownloadsEventsListener : public content::NotificationObserver {
   typedef ExtensionDownloadsEventRouter::DownloadsNotificationSource
     DownloadsNotificationSource;
 
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     switch (type) {
       case extensions::NOTIFICATION_EXTENSION_DOWNLOADS_EVENT: {
           DownloadsNotificationSource* dns =
@@ -312,7 +309,7 @@ class DownloadExtensionTest : public ExtensionApiTest {
   Browser* current_browser() { return current_browser_; }
 
   // InProcessBrowserTest
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     ExtensionApiTest::SetUpOnMainThread();
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
@@ -453,10 +450,8 @@ class DownloadExtensionTest : public ExtensionApiTest {
     for (size_t i = 0; i < count; ++i) {
       scoped_ptr<content::DownloadTestObserver> observer(
           CreateInProgressDownloadObserver(1));
-      GURL slow_download_url(URLRequestSlowDownloadJob::kUnknownSizeUrl);
-      ui_test_utils::NavigateToURLWithDisposition(
-          current_browser(), slow_download_url, CURRENT_TAB,
-          ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
+      GURL slow_download_url(net::URLRequestSlowDownloadJob::kUnknownSizeUrl);
+      ui_test_utils::NavigateToURL(current_browser(), slow_download_url);
       observer->WaitForFinished();
       EXPECT_EQ(
           1u, observer->NumDownloadsSeenInState(DownloadItem::IN_PROGRESS));
@@ -468,7 +463,7 @@ class DownloadExtensionTest : public ExtensionApiTest {
   DownloadItem* CreateSlowTestDownload() {
     scoped_ptr<content::DownloadTestObserver> observer(
         CreateInProgressDownloadObserver(1));
-    GURL slow_download_url(URLRequestSlowDownloadJob::kUnknownSizeUrl);
+    GURL slow_download_url(net::URLRequestSlowDownloadJob::kUnknownSizeUrl);
     DownloadManager* manager = GetCurrentManager();
 
     EXPECT_EQ(0, manager->NonMaliciousInProgressCount());
@@ -476,9 +471,7 @@ class DownloadExtensionTest : public ExtensionApiTest {
     if (manager->InProgressCount() != 0)
       return NULL;
 
-    ui_test_utils::NavigateToURLWithDisposition(
-        current_browser(), slow_download_url, CURRENT_TAB,
-        ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
+    ui_test_utils::NavigateToURL(current_browser(), slow_download_url);
 
     observer->WaitForFinished();
     EXPECT_EQ(1u, observer->NumDownloadsSeenInState(DownloadItem::IN_PROGRESS));
@@ -501,7 +494,7 @@ class DownloadExtensionTest : public ExtensionApiTest {
   void FinishPendingSlowDownloads() {
     scoped_ptr<content::DownloadTestObserver> observer(
         CreateDownloadObserver(1));
-    GURL finish_url(URLRequestSlowDownloadJob::kFinishDownloadUrl);
+    GURL finish_url(net::URLRequestSlowDownloadJob::kFinishDownloadUrl);
     ui_test_utils::NavigateToURLWithDisposition(
         current_browser(), finish_url, NEW_FOREGROUND_TAB,
         ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
@@ -617,12 +610,12 @@ class MockIconExtractorImpl : public DownloadFileIconExtractor {
         expected_icon_size_(icon_size),
         response_(response) {
   }
-  virtual ~MockIconExtractorImpl() {}
+  ~MockIconExtractorImpl() override {}
 
-  virtual bool ExtractIconURLForPath(const base::FilePath& path,
-                                     float scale,
-                                     IconLoader::IconSize icon_size,
-                                     IconURLCallback callback) OVERRIDE {
+  bool ExtractIconURLForPath(const base::FilePath& path,
+                             float scale,
+                             IconLoader::IconSize icon_size,
+                             IconURLCallback callback) override {
     EXPECT_STREQ(expected_path_.value().c_str(), path.value().c_str());
     EXPECT_EQ(expected_icon_size_, icon_size);
     if (expected_path_ == path &&
@@ -758,10 +751,10 @@ class JustInProgressDownloadObserver
       : content::DownloadTestObserverInProgress(download_manager, wait_count) {
   }
 
-  virtual ~JustInProgressDownloadObserver() {}
+  ~JustInProgressDownloadObserver() override {}
 
  private:
-  virtual bool IsDownloadInFinalState(DownloadItem* item) OVERRIDE {
+  bool IsDownloadInFinalState(DownloadItem* item) override {
     return item->GetState() == DownloadItem::IN_PROGRESS;
   }
 
@@ -1573,7 +1566,7 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
   ASSERT_TRUE(test_server()->Start());
   GoOnTheRecord();
 
-  static const char* kUnsafeHeaders[] = {
+  static const char* const kUnsafeHeaders[] = {
     "Accept-chArsEt",
     "accept-eNcoding",
     "coNNection",
@@ -1731,7 +1724,7 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
   LoadExtension("downloads_split");
   GoOnTheRecord();
 
-  static const char* kInvalidURLs[] = {
+  static const char* const kInvalidURLs[] = {
     "foo bar",
     "../hello",
     "/hello",
@@ -2122,7 +2115,7 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
   ASSERT_TRUE(test_server()->Start());
   std::string download_url = test_server()->GetURL("auth-basic").spec();
   // This is just base64 of 'username:secret'.
-  static const char* kAuthorization = "dXNlcm5hbWU6c2VjcmV0";
+  static const char kAuthorization[] = "dXNlcm5hbWU6c2VjcmV0";
   GoOnTheRecord();
 
   scoped_ptr<base::Value> result(RunFunctionAndReturnResult(
@@ -2351,7 +2344,7 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
 // NOTE: chrome disallows creating HTML5 FileSystem Files in incognito.
 IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
                        MAYBE_DownloadExtensionTest_Download_FileSystemURL) {
-  static const char* kPayloadData = "on the record\ndata";
+  static const char kPayloadData[] = "on the record\ndata";
   GoOnTheRecord();
   LoadExtension("downloads_split");
 
@@ -3862,7 +3855,7 @@ IN_PROC_BROWSER_TEST_F(
 IN_PROC_BROWSER_TEST_F(
     DownloadExtensionTest,
     MAYBE_DownloadExtensionTest_OnDeterminingFilename_InterruptedResume) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   LoadExtension("downloads_split");
   ASSERT_TRUE(StartEmbeddedTestServer());
@@ -3883,7 +3876,7 @@ IN_PROC_BROWSER_TEST_F(
     // resumed. http://crbug.com/225901
     ui_test_utils::NavigateToURLWithDisposition(
         current_browser(),
-        GURL(URLRequestSlowDownloadJob::kUnknownSizeUrl),
+        GURL(net::URLRequestSlowDownloadJob::kUnknownSizeUrl),
         CURRENT_TAB,
         ui_test_utils::BROWSER_TEST_NONE);
     observer->WaitForFinished();
@@ -3923,7 +3916,7 @@ IN_PROC_BROWSER_TEST_F(
   ClearEvents();
   ui_test_utils::NavigateToURLWithDisposition(
       current_browser(),
-      GURL(URLRequestSlowDownloadJob::kErrorDownloadUrl),
+      GURL(net::URLRequestSlowDownloadJob::kErrorDownloadUrl),
       NEW_BACKGROUND_TAB,
       ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
 
@@ -4024,9 +4017,9 @@ void OnDangerPromptCreated(DownloadDangerPrompt* prompt) {
 #if defined(OS_MACOSX)
 // Flakily triggers and assert on Mac.
 // http://crbug.com/180759
-#define MAYBE_DownloadExtensionTest_AcceptDanger DownloadExtensionTest_AcceptDanger
-#else
 #define MAYBE_DownloadExtensionTest_AcceptDanger DISABLED_DownloadExtensionTest_AcceptDanger
+#else
+#define MAYBE_DownloadExtensionTest_AcceptDanger DownloadExtensionTest_AcceptDanger
 #endif
 IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
                        MAYBE_DownloadExtensionTest_AcceptDanger) {
@@ -4067,7 +4060,8 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
 class DownloadsApiTest : public ExtensionApiTest {
  public:
   DownloadsApiTest() {}
-  virtual ~DownloadsApiTest() {}
+  ~DownloadsApiTest() override {}
+
  private:
   DISALLOW_COPY_AND_ASSIGN(DownloadsApiTest);
 };
@@ -4086,7 +4080,7 @@ TEST(DownloadInterruptReasonEnumsSynced,
   EXPECT_EQ(                                                                 \
       InterruptReasonExtensionToContent(downloads::INTERRUPT_REASON_##name), \
       content::DOWNLOAD_INTERRUPT_REASON_##name);
-#include "content/public/browser/download_interrupt_reason_values.h"
+#include "content/public/browser/download_interrupt_reason_values.h"  // NOLINT
 #undef INTERRUPT_REASON
 }
 

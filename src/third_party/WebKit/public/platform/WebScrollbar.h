@@ -93,7 +93,6 @@ public:
     virtual bool enabled() const = 0;
     virtual int maximum() const = 0;
     virtual int totalSize() const = 0;
-    virtual bool isScrollViewScrollbar() const = 0;
     virtual bool isScrollableAreaActive() const = 0;
     virtual void getTickmarks(WebVector<WebRect>& tickmarks) const = 0;
     virtual ScrollbarControlSize controlSize() const = 0;
@@ -105,6 +104,8 @@ public:
     virtual bool isLeftSideVerticalScrollbar() const = 0;
     virtual bool isAlphaLocked() const { return false; }
     virtual void setIsAlphaLocked(bool) { }
+    virtual float elasticOverscroll() const = 0;
+    virtual void setElasticOverscroll(float) = 0;
 };
 
 } // namespace blink

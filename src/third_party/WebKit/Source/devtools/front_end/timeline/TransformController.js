@@ -14,34 +14,35 @@ WebInspector.TransformController = function(element, disableRotate)
 {
     this._shortcuts = {};
     this.element = element;
+    if (this.element.tabIndex < 0)
+        this.element.tabIndex = 0;
     this._registerShortcuts();
+    WebInspector.installDragHandle(element, this._onDragStart.bind(this), this._onDrag.bind(this), this._onDragEnd.bind(this), "move", null);
     element.addEventListener("keydown", this._onKeyDown.bind(this), false);
     element.addEventListener("keyup", this._onKeyUp.bind(this), false);
-    element.addEventListener("mousemove", this._onMouseMove.bind(this), false);
-    element.addEventListener("mousedown", this._onMouseDown.bind(this), false);
-    element.addEventListener("mouseup", this._onMouseUp.bind(this), false);
     element.addEventListener("mousewheel", this._onMouseWheel.bind(this), false);
-    this._disableRotate = disableRotate;
+    this._minScale = 0;
+    this._maxScale = Infinity;
 
-    this._controlPanelElement = document.createElement("div");
-    this._controlPanelElement.classList.add("transform-control-panel");
+    this._controlPanelToolbar = new WebInspector.Toolbar();
+    this._controlPanelToolbar.element.classList.add("transform-control-panel");
 
     this._modeButtons = {};
     if (!disableRotate) {
-        var panModeButton = new WebInspector.StatusBarButton(WebInspector.UIString("Pan mode (X)"), "transform-mode-pan");
+        var panModeButton = new WebInspector.ToolbarButton(WebInspector.UIString("Pan mode (X)"), "pan-toolbar-item");
         panModeButton.addEventListener("click", this._setMode.bind(this, WebInspector.TransformController.Modes.Pan));
         this._modeButtons[WebInspector.TransformController.Modes.Pan] = panModeButton;
-        this._controlPanelElement.appendChild(panModeButton.element);
-        var rotateModeButton = new WebInspector.StatusBarButton(WebInspector.UIString("Rotate mode (V)"), "transform-mode-rotate");
+        this._controlPanelToolbar.appendToolbarItem(panModeButton);
+        var rotateModeButton = new WebInspector.ToolbarButton(WebInspector.UIString("Rotate mode (V)"), "rotate-toolbar-item");
         rotateModeButton.addEventListener("click", this._setMode.bind(this, WebInspector.TransformController.Modes.Rotate));
         this._modeButtons[WebInspector.TransformController.Modes.Rotate] = rotateModeButton;
-        this._controlPanelElement.appendChild(rotateModeButton.element);
+        this._controlPanelToolbar.appendToolbarItem(rotateModeButton);
     }
     this._setMode(WebInspector.TransformController.Modes.Pan);
 
-    var resetButton = new WebInspector.StatusBarButton(WebInspector.UIString("Reset transform (0)"), "transform-reset");
+    var resetButton = new WebInspector.ToolbarButton(WebInspector.UIString("Reset transform (0)"), "center-toolbar-item");
     resetButton.addEventListener("click", this.resetAndNotify.bind(this, undefined));
-    this._controlPanelElement.appendChild(resetButton.element);
+    this._controlPanelToolbar.appendToolbarItem(resetButton);
 
     this._reset();
 }
@@ -63,11 +64,11 @@ WebInspector.TransformController.Modes = {
 
 WebInspector.TransformController.prototype = {
     /**
-     * @return {!Element}
+     * @return {!WebInspector.Toolbar}
      */
-    controlPanelElement: function()
+    toolbar: function()
     {
-        return this._controlPanelElement;
+        return this._controlPanelToolbar;
     },
 
     _onKeyDown: function(event)
@@ -143,7 +144,7 @@ WebInspector.TransformController.prototype = {
     _updateModeButtons: function()
     {
         for (var mode in this._modeButtons)
-            this._modeButtons[mode].toggled = (mode === this._mode);
+            this._modeButtons[mode].setToggled(mode === this._mode);
     },
 
     /**
@@ -156,6 +157,29 @@ WebInspector.TransformController.prototype = {
         if (event)
             event.preventDefault();
         this.element.focus();
+    },
+
+    /**
+     * @param {number} minScale
+     * @param {number} maxScale
+     */
+    setScaleConstraints: function(minScale, maxScale)
+    {
+        this._minScale = minScale;
+        this._maxScale = maxScale;
+        this._scale = Number.constrain(this._scale, minScale, maxScale);
+    },
+
+    /**
+     * @param {number} minX
+     * @param {number} maxX
+     * @param {number} minY
+     * @param {number} maxY
+     */
+    clampOffsets: function(minX, maxX, minY, maxY)
+    {
+        this._offsetX = Number.constrain(this._offsetX, minX, maxX);
+        this._offsetY = Number.constrain(this._offsetY, minY, maxY);
     },
 
     /**
@@ -205,6 +229,7 @@ WebInspector.TransformController.prototype = {
      */
     _onScale: function(scaleFactor, x, y)
     {
+        scaleFactor = Number.constrain(this._scale * scaleFactor, this._minScale, this._maxScale) / this._scale;
         this._scale *= scaleFactor;
         this._offsetX -= (x - this._offsetX) * (scaleFactor - 1);
         this._offsetY -= (y - this._offsetY) * (scaleFactor - 1);
@@ -274,10 +299,8 @@ WebInspector.TransformController.prototype = {
     /**
      * @param {!Event} event
      */
-    _onMouseMove: function(event)
+    _onDrag: function(event)
     {
-        if (event.which !== 1 || typeof this._originX !== "number")
-            return;
         if (this._mode === WebInspector.TransformController.Modes.Rotate) {
             this._onRotate(this._oldRotateX + (this._originY - event.clientY) / this.element.clientHeight * 180, this._oldRotateY - (this._originX - event.clientX) / this.element.clientWidth * 180);
         } else {
@@ -288,42 +311,24 @@ WebInspector.TransformController.prototype = {
     },
 
     /**
-     * @param {!Event} event
+     * @param {!MouseEvent} event
      */
-    _setReferencePoint: function(event)
+    _onDragStart: function(event)
     {
+        this.element.focus();
         this._originX = event.clientX;
         this._originY = event.clientY;
         this._oldRotateX = this._rotateX;
         this._oldRotateY = this._rotateY;
+        return true;
     },
 
-    _resetReferencePoint: function()
+    _onDragEnd: function()
     {
         delete this._originX;
         delete this._originY;
         delete this._oldRotateX;
         delete this._oldRotateY;
-    },
-
-    /**
-     * @param {!Event} event
-     */
-    _onMouseDown: function(event)
-    {
-        if (event.which !== 1)
-            return;
-        this._setReferencePoint(event);
-    },
-
-    /**
-     * @param {!Event} event
-     */
-    _onMouseUp: function(event)
-    {
-        if (event.which !== 1)
-            return;
-        this._resetReferencePoint();
     },
 
     __proto__: WebInspector.Object.prototype

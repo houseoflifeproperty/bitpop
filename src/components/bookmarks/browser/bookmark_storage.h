@@ -14,8 +14,6 @@
 #include "base/memory/weak_ptr.h"
 #include "components/bookmarks/browser/bookmark_node.h"
 
-class BookmarkModel;
-
 namespace base {
 class SequencedTaskRunner;
 }
@@ -23,6 +21,7 @@ class SequencedTaskRunner;
 namespace bookmarks {
 
 class BookmarkIndex;
+class BookmarkModel;
 
 // A list of BookmarkPermanentNodes that owns them.
 typedef ScopedVector<BookmarkPermanentNode> BookmarkPermanentNodeList;
@@ -142,7 +141,7 @@ class BookmarkStorage : public base::ImportantFileWriter::DataSerializer {
   BookmarkStorage(BookmarkModel* model,
                   const base::FilePath& profile_path,
                   base::SequencedTaskRunner* sequenced_task_runner);
-  virtual ~BookmarkStorage();
+  ~BookmarkStorage() override;
 
   // Loads the bookmarks into the model, notifying the model when done. This
   // takes ownership of |details| and send the |OnLoadFinished| callback from
@@ -162,7 +161,7 @@ class BookmarkStorage : public base::ImportantFileWriter::DataSerializer {
   void OnLoadFinished(scoped_ptr<BookmarkLoadDetails> details);
 
   // ImportantFileWriter::DataSerializer implementation.
-  virtual bool SerializeData(std::string* output) OVERRIDE;
+  bool SerializeData(std::string* output) override;
 
  private:
   // Serializes the data and schedules save using ImportantFileWriter.

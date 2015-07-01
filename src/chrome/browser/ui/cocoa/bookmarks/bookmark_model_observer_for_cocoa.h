@@ -28,7 +28,7 @@
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_model_observer.h"
 
-class BookmarkModelObserverForCocoa : public BookmarkModelObserver {
+class BookmarkModelObserverForCocoa : public bookmarks::BookmarkModelObserver {
  public:
   // Callback called on a significant model change. |nodeWasDeleted| will
   // be YES if an observed node was deleted in the change.
@@ -36,55 +36,57 @@ class BookmarkModelObserverForCocoa : public BookmarkModelObserver {
 
   // When a |model| changes, or an observed node within it does, call a
   // |callback|.
-  BookmarkModelObserverForCocoa(BookmarkModel* model,
+  BookmarkModelObserverForCocoa(bookmarks::BookmarkModel* model,
                                 ChangeCallback callback);
-  virtual ~BookmarkModelObserverForCocoa();
+  ~BookmarkModelObserverForCocoa() override;
 
   // Starts and stops observing a specified |node|; the node must be contained
   // within the model.
-  void StartObservingNode(const BookmarkNode* node);
-  void StopObservingNode(const BookmarkNode* node);
+  void StartObservingNode(const bookmarks::BookmarkNode* node);
+  void StopObservingNode(const bookmarks::BookmarkNode* node);
 
-  // BookmarkModelObserver:
-  virtual void BookmarkModelBeingDeleted(BookmarkModel* model) OVERRIDE;
-  virtual void BookmarkNodeMoved(BookmarkModel* model,
-                                 const BookmarkNode* old_parent,
-                                 int old_index,
-                                 const BookmarkNode* new_parent,
-                                 int new_index) OVERRIDE;
-  virtual void BookmarkNodeRemoved(BookmarkModel* model,
-                                   const BookmarkNode* parent,
-                                   int old_index,
-                                   const BookmarkNode* node,
-                                   const std::set<GURL>& removed_urls) OVERRIDE;
-  virtual void BookmarkAllUserNodesRemoved(
-      BookmarkModel* model,
-      const std::set<GURL>& removed_urls) OVERRIDE;
-  virtual void BookmarkNodeChanged(BookmarkModel* model,
-                                   const BookmarkNode* node) OVERRIDE;
+  // bookmarks::BookmarkModelObserver:
+  void BookmarkModelBeingDeleted(bookmarks::BookmarkModel* model) override;
+  void BookmarkNodeMoved(bookmarks::BookmarkModel* model,
+                         const bookmarks::BookmarkNode* old_parent,
+                         int old_index,
+                         const bookmarks::BookmarkNode* new_parent,
+                         int new_index) override;
+  void BookmarkNodeRemoved(bookmarks::BookmarkModel* model,
+                           const bookmarks::BookmarkNode* parent,
+                           int old_index,
+                           const bookmarks::BookmarkNode* node,
+                           const std::set<GURL>& removed_urls) override;
+  void BookmarkAllUserNodesRemoved(bookmarks::BookmarkModel* model,
+                                   const std::set<GURL>& removed_urls) override;
+  void BookmarkNodeChanged(bookmarks::BookmarkModel* model,
+                           const bookmarks::BookmarkNode* node) override;
 
   // Some notifications we don't care about, but by being pure virtual
   // in the base class we must implement them.
 
-  virtual void BookmarkModelLoaded(BookmarkModel* model,
-                                   bool ids_reassigned) OVERRIDE {}
-  virtual void BookmarkNodeAdded(BookmarkModel* model,
-                                 const BookmarkNode* parent,
-                                 int index) OVERRIDE {}
-  virtual void BookmarkNodeFaviconChanged(BookmarkModel* model,
-                                          const BookmarkNode* node) OVERRIDE {}
-  virtual void BookmarkNodeChildrenReordered(
-      BookmarkModel* model,
-      const BookmarkNode* node) OVERRIDE {}
+  void BookmarkModelLoaded(bookmarks::BookmarkModel* model,
+                           bool ids_reassigned) override {}
+  void BookmarkNodeAdded(bookmarks::BookmarkModel* model,
+                         const bookmarks::BookmarkNode* parent,
+                         int index) override {}
+  void BookmarkNodeFaviconChanged(
+      bookmarks::BookmarkModel* model,
+      const bookmarks::BookmarkNode* node) override {}
+  void BookmarkNodeChildrenReordered(
+      bookmarks::BookmarkModel* model,
+      const bookmarks::BookmarkNode* node) override {}
 
-  virtual void ExtensiveBookmarkChangesBeginning(
-      BookmarkModel* model) OVERRIDE {}
+  void ExtensiveBookmarkChangesBeginning(
+      bookmarks::BookmarkModel* model) override {}
 
-  virtual void ExtensiveBookmarkChangesEnded(BookmarkModel* model) OVERRIDE {}
+  void ExtensiveBookmarkChangesEnded(bookmarks::BookmarkModel* model) override {
+  }
 
  private:
-  BookmarkModel* model_;  // Weak; it is owned by a Profile.
-  std::set<const BookmarkNode*> nodes_;  // Weak items owned by a BookmarkModel.
+  bookmarks::BookmarkModel* model_;  // Weak; it is owned by a Profile.
+  std::set<const bookmarks::BookmarkNode*>
+      nodes_;  // Weak items owned by a BookmarkModel.
   base::mac::ScopedBlock<ChangeCallback> callback_;
 
   // Send a notification to the client; |deleted| is YES if an observed node was

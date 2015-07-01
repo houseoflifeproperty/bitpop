@@ -14,11 +14,9 @@ WebInspector.FileBasedSearchResultsPane = function(searchConfig)
     this._searchResults = [];
 
     this.element.id = "search-results-pane-file-based";
-
-    this._treeOutlineElement = document.createElement("ol");
-    this._treeOutlineElement.className = "search-results-outline-disclosure";
-    this.element.appendChild(this._treeOutlineElement);
-    this._treeOutline = new TreeOutline(this._treeOutlineElement);
+    this._treeOutline = new TreeOutline();
+    this._treeOutline.element.classList.add("search-results-outline-disclosure");
+    this.element.appendChild(this._treeOutline.element);
 
     this._matchesExpandedCount = 0;
 }
@@ -28,6 +26,7 @@ WebInspector.FileBasedSearchResultsPane.fileMatchesShownAtOnce = 20;
 
 WebInspector.FileBasedSearchResultsPane.prototype = {
     /**
+     * @override
      * @param {!WebInspector.FileBasedSearchResult} searchResult
      */
     addSearchResult: function(searchResult)
@@ -63,7 +62,7 @@ WebInspector.FileBasedSearchResultsPane.prototype = {
  */
 WebInspector.FileBasedSearchResultsPane.FileTreeElement = function(searchConfig, searchResult)
 {
-    TreeElement.call(this, "", null, true);
+    TreeElement.call(this, "", true);
     this._searchConfig = searchConfig;
     this._searchResult = searchResult;
 
@@ -102,12 +101,12 @@ WebInspector.FileBasedSearchResultsPane.FileTreeElement.prototype = {
     {
         this.listItemElement.classList.add("search-result");
 
-        var fileNameSpan = document.createElement("span");
+        var fileNameSpan = createElement("span");
         fileNameSpan.className = "search-result-file-name";
         fileNameSpan.textContent = this._searchResult.uiSourceCode.fullDisplayName();
         this.listItemElement.appendChild(fileNameSpan);
 
-        var matchesCountSpan = document.createElement("span");
+        var matchesCountSpan = createElement("span");
         matchesCountSpan.className = "search-result-matches-count";
 
         var searchMatchesCount = this._searchResult.searchMatches.length;
@@ -146,7 +145,7 @@ WebInspector.FileBasedSearchResultsPane.FileTreeElement.prototype = {
             var anchor = this._createAnchor(uiSourceCode, lineNumber, matchRanges[0].offset);
 
             var numberString = numberToStringWithSpacesPadding(lineNumber + 1, 4);
-            var lineNumberSpan = document.createElement("span");
+            var lineNumberSpan = createElement("span");
             lineNumberSpan.classList.add("search-match-line-number");
             lineNumberSpan.textContent = numberString;
             anchor.appendChild(lineNumberSpan);
@@ -154,7 +153,7 @@ WebInspector.FileBasedSearchResultsPane.FileTreeElement.prototype = {
             var contentSpan = this._createContentSpan(lineContent, matchRanges);
             anchor.appendChild(contentSpan);
 
-            var searchMatchElement = new TreeElement("");
+            var searchMatchElement = new TreeElement();
             searchMatchElement.selectable = false;
             this.appendChild(searchMatchElement);
             searchMatchElement.listItemElement.className = "search-match source-code";
@@ -183,7 +182,7 @@ WebInspector.FileBasedSearchResultsPane.FileTreeElement.prototype = {
      */
     _createAnchor: function(uiSourceCode, lineNumber, columnNumber)
     {
-        return WebInspector.Linkifier.linkifyUsingRevealer(uiSourceCode.uiLocation(lineNumber, columnNumber), "", uiSourceCode.url, lineNumber);
+        return WebInspector.Linkifier.linkifyUsingRevealer(uiSourceCode.uiLocation(lineNumber, columnNumber), "");
     },
 
     /**
@@ -192,7 +191,7 @@ WebInspector.FileBasedSearchResultsPane.FileTreeElement.prototype = {
      */
     _createContentSpan: function(lineContent, matchRanges)
     {
-        var contentSpan = document.createElement("span");
+        var contentSpan = createElement("span");
         contentSpan.className = "search-match-content";
         contentSpan.textContent = lineContent;
         WebInspector.highlightRangesWithStyleClass(contentSpan, matchRanges, "highlighted-match");
@@ -208,7 +207,6 @@ WebInspector.FileBasedSearchResultsPane.FileTreeElement.prototype = {
     {
         regex.lastIndex = 0;
         var match;
-        var offset = 0;
         var matchRanges = [];
         while ((regex.lastIndex < lineContent.length) && (match = regex.exec(lineContent)))
             matchRanges.push(new WebInspector.SourceRange(match.index, match[0].length));

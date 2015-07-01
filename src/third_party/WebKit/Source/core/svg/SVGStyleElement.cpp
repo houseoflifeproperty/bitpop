@@ -25,9 +25,16 @@
 
 #include "core/MediaTypeNames.h"
 #include "core/css/CSSStyleSheet.h"
+#include "core/events/Event.h"
 #include "wtf/StdLibExtras.h"
 
 namespace blink {
+
+static SVGStyleEventSender& styleErrorEventSender()
+{
+    DEFINE_STATIC_LOCAL(SVGStyleEventSender, sharedErrorEventSender, (EventTypeNames::error));
+    return sharedErrorEventSender;
+}
 
 inline SVGStyleElement::SVGStyleElement(Document& document, bool createdByParser)
     : SVGElement(SVGNames::styleTag, document)
@@ -41,6 +48,8 @@ SVGStyleElement::~SVGStyleElement()
 #if !ENABLE(OILPAN)
     StyleElement::clearDocumentData(document(), this);
 #endif
+
+    styleErrorEventSender().cancelEvent(this);
 }
 
 PassRefPtrWillBeRawPtr<SVGStyleElement> SVGStyleElement::create(Document& document, bool createdByParser)
@@ -95,61 +104,64 @@ void SVGStyleElement::setTitle(const AtomicString& title)
     setAttribute(SVGNames::titleAttr, title);
 }
 
-bool SVGStyleElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty())
-        supportedAttributes.add(SVGNames::titleAttr);
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
 void SVGStyleElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGElement::parseAttribute(name, value);
-        return;
-    }
-
     if (name == SVGNames::titleAttr) {
         if (m_sheet)
             m_sheet->setTitle(value);
+
         return;
     }
 
-    ASSERT_NOT_REACHED();
+    SVGElement::parseAttribute(name, value);
 }
 
 void SVGStyleElement::finishParsingChildren()
 {
-    StyleElement::finishParsingChildren(this);
+    StyleElement::ProcessingResult result = StyleElement::finishParsingChildren(this);
     SVGElement::finishParsingChildren();
+    if (result == StyleElement::ProcessingFatalError)
+        sendSVGErrorEventAsynchronously();
 }
 
-Node::InsertionNotificationRequest SVGStyleElement::insertedInto(ContainerNode* rootParent)
+Node::InsertionNotificationRequest SVGStyleElement::insertedInto(ContainerNode* insertionPoint)
 {
-    SVGElement::insertedInto(rootParent);
+    SVGElement::insertedInto(insertionPoint);
+    StyleElement::insertedInto(this, insertionPoint);
     return InsertionShouldCallDidNotifySubtreeInsertions;
 }
 
 void SVGStyleElement::didNotifySubtreeInsertionsToDocument()
 {
-    StyleElement::processStyleSheet(document(), this);
+    if (StyleElement::processStyleSheet(document(), this) == StyleElement::ProcessingFatalError)
+        sendSVGErrorEventAsynchronously();
 }
 
-void SVGStyleElement::removedFrom(ContainerNode* rootParent)
+void SVGStyleElement::removedFrom(ContainerNode* insertionPoint)
 {
-    SVGElement::removedFrom(rootParent);
-    if (rootParent->inDocument())
-        StyleElement::removedFromDocument(document(), this);
+    SVGElement::removedFrom(insertionPoint);
+    StyleElement::removedFrom(this, insertionPoint);
 }
 
 void SVGStyleElement::childrenChanged(const ChildrenChange& change)
 {
     SVGElement::childrenChanged(change);
-    StyleElement::childrenChanged(this);
+    if (StyleElement::childrenChanged(this) == StyleElement::ProcessingFatalError)
+        sendSVGErrorEventAsynchronously();
 }
 
-void SVGStyleElement::trace(Visitor* visitor)
+void SVGStyleElement::sendSVGErrorEventAsynchronously()
+{
+    styleErrorEventSender().dispatchEventSoon(this);
+}
+
+void SVGStyleElement::dispatchPendingEvent(SVGStyleEventSender* eventSender)
+{
+    ASSERT_UNUSED(eventSender, eventSender == &styleErrorEventSender());
+    dispatchEvent(Event::create(EventTypeNames::error));
+}
+
+DEFINE_TRACE(SVGStyleElement)
 {
     StyleElement::trace(visitor);
     SVGElement::trace(visitor);

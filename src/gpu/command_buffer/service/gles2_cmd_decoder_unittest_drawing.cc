@@ -8,7 +8,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
-#include "gpu/command_buffer/common/id_allocator.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_delegate_mock.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager_mock.h"
@@ -18,12 +17,12 @@
 #include "gpu/command_buffer/service/gl_surface_mock.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder_unittest.h"
 
-#include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/mocks.h"
 #include "gpu/command_buffer/service/program_manager.h"
 #include "gpu/command_buffer/service/test_helper.h"
+#include "gpu/config/gpu_switches.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_mock.h"
@@ -58,10 +57,13 @@ class GLES2DecoderGeometryInstancingTest : public GLES2DecoderWithShaderTest {
  public:
   GLES2DecoderGeometryInstancingTest() : GLES2DecoderWithShaderTest() {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     InitState init;
     init.extensions = "GL_ANGLE_instanced_arrays";
-    init.gl_version = "opengl es 2.0";
+    // Most of the tests in this file assume they're running on
+    // desktop OpenGL, and large portions of the tests will become
+    // no-ops if they aren't.
+    init.gl_version = "opengl 2.1";
     init.has_alpha = true;
     init.has_depth = true;
     init.request_alpha = true;
@@ -315,7 +317,12 @@ TEST_P(GLES2DecoderRGBBackbufferTest, RGBBackbufferColorMaskFBO) {
   const GLsizei kWidth = 1;
   const GLsizei kHeight = 1;
   const GLenum kFormat = GL_RGB;
-  DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
+  // Use a different texture for framebuffer to avoid drawing feedback loops.
+  EXPECT_CALL(*gl_, GenTextures(_, _))
+      .WillOnce(SetArgumentPointee<1>(kNewServiceId))
+      .RetiresOnSaturation();
+  GenHelper<cmds::GenTexturesImmediate>(kNewClientId);
+  DoBindTexture(GL_TEXTURE_2D, kNewClientId, kNewServiceId);
   // Pass some data so the texture will be marked as cleared.
   DoTexImage2D(GL_TEXTURE_2D,
                0,
@@ -332,10 +339,11 @@ TEST_P(GLES2DecoderRGBBackbufferTest, RGBBackbufferColorMaskFBO) {
   DoFramebufferTexture2D(GL_FRAMEBUFFER,
                          GL_COLOR_ATTACHMENT0,
                          GL_TEXTURE_2D,
-                         client_texture_id_,
-                         kServiceTextureId,
+                         kNewClientId,
+                         kNewServiceId,
                          0,
                          GL_NO_ERROR);
+  DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
   EXPECT_CALL(*gl_, CheckFramebufferStatusEXT(GL_FRAMEBUFFER))
       .WillOnce(Return(GL_FRAMEBUFFER_COMPLETE))
       .RetiresOnSaturation();
@@ -386,7 +394,6 @@ TEST_P(GLES2DecoderRGBBackbufferTest, RGBBackbufferColorMaskFBO) {
 
 TEST_P(GLES2DecoderManualInitTest, DepthEnableWithDepth) {
   InitState init;
-  init.gl_version = "3.0";
   init.has_depth = true;
   init.request_depth = true;
   init.bind_generates_resource = true;
@@ -439,7 +446,6 @@ TEST_P(GLES2DecoderManualInitTest, DepthEnableWithDepth) {
 
 TEST_P(GLES2DecoderManualInitTest, DepthEnableWithoutRequestedDepth) {
   InitState init;
-  init.gl_version = "3.0";
   init.has_depth = true;
   init.bind_generates_resource = true;
   InitDecoder(init);
@@ -491,7 +497,6 @@ TEST_P(GLES2DecoderManualInitTest, DepthEnableWithoutRequestedDepth) {
 
 TEST_P(GLES2DecoderManualInitTest, StencilEnableWithStencil) {
   InitState init;
-  init.gl_version = "3.0";
   init.has_stencil = true;
   init.request_stencil = true;
   init.bind_generates_resource = true;
@@ -545,7 +550,6 @@ TEST_P(GLES2DecoderManualInitTest, StencilEnableWithStencil) {
 
 TEST_P(GLES2DecoderManualInitTest, StencilEnableWithoutRequestedStencil) {
   InitState init;
-  init.gl_version = "3.0";
   init.has_stencil = true;
   init.bind_generates_resource = true;
   InitDecoder(init);
@@ -597,7 +601,6 @@ TEST_P(GLES2DecoderManualInitTest, StencilEnableWithoutRequestedStencil) {
 
 TEST_P(GLES2DecoderManualInitTest, CachedColorMask) {
   InitState init;
-  init.gl_version = "3.0";
   init.has_alpha = true;
   init.has_depth = true;
   init.has_stencil = true;
@@ -625,7 +628,6 @@ TEST_P(GLES2DecoderManualInitTest, CachedColorMask) {
 
 TEST_P(GLES2DecoderManualInitTest, CachedDepthMask) {
   InitState init;
-  init.gl_version = "3.0";
   init.has_alpha = true;
   init.has_depth = true;
   init.has_stencil = true;
@@ -652,7 +654,6 @@ TEST_P(GLES2DecoderManualInitTest, CachedDepthMask) {
 
 TEST_P(GLES2DecoderManualInitTest, CachedStencilMask) {
   InitState init;
-  init.gl_version = "3.0";
   init.has_alpha = true;
   init.has_depth = true;
   init.has_stencil = true;
@@ -736,36 +737,6 @@ TEST_P(GLES2DecoderWithShaderTest, DrawArraysSimulatedAttrib0OOMFails) {
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_OUT_OF_MEMORY, GetGLError());
   EXPECT_FALSE(GetDecoder()->WasContextLost());
-}
-
-// Test that we lose context.
-TEST_P(GLES2DecoderManualInitTest, LoseContextWhenOOM) {
-  InitState init;
-  init.gl_version = "3.0";
-  init.has_alpha = true;
-  init.has_depth = true;
-  init.request_alpha = true;
-  init.request_depth = true;
-  init.bind_generates_resource = true;
-  init.lose_context_when_out_of_memory = true;
-  InitDecoder(init);
-  SetupDefaultProgram();
-
-  const GLsizei kFakeLargeCount = 0x1234;
-  SetupTexture();
-  AddExpectationsForSimulatedAttrib0WithError(
-      kFakeLargeCount, 0, GL_OUT_OF_MEMORY);
-  EXPECT_CALL(*gl_, DrawArrays(_, _, _)).Times(0).RetiresOnSaturation();
-  // Other contexts in the group should be lost also.
-  EXPECT_CALL(*mock_decoder_, LoseContext(GL_UNKNOWN_CONTEXT_RESET_ARB))
-      .Times(1)
-      .RetiresOnSaturation();
-  DrawArrays cmd;
-  cmd.Init(GL_TRIANGLES, 0, kFakeLargeCount);
-  // This context should be lost.
-  EXPECT_EQ(error::kLostContext, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_OUT_OF_MEMORY, GetGLError());
-  EXPECT_TRUE(decoder_->WasContextLost());
 }
 
 TEST_P(GLES2DecoderWithShaderTest, DrawArraysBadTextureUsesBlack) {
@@ -853,12 +824,11 @@ TEST_P(GLES2DecoderWithShaderTest, DrawArraysValidAttributesSucceeds) {
 // Same as DrawArraysValidAttributesSucceeds, but with workaround
 // |init_vertex_attributes|.
 TEST_P(GLES2DecoderManualInitTest, InitVertexAttributes) {
-  CommandLine command_line(0, NULL);
+  base::CommandLine command_line(0, NULL);
   command_line.AppendSwitchASCII(
       switches::kGpuDriverBugWorkarounds,
       base::IntToString(gpu::INIT_VERTEX_ATTRIBUTES));
   InitState init;
-  init.gl_version = "3.0";
   init.has_alpha = true;
   init.has_depth = true;
   init.request_alpha = true;

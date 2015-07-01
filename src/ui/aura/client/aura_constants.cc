@@ -5,13 +5,15 @@
 #include "ui/aura/client/aura_constants.h"
 
 #include "ui/aura/window_property.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 DECLARE_EXPORTED_WINDOW_PROPERTY_TYPE(AURA_EXPORT, bool)
 DECLARE_EXPORTED_WINDOW_PROPERTY_TYPE(AURA_EXPORT, ui::ModalType)
 DECLARE_EXPORTED_WINDOW_PROPERTY_TYPE(AURA_EXPORT, gfx::Rect*)
 DECLARE_EXPORTED_WINDOW_PROPERTY_TYPE(AURA_EXPORT, ui::InputMethod*)
 DECLARE_EXPORTED_WINDOW_PROPERTY_TYPE(AURA_EXPORT, ui::WindowShowState)
+DECLARE_EXPORTED_WINDOW_PROPERTY_TYPE(AURA_EXPORT, int)
+DECLARE_EXPORTED_WINDOW_PROPERTY_TYPE(AURA_EXPORT, void*)
 
 namespace aura {
 namespace client {
@@ -21,6 +23,7 @@ namespace client {
 DEFINE_WINDOW_PROPERTY_KEY(bool, kAlwaysOnTopKey, false);
 DEFINE_WINDOW_PROPERTY_KEY(bool, kAnimationsDisabledKey, false);
 DEFINE_WINDOW_PROPERTY_KEY(bool, kCanMaximizeKey, false);
+DEFINE_WINDOW_PROPERTY_KEY(bool, kCanMinimizeKey, false);
 DEFINE_WINDOW_PROPERTY_KEY(bool, kCanResizeKey, true);
 DEFINE_WINDOW_PROPERTY_KEY(bool, kConstrainedWindowKey, false);
 DEFINE_WINDOW_PROPERTY_KEY(bool, kDrawAttentionKey, false);

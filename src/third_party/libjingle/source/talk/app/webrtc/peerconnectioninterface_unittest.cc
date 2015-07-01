@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -58,7 +58,7 @@ static const char kTurnIceServerUri[] = "turn:user@turn.example.org";
 static const char kTurnUsername[] = "user";
 static const char kTurnPassword[] = "password";
 static const char kTurnHostname[] = "turn.example.org";
-static const uint32 kTimeout = 5000U;
+static const uint32 kTimeout = 10000U;
 
 #define MAYBE_SKIP_TEST(feature)                    \
   if (!(feature())) {                               \
@@ -132,7 +132,6 @@ class MockPeerConnectionObserver : public PeerConnectionObserver {
       state_ = pc_->signaling_state();
     }
   }
-  virtual void OnError() {}
   virtual void OnSignalingChange(
       PeerConnectionInterface::SignalingState new_state) {
     EXPECT_EQ(pc_->signaling_state(), new_state);
@@ -229,15 +228,10 @@ class MockPeerConnectionObserver : public PeerConnectionObserver {
 class PeerConnectionInterfaceTest : public testing::Test {
  protected:
   virtual void SetUp() {
-    rtc::InitializeSSL(NULL);
     pc_factory_ = webrtc::CreatePeerConnectionFactory(
         rtc::Thread::Current(), rtc::Thread::Current(), NULL, NULL,
         NULL);
     ASSERT_TRUE(pc_factory_.get() != NULL);
-  }
-
-  virtual void TearDown() {
-    rtc::CleanupSSL();
   }
 
   void CreatePeerConnection() {
@@ -262,6 +256,14 @@ class PeerConnectionInterfaceTest : public testing::Test {
     // DTLS does not work in a loopback call, so is disabled for most of the
     // tests in this file. We only create a FakeIdentityService if the test
     // explicitly sets the constraint.
+    FakeConstraints default_constraints;
+    if (!constraints) {
+      constraints = &default_constraints;
+
+      default_constraints.AddMandatory(
+          webrtc::MediaConstraintsInterface::kEnableDtlsSrtp, false);
+    }
+
     FakeIdentityService* dtls_service = NULL;
     bool dtls;
     if (FindConstraint(constraints,
@@ -325,7 +327,7 @@ class PeerConnectionInterfaceTest : public testing::Test {
     scoped_refptr<VideoTrackInterface> video_track(
         pc_factory_->CreateVideoTrack(label + "v0", video_source));
     stream->AddTrack(video_track.get());
-    EXPECT_TRUE(pc_->AddStream(stream, NULL));
+    EXPECT_TRUE(pc_->AddStream(stream));
     EXPECT_TRUE_WAIT(observer_.renegotiation_needed_, kTimeout);
     observer_.renegotiation_needed_ = false;
   }
@@ -337,7 +339,7 @@ class PeerConnectionInterfaceTest : public testing::Test {
     scoped_refptr<AudioTrackInterface> audio_track(
         pc_factory_->CreateAudioTrack(label + "a0", NULL));
     stream->AddTrack(audio_track.get());
-    EXPECT_TRUE(pc_->AddStream(stream, NULL));
+    EXPECT_TRUE(pc_->AddStream(stream));
     EXPECT_TRUE_WAIT(observer_.renegotiation_needed_, kTimeout);
     observer_.renegotiation_needed_ = false;
   }
@@ -355,7 +357,7 @@ class PeerConnectionInterfaceTest : public testing::Test {
     scoped_refptr<VideoTrackInterface> video_track(
         pc_factory_->CreateVideoTrack(video_track_label, NULL));
     stream->AddTrack(video_track.get());
-    EXPECT_TRUE(pc_->AddStream(stream, NULL));
+    EXPECT_TRUE(pc_->AddStream(stream));
     EXPECT_TRUE_WAIT(observer_.renegotiation_needed_, kTimeout);
     observer_.renegotiation_needed_ = false;
   }
@@ -439,7 +441,7 @@ class PeerConnectionInterfaceTest : public testing::Test {
 
   void CreateOfferAsRemoteDescription() {
     rtc::scoped_ptr<SessionDescriptionInterface> offer;
-    EXPECT_TRUE(DoCreateOffer(offer.use()));
+    ASSERT_TRUE(DoCreateOffer(offer.use()));
     std::string sdp;
     EXPECT_TRUE(offer->ToString(&sdp));
     SessionDescriptionInterface* remote_offer =
@@ -451,7 +453,7 @@ class PeerConnectionInterfaceTest : public testing::Test {
 
   void CreateAnswerAsLocalDescription() {
     scoped_ptr<SessionDescriptionInterface> answer;
-    EXPECT_TRUE(DoCreateAnswer(answer.use()));
+    ASSERT_TRUE(DoCreateAnswer(answer.use()));
 
     // TODO(perkj): Currently SetLocalDescription fails if any parameters in an
     // audio codec change, even if the parameter has nothing to do with
@@ -471,7 +473,7 @@ class PeerConnectionInterfaceTest : public testing::Test {
 
   void CreatePrAnswerAsLocalDescription() {
     scoped_ptr<SessionDescriptionInterface> answer;
-    EXPECT_TRUE(DoCreateAnswer(answer.use()));
+    ASSERT_TRUE(DoCreateAnswer(answer.use()));
 
     std::string sdp;
     EXPECT_TRUE(answer->ToString(&sdp));
@@ -579,7 +581,7 @@ TEST_F(PeerConnectionInterfaceTest, AddStreams) {
       pc_factory_->CreateAudioTrack(
           kStreamLabel3, static_cast<AudioSourceInterface*>(NULL)));
   stream->AddTrack(audio_track.get());
-  EXPECT_TRUE(pc_->AddStream(stream, NULL));
+  EXPECT_TRUE(pc_->AddStream(stream));
   EXPECT_EQ(3u, pc_->local_streams()->count());
 
   // Remove the third stream.
@@ -717,7 +719,7 @@ TEST_F(PeerConnectionInterfaceTest, SsrcInOfferAnswer) {
 
   // Test CreateOffer
   scoped_ptr<SessionDescriptionInterface> offer;
-  EXPECT_TRUE(DoCreateOffer(offer.use()));
+  ASSERT_TRUE(DoCreateOffer(offer.use()));
   int audio_ssrc = 0;
   int video_ssrc = 0;
   EXPECT_TRUE(GetFirstSsrc(GetFirstAudioContent(offer->description()),
@@ -729,7 +731,7 @@ TEST_F(PeerConnectionInterfaceTest, SsrcInOfferAnswer) {
   // Test CreateAnswer
   EXPECT_TRUE(DoSetRemoteDescription(offer.release()));
   scoped_ptr<SessionDescriptionInterface> answer;
-  EXPECT_TRUE(DoCreateAnswer(answer.use()));
+  ASSERT_TRUE(DoCreateAnswer(answer.use()));
   audio_ssrc = 0;
   video_ssrc = 0;
   EXPECT_TRUE(GetFirstSsrc(GetFirstAudioContent(answer->description()),
@@ -1185,7 +1187,7 @@ TEST_F(PeerConnectionInterfaceTest, CloseAndTestMethods) {
   pc_->Close();
 
   pc_->RemoveStream(local_stream);
-  EXPECT_FALSE(pc_->AddStream(local_stream, NULL));
+  EXPECT_FALSE(pc_->AddStream(local_stream));
 
   ASSERT_FALSE(local_stream->GetAudioTracks().empty());
   rtc::scoped_refptr<webrtc::DtmfSenderInterface> dtmf_sender(

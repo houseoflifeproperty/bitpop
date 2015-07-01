@@ -35,58 +35,53 @@ class ChromeWebContentsDelegateAndroid
       public content::NotificationObserver {
  public:
   ChromeWebContentsDelegateAndroid(JNIEnv* env, jobject obj);
-  virtual ~ChromeWebContentsDelegateAndroid();
+  ~ChromeWebContentsDelegateAndroid() override;
 
-  virtual void LoadingStateChanged(content::WebContents* source,
-                                   bool to_different_document) OVERRIDE;
-  virtual void RunFileChooser(content::WebContents* web_contents,
-                              const content::FileChooserParams& params)
-                              OVERRIDE;
-  virtual void CloseContents(content::WebContents* web_contents) OVERRIDE;
-  virtual void FindReply(content::WebContents* web_contents,
-                         int request_id,
-                         int number_of_matches,
-                         const gfx::Rect& selection_rect,
-                         int active_match_ordinal,
-                         bool final_update) OVERRIDE;
-  virtual void FindMatchRectsReply(content::WebContents* web_contents,
-                                   int version,
-                                   const std::vector<gfx::RectF>& rects,
-                                   const gfx::RectF& active_rect) OVERRIDE;
-  virtual content::JavaScriptDialogManager*
-  GetJavaScriptDialogManager() OVERRIDE;
-  virtual void RequestMediaAccessPermission(
+  void LoadingStateChanged(content::WebContents* source,
+                           bool to_different_document) override;
+  void RunFileChooser(content::WebContents* web_contents,
+                      const content::FileChooserParams& params) override;
+  void CloseContents(content::WebContents* web_contents) override;
+  void FindReply(content::WebContents* web_contents,
+                 int request_id,
+                 int number_of_matches,
+                 const gfx::Rect& selection_rect,
+                 int active_match_ordinal,
+                 bool final_update) override;
+  void FindMatchRectsReply(content::WebContents* web_contents,
+                           int version,
+                           const std::vector<gfx::RectF>& rects,
+                           const gfx::RectF& active_rect) override;
+  content::JavaScriptDialogManager* GetJavaScriptDialogManager(
+      content::WebContents* source) override;
+  void RequestMediaAccessPermission(
       content::WebContents* web_contents,
       const content::MediaStreamRequest& request,
-      const content::MediaResponseCallback& callback) OVERRIDE;
-  virtual bool CheckMediaAccessPermission(
-      content::WebContents* web_contents,
-      const GURL& security_origin,
-      content::MediaStreamType type) OVERRIDE;
-  virtual bool RequestPpapiBrokerPermission(
+      const content::MediaResponseCallback& callback) override;
+  bool CheckMediaAccessPermission(content::WebContents* web_contents,
+                                  const GURL& security_origin,
+                                  content::MediaStreamType type) override;
+  bool RequestPpapiBrokerPermission(
       content::WebContents* web_contents,
       const GURL& url,
       const base::FilePath& plugin_path,
-      const base::Callback<void(bool)>& callback) OVERRIDE;
-  virtual content::WebContents* OpenURLFromTab(
+      const base::Callback<void(bool)>& callback) override;
+  content::WebContents* OpenURLFromTab(
       content::WebContents* source,
-      const content::OpenURLParams& params) OVERRIDE;
-  virtual void AddNewContents(content::WebContents* source,
-                              content::WebContents* new_contents,
-                              WindowOpenDisposition disposition,
-                              const gfx::Rect& initial_pos,
-                              bool user_gesture,
-                              bool* was_blocked) OVERRIDE;
-  virtual void WebContentsCreated(content::WebContents* source_contents,
-                                  int opener_render_frame_id,
-                                  const base::string16& frame_name,
-                                  const GURL& target_url,
-                                  content::WebContents* new_contents) OVERRIDE;
+      const content::OpenURLParams& params) override;
+  bool ShouldResumeRequestsForCreatedWindow() override;
+  void AddNewContents(content::WebContents* source,
+                      content::WebContents* new_contents,
+                      WindowOpenDisposition disposition,
+                      const gfx::Rect& initial_rect,
+                      bool user_gesture,
+                      bool* was_blocked) override;
+
  private:
   // NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   void OnFindResultAvailable(content::WebContents* web_contents,
                              const FindNotificationDetails* find_result);

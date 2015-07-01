@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2011, Google Inc.
+ * Copyright 2011 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -32,7 +32,7 @@
 #define TALK_APP_WEBRTC_FAKEPORTALLOCATORFACTORY_H_
 
 #include "talk/app/webrtc/peerconnectioninterface.h"
-#include "talk/p2p/client/fakeportallocator.h"
+#include "webrtc/p2p/client/fakeportallocator.h"
 
 namespace webrtc {
 
@@ -59,6 +59,8 @@ class FakePortAllocatorFactory : public PortAllocatorFactoryInterface {
   const std::vector<TurnConfiguration>& turn_configs() const {
     return turn_configs_;
   }
+
+  void SetNetworkIgnoreMask(int network_ignore_mask) {}
 
  protected:
   FakePortAllocatorFactory() {}

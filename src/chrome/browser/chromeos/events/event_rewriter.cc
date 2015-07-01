@@ -20,17 +20,21 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
-#include "chromeos/ime/ime_keyboard.h"
-#include "chromeos/ime/input_method_manager.h"
 #include "components/user_manager/user_manager.h"
+#include "ui/base/ime/chromeos/ime_keyboard.h"
+#include "ui/base/ime/chromeos/input_method_manager.h"
+#include "ui/events/devices/device_data_manager.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/keycodes/dom/dom_code.h"
+#include "ui/events/keycodes/dom/keycode_converter.h"
 #include "ui/events/keycodes/keyboard_code_conversion.h"
 #include "ui/wm/core/window_util.h"
 
 #if defined(USE_X11)
 #include <X11/extensions/XInput2.h>
 #include <X11/Xlib.h>
+
 // Get rid of macros from Xlib.h that conflicts with other parts of the code.
 #undef RootWindow
 #undef Status
@@ -42,6 +46,12 @@
 namespace chromeos {
 
 namespace {
+
+// Hotrod controller vendor/product ids.
+const int kHotrodRemoteVendorId = 0x0471;
+const int kHotrodRemoteProductId = 0x21cc;
+const int kUnknownVendorId = -1;
+const int kUnknownProductId = -1;
 
 // Table of key properties of remappable keys and/or remapping targets.
 // This is searched in two distinct ways:
@@ -91,7 +101,7 @@ const ModifierRemapping* GetRemappedKey(const std::string& pref_name,
 }
 
 bool HasDiamondKey() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
       chromeos::switches::kHasChromeOSDiamondKey);
 }
 
@@ -105,7 +115,7 @@ bool IsISOLevel5ShiftUsedByCurrentInputMethod() {
   return manager->IsISOLevel5ShiftUsedByCurrentInputMethod();
 }
 
-bool IsExtensionCommandRegistered(const ui::KeyEvent& key_event) {
+bool IsExtensionCommandRegistered(ui::KeyboardCode key_code, int flags) {
   // Some keyboard events for ChromeOS get rewritten, such as:
   // Search+Shift+Left gets converted to Shift+Home (BeginDocument).
   // This doesn't make sense if the user has assigned that shortcut
@@ -120,16 +130,27 @@ bool IsExtensionCommandRegistered(const ui::KeyEvent& key_event) {
   if (!profile || !extensions::ExtensionCommandsGlobalRegistry::Get(profile))
     return false;
 
-  int modifiers = key_event.flags() & (ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN |
-                                       ui::EF_ALT_DOWN | ui::EF_COMMAND_DOWN);
-  ui::Accelerator accelerator(key_event.key_code(), modifiers);
+  int modifiers = flags & (ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN |
+                           ui::EF_ALT_DOWN | ui::EF_COMMAND_DOWN);
+  ui::Accelerator accelerator(key_code, modifiers);
   return extensions::ExtensionCommandsGlobalRegistry::Get(profile)
       ->IsRegistered(accelerator);
 }
 
-EventRewriter::DeviceType GetDeviceType(const std::string& device_name) {
+EventRewriter::DeviceType GetDeviceType(const std::string& device_name,
+                                        int vendor_id,
+                                        int product_id) {
+  if (vendor_id == kHotrodRemoteVendorId &&
+      product_id == kHotrodRemoteProductId) {
+    return EventRewriter::kDeviceHotrodRemote;
+  }
+
+  if (LowerCaseEqualsASCII(device_name, "virtual core keyboard"))
+    return EventRewriter::kDeviceVirtualCoreKeyboard;
+
   std::vector<std::string> tokens;
   Tokenize(device_name, " .", &tokens);
+
 
   // If the |device_name| contains the two words, "apple" and "keyboard", treat
   // it as an Apple keyboard.
@@ -165,7 +186,10 @@ EventRewriter::DeviceType EventRewriter::KeyboardDeviceAddedForTesting(
     const std::string& device_name) {
   // Tests must avoid XI2 reserved device IDs.
   DCHECK((device_id < 0) || (device_id > 1));
-  return KeyboardDeviceAddedInternal(device_id, device_name);
+  return KeyboardDeviceAddedInternal(device_id,
+                                     device_name,
+                                     kUnknownVendorId,
+                                     kUnknownProductId);
 }
 
 void EventRewriter::RewriteMouseButtonEventForTesting(
@@ -265,6 +289,7 @@ void EventRewriter::BuildRewrittenKeyEvent(
         numpad_xevent.xkey.keycode = original_x11_keycode;
       rewritten_key_event->set_character(
           ui::GetCharacterFromXEvent(&numpad_xevent));
+      rewritten_key_event->native_event()->xkey.state |= Mod2Mask;
     }
   }
 #endif
@@ -280,8 +305,20 @@ void EventRewriter::BuildRewrittenKeyEvent(
 }
 
 void EventRewriter::DeviceKeyPressedOrReleased(int device_id) {
-  if (!device_id_to_type_.count(device_id))
-    KeyboardDeviceAdded(device_id);
+  std::map<int, DeviceType>::const_iterator iter =
+        device_id_to_type_.find(device_id);
+  DeviceType type;
+  if (iter != device_id_to_type_.end())
+    type = iter->second;
+  else
+    type = KeyboardDeviceAdded(device_id);
+
+  // Ignore virtual Xorg keyboard (magic that generates key repeat
+  // events). Pretend that the previous real keyboard is the one that is still
+  // in use.
+  if (type == kDeviceVirtualCoreKeyboard)
+    return;
+
   last_keyboard_device_id_ = device_id;
 }
 
@@ -293,6 +330,14 @@ const PrefService* EventRewriter::GetPrefService() const {
 }
 
 bool EventRewriter::IsAppleKeyboard() const {
+  return IsLastKeyboardOfType(kDeviceAppleKeyboard);
+}
+
+bool EventRewriter::IsHotrodRemote() const {
+  return IsLastKeyboardOfType(kDeviceHotrodRemote);
+}
+
+bool EventRewriter::IsLastKeyboardOfType(DeviceType device_type) const {
   if (last_keyboard_device_id_ == ui::ED_UNKNOWN_DEVICE)
     return false;
 
@@ -305,7 +350,7 @@ bool EventRewriter::IsAppleKeyboard() const {
   }
 
   const DeviceType type = iter->second;
-  return type == kDeviceAppleKeyboard;
+  return type == device_type;
 }
 
 bool EventRewriter::TopRowKeysAreFunctionKeys(const ui::KeyEvent& event) const {
@@ -383,10 +428,18 @@ bool EventRewriter::RewriteWithKeyboardRemappingsByKeyCode(
 ui::EventRewriteStatus EventRewriter::RewriteKeyEvent(
     const ui::KeyEvent& key_event,
     scoped_ptr<ui::Event>* rewritten_event) {
-  if (IsExtensionCommandRegistered(key_event))
+  if (IsExtensionCommandRegistered(key_event.key_code(), key_event.flags()))
     return ui::EVENT_REWRITE_CONTINUE;
   if (key_event.source_device_id() != ui::ED_UNKNOWN_DEVICE)
     DeviceKeyPressedOrReleased(key_event.source_device_id());
+
+  // Drop repeated keys from Hotrod remote.
+  if ((key_event.flags() & ui::EF_IS_REPEAT) &&
+      (key_event.type() == ui::ET_KEY_PRESSED) &&
+      IsHotrodRemote() && key_event.key_code() != ui::VKEY_BACK) {
+    return ui::EVENT_REWRITE_DISCARD;
+  }
+
   MutableKeyState state = {key_event.flags(), key_event.key_code()};
   // Do not rewrite an event sent by ui_controls::SendKeyPress(). See
   // crbug.com/136465.
@@ -394,14 +447,22 @@ ui::EventRewriteStatus EventRewriter::RewriteKeyEvent(
     RewriteModifierKeys(key_event, &state);
     RewriteNumPadKeys(key_event, &state);
   }
+
   ui::EventRewriteStatus status = ui::EVENT_REWRITE_CONTINUE;
+  bool is_sticky_key_extension_command = false;
   if (sticky_keys_controller_) {
     status = sticky_keys_controller_->RewriteKeyEvent(
         key_event, state.key_code, &state.flags);
     if (status == ui::EVENT_REWRITE_DISCARD)
       return ui::EVENT_REWRITE_DISCARD;
+    is_sticky_key_extension_command =
+        IsExtensionCommandRegistered(state.key_code, state.flags);
   }
-  if (!(key_event.flags() & ui::EF_FINAL)) {
+
+  // If sticky key rewrites the event, and it matches an extension command, do
+  // not further rewrite the event since it won't match the extension command
+  // thereafter.
+  if (!is_sticky_key_extension_command && !(key_event.flags() & ui::EF_FINAL)) {
     RewriteExtendedKeys(key_event, &state);
     RewriteFunctionKeys(key_event, &state);
   }
@@ -627,11 +688,14 @@ void EventRewriter::RewriteModifierKeys(const ui::KeyEvent& key_event,
   else
     state->flags &= ~characteristic_flag;
 
-  // Toggle Caps Lock if the remapped key is ui::VKEY_CAPITAL, but do nothing if
-  // the original key is ui::VKEY_CAPITAL (i.e. a Caps Lock key on an external
-  // keyboard is pressed) since X can handle that case.
+  // Toggle Caps Lock if the remapped key is ui::VKEY_CAPITAL.
   if (key_event.type() == ui::ET_KEY_PRESSED &&
+#if defined(USE_X11)
+      // ... but for X11, do nothing if the original key is ui::VKEY_CAPITAL
+      // (i.e. a Caps Lock key on an external keyboard is pressed) since X
+      // handles that itself.
       incoming.key_code != ui::VKEY_CAPITAL &&
+#endif
       state->key_code == ui::VKEY_CAPITAL) {
     chromeos::input_method::ImeKeyboard* ime_keyboard =
         ime_keyboard_for_testing_
@@ -646,26 +710,31 @@ void EventRewriter::RewriteNumPadKeys(const ui::KeyEvent& key_event,
                                       MutableKeyState* state) {
   DCHECK(key_event.type() == ui::ET_KEY_PRESSED ||
          key_event.type() == ui::ET_KEY_RELEASED);
-  if (!(state->flags & ui::EF_NUMPAD_KEY))
-    return;
   MutableKeyState incoming = *state;
-
-  static const KeyboardRemapping kNumPadRemappings[] = {
-      {ui::VKEY_INSERT, ui::EF_NUMPAD_KEY, ui::VKEY_NUMPAD0, ui::EF_NUMPAD_KEY},
-      {ui::VKEY_DELETE, ui::EF_NUMPAD_KEY, ui::VKEY_DECIMAL, ui::EF_NUMPAD_KEY},
-      {ui::VKEY_END, ui::EF_NUMPAD_KEY, ui::VKEY_NUMPAD1, ui::EF_NUMPAD_KEY},
-      {ui::VKEY_DOWN, ui::EF_NUMPAD_KEY, ui::VKEY_NUMPAD2, ui::EF_NUMPAD_KEY},
-      {ui::VKEY_NEXT, ui::EF_NUMPAD_KEY, ui::VKEY_NUMPAD3, ui::EF_NUMPAD_KEY},
-      {ui::VKEY_LEFT, ui::EF_NUMPAD_KEY, ui::VKEY_NUMPAD4, ui::EF_NUMPAD_KEY},
-      {ui::VKEY_CLEAR, ui::EF_NUMPAD_KEY, ui::VKEY_NUMPAD5, ui::EF_NUMPAD_KEY},
-      {ui::VKEY_RIGHT, ui::EF_NUMPAD_KEY, ui::VKEY_NUMPAD6, ui::EF_NUMPAD_KEY},
-      {ui::VKEY_HOME, ui::EF_NUMPAD_KEY, ui::VKEY_NUMPAD7, ui::EF_NUMPAD_KEY},
-      {ui::VKEY_UP, ui::EF_NUMPAD_KEY, ui::VKEY_NUMPAD8, ui::EF_NUMPAD_KEY},
-      {ui::VKEY_PRIOR, ui::EF_NUMPAD_KEY, ui::VKEY_NUMPAD9, ui::EF_NUMPAD_KEY},
+  static const struct NumPadRemapping {
+    ui::DomCode input_dom_code;
+    ui::KeyboardCode input_key_code;
+    ui::KeyboardCode output_key_code;
+  } kNumPadRemappings[] = {
+      {ui::DomCode::NUMPAD_DECIMAL, ui::VKEY_DELETE, ui::VKEY_DECIMAL},
+      {ui::DomCode::NUMPAD0, ui::VKEY_INSERT, ui::VKEY_NUMPAD0},
+      {ui::DomCode::NUMPAD1, ui::VKEY_END, ui::VKEY_NUMPAD1},
+      {ui::DomCode::NUMPAD2, ui::VKEY_DOWN, ui::VKEY_NUMPAD2},
+      {ui::DomCode::NUMPAD3, ui::VKEY_NEXT, ui::VKEY_NUMPAD3},
+      {ui::DomCode::NUMPAD4, ui::VKEY_LEFT, ui::VKEY_NUMPAD4},
+      {ui::DomCode::NUMPAD5, ui::VKEY_CLEAR, ui::VKEY_NUMPAD5},
+      {ui::DomCode::NUMPAD6, ui::VKEY_RIGHT, ui::VKEY_NUMPAD6},
+      {ui::DomCode::NUMPAD7, ui::VKEY_HOME, ui::VKEY_NUMPAD7},
+      {ui::DomCode::NUMPAD8, ui::VKEY_UP, ui::VKEY_NUMPAD8},
+      {ui::DomCode::NUMPAD9, ui::VKEY_PRIOR, ui::VKEY_NUMPAD9},
   };
-
-  RewriteWithKeyboardRemappingsByKeyCode(
-      kNumPadRemappings, arraysize(kNumPadRemappings), incoming, state);
+  for (const auto& map : kNumPadRemappings) {
+    if ((incoming.key_code == map.input_key_code) &&
+        (key_event.code() == map.input_dom_code)) {
+      state->key_code = map.output_key_code;
+      break;
+    }
+  }
 }
 
 void EventRewriter::RewriteExtendedKeys(const ui::KeyEvent& key_event,
@@ -847,10 +916,21 @@ int EventRewriter::RewriteModifierClick(const ui::MouseEvent& mouse_event,
 
 EventRewriter::DeviceType EventRewriter::KeyboardDeviceAddedInternal(
     int device_id,
-    const std::string& device_name) {
-  const DeviceType type = GetDeviceType(device_name);
+    const std::string& device_name,
+    int vendor_id,
+    int product_id) {
+  const DeviceType type = GetDeviceType(device_name, vendor_id, product_id);
   if (type == kDeviceAppleKeyboard) {
     VLOG(1) << "Apple keyboard '" << device_name << "' connected: "
+            << "id=" << device_id;
+  } else if (type == kDeviceHotrodRemote) {
+    VLOG(1) << "Hotrod remote '" << device_name << "' connected: "
+            << "id=" << device_id;
+  } else if (type == kDeviceVirtualCoreKeyboard) {
+    VLOG(1) << "Xorg virtual '" << device_name << "' connected: "
+            << "id=" << device_id;
+  } else {
+    VLOG(1) << "Unknown keyboard '" << device_name << "' connected: "
             << "id=" << device_id;
   }
   // Always overwrite the existing device_id since the X server may reuse a
@@ -859,37 +939,18 @@ EventRewriter::DeviceType EventRewriter::KeyboardDeviceAddedInternal(
   return type;
 }
 
-void EventRewriter::KeyboardDeviceAdded(int device_id) {
-#if defined(USE_X11)
-  DCHECK_NE(XIAllDevices, device_id);
-  DCHECK_NE(XIAllMasterDevices, device_id);
-  if (device_id == XIAllDevices || device_id == XIAllMasterDevices) {
-    LOG(ERROR) << "Unexpected device_id passed: " << device_id;
-    return;
+EventRewriter::DeviceType EventRewriter::KeyboardDeviceAdded(int device_id) {
+  if (!ui::DeviceDataManager::HasInstance())
+    return kDeviceUnknown;
+  const std::vector<ui::KeyboardDevice>& keyboards =
+      ui::DeviceDataManager::GetInstance()->keyboard_devices();
+  for (const auto& keyboard : keyboards) {
+    if (keyboard.id == device_id) {
+      return KeyboardDeviceAddedInternal(
+          keyboard.id, keyboard.name, keyboard.vendor_id, keyboard.product_id);
+    }
   }
-
-  int ndevices_return = 0;
-  XIDeviceInfo* device_info =
-      XIQueryDevice(gfx::GetXDisplay(), device_id, &ndevices_return);
-
-  // Since |device_id| is neither XIAllDevices nor XIAllMasterDevices,
-  // the number of devices found should be either 0 (not found) or 1.
-  if (!device_info) {
-    LOG(ERROR) << "XIQueryDevice: Device ID " << device_id << " is unknown.";
-    return;
-  }
-
-  DCHECK_EQ(1, ndevices_return);
-  for (int i = 0; i < ndevices_return; ++i) {
-    DCHECK_EQ(device_id, device_info[i].deviceid);  // see the comment above.
-    DCHECK(device_info[i].name);
-    KeyboardDeviceAddedInternal(device_info[i].deviceid, device_info[i].name);
-  }
-
-  XIFreeDeviceInfo(device_info);
-#else
-  KeyboardDeviceAddedInternal(device_id, "keyboard");
-#endif
+  return kDeviceUnknown;
 }
 
 }  // namespace chromeos

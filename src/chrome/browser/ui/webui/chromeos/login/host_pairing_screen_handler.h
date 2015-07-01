@@ -7,8 +7,8 @@
 
 #include "base/macros.h"
 #include "chrome/browser/chromeos/login/screens/host_pairing_screen_actor.h"
-#include "chrome/browser/chromeos/login/screens/screen_context.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
+#include "components/login/screens/screen_context.h"
 
 namespace chromeos {
 
@@ -16,30 +16,31 @@ class HostPairingScreenHandler : public HostPairingScreenActor,
                                  public BaseScreenHandler {
  public:
   HostPairingScreenHandler();
-  virtual ~HostPairingScreenHandler();
+  ~HostPairingScreenHandler() override;
 
  private:
   void HandleContextReady();
 
   // Overridden from BaseScreenHandler:
-  virtual void Initialize() OVERRIDE;
-  virtual void DeclareLocalizedValues(LocalizedValuesBuilder* builder) OVERRIDE;
+  void Initialize() override;
+  void DeclareLocalizedValues(
+      ::login::LocalizedValuesBuilder* builder) override;
 
   // Overridden from content::WebUIMessageHandler:
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
   // Overridden from HostPairingScreenActor:
-  virtual void Show() OVERRIDE;
-  virtual void Hide() OVERRIDE;
-  virtual void SetDelegate(Delegate* delegate) OVERRIDE;
-  virtual void OnContextChanged(const base::DictionaryValue& diff) OVERRIDE;
+  void Show() override;
+  void Hide() override;
+  void SetDelegate(Delegate* delegate) override;
+  void OnContextChanged(const base::DictionaryValue& diff) override;
 
   HostPairingScreenActor::Delegate* delegate_;
   bool show_on_init_;
   bool js_context_ready_;
 
   // Caches context changes while JS part is not ready to receive messages.
-  ScreenContext context_cache_;
+  ::login::ScreenContext context_cache_;
 
   DISALLOW_COPY_AND_ASSIGN(HostPairingScreenHandler);
 };

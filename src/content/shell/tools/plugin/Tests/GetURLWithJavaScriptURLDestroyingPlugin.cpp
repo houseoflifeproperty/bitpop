@@ -31,7 +31,7 @@
 
 using namespace std;
 
-// From NPP_New, call NPN_GetURL to evaluate JavaScript that destroys the plug-in.
+// From NPP_New, call NPN_GetURL to evaluate JavaScript that destroys the plugin.
 
 class GetURLWithJavaScriptURLDestroyingPlugin : public PluginTest {
 public:
@@ -41,12 +41,12 @@ public:
     }
 
 private:
- virtual NPError NPP_New(NPMIMEType pluginType,
-                         uint16_t mode,
-                         int16_t argc,
-                         char* argn[],
-                         char* argv[],
-                         NPSavedData* saved) OVERRIDE {
+ NPError NPP_New(NPMIMEType pluginType,
+                 uint16_t mode,
+                 int16_t argc,
+                 char* argn[],
+                 char* argv[],
+                 NPSavedData* saved) override {
         NPN_GetURL("javascript:removePlugin()", 0);
         return NPERR_NO_ERROR;
     }

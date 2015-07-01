@@ -40,24 +40,25 @@ WebInspector.InplaceFormatterEditorAction.prototype = {
     },
 
     /**
+     * @override
      * @param {!WebInspector.SourcesView} sourcesView
-     * @return {!Element}
+     * @return {!WebInspector.ToolbarButton}
      */
     button: function(sourcesView)
     {
         if (this._button)
-            return this._button.element;
+            return this._button;
 
         this._sourcesView = sourcesView;
         this._sourcesView.addEventListener(WebInspector.SourcesView.Events.EditorSelected, this._editorSelected.bind(this));
         this._sourcesView.addEventListener(WebInspector.SourcesView.Events.EditorClosed, this._editorClosed.bind(this));
 
-        this._button = new WebInspector.StatusBarButton(WebInspector.UIString("Format"), "sources-toggle-pretty-print-status-bar-item");
-        this._button.toggled = false;
+        this._button = new WebInspector.ToolbarButton(WebInspector.UIString("Format"), "format-toolbar-item");
+        this._button.setToggled(false);
         this._button.addEventListener("click", this._formatSourceInPlace, this);
-        this._updateButton(null);
+        this._updateButton(sourcesView.currentUISourceCode());
 
-        return this._button.element;
+        return this._button;
     },
 
     /**
@@ -68,6 +69,8 @@ WebInspector.InplaceFormatterEditorAction.prototype = {
     {
         if (!uiSourceCode)
             return false;
+        if (uiSourceCode.project().type() === WebInspector.projectTypes.FileSystem)
+            return true;
         return uiSourceCode.contentType() === WebInspector.resourceTypes.Stylesheet
             || uiSourceCode.project().type() === WebInspector.projectTypes.Snippets;
     },
@@ -89,8 +92,8 @@ WebInspector.InplaceFormatterEditorAction.prototype = {
          */
         function contentLoaded(content)
         {
-            var formatter = WebInspector.Formatter.createFormatter(uiSourceCode.contentType());
-            formatter.formatContent(uiSourceCode.highlighterType(), content || "", innerCallback.bind(this));
+            var highlighterType = WebInspector.SourcesView.uiSourceCodeHighlighterType(uiSourceCode);
+            WebInspector.Formatter.format(uiSourceCode.contentType(), highlighterType, content || "", innerCallback.bind(this));
         }
 
         /**

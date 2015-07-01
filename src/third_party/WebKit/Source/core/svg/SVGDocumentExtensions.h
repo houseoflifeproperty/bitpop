@@ -31,28 +31,25 @@
 namespace blink {
 
 class Document;
-class RenderSVGResourceContainer;
+class LayoutSVGResourceContainer;
 class SubtreeLayoutScope;
-#if ENABLE(SVG_FONTS)
-class SVGFontFaceElement;
-#endif
 class SVGResourcesCache;
 class SVGSVGElement;
 class Element;
 
 class SVGDocumentExtensions : public NoBaseWillBeGarbageCollectedFinalized<SVGDocumentExtensions> {
-    WTF_MAKE_NONCOPYABLE(SVGDocumentExtensions); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_NONCOPYABLE(SVGDocumentExtensions); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(SVGDocumentExtensions);
 public:
-    typedef WillBeHeapHashSet<RawPtrWillBeMember<Element> > SVGPendingElements;
+    typedef WillBeHeapHashSet<RawPtrWillBeMember<Element>> SVGPendingElements;
     explicit SVGDocumentExtensions(Document*);
     ~SVGDocumentExtensions();
 
     void addTimeContainer(SVGSVGElement*);
     void removeTimeContainer(SVGSVGElement*);
 
-    void addResource(const AtomicString& id, RenderSVGResourceContainer*);
+    void addResource(const AtomicString& id, LayoutSVGResourceContainer*);
     void removeResource(const AtomicString& id);
-    RenderSVGResourceContainer* resourceById(const AtomicString& id) const;
+    LayoutSVGResourceContainer* resourceById(const AtomicString& id) const;
 
     static void serviceOnAnimationFrame(Document&, double monotonicAnimationStartTime);
 
@@ -70,15 +67,6 @@ public:
     bool isSVGRootWithRelativeLengthDescendents(SVGSVGElement*) const;
     void invalidateSVGRootsWithRelativeLengthDescendents(SubtreeLayoutScope*);
 
-#if ENABLE(SVG_FONTS)
-    const WillBeHeapHashSet<RawPtrWillBeMember<SVGFontFaceElement> >& svgFontFaceElements() const { return m_svgFontFaceElements; }
-    void registerSVGFontFaceElement(SVGFontFaceElement*);
-    void unregisterSVGFontFaceElement(SVGFontFaceElement*);
-
-    void registerPendingSVGFontFaceElementsForRemoval(PassRefPtrWillBeRawPtr<SVGFontFaceElement>);
-    void removePendingSVGFontFaceElementsForRemoval();
-#endif
-
     bool zoomAndPanEnabled() const;
 
     void startPan(const FloatPoint& start);
@@ -87,21 +75,16 @@ public:
     static SVGSVGElement* rootElement(const Document&);
     SVGSVGElement* rootElement() const;
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     RawPtrWillBeMember<Document> m_document;
-    WillBeHeapHashSet<RawPtrWillBeMember<SVGSVGElement> > m_timeContainers; // For SVG 1.2 support this will need to be made more general.
-#if ENABLE(SVG_FONTS)
-    WillBeHeapHashSet<RawPtrWillBeMember<SVGFontFaceElement> > m_svgFontFaceElements;
-    // SVGFontFaceElements that are pending and scheduled for removal.
-    WillBeHeapHashSet<RefPtrWillBeMember<SVGFontFaceElement> > m_pendingSVGFontFaceElementsForRemoval;
-#endif
-    HashMap<AtomicString, RenderSVGResourceContainer*> m_resources;
-    WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<SVGPendingElements> > m_pendingResources; // Resources that are pending.
-    WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<SVGPendingElements> > m_pendingResourcesForRemoval; // Resources that are pending and scheduled for removal.
+    WillBeHeapHashSet<RawPtrWillBeMember<SVGSVGElement>> m_timeContainers; // For SVG 1.2 support this will need to be made more general.
+    HashMap<AtomicString, LayoutSVGResourceContainer*> m_resources;
+    WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<SVGPendingElements>> m_pendingResources; // Resources that are pending.
+    WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<SVGPendingElements>> m_pendingResourcesForRemoval; // Resources that are pending and scheduled for removal.
     OwnPtr<SVGResourcesCache> m_resourcesCache;
-    WillBeHeapHashSet<RawPtrWillBeMember<SVGSVGElement> > m_relativeLengthSVGRoots; // Root SVG elements with relative length descendants.
+    WillBeHeapHashSet<RawPtrWillBeMember<SVGSVGElement>> m_relativeLengthSVGRoots; // Root SVG elements with relative length descendants.
     FloatPoint m_translate;
 #if ENABLE(ASSERT)
     bool m_inRelativeLengthSVGRootsInvalidation;

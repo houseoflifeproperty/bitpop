@@ -8,13 +8,12 @@
 #include "base/guid.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/scoped_user_pref_update.h"
-#include "chrome/browser/browser_process.h"
+#include "base/thread_task_runner_handle.h"
 #include "chrome/browser/chromeos/policy/server_backed_device_state.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/pref_names.h"
@@ -74,6 +73,8 @@ std::string ConvertRestoreMode(
       return kDeviceStateRestoreModeReEnrollmentRequested;
     case em::DeviceStateRetrievalResponse::RESTORE_MODE_REENROLLMENT_ENFORCED:
       return kDeviceStateRestoreModeReEnrollmentEnforced;
+    case em::DeviceStateRetrievalResponse::RESTORE_MODE_DISABLED:
+      return kDeviceStateRestoreModeDisabled;
   }
 
   // Return is required to avoid compiler warning.
@@ -89,7 +90,6 @@ AutoEnrollmentClient::AutoEnrollmentClient(
     PrefService* local_state,
     scoped_refptr<net::URLRequestContextGetter> system_request_context,
     const std::string& server_backed_state_key,
-    bool retrieve_device_state,
     int power_initial,
     int power_limit)
     : progress_callback_(callback),
@@ -98,7 +98,6 @@ AutoEnrollmentClient::AutoEnrollmentClient(
       device_state_available_(false),
       device_id_(base::GenerateGUID()),
       server_backed_state_key_(server_backed_state_key),
-      retrieve_device_state_(retrieve_device_state),
       current_power_(power_initial),
       power_limit_(power_limit),
       modulus_updates_received_(0),
@@ -109,10 +108,9 @@ AutoEnrollmentClient::AutoEnrollmentClient(
 
   DCHECK_LE(current_power_, power_limit_);
   DCHECK(!progress_callback_.is_null());
-  if (!server_backed_state_key_.empty()) {
-    server_backed_state_key_hash_ =
-        crypto::SHA256HashString(server_backed_state_key_);
-  }
+  CHECK(!server_backed_state_key_.empty());
+  server_backed_state_key_hash_ =
+      crypto::SHA256HashString(server_backed_state_key_);
 }
 
 AutoEnrollmentClient::~AutoEnrollmentClient() {
@@ -123,14 +121,6 @@ AutoEnrollmentClient::~AutoEnrollmentClient() {
 void AutoEnrollmentClient::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(prefs::kShouldAutoEnroll, false);
   registry->RegisterIntegerPref(prefs::kAutoEnrollmentPowerLimit, -1);
-}
-
-// static
-void AutoEnrollmentClient::CancelAutoEnrollment() {
-  PrefService* local_state = g_browser_process->local_state();
-  local_state->SetBoolean(prefs::kShouldAutoEnroll, false);
-  local_state->ClearPref(prefs::kServerBackedDeviceState);
-  local_state->CommitPendingWrite();
 }
 
 void AutoEnrollmentClient::Start() {
@@ -205,15 +195,15 @@ bool AutoEnrollmentClient::RetryStep() {
     // The bucket download check has completed already. If it came back
     // positive, then device state should be (re-)downloaded.
     if (has_server_state_) {
-      if (retrieve_device_state_ && !device_state_available_ &&
-          SendDeviceStateRequest()) {
+      if (!device_state_available_) {
+        SendDeviceStateRequest();
         return true;
       }
     }
   } else {
     // Start bucket download.
-    if (SendBucketDownloadRequest())
-      return true;
+    SendBucketDownloadRequest();
+    return true;
   }
 
   return false;
@@ -222,7 +212,7 @@ bool AutoEnrollmentClient::RetryStep() {
 void AutoEnrollmentClient::ReportProgress(AutoEnrollmentState state) {
   state_ = state;
   if (progress_callback_.is_null()) {
-    base::MessageLoopProxy::current()->DeleteSoon(FROM_HERE, this);
+    base::ThreadTaskRunnerHandle::Get()->DeleteSoon(FROM_HERE, this);
   } else {
     progress_callback_.Run(state_);
   }
@@ -231,28 +221,17 @@ void AutoEnrollmentClient::ReportProgress(AutoEnrollmentState state) {
 void AutoEnrollmentClient::NextStep() {
   if (!RetryStep()) {
     // Protocol finished successfully, report result.
-    bool trigger_enrollment = false;
-    if (retrieve_device_state_) {
-      const base::DictionaryValue* device_state_dict =
-          local_state_->GetDictionary(prefs::kServerBackedDeviceState);
-      std::string restore_mode;
-      device_state_dict->GetString(kDeviceStateRestoreMode, &restore_mode);
-      trigger_enrollment =
-          (restore_mode == kDeviceStateRestoreModeReEnrollmentRequested ||
-           restore_mode == kDeviceStateRestoreModeReEnrollmentEnforced);
-    } else {
-      trigger_enrollment = has_server_state_;
-    }
+    const RestoreMode restore_mode = GetRestoreMode();
+    bool trigger_enrollment =
+        (restore_mode == RESTORE_MODE_REENROLLMENT_REQUESTED ||
+         restore_mode == RESTORE_MODE_REENROLLMENT_ENFORCED);
 
     ReportProgress(trigger_enrollment ? AUTO_ENROLLMENT_STATE_TRIGGER_ENROLLMENT
                                       : AUTO_ENROLLMENT_STATE_NO_ENROLLMENT);
   }
 }
 
-bool AutoEnrollmentClient::SendBucketDownloadRequest() {
-  if (server_backed_state_key_hash_.empty())
-    return false;
-
+void AutoEnrollmentClient::SendBucketDownloadRequest() {
   // Only power-of-2 moduli are supported for now. These are computed by taking
   // the lower |current_power_| bits of the hash.
   uint64 remainder = 0;
@@ -277,10 +256,9 @@ bool AutoEnrollmentClient::SendBucketDownloadRequest() {
       base::Bind(&AutoEnrollmentClient::HandleRequestCompletion,
                  base::Unretained(this),
                  &AutoEnrollmentClient::OnBucketDownloadRequestCompletion));
-  return true;
 }
 
-bool AutoEnrollmentClient::SendDeviceStateRequest() {
+void AutoEnrollmentClient::SendDeviceStateRequest() {
   ReportProgress(AUTO_ENROLLMENT_STATE_PENDING);
 
   request_job_.reset(
@@ -295,7 +273,6 @@ bool AutoEnrollmentClient::SendDeviceStateRequest() {
       base::Bind(&AutoEnrollmentClient::HandleRequestCompletion,
                  base::Unretained(this),
                  &AutoEnrollmentClient::OnDeviceStateRequestCompletion));
-  return true;
 }
 
 void AutoEnrollmentClient::HandleRequestCompletion(
@@ -312,7 +289,7 @@ void AutoEnrollmentClient::HandleRequestCompletion(
 
     // Abort if CancelAndDeleteSoon has been called meanwhile.
     if (progress_callback_.is_null()) {
-      base::MessageLoopProxy::current()->DeleteSoon(FROM_HERE, this);
+      base::ThreadTaskRunnerHandle::Get()->DeleteSoon(FROM_HERE, this);
     } else {
       ReportProgress(status == DM_STATUS_REQUEST_FAILED
                          ? AUTO_ENROLLMENT_STATE_CONNECTION_ERROR
@@ -410,6 +387,12 @@ bool AutoEnrollmentClient::OnDeviceStateRequestCompletion(
                  kDeviceStateRestoreMode,
                  !restore_mode.empty(),
                  new base::StringValue(restore_mode));
+
+      UpdateDict(dict.Get(),
+                 kDeviceStateDisabledMessage,
+                 state_response.has_disabled_state(),
+                 new base::StringValue(
+                     state_response.disabled_state().message()));
     }
     local_state_->CommitPendingWrite();
     device_state_available_ = true;

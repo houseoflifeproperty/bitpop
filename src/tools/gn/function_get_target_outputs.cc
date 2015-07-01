@@ -86,14 +86,13 @@ Value RunGetTargetOutputs(Scope* scope,
   // Find the referenced target. The targets previously encountered in this
   // scope will have been stashed in the item collector (they'll be dispatched
   // when this file is done running) so we can look through them.
-  const Target* target = NULL;
+  const Target* target = nullptr;
   Scope::ItemVector* collector = scope->GetItemCollector();
   if (!collector) {
     *err = Err(function, "No targets defined in this context.");
     return Value();
   }
-  for (size_t i = 0; i < collector->size(); i++) {
-    const Item* item = (*collector)[i]->get();
+  for (const auto& item : *collector) {
     if (item->label() != label)
       continue;
 
@@ -132,8 +131,8 @@ Value RunGetTargetOutputs(Scope* scope,
   // Convert to Values.
   Value ret(function, Value::LIST);
   ret.list_value().reserve(files.size());
-  for (size_t i = 0; i < files.size(); i++)
-    ret.list_value().push_back(Value(function, files[i].value()));
+  for (const auto& file : files)
+    ret.list_value().push_back(Value(function, file.value()));
 
   return ret;
 }

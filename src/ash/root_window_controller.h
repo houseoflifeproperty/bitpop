@@ -86,10 +86,6 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   // Creates and Initialize the RootWindowController for secondary displays.
   static void CreateForSecondaryDisplay(AshWindowTreeHost* host);
 
-  // Creates and Initialize the RootWindowController for virtual
-  // keyboard displays.
-  static void CreateForVirtualKeyboardDisplay(AshWindowTreeHost* host);
-
   // Returns a RootWindowController that has a shelf for given
   // |window|. This returns the RootWindowController for the |window|'s
   // root window when multiple shelf mode is enabled, or the primary
@@ -105,7 +101,7 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   // Returns container which contains a given |window|.
   static aura::Window* GetContainerForWindow(aura::Window* window);
 
-  virtual ~RootWindowController();
+  ~RootWindowController() override;
 
   AshWindowTreeHost* ash_host() { return ash_host_.get(); }
   const AshWindowTreeHost* ash_host() const { return ash_host_.get(); }
@@ -267,8 +263,8 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   void DisableTouchHudProjection();
 
   // Overridden from ShellObserver.
-  virtual void OnLoginStateChanged(user::LoginStatus status) OVERRIDE;
-  virtual void OnTouchHudProjectionToggled(bool enabled) OVERRIDE;
+  void OnLoginStateChanged(user::LoginStatus status) override;
+  void OnTouchHudProjectionToggled(bool enabled) override;
 
   scoped_ptr<AshWindowTreeHost> ash_host_;
   RootWindowLayoutManager* root_window_layout_;

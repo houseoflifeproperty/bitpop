@@ -32,7 +32,7 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
   class ObserverWithAccessor : public content::WebContentsObserver {
    public:
     explicit ObserverWithAccessor(content::WebContents* web_contents);
-    virtual ~ObserverWithAccessor();
+    ~ObserverWithAccessor() override;
 
    private:
     DISALLOW_COPY_AND_ASSIGN(ObserverWithAccessor);
@@ -40,7 +40,7 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
 
   static const char kDevToolsApp[];
 
-  virtual ~DevToolsWindow();
+  ~DevToolsWindow() override;
 
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
@@ -61,19 +61,38 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
       DevToolsContentsResizingStrategy* out_strategy);
 
   static bool IsDevToolsWindow(content::WebContents* web_contents);
+  static DevToolsWindow* AsDevToolsWindow(content::WebContents* web_contents);
+  static DevToolsWindow* FindDevToolsWindow(content::DevToolsAgentHost*);
 
   // Open or reveal DevTools window, and perform the specified action.
-  static DevToolsWindow* OpenDevToolsWindow(
-      content::WebContents* inspected_web_contents,
-      const DevToolsToggleAction& action);
+  // How to get pointer to the created window see comments for
+  // ToggleDevToolsWindow().
+  static void OpenDevToolsWindow(content::WebContents* inspected_web_contents,
+                                 const DevToolsToggleAction& action);
 
   // Open or reveal DevTools window, with no special action.
-  static DevToolsWindow* OpenDevToolsWindow(
-      content::WebContents* inspected_web_contents);
+  // How to get pointer to the created window see comments for
+  // ToggleDevToolsWindow().
+  static void OpenDevToolsWindow(content::WebContents* inspected_web_contents);
+
+  // Open or reveal DevTools window. This window will be undocked.
+  static void OpenDevToolsWindow(
+      Profile* profile,
+      const scoped_refptr<content::DevToolsAgentHost>& agent_host);
 
   // Perform specified action for current WebContents inside a |browser|.
   // This may close currently open DevTools window.
-  static DevToolsWindow* ToggleDevToolsWindow(
+  // If DeveloperToolsDisabled policy is set, no DevTools window created.
+  // In case if needed pointer to the created window one should use
+  // DevToolsAgentHost and DevToolsWindow::FindDevToolsWindow(). E.g.:
+  //
+  // scoped_refptr<content::DevToolsAgentHost> agent(
+  //   content::DevToolsAgentHost::GetOrCreateFor(inspected_web_contents));
+  // DevToolsWindow::ToggleDevToolsWindow(
+  //   inspected_web_contents, DevToolsToggleAction::Show());
+  // DevToolsWindow* window = DevToolsWindow::FindDevToolsWindow(agent.get());
+  //
+  static void ToggleDevToolsWindow(
       Browser* browser,
       const DevToolsToggleAction& action);
 
@@ -85,7 +104,7 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
       bool isWorker);
 
   // Worker frontend is always undocked.
-  static DevToolsWindow* OpenDevToolsWindowForWorker(
+  static void OpenDevToolsWindowForWorker(
       Profile* profile,
       const scoped_refptr<content::DevToolsAgentHost>& worker_agent);
 
@@ -99,6 +118,11 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
 
   // Forwards an unhandled keyboard event to the DevTools frontend.
   bool ForwardKeyboardEvent(const content::NativeWebKeyboardEvent& event);
+
+  // content::WebContentsDelegate overrides.
+  content::WebContents* OpenURLFromTab(
+      content::WebContents* source,
+      const content::OpenURLParams& params) override;
 
   // BeforeUnload interception ////////////////////////////////////////////////
 
@@ -199,7 +223,8 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
   };
 
   DevToolsWindow(Profile* profile,
-                 const GURL& frontend_url,
+                 content::WebContents* main_web_contents,
+                 DevToolsUIBindings* bindings,
                  content::WebContents* inspected_web_contents,
                  bool can_dock);
 
@@ -207,79 +232,70 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
                                 const GURL& frontend_url,
                                 content::WebContents* inspected_web_contents,
                                 bool shared_worker_frontend,
-                                bool external_frontend,
+                                const std::string& remote_frontend,
                                 bool can_dock,
                                 const std::string& settings);
   static GURL GetDevToolsURL(Profile* profile,
                              const GURL& base_url,
                              bool shared_worker_frontend,
-                             bool external_frontend,
+                             const std::string& remote_frontend,
                              bool can_dock,
                              const std::string& settings);
-  static DevToolsWindow* FindDevToolsWindow(content::DevToolsAgentHost*);
-  static DevToolsWindow* AsDevToolsWindow(content::WebContents*);
+
   static DevToolsWindow* CreateDevToolsWindowForWorker(Profile* profile);
-  static DevToolsWindow* ToggleDevToolsWindow(
+  static void ToggleDevToolsWindow(
       content::WebContents* web_contents,
       bool force_open,
       const DevToolsToggleAction& action,
       const std::string& settings);
 
   // content::WebContentsDelegate:
-  virtual content::WebContents* OpenURLFromTab(
+  void ActivateContents(content::WebContents* contents) override;
+  void AddNewContents(content::WebContents* source,
+                      content::WebContents* new_contents,
+                      WindowOpenDisposition disposition,
+                      const gfx::Rect& initial_rect,
+                      bool user_gesture,
+                      bool* was_blocked) override;
+  void WebContentsCreated(content::WebContents* source_contents,
+                          int opener_render_frame_id,
+                          const base::string16& frame_name,
+                          const GURL& target_url,
+                          content::WebContents* new_contents) override;
+  void CloseContents(content::WebContents* source) override;
+  void ContentsZoomChange(bool zoom_in) override;
+  void BeforeUnloadFired(content::WebContents* tab,
+                         bool proceed,
+                         bool* proceed_to_fire_unload) override;
+  bool PreHandleKeyboardEvent(content::WebContents* source,
+                              const content::NativeWebKeyboardEvent& event,
+                              bool* is_keyboard_shortcut) override;
+  void HandleKeyboardEvent(
       content::WebContents* source,
-      const content::OpenURLParams& params) OVERRIDE;
-  virtual void ActivateContents(content::WebContents* contents) OVERRIDE;
-  virtual void AddNewContents(content::WebContents* source,
-                              content::WebContents* new_contents,
-                              WindowOpenDisposition disposition,
-                              const gfx::Rect& initial_pos,
-                              bool user_gesture,
-                              bool* was_blocked) OVERRIDE;
-  virtual void WebContentsCreated(content::WebContents* source_contents,
-                                  int opener_render_frame_id,
-                                  const base::string16& frame_name,
-                                  const GURL& target_url,
-                                  content::WebContents* new_contents) OVERRIDE;
-  virtual void CloseContents(content::WebContents* source) OVERRIDE;
-  virtual void ContentsZoomChange(bool zoom_in) OVERRIDE;
-  virtual void BeforeUnloadFired(content::WebContents* tab,
-                                 bool proceed,
-                                 bool* proceed_to_fire_unload) OVERRIDE;
-  virtual bool PreHandleKeyboardEvent(
-      content::WebContents* source,
-      const content::NativeWebKeyboardEvent& event,
-      bool* is_keyboard_shortcut) OVERRIDE;
-  virtual void HandleKeyboardEvent(
-      content::WebContents* source,
-      const content::NativeWebKeyboardEvent& event) OVERRIDE;
-  virtual content::JavaScriptDialogManager*
-      GetJavaScriptDialogManager() OVERRIDE;
-  virtual content::ColorChooser* OpenColorChooser(
+      const content::NativeWebKeyboardEvent& event) override;
+  content::JavaScriptDialogManager* GetJavaScriptDialogManager(
+      content::WebContents* source) override;
+  content::ColorChooser* OpenColorChooser(
       content::WebContents* web_contents,
       SkColor color,
-      const std::vector<content::ColorSuggestion>& suggestions) OVERRIDE;
-  virtual void RunFileChooser(
-      content::WebContents* web_contents,
-      const content::FileChooserParams& params) OVERRIDE;
-  virtual void WebContentsFocused(content::WebContents* contents) OVERRIDE;
-  virtual bool PreHandleGestureEvent(
-      content::WebContents* source,
-      const blink::WebGestureEvent& event) OVERRIDE;
+      const std::vector<content::ColorSuggestion>& suggestions) override;
+  void RunFileChooser(content::WebContents* web_contents,
+                      const content::FileChooserParams& params) override;
+  bool PreHandleGestureEvent(content::WebContents* source,
+                             const blink::WebGestureEvent& event) override;
 
   // content::DevToolsUIBindings::Delegate overrides
-  virtual void ActivateWindow() OVERRIDE;
-  virtual void CloseWindow() OVERRIDE;
-  virtual void SetInspectedPageBounds(const gfx::Rect& rect) OVERRIDE;
-  virtual void InspectElementCompleted() OVERRIDE;
-  virtual void MoveWindow(int x, int y) OVERRIDE;
-  virtual void SetIsDocked(bool is_docked) OVERRIDE;
-  virtual void OpenInNewTab(const std::string& url) OVERRIDE;
-  virtual void SetWhitelistedShortcuts(const std::string& message) OVERRIDE;
-  virtual void InspectedContentsClosing() OVERRIDE;
-  virtual void OnLoadCompleted() OVERRIDE;
-  virtual InfoBarService* GetInfoBarService() OVERRIDE;
-  virtual void RenderProcessGone() OVERRIDE;
+  void ActivateWindow() override;
+  void CloseWindow() override;
+  void SetInspectedPageBounds(const gfx::Rect& rect) override;
+  void InspectElementCompleted() override;
+  void SetIsDocked(bool is_docked) override;
+  void OpenInNewTab(const std::string& url) override;
+  void SetWhitelistedShortcuts(const std::string& message) override;
+  void InspectedContentsClosing() override;
+  void OnLoadCompleted() override;
+  InfoBarService* GetInfoBarService() override;
+  void RenderProcessGone(bool crashed) override;
 
   void CreateDevToolsBrowser();
   BrowserWindow* GetInspectedBrowserWindow();

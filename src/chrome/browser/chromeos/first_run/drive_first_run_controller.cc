@@ -11,12 +11,12 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/background/background_contents.h"
 #include "chrome/browser/background/background_contents_service.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/tab_contents/background_contents.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
@@ -85,14 +85,10 @@ class DriveOfflineNotificationDelegate
       : profile_(profile) {}
 
   // message_center::NotificationDelegate overrides:
-  virtual void Display() OVERRIDE {}
-  virtual void Error() OVERRIDE {}
-  virtual void Close(bool by_user) OVERRIDE {}
-  virtual void Click() OVERRIDE {}
-  virtual void ButtonClick(int button_index) OVERRIDE;
+  void ButtonClick(int button_index) override;
 
  protected:
-  virtual ~DriveOfflineNotificationDelegate() {}
+  ~DriveOfflineNotificationDelegate() override {}
 
  private:
   Profile* profile_;
@@ -132,7 +128,7 @@ class DriveWebContentsManager : public content::WebContentsObserver,
                           const std::string& app_id,
                           const std::string& endpoint_url,
                           const CompletionCallback& completion_callback);
-  virtual ~DriveWebContentsManager();
+  ~DriveWebContentsManager() override;
 
   // Start loading the WebContents for the endpoint in the context of the Drive
   // hosted app that will initialize offline mode and open a background page.
@@ -152,31 +148,31 @@ class DriveWebContentsManager : public content::WebContentsObserver,
                              DriveFirstRunController::UMAOutcome outcome);
 
   // content::WebContentsObserver overrides:
-  virtual void DidFailProvisionalLoad(
-      content::RenderFrameHost* render_frame_host,
-      const GURL& validated_url,
-      int error_code,
-      const base::string16& error_description) OVERRIDE;
+  void DidFailProvisionalLoad(content::RenderFrameHost* render_frame_host,
+                              const GURL& validated_url,
+                              int error_code,
+                              const base::string16& error_description) override;
 
-  virtual void DidFailLoad(content::RenderFrameHost* render_frame_host,
-                           const GURL& validated_url,
-                           int error_code,
-                           const base::string16& error_description) OVERRIDE;
+  void DidFailLoad(content::RenderFrameHost* render_frame_host,
+                   const GURL& validated_url,
+                   int error_code,
+                   const base::string16& error_description) override;
 
   // content::WebContentsDelegate overrides:
-  virtual bool ShouldCreateWebContents(
+  bool ShouldCreateWebContents(
       content::WebContents* web_contents,
       int route_id,
+      int main_frame_route_id,
       WindowContainerType window_container_type,
       const base::string16& frame_name,
       const GURL& target_url,
       const std::string& partition_id,
-      content::SessionStorageNamespace* session_storage_namespace) OVERRIDE;
+      content::SessionStorageNamespace* session_storage_namespace) override;
 
   // content::NotificationObserver overrides:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   Profile* profile_;
   const std::string app_id_;
@@ -280,6 +276,7 @@ void DriveWebContentsManager::DidFailLoad(
 bool DriveWebContentsManager::ShouldCreateWebContents(
     content::WebContents* web_contents,
     int route_id,
+    int main_frame_route_id,
     WindowContainerType window_container_type,
     const base::string16& frame_name,
     const GURL& target_url,
@@ -309,6 +306,7 @@ bool DriveWebContentsManager::ShouldCreateWebContents(
   BackgroundContents* contents = background_contents_service
       ->CreateBackgroundContents(content::SiteInstance::Create(profile_),
                                  route_id,
+                                 main_frame_route_id,
                                  profile_,
                                  frame_name,
                                  base::ASCIIToUTF16(app_id_),
@@ -364,7 +362,7 @@ void DriveFirstRunController::EnableOfflineMode() {
     return;
   }
 
-  if (!user_manager::UserManager::Get()->IsLoggedInAsRegularUser()) {
+  if (!user_manager::UserManager::Get()->IsLoggedInAsUserWithGaiaAccount()) {
     LOG(ERROR) << "Attempting to enable offline access "
                   "but not logged in a regular user.";
     OnOfflineInit(false, OUTCOME_WRONG_USER_TYPE);
@@ -439,7 +437,7 @@ void DriveFirstRunController::CleanUp() {
 }
 
 void DriveFirstRunController::OnOfflineInit(bool success, UMAOutcome outcome) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (success)
     ShowNotification();
   UMA_HISTOGRAM_ENUMERATION("DriveOffline.CrosAutoEnableOutcome",

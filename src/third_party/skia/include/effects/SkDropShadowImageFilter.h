@@ -11,30 +11,39 @@
 
 class SK_API SkDropShadowImageFilter : public SkImageFilter {
 public:
+    enum ShadowMode {
+        kDrawShadowAndForeground_ShadowMode,
+        kDrawShadowOnly_ShadowMode,
+
+        kLast_ShadowMode = kDrawShadowOnly_ShadowMode
+    };
+
+    static const int kShadowModeCount = kLast_ShadowMode+1;
+
     static SkDropShadowImageFilter* Create(SkScalar dx, SkScalar dy,
                                            SkScalar sigmaX, SkScalar sigmaY, SkColor color,
+                                           ShadowMode shadowMode,
                                            SkImageFilter* input = NULL,
-                                           const CropRect* cropRect = NULL,
-                                           uint32_t uniqueID = 0) {
-        return SkNEW_ARGS(SkDropShadowImageFilter, (dx, dy, sigmaX, sigmaY,
-                                                    color, input, cropRect, uniqueID));
+                                           const CropRect* cropRect = NULL) {
+        return SkNEW_ARGS(SkDropShadowImageFilter, (dx, dy, sigmaX, sigmaY, color,
+                                                    shadowMode, input, cropRect));
     }
-    virtual void computeFastBounds(const SkRect&, SkRect*) const SK_OVERRIDE;
+
+    void computeFastBounds(const SkRect&, SkRect*) const override;
+    SK_TO_STRING_OVERRIDE()
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkDropShadowImageFilter)
 
 protected:
     SkDropShadowImageFilter(SkScalar dx, SkScalar dy, SkScalar sigmaX, SkScalar sigmaY, SkColor,
-                            SkImageFilter* input, const CropRect* cropRect, uint32_t uniqueID);
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-    explicit SkDropShadowImageFilter(SkReadBuffer&);
-#endif
-    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
-    virtual bool onFilterImage(Proxy*, const SkBitmap& source, const Context&, SkBitmap* result, SkIPoint* loc) const SK_OVERRIDE;
+                            ShadowMode shadowMode, SkImageFilter* input, const CropRect* cropRect);
+    void flatten(SkWriteBuffer&) const override;
+    bool onFilterImage(Proxy*, const SkBitmap& source, const Context&, SkBitmap* result, SkIPoint* loc) const override;
     virtual bool onFilterBounds(const SkIRect& src, const SkMatrix&,
-                                SkIRect* dst) const SK_OVERRIDE;
+                                SkIRect* dst) const override;
 
 private:
     SkScalar fDx, fDy, fSigmaX, fSigmaY;
     SkColor fColor;
+    ShadowMode fShadowMode;
     typedef SkImageFilter INHERITED;
 };

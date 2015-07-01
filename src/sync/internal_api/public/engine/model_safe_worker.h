@@ -11,6 +11,7 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
@@ -89,13 +90,13 @@ class SYNC_EXPORT ModelSafeWorker
   virtual ModelSafeGroup GetModelSafeGroup() = 0;
 
   // MessageLoop::DestructionObserver implementation.
-  virtual void WillDestroyCurrentMessageLoop() OVERRIDE;
+  void WillDestroyCurrentMessageLoop() override;
 
  protected:
   friend class base::RefCountedThreadSafe<ModelSafeWorker>;
 
   explicit ModelSafeWorker(WorkerLoopDestructionObserver* observer);
-  virtual ~ModelSafeWorker();
+  ~ModelSafeWorker() override;
 
   // Any time the Syncer performs model modifications (e.g employing a
   // WriteTransaction), it should be done by this method to ensure it is done
@@ -148,8 +149,8 @@ class SYNC_EXPORT ModelSafeWorker
 typedef std::map<ModelType, ModelSafeGroup> ModelSafeRoutingInfo;
 
 // Caller takes ownership of return value.
-SYNC_EXPORT_PRIVATE base::DictionaryValue* ModelSafeRoutingInfoToValue(
-    const ModelSafeRoutingInfo& routing_info);
+SYNC_EXPORT_PRIVATE scoped_ptr<base::DictionaryValue>
+ModelSafeRoutingInfoToValue(const ModelSafeRoutingInfo& routing_info);
 
 SYNC_EXPORT std::string ModelSafeRoutingInfoToString(
     const ModelSafeRoutingInfo& routing_info);

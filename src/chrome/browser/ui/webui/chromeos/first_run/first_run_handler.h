@@ -20,24 +20,24 @@ class FirstRunHandler : public FirstRunActor,
  public:
   FirstRunHandler();
   // Overriden from FirstRunActor.
-  virtual bool IsInitialized() OVERRIDE;
-  virtual void SetBackgroundVisible(bool visible) OVERRIDE;
-  virtual void AddRectangularHole(int x, int y, int width, int height) OVERRIDE;
-  virtual void AddRoundHole(int x, int y, float radius) OVERRIDE;
-  virtual void RemoveBackgroundHoles() OVERRIDE;
-  virtual void ShowStepPositioned(const std::string& name,
-                                  const StepPosition& position) OVERRIDE;
-  virtual void ShowStepPointingTo(const std::string& name,
-                                  int x,
-                                  int y,
-                                  int offset) OVERRIDE;
-  virtual void HideCurrentStep() OVERRIDE;
-  virtual void Finalize() OVERRIDE;
-  virtual bool IsFinalizing() OVERRIDE;
+  bool IsInitialized() override;
+  void SetBackgroundVisible(bool visible) override;
+  void AddRectangularHole(int x, int y, int width, int height) override;
+  void AddRoundHole(int x, int y, float radius) override;
+  void RemoveBackgroundHoles() override;
+  void ShowStepPositioned(const std::string& name,
+                          const StepPosition& position) override;
+  void ShowStepPointingTo(const std::string& name,
+                          int x,
+                          int y,
+                          int offset) override;
+  void HideCurrentStep() override;
+  void Finalize() override;
+  bool IsFinalizing() override;
 
  private:
   // Overriden from content::WebUIMessageHandler.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
   // Handlers for calls from JS.
   void HandleInitialized(const base::ListValue* args);

@@ -40,31 +40,27 @@ scoped_ptr<net::test_server::HttpResponse> HandleTestRequest(
         new net::test_server::BasicHttpResponse);
     http_response->set_code(net::HTTP_MOVED_PERMANENTLY);
     http_response->AddCustomHeader("Location", redirect_target);
-    return http_response.PassAs<net::test_server::HttpResponse>();
+    return http_response.Pass();
   } else {
     scoped_ptr<net::test_server::BasicHttpResponse> http_response(
         new net::test_server::BasicHttpResponse);
     http_response->set_code(net::HTTP_OK);
     http_response->set_content("Success");
-    return http_response.PassAs<net::test_server::HttpResponse>();
+    return http_response.Pass();
   }
 }
 
 class TestDispatcherHostDelegate : public ChromeResourceDispatcherHostDelegate {
  public:
-  explicit TestDispatcherHostDelegate(
-      prerender::PrerenderTracker* prerender_tracker)
-      : ChromeResourceDispatcherHostDelegate(prerender_tracker) {
-  }
+  TestDispatcherHostDelegate() {}
+  ~TestDispatcherHostDelegate() override {}
 
-  virtual ~TestDispatcherHostDelegate() {}
-
-  virtual void RequestBeginning(
+  void RequestBeginning(
       net::URLRequest* request,
       content::ResourceContext* resource_context,
       content::AppCacheService* appcache_service,
       ResourceType resource_type,
-      ScopedVector<content::ResourceThrottle>* throttles) OVERRIDE {
+      ScopedVector<content::ResourceThrottle>* throttles) override {
     ChromeResourceDispatcherHostDelegate::RequestBeginning(
         request,
         resource_context,
@@ -74,11 +70,10 @@ class TestDispatcherHostDelegate : public ChromeResourceDispatcherHostDelegate {
     request_headers_.MergeFrom(request->extra_request_headers());
   }
 
-  virtual void OnRequestRedirected(
-      const GURL& redirect_url,
-      net::URLRequest* request,
-      content::ResourceContext* resource_context,
-      content::ResourceResponse* response) OVERRIDE {
+  void OnRequestRedirected(const GURL& redirect_url,
+                           net::URLRequest* request,
+                           content::ResourceContext* resource_context,
+                           content::ResourceResponse* response) override {
     ChromeResourceDispatcherHostDelegate::OnRequestRedirected(
         redirect_url,
         request,
@@ -100,11 +95,10 @@ class ChromeResourceDispatcherHostDelegateBrowserTest :
  public:
   ChromeResourceDispatcherHostDelegateBrowserTest() {}
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     InProcessBrowserTest::SetUpOnMainThread();
     // Hook navigations with our delegate.
-    dispatcher_host_delegate_.reset(new TestDispatcherHostDelegate(
-        g_browser_process->prerender_tracker()));
+    dispatcher_host_delegate_.reset(new TestDispatcherHostDelegate);
     content::ResourceDispatcherHost::Get()->SetDelegate(
         dispatcher_host_delegate_.get());
 
@@ -130,7 +124,7 @@ class ChromeResourceDispatcherHostDelegateBrowserTest :
     }
   }
 
-  virtual void TearDownOnMainThread() OVERRIDE {
+  void TearDownOnMainThread() override {
     content::ResourceDispatcherHost::Get()->SetDelegate(NULL);
     dispatcher_host_delegate_.reset();
   }

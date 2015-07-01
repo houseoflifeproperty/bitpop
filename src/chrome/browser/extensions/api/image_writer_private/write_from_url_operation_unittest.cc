@@ -8,7 +8,6 @@
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/url_request/test_url_request_interceptor.h"
-#include "net/url_request/url_fetcher.h"
 
 namespace extensions {
 namespace image_writer {
@@ -43,7 +42,7 @@ class OperationForTest : public WriteFromUrlOperation {
                               hash,
                               storage_unit_id) {}
 
-  virtual void StartImpl() OVERRIDE {}
+  void StartImpl() override {}
 
   // Expose stages for testing.
   void GetDownloadTarget(const base::Closure& continuation) {
@@ -66,18 +65,17 @@ class OperationForTest : public WriteFromUrlOperation {
   base::FilePath GetImagePath() { return image_path_; }
 
  private:
-  virtual ~OperationForTest() {};
+  ~OperationForTest() override{};
 };
 
 class ImageWriterWriteFromUrlOperationTest : public ImageWriterUnitTestBase {
  protected:
   ImageWriterWriteFromUrlOperationTest() : manager_(&test_profile_) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ImageWriterUnitTestBase::SetUp();
 
     // Turn on interception and set up our dummy file.
-    net::URLFetcher::SetEnableInterceptionForTests(true);
     get_interceptor_.reset(new GetInterceptor(
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
         BrowserThread::GetBlockingPool()->GetTaskRunnerWithShutdownBehavior(
@@ -86,11 +84,8 @@ class ImageWriterWriteFromUrlOperationTest : public ImageWriterUnitTestBase {
                                   test_utils_.GetImagePath());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     ImageWriterUnitTestBase::TearDown();
-
-    // Remember to turn off global interception.
-    net::URLFetcher::SetEnableInterceptionForTests(false);
   }
 
   scoped_refptr<OperationForTest> CreateOperation(const GURL& url,

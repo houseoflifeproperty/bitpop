@@ -32,20 +32,20 @@ class PCMWaveInAudioInputStream : public AudioInputStream {
                             const AudioParameters& params,
                             int num_buffers,
                             const std::string& device_id);
-  virtual ~PCMWaveInAudioInputStream();
+  ~PCMWaveInAudioInputStream() override;
 
   // Implementation of AudioInputStream.
-  virtual bool Open() OVERRIDE;
-  virtual void Start(AudioInputCallback* callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Close() OVERRIDE;
+  bool Open() override;
+  void Start(AudioInputCallback* callback) override;
+  void Stop() override;
+  void Close() override;
   // TODO(henrika): Add volume support using the Audio Mixer API.
-  virtual double GetMaxVolume() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual double GetVolume() OVERRIDE;
-  virtual void SetAutomaticGainControl(bool enabled) OVERRIDE;
-  virtual bool GetAutomaticGainControl() OVERRIDE;
-  virtual bool IsMuted() OVERRIDE;
+  double GetMaxVolume() override;
+  void SetVolume(double volume) override;
+  double GetVolume() override;
+  bool SetAutomaticGainControl(bool enabled) override;
+  bool GetAutomaticGainControl() override;
+  bool IsMuted() override;
 
  private:
   enum State {

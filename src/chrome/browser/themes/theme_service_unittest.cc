@@ -10,8 +10,6 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_service_test_base.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
-#include "chrome/browser/supervised_user/supervised_user_service.h"
-#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
 #include "chrome/browser/themes/custom_theme_supplier.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/common/chrome_paths.h"
@@ -21,9 +19,15 @@
 #include "chrome/test/base/testing_profile_manager.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/test_extension_registry_observer.h"
 #include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/extension.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(ENABLE_SUPERVISED_USERS)
+#include "chrome/browser/supervised_user/supervised_user_service.h"
+#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
+#endif
 
 using extensions::ExtensionRegistry;
 
@@ -33,7 +37,7 @@ class ThemeServiceTest : public extensions::ExtensionServiceTestBase {
  public:
   ThemeServiceTest() : is_supervised_(false),
                        registry_(NULL) {}
-  virtual ~ThemeServiceTest() {}
+  ~ThemeServiceTest() override {}
 
   // Moves a minimal theme to |temp_dir_path| and unpacks it from that
   // directory.
@@ -47,14 +51,10 @@ class ThemeServiceTest : public extensions::ExtensionServiceTestBase {
 
     scoped_refptr<extensions::UnpackedInstaller> installer(
         extensions::UnpackedInstaller::Create(service_));
-    content::WindowedNotificationObserver observer(
-        extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
-        content::Source<Profile>(profile_.get()));
+    extensions::TestExtensionRegistryObserver observer(
+        ExtensionRegistry::Get(profile()));
     installer->Load(temp_dir);
-    observer.Wait();
-
-    std::string extension_id =
-        content::Details<extensions::Extension>(observer.details())->id();
+    std::string extension_id = observer.WaitForExtensionLoaded()->id();
 
     // Let the ThemeService finish creating the theme pack.
     base::MessageLoop::current()->RunUntilIdle();
@@ -64,26 +64,29 @@ class ThemeServiceTest : public extensions::ExtensionServiceTestBase {
 
   // Update the theme with |extension_id|.
   void UpdateUnpackedTheme(const std::string& extension_id) {
-    int updated_notification =
-        service_->IsExtensionEnabled(extension_id)
-            ? extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED
-            : extensions::NOTIFICATION_EXTENSION_UPDATE_DISABLED;
-
     const base::FilePath& path =
         service_->GetInstalledExtension(extension_id)->path();
 
     scoped_refptr<extensions::UnpackedInstaller> installer(
         extensions::UnpackedInstaller::Create(service_));
-    content::WindowedNotificationObserver observer(updated_notification,
-        content::Source<Profile>(profile_.get()));
-    installer->Load(path);
-    observer.Wait();
+    if (service_->IsExtensionEnabled(extension_id)) {
+      extensions::TestExtensionRegistryObserver observer(
+          ExtensionRegistry::Get(profile()));
+      installer->Load(path);
+      observer.WaitForExtensionLoaded();
+    } else {
+      content::WindowedNotificationObserver observer(
+          extensions::NOTIFICATION_EXTENSION_UPDATE_DISABLED,
+          content::Source<Profile>(profile_.get()));
+      installer->Load(path);
+      observer.Wait();
+    }
 
     // Let the ThemeService finish creating the theme pack.
     base::MessageLoop::current()->RunUntilIdle();
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     extensions::ExtensionServiceTestBase::SetUp();
     extensions::ExtensionServiceTestBase::ExtensionServiceInitParams params =
         CreateDefaultInitParams();
@@ -234,12 +237,13 @@ TEST_F(ThemeServiceTest, ThemeUpgrade) {
                                           ExtensionRegistry::DISABLED));
 }
 
+#if defined(ENABLE_SUPERVISED_USERS)
 class ThemeServiceSupervisedUserTest : public ThemeServiceTest {
  public:
   ThemeServiceSupervisedUserTest() {}
-  virtual ~ThemeServiceSupervisedUserTest() {}
+  ~ThemeServiceSupervisedUserTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     is_supervised_ = true;
     ThemeServiceTest::SetUp();
   }
@@ -270,6 +274,7 @@ TEST_F(ThemeServiceSupervisedUserTest, SupervisedUserThemeReplacesNativeTheme) {
   EXPECT_EQ(get_theme_supplier(theme_service)->get_theme_type(),
             CustomThemeSupplier::SUPERVISED_USER_THEME);
 }
-#endif
+#endif // defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#endif // defined(ENABLE_SUPERVISED_USERS)
 
 }; // namespace theme_service_internal

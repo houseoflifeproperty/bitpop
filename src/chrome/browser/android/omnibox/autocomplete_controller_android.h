@@ -36,6 +36,7 @@ class AutocompleteControllerAndroid : public AutocompleteControllerDelegate,
   void Start(JNIEnv* env,
              jobject obj,
              jstring j_text,
+             jint j_cursor_pos,
              jstring j_desired_tld,
              jstring j_current_url,
              bool prevent_inline_autocomplete,
@@ -45,7 +46,7 @@ class AutocompleteControllerAndroid : public AutocompleteControllerDelegate,
   base::android::ScopedJavaLocalRef<jobject> Classify(JNIEnv* env,
                                                       jobject obj,
                                                       jstring j_text);
-  void StartZeroSuggest(JNIEnv* env,
+  void OnOmniboxFocused(JNIEnv* env,
                         jobject obj,
                         jstring j_omnibox_text,
                         jstring j_current_url,
@@ -69,13 +70,8 @@ class AutocompleteControllerAndroid : public AutocompleteControllerDelegate,
           jint selected_index,
           jlong elapsed_time_since_input_change);
 
-  base::android::ScopedJavaLocalRef<jobject> GetTopSynchronousMatch(
-      JNIEnv* env,
-      jobject obj,
-      jstring query);
-
   // KeyedService:
-  virtual void Shutdown() OVERRIDE;
+  void Shutdown() override;
 
   class Factory : public BrowserContextKeyedServiceFactory {
    public:
@@ -86,26 +82,26 @@ class AutocompleteControllerAndroid : public AutocompleteControllerDelegate,
     static Factory* GetInstance();
 
    protected:
-    virtual content::BrowserContext* GetBrowserContextToUse(
-        content::BrowserContext* context) const OVERRIDE;
+    content::BrowserContext* GetBrowserContextToUse(
+        content::BrowserContext* context) const override;
 
    private:
     friend struct DefaultSingletonTraits<Factory>;
 
     Factory();
-    virtual ~Factory();
+    ~Factory() override;
 
     // BrowserContextKeyedServiceFactory
-    virtual KeyedService* BuildServiceInstanceFor(
-        content::BrowserContext* profile) const OVERRIDE;
+    KeyedService* BuildServiceInstanceFor(
+        content::BrowserContext* profile) const override;
   };
 
  private:
-  virtual ~AutocompleteControllerAndroid();
+  ~AutocompleteControllerAndroid() override;
   void InitJNI(JNIEnv* env, jobject obj);
 
   // AutocompleteControllerDelegate implementation.
-  virtual void OnResultChanged(bool default_match_changed) OVERRIDE;
+  void OnResultChanged(bool default_match_changed) override;
 
   // Notifies the Java AutocompleteController that suggestions were received
   // based on the text the user typed in last.

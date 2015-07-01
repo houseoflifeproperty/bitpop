@@ -119,7 +119,10 @@ void GetSelectedFileInfoInternal(Profile* profile,
       // MTP, or provided file system), we should resolve the path.
       switch (params->local_path_option) {
         case NO_LOCAL_PATH_RESOLUTION:
-          break;  // No special handling needed.
+          // Pass empty local path.
+          params->selected_files.push_back(
+              ui::SelectedFileInfo(file_path, base::FilePath()));
+          break;
         case NEED_LOCAL_PATH_FOR_OPENING:
           GetFileNativeLocalPathForOpening(
               profile,
@@ -137,9 +140,10 @@ void GetSelectedFileInfoInternal(Profile* profile,
                          base::Passed(&params)));
           return;  // Remaining work is done in ContinueGetSelectedFileInfo.
       }
+    } else {
+      params->selected_files.push_back(
+          ui::SelectedFileInfo(file_path, file_path));
     }
-    params->selected_files.push_back(
-        ui::SelectedFileInfo(file_path, base::FilePath()));
   }
   params->callback.Run(params->selected_files);
 }
@@ -160,36 +164,52 @@ void ContinueGetSelectedFileInfo(Profile* profile,
 
 }  // namespace
 
-void VolumeInfoToVolumeMetadata(
+void VolumeToVolumeMetadata(
     Profile* profile,
-    const VolumeInfo& volume_info,
+    const Volume& volume,
     file_manager_private::VolumeMetadata* volume_metadata) {
   DCHECK(volume_metadata);
 
-  volume_metadata->volume_id = volume_info.volume_id;
+  volume_metadata->volume_id = volume.volume_id();
 
   // TODO(kinaba): fill appropriate information once multi-profile support is
   // implemented.
-  volume_metadata->profile.display_name = profile->GetProfileName();
+  volume_metadata->profile.display_name = profile->GetProfileUserName();
   volume_metadata->profile.is_current_profile = true;
 
-  if (!volume_info.source_path.empty()) {
+  if (!volume.source_path().empty()) {
     volume_metadata->source_path.reset(
-        new std::string(volume_info.source_path.AsUTF8Unsafe()));
+        new std::string(volume.source_path().AsUTF8Unsafe()));
   }
 
-  if (volume_info.type == VOLUME_TYPE_PROVIDED) {
-    volume_metadata->extension_id.reset(
-        new std::string(volume_info.extension_id));
+  switch (volume.source()) {
+    case SOURCE_FILE:
+      volume_metadata->source = file_manager_private::SOURCE_FILE;
+      break;
+    case SOURCE_DEVICE:
+      volume_metadata->source = file_manager_private::SOURCE_DEVICE;
+      break;
+    case SOURCE_NETWORK:
+      volume_metadata->source =
+          extensions::api::file_manager_private::SOURCE_NETWORK;
+      break;
+    case SOURCE_SYSTEM:
+      volume_metadata->source =
+          extensions::api::file_manager_private::SOURCE_SYSTEM;
+      break;
+  }
 
+  volume_metadata->configurable = volume.configurable();
+
+  if (volume.type() == VOLUME_TYPE_PROVIDED) {
+    volume_metadata->extension_id.reset(new std::string(volume.extension_id()));
     volume_metadata->file_system_id.reset(
-        new std::string(volume_info.file_system_id));
+        new std::string(volume.file_system_id()));
   }
 
-  volume_metadata->volume_label.reset(
-      new std::string(volume_info.volume_label));
+  volume_metadata->volume_label.reset(new std::string(volume.volume_label()));
 
-  switch (volume_info.type) {
+  switch (volume.type()) {
     case VOLUME_TYPE_GOOGLE_DRIVE:
       volume_metadata->volume_type =
           file_manager_private::VOLUME_TYPE_DRIVE;
@@ -204,10 +224,6 @@ void VolumeInfoToVolumeMetadata(
       break;
     case VOLUME_TYPE_MOUNTED_ARCHIVE_FILE:
       volume_metadata->volume_type = file_manager_private::VOLUME_TYPE_ARCHIVE;
-      break;
-    case VOLUME_TYPE_CLOUD_DEVICE:
-      volume_metadata->volume_type =
-          file_manager_private::VOLUME_TYPE_CLOUD_DEVICE;
       break;
     case VOLUME_TYPE_PROVIDED:
       volume_metadata->volume_type = file_manager_private::VOLUME_TYPE_PROVIDED;
@@ -225,8 +241,8 @@ void VolumeInfoToVolumeMetadata(
   }
 
   // Fill device_type iff the volume is removable partition.
-  if (volume_info.type == VOLUME_TYPE_REMOVABLE_DISK_PARTITION) {
-    switch (volume_info.device_type) {
+  if (volume.type() == VOLUME_TYPE_REMOVABLE_DISK_PARTITION) {
+    switch (volume.device_type()) {
       case chromeos::DEVICE_TYPE_UNKNOWN:
         volume_metadata->device_type =
             file_manager_private::DEVICE_TYPE_UNKNOWN;
@@ -247,17 +263,17 @@ void VolumeInfoToVolumeMetadata(
         break;
     }
     volume_metadata->device_path.reset(
-        new std::string(volume_info.system_path_prefix.AsUTF8Unsafe()));
-    volume_metadata->is_parent_device.reset(
-        new bool(volume_info.is_parent));
+        new std::string(volume.system_path_prefix().AsUTF8Unsafe()));
+    volume_metadata->is_parent_device.reset(new bool(volume.is_parent()));
   } else {
     volume_metadata->device_type =
         file_manager_private::DEVICE_TYPE_NONE;
   }
 
-  volume_metadata->is_read_only = volume_info.is_read_only;
+  volume_metadata->is_read_only = volume.is_read_only();
+  volume_metadata->has_media = volume.has_media();
 
-  switch (volume_info.mount_condition) {
+  switch (volume.mount_condition()) {
     case chromeos::disks::MOUNT_CONDITION_NONE:
       volume_metadata->mount_condition =
           file_manager_private::MOUNT_CONDITION_NONE;
@@ -269,6 +285,18 @@ void VolumeInfoToVolumeMetadata(
     case chromeos::disks::MOUNT_CONDITION_UNSUPPORTED_FILESYSTEM:
       volume_metadata->mount_condition =
           file_manager_private::MOUNT_CONDITION_UNSUPPORTED;
+      break;
+  }
+
+  // If the context is known, then pass it.
+  switch (volume.mount_context()) {
+    case MOUNT_CONTEXT_USER:
+      volume_metadata->mount_context = file_manager_private::MOUNT_CONTEXT_USER;
+      break;
+    case MOUNT_CONTEXT_AUTO:
+      volume_metadata->mount_context = file_manager_private::MOUNT_CONTEXT_AUTO;
+      break;
+    case MOUNT_CONTEXT_UNKNOWN:
       break;
   }
 }

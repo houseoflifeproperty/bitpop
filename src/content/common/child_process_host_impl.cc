@@ -11,13 +11,14 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/numerics/safe_math.h"
 #include "base/path_service.h"
 #include "base/process/process_metrics.h"
 #include "base/rand_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "content/common/child_process_messages.h"
-#include "content/common/gpu/client/gpu_memory_buffer_impl.h"
+#include "content/common/gpu/client/gpu_memory_buffer_impl_shared_memory.h"
 #include "content/public/common/child_process_host_delegate.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
@@ -78,6 +79,9 @@ base::FilePath TransformPathForFeature(const base::FilePath& path,
 // Global atomic to generate child process unique IDs.
 base::StaticAtomicSequenceNumber g_unique_id;
 
+// Global atomic to generate gpu memory buffer unique IDs.
+base::StaticAtomicSequenceNumber g_next_gpu_memory_buffer_id;
+
 }  // namespace
 
 namespace content {
@@ -135,7 +139,6 @@ base::FilePath ChildProcessHost::GetChildPath(int flags) {
 
 ChildProcessHostImpl::ChildProcessHostImpl(ChildProcessHostDelegate* delegate)
     : delegate_(delegate),
-      peer_handle_(base::kNullProcessHandle),
       opening_channel_(false) {
 #if defined(OS_WIN)
   AddFilter(new FontCacheDispatcher());
@@ -147,8 +150,6 @@ ChildProcessHostImpl::~ChildProcessHostImpl() {
     filters_[i]->OnChannelClosing();
     filters_[i]->OnFilterRemoved();
   }
-
-  base::CloseProcessHandle(peer_handle_);
 }
 
 void ChildProcessHostImpl::AddFilter(IPC::MessageFilter* filter) {
@@ -187,7 +188,7 @@ bool ChildProcessHostImpl::IsChannelOpening() {
 }
 
 #if defined(OS_POSIX)
-int ChildProcessHostImpl::TakeClientFileDescriptor() {
+base::ScopedFD ChildProcessHostImpl::TakeClientFileDescriptor() {
   return channel_->TakeClientFileDescriptor();
 }
 #endif
@@ -255,6 +256,8 @@ bool ChildProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
                           OnAllocateSharedMemory)
       IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer,
                           OnAllocateGpuMemoryBuffer)
+      IPC_MESSAGE_HANDLER(ChildProcessHostMsg_DeletedGpuMemoryBuffer,
+                          OnDeletedGpuMemoryBuffer)
       IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP()
 
@@ -270,10 +273,11 @@ bool ChildProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
 }
 
 void ChildProcessHostImpl::OnChannelConnected(int32 peer_pid) {
-  if (!peer_handle_ &&
-      !base::OpenPrivilegedProcessHandle(peer_pid, &peer_handle_)) {
-    peer_handle_ = delegate_->GetHandle();
-    DCHECK(peer_handle_);
+  if (!peer_process_.IsValid()) {
+    peer_process_ = base::Process::OpenWithExtraPrivileges(peer_pid);
+    if (!peer_process_.IsValid())
+       peer_process_ = delegate_->GetProcess().Duplicate();
+    DCHECK(peer_process_.IsValid());
   }
   opening_channel_ = false;
   delegate_->OnChannelConnected(peer_pid);
@@ -299,7 +303,7 @@ void ChildProcessHostImpl::OnBadMessageReceived(const IPC::Message& message) {
 void ChildProcessHostImpl::OnAllocateSharedMemory(
     uint32 buffer_size,
     base::SharedMemoryHandle* handle) {
-  AllocateSharedMemory(buffer_size, peer_handle_, handle);
+  AllocateSharedMemory(buffer_size, peer_process_.Handle(), handle);
 }
 
 void ChildProcessHostImpl::OnShutdownRequest() {
@@ -310,14 +314,29 @@ void ChildProcessHostImpl::OnShutdownRequest() {
 void ChildProcessHostImpl::OnAllocateGpuMemoryBuffer(
     uint32 width,
     uint32 height,
-    uint32 internalformat,
-    uint32 usage,
+    gfx::GpuMemoryBuffer::Format format,
+    gfx::GpuMemoryBuffer::Usage usage,
     gfx::GpuMemoryBufferHandle* handle) {
-  handle->type = gfx::SHARED_MEMORY_BUFFER;
-  AllocateSharedMemory(
-      width * height * GpuMemoryBufferImpl::BytesPerPixel(internalformat),
-      peer_handle_,
-      &handle->handle);
+  // TODO(reveman): Add support for other types of GpuMemoryBuffers.
+
+  // AllocateForChildProcess() will check if |width| and |height| are valid
+  // and handle failure in a controlled way when not. We just need to make
+  // sure |format| and |usage| are supported here.
+  if (GpuMemoryBufferImplSharedMemory::IsFormatSupported(format) &&
+      usage == gfx::GpuMemoryBuffer::MAP) {
+    *handle = GpuMemoryBufferImplSharedMemory::AllocateForChildProcess(
+        g_next_gpu_memory_buffer_id.GetNext(),
+        gfx::Size(width, height),
+        format,
+        peer_process_.Handle());
+  }
+}
+
+void ChildProcessHostImpl::OnDeletedGpuMemoryBuffer(
+    gfx::GpuMemoryBufferId id,
+    uint32 sync_point) {
+  // Note: Nothing to do here as ownership of shared memory backed
+  // GpuMemoryBuffers is passed with IPC.
 }
 
 }  // namespace content

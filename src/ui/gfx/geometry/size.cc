@@ -6,17 +6,20 @@
 
 #if defined(OS_WIN)
 #include <windows.h>
+#elif defined(OS_IOS)
+#include <CoreGraphics/CoreGraphics.h>
+#elif defined(OS_MACOSX)
+#include <ApplicationServices/ApplicationServices.h>
 #endif
 
 #include "base/strings/stringprintf.h"
 
 namespace gfx {
 
-template class SizeBase<Size, int>;
-
 #if defined(OS_MACOSX)
 Size::Size(const CGSize& s)
-    : SizeBase<Size, int>(s.width, s.height) {
+    : width_(s.width < 0 ? 0 : s.width),
+      height_(s.height < 0 ? 0 : s.height) {
 }
 
 Size& Size::operator=(const CGSize& s) {
@@ -38,6 +41,24 @@ CGSize Size::ToCGSize() const {
   return CGSizeMake(width(), height());
 }
 #endif
+
+int Size::GetArea() const {
+  return width() * height();
+}
+
+void Size::Enlarge(int grow_width, int grow_height) {
+  SetSize(width() + grow_width, height() + grow_height);
+}
+
+void Size::SetToMin(const Size& other) {
+  width_ = width() <= other.width() ? width() : other.width();
+  height_ = height() <= other.height() ? height() : other.height();
+}
+
+void Size::SetToMax(const Size& other) {
+  width_ = width() >= other.width() ? width() : other.width();
+  height_ = height() >= other.height() ? height() : other.height();
+}
 
 std::string Size::ToString() const {
   return base::StringPrintf("%dx%d", width(), height());

@@ -30,10 +30,10 @@ class NativeWidgetAura;
 class VIEWS_EXPORT X11WindowEventFilter : public ui::EventHandler {
  public:
   explicit X11WindowEventFilter(DesktopWindowTreeHost* window_tree_host);
-  virtual ~X11WindowEventFilter();
+  ~X11WindowEventFilter() override;
 
   // Overridden from ui::EventHandler:
-  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
+  void OnMouseEvent(ui::MouseEvent* event) override;
 
  private:
   // Called when the user clicked the caption area.
@@ -60,9 +60,6 @@ class VIEWS_EXPORT X11WindowEventFilter : public ui::EventHandler {
   ui::X11AtomCache atom_cache_;
 
   DesktopWindowTreeHost* window_tree_host_;
-
-  // True if |xwindow_| is the current _NET_ACTIVE_WINDOW.
-  bool is_active_;
 
   // The non-client component for the target of a MouseEvent. Mouse events can
   // be destructive to the window tree, which can cause the component of a

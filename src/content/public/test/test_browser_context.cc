@@ -21,17 +21,15 @@ class TestContextURLRequestContextGetter : public net::URLRequestContextGetter {
       : null_task_runner_(new base::NullTaskRunner) {
   }
 
-  virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE {
-    return &context_;
-  }
+  net::URLRequestContext* GetURLRequestContext() override { return &context_; }
 
-  virtual scoped_refptr<base::SingleThreadTaskRunner>
-      GetNetworkTaskRunner() const OVERRIDE {
+  scoped_refptr<base::SingleThreadTaskRunner> GetNetworkTaskRunner()
+      const override {
     return null_task_runner_;
   }
 
  private:
-  virtual ~TestContextURLRequestContextGetter() {}
+  ~TestContextURLRequestContextGetter() override {}
 
   net::TestURLRequestContext context_;
   scoped_refptr<base::SingleThreadTaskRunner> null_task_runner_;
@@ -59,6 +57,11 @@ void TestBrowserContext::SetSpecialStoragePolicy(
 
 base::FilePath TestBrowserContext::GetPath() const {
   return browser_context_dir_.path();
+}
+
+scoped_ptr<ZoomLevelDelegate> TestBrowserContext::CreateZoomLevelDelegate(
+    const base::FilePath& partition_path) {
+  return scoped_ptr<ZoomLevelDelegate>();
 }
 
 bool TestBrowserContext::IsOffTheRecord() const {
@@ -118,6 +121,10 @@ PushMessagingService* TestBrowserContext::GetPushMessagingService() {
 }
 
 SSLHostStateDelegate* TestBrowserContext::GetSSLHostStateDelegate() {
+  return NULL;
+}
+
+PermissionManager* TestBrowserContext::GetPermissionManager() {
   return NULL;
 }
 

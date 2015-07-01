@@ -27,7 +27,7 @@ class PrerenderDispatcher : public content::RenderProcessObserver,
                             public blink::WebPrerenderingSupport {
  public:
   PrerenderDispatcher();
-  virtual ~PrerenderDispatcher();
+  ~PrerenderDispatcher() override;
 
   bool IsPrerenderURL(const GURL& url) const;
 
@@ -43,12 +43,12 @@ class PrerenderDispatcher : public content::RenderProcessObserver,
   void OnPrerenderStop(int prerender_id);
 
   // From RenderProcessObserver:
-  virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnControlMessageReceived(const IPC::Message& message) override;
 
   // From WebPrerenderingSupport:
-  virtual void add(const blink::WebPrerender& prerender) OVERRIDE;
-  virtual void cancel(const blink::WebPrerender& prerender) OVERRIDE;
-  virtual void abandon(const blink::WebPrerender& prerender) OVERRIDE;
+  void add(const blink::WebPrerender& prerender) override;
+  void cancel(const blink::WebPrerender& prerender) override;
+  void abandon(const blink::WebPrerender& prerender) override;
 
   // From WebKit, prerender elements launched by renderers in our process.
   std::map<int, blink::WebPrerender> prerenders_;

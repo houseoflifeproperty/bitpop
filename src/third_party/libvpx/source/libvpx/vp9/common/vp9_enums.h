@@ -67,6 +67,7 @@ typedef enum PARTITION_TYPE {
   PARTITION_INVALID = PARTITION_TYPES
 } PARTITION_TYPE;
 
+typedef char PARTITION_CONTEXT;
 #define PARTITION_PLOFFSET   4  // number of probability models per block size
 #define PARTITION_CONTEXTS (4 * PARTITION_PLOFFSET)
 
@@ -96,17 +97,6 @@ typedef enum {
   ADST_ADST = 3,                      // ADST in both directions
   TX_TYPES = 4
 } TX_TYPE;
-
-typedef enum {
-  UNKNOWN    = 0,
-  BT_601     = 1,  // YUV
-  BT_709     = 2,  // YUV
-  SMPTE_170  = 3,  // YUV
-  SMPTE_240  = 4,  // YUV
-  RESERVED_1 = 5,
-  RESERVED_2 = 6,
-  SRGB       = 7   // RGB
-} COLOR_SPACE;
 
 typedef enum {
   VP9_LAST_FLAG = 1 << 0,

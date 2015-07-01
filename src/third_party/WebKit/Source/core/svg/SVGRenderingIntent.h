@@ -26,7 +26,7 @@
 
 namespace blink {
 
-class SVGRenderingIntent FINAL : public RefCountedWillBeGarbageCollected<SVGRenderingIntent>, public ScriptWrappable {
+class SVGRenderingIntent final : public RefCountedWillBeGarbageCollected<SVGRenderingIntent>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     enum SVGRenderingIntentType {
@@ -38,7 +38,7 @@ public:
         RENDERING_INTENT_ABSOLUTE_COLORIMETRIC    = 5
     };
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     SVGRenderingIntent(); // No instantiation.

@@ -22,17 +22,26 @@
 
 #include "platform/graphics/filters/SourceGraphic.h"
 
-#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/filters/Filter.h"
 #include "platform/text/TextStream.h"
+#include "third_party/skia/include/core/SkPicture.h"
 #include "third_party/skia/include/effects/SkPictureImageFilter.h"
-#include "wtf/StdLibExtras.h"
-#include "wtf/text/WTFString.h"
 
 namespace blink {
 
-PassRefPtr<SourceGraphic> SourceGraphic::create(Filter* filter)
+SourceGraphic::SourceGraphic(Filter* filter)
+    : FilterEffect(filter)
 {
-    return adoptRef(new SourceGraphic(filter));
+    setOperatingColorSpace(ColorSpaceDeviceRGB);
+}
+
+SourceGraphic::~SourceGraphic()
+{
+}
+
+PassRefPtrWillBeRawPtr<SourceGraphic> SourceGraphic::create(Filter* filter)
+{
+    return adoptRefWillBeNoop(new SourceGraphic(filter));
 }
 
 const AtomicString& SourceGraphic::effectName()
@@ -49,31 +58,17 @@ FloatRect SourceGraphic::determineAbsolutePaintRect(const FloatRect& requestedRe
     return srcRect;
 }
 
-void SourceGraphic::applySoftware()
+void SourceGraphic::setPicture(PassRefPtr<const SkPicture> picture)
 {
-    ImageBuffer* resultImage = createImageBufferResult();
-    Filter* filter = this->filter();
-    if (!resultImage || !filter->sourceImage())
-        return;
-
-    IntRect srcRect = filter->sourceImageRect();
-    if (ImageBuffer* sourceImageBuffer = filter->sourceImage()) {
-        resultImage->context()->drawImageBuffer(sourceImageBuffer,
-            FloatRect(IntPoint(srcRect.location() - absolutePaintRect().location()), sourceImageBuffer->size()));
-    }
-}
-
-void SourceGraphic::setDisplayList(PassRefPtr<DisplayList> displayList)
-{
-    m_displayList = displayList;
+    m_picture = picture;
 }
 
 PassRefPtr<SkImageFilter> SourceGraphic::createImageFilter(SkiaImageFilterBuilder*)
 {
-    if (!m_displayList)
+    if (!m_picture)
         return nullptr;
 
-    return adoptRef(SkPictureImageFilter::Create(m_displayList->picture(), m_displayList->bounds()));
+    return adoptRef(SkPictureImageFilter::Create(m_picture.get(), m_picture->cullRect()));
 }
 
 TextStream& SourceGraphic::externalRepresentation(TextStream& ts, int indent) const

@@ -94,12 +94,16 @@ class CC_EXPORT TextureLayer : public Layer {
   // Resets the texture.
   void ClearTexture();
 
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
 
   // Sets whether this texture should be Y-flipped at draw time. Defaults to
   // true.
   void SetFlipped(bool flipped);
+  bool flipped() const { return flipped_; }
+
+  // Sets whether this texture should use nearest neighbor interpolation as
+  // opposed to bilinear. Defaults to false.
+  void SetNearestNeighbor(bool nearest_neighbor);
 
   // Sets a UV transform to be used at draw time. Defaults to (0, 0) and (1, 1).
   void SetUV(const gfx::PointF& top_left, const gfx::PointF& bottom_right);
@@ -134,18 +138,18 @@ class CC_EXPORT TextureLayer : public Layer {
   // TODO(danakj): Remove this when pepper doesn't need it. crbug.com/350204
   void SetTextureMailboxWithoutReleaseCallback(const TextureMailbox& mailbox);
 
-  virtual void SetNeedsDisplayRect(const gfx::RectF& dirty_rect) OVERRIDE;
+  void SetNeedsDisplayRect(const gfx::Rect& dirty_rect) override;
 
-  virtual void SetLayerTreeHost(LayerTreeHost* layer_tree_host) OVERRIDE;
-  virtual bool Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker<Layer>* occlusion) OVERRIDE;
-  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
-  virtual SimpleEnclosedRegion VisibleContentOpaqueRegion() const OVERRIDE;
+  void SetLayerTreeHost(LayerTreeHost* layer_tree_host) override;
+  bool Update(ResourceUpdateQueue* queue,
+              const OcclusionTracker<Layer>* occlusion) override;
+  void PushPropertiesTo(LayerImpl* layer) override;
+  SimpleEnclosedRegion VisibleContentOpaqueRegion() const override;
 
  protected:
   explicit TextureLayer(TextureLayerClient* client);
-  virtual ~TextureLayer();
-  virtual bool HasDrawableContent() const OVERRIDE;
+  ~TextureLayer() override;
+  bool HasDrawableContent() const override;
 
  private:
   void SetTextureMailboxInternal(
@@ -157,6 +161,7 @@ class CC_EXPORT TextureLayer : public Layer {
   TextureLayerClient* client_;
 
   bool flipped_;
+  bool nearest_neighbor_;
   gfx::PointF uv_top_left_;
   gfx::PointF uv_bottom_right_;
   // [bottom left, top left, top right, bottom right]

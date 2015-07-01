@@ -9,28 +9,32 @@
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/debug/profiler.h"
-#include "base/debug/trace_event.h"
 #include "base/files/file_util.h"
 #include "base/hash.h"
-#include "base/metrics/field_trial.h"
+#include "base/memory/shared_memory.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/trace_event/trace_event.h"
 #include "base/win/iat_patch_function.h"
-#include "base/win/registry.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/scoped_process_information.h"
 #include "base/win/windows_version.h"
+#include "content/common/content_switches_internal.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/dwrite_font_platform_win.h"
 #include "content/public/common/sandbox_init.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "sandbox/win/src/process_mitigations.h"
 #include "sandbox/win/src/sandbox.h"
 #include "sandbox/win/src/sandbox_nt_util.h"
+#include "sandbox/win/src/sandbox_policy_base.h"
 #include "sandbox/win/src/win_utils.h"
-#include "ui/gfx/win/dpi.h"
+#include "ui/gfx/win/direct_write.h"
 
 static sandbox::BrokerServices* g_broker_services = NULL;
 static sandbox::TargetServices* g_target_services = NULL;
@@ -57,14 +61,18 @@ const wchar_t* const kTroublesomeDlls[] = {
   L"cmcsyshk.dll",                // CMC Internet Security.
   L"cmsetac.dll",                 // Unknown (suspected malware).
   L"cooliris.dll",                // CoolIris.
+  L"cplushook.dll",               // Unknown (suspected malware).
   L"dockshellhook.dll",           // Stardock Objectdock.
   L"easyhook32.dll",              // GDIPP and others.
+  L"esspd.dll",                   // Samsung Smart Security ESCORT.
   L"googledesktopnetwork3.dll",   // Google Desktop Search v5.
   L"fwhook.dll",                  // PC Tools Firewall Plus.
   L"hookprocesscreation.dll",     // Blumentals Program protector.
   L"hookterminateapis.dll",       // Blumentals and Cyberprinter.
   L"hookprintapis.dll",           // Cyberprinter.
   L"imon.dll",                    // NOD32 Antivirus.
+  L"icatcdll.dll",                // Samsung Smart Security ESCORT.
+  L"icdcnl.dll",                  // Samsung Smart Security ESCORT.
   L"ioloHL.dll",                  // Iolo (System Mechanic).
   L"kloehk.dll",                  // Kaspersky Internet Security.
   L"lawenforcer.dll",             // Spyware-Browser AntiSpyware (Spybro).
@@ -78,12 +86,15 @@ const wchar_t* const kTroublesomeDlls[] = {
   L"npggNT.des",                  // GameGuard 2008.
   L"npggNT.dll",                  // GameGuard (older).
   L"oawatch.dll",                 // Online Armor.
+  L"pastali32.dll",               // PastaLeads.
   L"pavhook.dll",                 // Panda Internet Security.
   L"pavlsphook.dll",              // Panda Antivirus.
   L"pavshook.dll",                // Panda Antivirus.
   L"pavshookwow.dll",             // Panda Antivirus.
   L"pctavhook.dll",               // PC Tools Antivirus.
   L"pctgmhk.dll",                 // PC Tools Spyware Doctor.
+  L"picrmi32.dll",                // PicRec.
+  L"picrmi64.dll",                // PicRec.
   L"prntrack.dll",                // Pharos Systems.
   L"protector.dll",               // Unknown (suspected malware).
   L"radhslib.dll",                // Radiant Naomi Internet Filter.
@@ -193,8 +204,8 @@ void BlacklistAddOneDll(const wchar_t* module_name,
     DCHECK_LE(3U, (name.size() - period));
     if (period <= 8)
       return;
-    for (int ix = 0; ix < 3; ++ix) {
-      const wchar_t suffix[] = {'~', ('1' + ix), 0};
+    for (wchar_t ix = '1'; ix <= '3'; ++ix) {
+      const wchar_t suffix[] = {'~', ix, 0};
       std::wstring alt_name = name.substr(0, 6) + suffix;
       alt_name += name.substr(period, name.size());
       if (check_in_browser) {
@@ -334,6 +345,40 @@ bool AddGenericPolicy(sandbox::TargetPolicy* policy) {
   if (result != sandbox::SBOX_ALL_OK)
     return false;
 #endif  // NDEBUG
+
+  // Add the policy for read-only PDB file access for AddressSanitizer.
+#if defined(ADDRESS_SANITIZER)
+  base::FilePath exe;
+  if (!PathService::Get(base::FILE_EXE, &exe))
+    return false;
+  base::FilePath pdb_path = exe.DirName().Append(L"*.pdb");
+  result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
+                           sandbox::TargetPolicy::FILES_ALLOW_READONLY,
+                           pdb_path.value().c_str());
+  if (result != sandbox::SBOX_ALL_OK)
+    return false;
+#endif
+
+#if defined(SANITIZER_COVERAGE)
+  DWORD coverage_dir_size =
+      ::GetEnvironmentVariable(L"SANITIZER_COVERAGE_DIR", NULL, 0);
+  if (coverage_dir_size == 0) {
+    LOG(WARNING) << "SANITIZER_COVERAGE_DIR was not set, coverage won't work.";
+  } else {
+    std::wstring coverage_dir;
+    wchar_t* coverage_dir_str = WriteInto(&coverage_dir, coverage_dir_size);
+    coverage_dir_size = ::GetEnvironmentVariable(
+        L"SANITIZER_COVERAGE_DIR", coverage_dir_str, coverage_dir_size);
+    CHECK(coverage_dir.size() == coverage_dir_size);
+    base::FilePath sancov_path =
+        base::FilePath(coverage_dir).Append(L"*.sancov");
+    result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
+                             sandbox::TargetPolicy::FILES_ALLOW_ANY,
+                             sancov_path.value().c_str());
+    if (result != sandbox::SBOX_ALL_OK)
+      return false;
+  }
+#endif
 
   AddGenericDllEvictionPolicy(policy);
   return true;
@@ -577,54 +622,7 @@ bool InitTargetServices(sandbox::TargetServices* target_services) {
   return sandbox::SBOX_ALL_OK == result;
 }
 
-bool ShouldUseDirectWrite() {
-  // If the flag is currently on, and we're on Win7 or above, we enable
-  // DirectWrite. Skia does not require the additions to DirectWrite in QFE
-  // 2670838, but a simple 'better than XP' check is not enough.
-  if (base::win::GetVersion() < base::win::VERSION_WIN7)
-    return false;
-
-  base::win::OSInfo::VersionNumber os_version =
-      base::win::OSInfo::GetInstance()->version_number();
-  if ((os_version.major == 6) && (os_version.minor == 1)) {
-    // We can't use DirectWrite for pre-release versions of Windows 7.
-    if (os_version.build < 7600)
-      return false;
-  }
-
-  // If forced off, don't use it.
-  const base::CommandLine& command_line =
-      *base::CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kDisableDirectWrite))
-    return false;
-
-#if !defined(NACL_WIN64)
-  // Can't use GDI on HiDPI.
-  if (gfx::GetDPIScale() > 1.0f)
-    return true;
-#endif
-
-  // We have logic in renderer_font_platform_win.cc for falling back to safe
-  // font list if machine has more than 1750 fonts installed. Users have
-  // complained about this as safe font list is usually not sufficient.
-  // We now disable direct write (gdi) if we encounter more number
-  // of fonts than a threshold (currently 1750).
-  // Refer: crbug.com/421305
-  const wchar_t kWindowsFontsRegistryKey[] =
-      L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
-  base::win::RegistryValueIterator reg_iterator(HKEY_LOCAL_MACHINE,
-                                                kWindowsFontsRegistryKey);
-  const DWORD kMaxAllowedFontsBeforeFallbackToGDI = 1750;
-  if (reg_iterator.ValueCount() >= kMaxAllowedFontsBeforeFallbackToGDI)
-    return false;
-
-  // Otherwise, check the field trial.
-  const std::string group_name =
-      base::FieldTrialList::FindFullName("DirectWrite");
-  return group_name != "Disabled";
-}
-
-base::ProcessHandle StartSandboxedProcess(
+base::Process StartSandboxedProcess(
     SandboxedProcessLauncherDelegate* delegate,
     base::CommandLine* cmd_line) {
   const base::CommandLine& browser_command_line =
@@ -649,10 +647,11 @@ base::ProcessHandle StartSandboxedProcess(
   if ((delegate && !delegate->ShouldSandbox()) ||
       browser_command_line.HasSwitch(switches::kNoSandbox) ||
       cmd_line->HasSwitch(switches::kNoSandbox)) {
-    base::ProcessHandle process = 0;
-    base::LaunchProcess(*cmd_line, base::LaunchOptions(), &process);
-    g_broker_services->AddTargetPeer(process);
-    return process;
+    base::Process process =
+        base::LaunchProcess(*cmd_line, base::LaunchOptions());
+    // TODO(rvargas) crbug.com/417532: Don't share a raw handle.
+    g_broker_services->AddTargetPeer(process.Handle());
+    return process.Pass();
   }
 
   sandbox::TargetPolicy* policy = g_broker_services->CreatePolicy();
@@ -663,26 +662,26 @@ base::ProcessHandle StartSandboxedProcess(
                                          sandbox::MITIGATION_DEP_NO_ATL_THUNK |
                                          sandbox::MITIGATION_SEHOP;
 
- if (base::win::GetVersion() >= base::win::VERSION_WIN8 &&
-     type_str == switches::kRendererProcess &&
-     browser_command_line.HasSwitch(
-        switches::kEnableWin32kRendererLockDown)) {
+#if !defined(NACL_WIN64)
+  if (type_str == switches::kRendererProcess &&
+      IsWin32kRendererLockdownEnabled()) {
     if (policy->AddRule(sandbox::TargetPolicy::SUBSYS_WIN32K_LOCKDOWN,
                         sandbox::TargetPolicy::FAKE_USER_GDI_INIT,
                         NULL) != sandbox::SBOX_ALL_OK) {
-      return 0;
+      return base::Process();
     }
     mitigations |= sandbox::MITIGATION_WIN32K_DISABLE;
   }
+#endif
 
   if (policy->SetProcessMitigations(mitigations) != sandbox::SBOX_ALL_OK)
-    return 0;
+    return base::Process();
 
   mitigations = sandbox::MITIGATION_STRICT_HANDLE_CHECKS |
                 sandbox::MITIGATION_DLL_SEARCH_ORDER;
 
   if (policy->SetDelayedProcessMitigations(mitigations) != sandbox::SBOX_ALL_OK)
-    return 0;
+    return base::Process();
 
   SetJobLevel(*cmd_line, sandbox::JOB_LOCKDOWN, 0, policy);
 
@@ -692,16 +691,34 @@ base::ProcessHandle StartSandboxedProcess(
     delegate->PreSandbox(&disable_default_policy, &exposed_dir);
 
   if (!disable_default_policy && !AddPolicyForSandboxedProcess(policy))
-    return 0;
+    return base::Process();
 
   if (type_str == switches::kRendererProcess) {
-    if (ShouldUseDirectWrite()) {
+#if !defined(NACL_WIN64)
+    if (gfx::win::ShouldUseDirectWrite()) {
       AddDirectory(base::DIR_WINDOWS_FONTS,
                   NULL,
                   true,
                   sandbox::TargetPolicy::FILES_ALLOW_READONLY,
                   policy);
+
+      // If DirectWrite is enabled for font rendering then open the font cache
+      // section which is created by the browser and pass the handle to the
+      // renderer process. This is needed because renderer processes on
+      // Windows 8+ may be running in an AppContainer sandbox and hence their
+      // kernel object namespace may be partitioned.
+      std::string name(content::kFontCacheSharedSectionName);
+      name.append(base::UintToString(base::GetCurrentProcId()));
+
+      base::SharedMemory direct_write_font_cache_section;
+      if (direct_write_font_cache_section.Open(name, true)) {
+        void* shared_handle =
+            policy->AddHandleToShare(direct_write_font_cache_section.handle());
+        cmd_line->AppendSwitchASCII(switches::kFontCacheSharedHandle,
+            base::UintToString(reinterpret_cast<unsigned int>(shared_handle)));
+      }
     }
+#endif
   } else {
     // Hack for Google Desktop crash. Trick GD into not injecting its DLL into
     // this subprocess. See
@@ -715,19 +732,19 @@ base::ProcessHandle StartSandboxedProcess(
                              sandbox::TargetPolicy::FILES_ALLOW_ANY,
                              exposed_dir.value().c_str());
     if (result != sandbox::SBOX_ALL_OK)
-      return 0;
+      return base::Process();
 
     base::FilePath exposed_files = exposed_dir.AppendASCII("*");
     result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
                              sandbox::TargetPolicy::FILES_ALLOW_ANY,
                              exposed_files.value().c_str());
     if (result != sandbox::SBOX_ALL_OK)
-      return 0;
+      return base::Process();
   }
 
   if (!AddGenericPolicy(policy)) {
     NOTREACHED();
-    return 0;
+    return base::Process();
   }
 
   if (browser_command_line.HasSwitch(switches::kEnableLogging)) {
@@ -741,7 +758,7 @@ base::ProcessHandle StartSandboxedProcess(
     bool success = true;
     delegate->PreSpawnTarget(policy, &success);
     if (!success)
-      return 0;
+      return base::Process();
   }
 
   TRACE_EVENT_BEGIN_ETW("StartProcessWithAccess::LAUNCHPROCESS", 0, 0);
@@ -751,7 +768,7 @@ base::ProcessHandle StartSandboxedProcess(
                cmd_line->GetProgram().value().c_str(),
                cmd_line->GetCommandLineString().c_str(),
                policy, &temp_process_info);
-  policy->Release();
+  DWORD last_error = ::GetLastError();
   base::win::ScopedProcessInformation target(temp_process_info);
 
   TRACE_EVENT_END_ETW("StartProcessWithAccess::LAUNCHPROCESS", 0, 0);
@@ -759,17 +776,29 @@ base::ProcessHandle StartSandboxedProcess(
   if (sandbox::SBOX_ALL_OK != result) {
     if (result == sandbox::SBOX_ERROR_GENERIC)
       DPLOG(ERROR) << "Failed to launch process";
-    else
+    else if (result == sandbox::SBOX_ERROR_CREATE_PROCESS) {
+      // TODO(shrikant): Remove this special case handling after determining
+      // cause for lowbox/createprocess errors.
+      sandbox::PolicyBase* policy_base =
+          static_cast<sandbox::PolicyBase*>(policy);
+      UMA_HISTOGRAM_SPARSE_SLOWLY(policy_base->GetLowBoxSid() ?
+                                      "Process.Sandbox.Lowbox.Launch.Error" :
+                                      "Process.Sandbox.Launch.Error",
+                                  last_error);
+    } else
       DLOG(ERROR) << "Failed to launch process. Error: " << result;
-    return 0;
+
+    policy->Release();
+    return base::Process();
   }
+  policy->Release();
 
   if (delegate)
     delegate->PostSpawnTarget(target.process_handle());
 
-  ResumeThread(target.thread_handle());
+  CHECK(ResumeThread(target.thread_handle()) != -1);
   TRACE_EVENT_END_ETW("StartProcessWithAccess", 0, type_str);
-  return target.TakeProcessHandle();
+  return base::Process(target.TakeProcessHandle());
 }
 
 bool BrokerDuplicateHandle(HANDLE source_handle,

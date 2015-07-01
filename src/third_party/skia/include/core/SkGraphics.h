@@ -1,11 +1,9 @@
-
 /*
  * Copyright 2006 The Android Open Source Project
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 
 #ifndef SkGraphics_DEFINED
 #define SkGraphics_DEFINED
@@ -80,7 +78,7 @@ public:
     static void PurgeFontCache();
 
     /**
-     *  Scaling bitmaps with the SkPaint::kHigh_FilterLevel setting is
+     *  Scaling bitmaps with the kHigh_SkFilterQuality setting is
      *  expensive, so the result is saved in the global Scaled Image
      *  Cache.
      *
@@ -113,33 +111,6 @@ public:
     static size_t GetResourceCacheSingleAllocationByteLimit();
     static size_t SetResourceCacheSingleAllocationByteLimit(size_t newLimit);
 
-#ifdef SK_SUPPORT_LEGACY_IMAGECACHE_NAME
-    static size_t GetImageCacheBytesUsed() {
-        return GetImageCacheTotalBytesUsed();
-    }
-    static size_t GetImageCacheByteLimit() {
-        return GetImageCacheTotalByteLimit();
-    }
-    static size_t SetImageCacheByteLimit(size_t newLimit) {
-        return SetImageCacheTotalByteLimit(newLimit);
-    }
-    static size_t GetImageCacheTotalBytesUsed() {
-        return GetResourceCacheTotalBytesUsed();
-    }
-    static size_t GetImageCacheTotalByteLimit() {
-        return GetResourceCacheTotalByteLimit();
-    }
-    static size_t SetImageCacheTotalByteLimit(size_t newLimit) {
-        return SetResourceCacheTotalByteLimit(newLimit);
-    }
-    static size_t GetImageCacheSingleAllocationByteLimit() {
-        return GetResourceCacheSingleAllocationByteLimit();
-    }
-    static size_t SetImageCacheSingleAllocationByteLimit(size_t newLimit) {
-        return SetResourceCacheSingleAllocationByteLimit(newLimit);
-    }
-#endif
-
     /**
      *  Applications with command line options may pass optional state, such
      *  as cache sizes, here, for instance:
@@ -169,13 +140,6 @@ public:
      *  global font cache.
      */
     static void SetTLSFontCacheLimit(size_t bytes);
-
-private:
-    /** This is automatically called by SkGraphics::Init(), and must be
-        implemented by the host OS. This allows the host OS to register a callback
-        with the C++ runtime to call SkGraphics::FreeCaches()
-    */
-    static void InstallNewHandler();
 };
 
 class SkAutoGraphics {

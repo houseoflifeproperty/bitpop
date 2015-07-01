@@ -12,15 +12,10 @@
 #include "chrome/browser/sync_file_system/drive_backend/sync_task.h"
 #include "chrome/browser/sync_file_system/remote_file_sync_service.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
-#include "google_apis/drive/gdata_errorcode.h"
+#include "google_apis/drive/drive_api_error_codes.h"
 
 namespace drive {
 class DriveServiceInterface;
-}
-
-namespace google_apis {
-class ResourceEntry;
-class ResourceList;
 }
 
 namespace sync_file_system {
@@ -37,14 +32,14 @@ class UninstallAppTask : public ExclusiveTask {
   UninstallAppTask(SyncEngineContext* sync_context,
                    const std::string& app_id,
                    UninstallFlag uninstall_flag);
-  virtual ~UninstallAppTask();
+  ~UninstallAppTask() override;
 
-  virtual void RunExclusive(const SyncStatusCallback& callback) OVERRIDE;
+  void RunExclusive(const SyncStatusCallback& callback) override;
 
  private:
   void DidDeleteAppRoot(const SyncStatusCallback& callback,
                         int64 change_id,
-                        google_apis::GDataErrorCode error);
+                        google_apis::DriveApiErrorCode error);
 
   bool IsContextReady();
   MetadataDatabase* metadata_database();

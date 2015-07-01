@@ -19,8 +19,8 @@
 #include "url/android/url_jni_registrar.h"
 #endif
 
-#if !defined(OS_IOS)
-#include "net/proxy/proxy_resolver_v8.h"
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+#include "third_party/mojo/src/mojo/edk/embedder/test_embedder.h"
 #endif
 
 using net::internal::ClientSocketPoolBaseHelper;
@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
   NetTestSuite test_suite(argc, argv);
   ClientSocketPoolBaseHelper::set_connect_backup_jobs_enabled(false);
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_OPENSSL)
   // We want to be sure to init NSPR on the main thread.
   crypto::EnsureNSPRInit();
 #endif
@@ -57,8 +57,8 @@ int main(int argc, char** argv) {
   // single-threaded.
   net::EnableSSLServerSockets();
 
-#if !defined(OS_IOS)
-  net::ProxyResolverV8::EnsureIsolateCreated();
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+  mojo::embedder::test::InitWithSimplePlatformSupport();
 #endif
 
   return base::LaunchUnitTests(

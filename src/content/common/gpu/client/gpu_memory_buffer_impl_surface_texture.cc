@@ -4,23 +4,46 @@
 
 #include "content/common/gpu/client/gpu_memory_buffer_impl_surface_texture.h"
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
-#include "content/common/android/surface_texture_lookup.h"
+#include "base/trace_event/trace_event.h"
+#include "content/common/android/surface_texture_manager.h"
 #include "ui/gl/gl_bindings.h"
 
 namespace content {
+namespace {
+
+int WindowFormat(gfx::GpuMemoryBuffer::Format format) {
+  switch (format) {
+    case gfx::GpuMemoryBuffer::RGBA_8888:
+      return WINDOW_FORMAT_RGBA_8888;
+    case gfx::GpuMemoryBuffer::ATC:
+    case gfx::GpuMemoryBuffer::ATCIA:
+    case gfx::GpuMemoryBuffer::DXT1:
+    case gfx::GpuMemoryBuffer::DXT5:
+    case gfx::GpuMemoryBuffer::ETC1:
+    case gfx::GpuMemoryBuffer::R_8:
+    case gfx::GpuMemoryBuffer::RGBX_8888:
+    case gfx::GpuMemoryBuffer::BGRA_8888:
+    case gfx::GpuMemoryBuffer::YUV_420:
+      NOTREACHED();
+      return 0;
+  }
+
+  NOTREACHED();
+  return 0;
+}
+
+}  // namespace
 
 GpuMemoryBufferImplSurfaceTexture::GpuMemoryBufferImplSurfaceTexture(
+    gfx::GpuMemoryBufferId id,
     const gfx::Size& size,
-    unsigned internalformat,
+    Format format,
     const DestructionCallback& callback,
-    const gfx::SurfaceTextureId& surface_texture_id,
     ANativeWindow* native_window)
-    : GpuMemoryBufferImpl(size, internalformat, callback),
-      surface_texture_id_(surface_texture_id),
+    : GpuMemoryBufferImpl(id, size, format, callback),
       native_window_(native_window),
-      stride_(0u) {
+      stride_(0) {
 }
 
 GpuMemoryBufferImplSurfaceTexture::~GpuMemoryBufferImplSurfaceTexture() {
@@ -32,68 +55,22 @@ scoped_ptr<GpuMemoryBufferImpl>
 GpuMemoryBufferImplSurfaceTexture::CreateFromHandle(
     const gfx::GpuMemoryBufferHandle& handle,
     const gfx::Size& size,
-    unsigned internalformat,
+    Format format,
     const DestructionCallback& callback) {
-  DCHECK(IsFormatSupported(internalformat));
-
-  ANativeWindow* native_window =
-      SurfaceTextureLookup::GetInstance()->AcquireNativeWidget(
-          handle.surface_texture_id.primary_id,
-          handle.surface_texture_id.secondary_id);
+  ANativeWindow* native_window = SurfaceTextureManager::GetInstance()->
+      AcquireNativeWidgetForSurfaceTexture(handle.id);
   if (!native_window)
     return scoped_ptr<GpuMemoryBufferImpl>();
 
   ANativeWindow_setBuffersGeometry(
-      native_window, size.width(), size.height(), WindowFormat(internalformat));
+      native_window, size.width(), size.height(), WindowFormat(format));
 
   return make_scoped_ptr<GpuMemoryBufferImpl>(
-      new GpuMemoryBufferImplSurfaceTexture(size,
-                                            internalformat,
-                                            callback,
-                                            handle.surface_texture_id,
-                                            native_window));
+      new GpuMemoryBufferImplSurfaceTexture(
+          handle.id, size, format, callback, native_window));
 }
 
-// static
-bool GpuMemoryBufferImplSurfaceTexture::IsFormatSupported(
-    unsigned internalformat) {
-  switch (internalformat) {
-    case GL_RGBA8_OES:
-      return true;
-    default:
-      return false;
-  }
-}
-
-// static
-bool GpuMemoryBufferImplSurfaceTexture::IsUsageSupported(unsigned usage) {
-  switch (usage) {
-    case GL_IMAGE_MAP_CHROMIUM:
-      return true;
-    default:
-      return false;
-  }
-}
-
-// static
-bool GpuMemoryBufferImplSurfaceTexture::IsConfigurationSupported(
-    unsigned internalformat,
-    unsigned usage) {
-  return IsFormatSupported(internalformat) && IsUsageSupported(usage);
-}
-
-// static
-int GpuMemoryBufferImplSurfaceTexture::WindowFormat(unsigned internalformat) {
-  switch (internalformat) {
-    case GL_RGBA8_OES:
-      return WINDOW_FORMAT_RGBA_8888;
-    default:
-      NOTREACHED();
-      return 0;
-  }
-}
-
-void* GpuMemoryBufferImplSurfaceTexture::Map() {
+bool GpuMemoryBufferImplSurfaceTexture::Map(void** data) {
   TRACE_EVENT0("gpu", "GpuMemoryBufferImplSurfaceTexture::Map");
 
   DCHECK(!mapped_);
@@ -102,13 +79,19 @@ void* GpuMemoryBufferImplSurfaceTexture::Map() {
   int status = ANativeWindow_lock(native_window_, &buffer, NULL);
   if (status) {
     VLOG(1) << "ANativeWindow_lock failed with error code: " << status;
-    return NULL;
+    return false;
   }
 
   DCHECK_LE(size_.width(), buffer.stride);
-  stride_ = buffer.stride * BytesPerPixel(internalformat_);
+  size_t row_size_in_bytes = 0;
+  bool valid_row_size =
+      RowSizeInBytes(buffer.stride, format_, 0, &row_size_in_bytes);
+  DCHECK(valid_row_size);
+
+  stride_ = row_size_in_bytes;
   mapped_ = true;
-  return buffer.bits;
+  *data = buffer.bits;
+  return true;
 }
 
 void GpuMemoryBufferImplSurfaceTexture::Unmap() {
@@ -119,13 +102,15 @@ void GpuMemoryBufferImplSurfaceTexture::Unmap() {
   mapped_ = false;
 }
 
-uint32 GpuMemoryBufferImplSurfaceTexture::GetStride() const { return stride_; }
+void GpuMemoryBufferImplSurfaceTexture::GetStride(int* stride) const {
+  *stride = stride_;
+}
 
 gfx::GpuMemoryBufferHandle GpuMemoryBufferImplSurfaceTexture::GetHandle()
     const {
   gfx::GpuMemoryBufferHandle handle;
   handle.type = gfx::SURFACE_TEXTURE_BUFFER;
-  handle.surface_texture_id = surface_texture_id_;
+  handle.id = id_;
   return handle;
 }
 

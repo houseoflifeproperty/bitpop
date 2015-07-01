@@ -27,14 +27,12 @@
 #define V8StringResource_h
 
 #include "bindings/core/v8/ExceptionState.h"
+#include "core/CoreExport.h"
 #include "wtf/Threading.h"
 #include "wtf/text/AtomicString.h"
-#include "wtf/text/WTFString.h"
 #include <v8.h>
 
 namespace blink {
-
-class ExternalStringVisitor;
 
 // WebCoreStringResource is a helper class for v8ExternalString. It is used
 // to manage the life-cycle of the underlying buffer of the external string.
@@ -108,7 +106,7 @@ private:
 #endif
 };
 
-class WebCoreStringResource16 FINAL : public WebCoreStringResourceBase, public v8::String::ExternalStringResource {
+class WebCoreStringResource16 final : public WebCoreStringResourceBase, public v8::String::ExternalStringResource {
 public:
     explicit WebCoreStringResource16(const String& string)
         : WebCoreStringResourceBase(string)
@@ -122,14 +120,14 @@ public:
         ASSERT(!string.is8Bit());
     }
 
-    virtual size_t length() const OVERRIDE { return m_plainString.impl()->length(); }
-    virtual const uint16_t* data() const OVERRIDE
+    virtual size_t length() const override { return m_plainString.impl()->length(); }
+    virtual const uint16_t* data() const override
     {
         return reinterpret_cast<const uint16_t*>(m_plainString.impl()->characters16());
     }
 };
 
-class WebCoreStringResource8 FINAL : public WebCoreStringResourceBase, public v8::String::ExternalAsciiStringResource {
+class WebCoreStringResource8 final : public WebCoreStringResourceBase, public v8::String::ExternalOneByteStringResource {
 public:
     explicit WebCoreStringResource8(const String& string)
         : WebCoreStringResourceBase(string)
@@ -143,8 +141,8 @@ public:
         ASSERT(string.is8Bit());
     }
 
-    virtual size_t length() const OVERRIDE { return m_plainString.impl()->length(); }
-    virtual const char* data() const OVERRIDE
+    virtual size_t length() const override { return m_plainString.impl()->length(); }
+    virtual const char* data() const override
     {
         return reinterpret_cast<const char*>(m_plainString.impl()->characters8());
     }
@@ -156,8 +154,8 @@ enum ExternalMode {
 };
 
 template <typename StringType>
-StringType v8StringToWebCoreString(v8::Handle<v8::String>, ExternalMode);
-String int32ToWebCoreString(int value);
+CORE_EXPORT StringType v8StringToWebCoreString(v8::Local<v8::String>, ExternalMode);
+CORE_EXPORT String int32ToWebCoreString(int value);
 
 // V8StringResource is an adapter class that converts V8 values to Strings
 // or AtomicStrings as appropriate, using multiple typecast operators.
@@ -176,13 +174,19 @@ public:
     {
     }
 
-    V8StringResource(v8::Handle<v8::Value> object)
+    V8StringResource(v8::Local<v8::Value> object)
         : m_v8Object(object)
         , m_mode(Externalize)
     {
     }
 
-    void operator=(v8::Handle<v8::Value> object)
+    V8StringResource(const String& string)
+        : m_mode(Externalize)
+        , m_string(string)
+    {
+    }
+
+    void operator=(v8::Local<v8::Value> object)
     {
         m_v8Object = object;
     }
@@ -202,11 +206,9 @@ public:
         if (prepareFast())
             return true;
 
-        m_v8Object = m_v8Object->ToString();
-        // Handle the case where an exception is thrown as part of invoking toString on the object.
-        if (m_v8Object.IsEmpty())
-            return false;
-        return true;
+        // TODO(bashi): Pass an isolate to this function and remove
+        // v8::Isolate::GetCurrent().
+        return m_v8Object->ToString(v8::Isolate::GetCurrent()->GetCurrentContext()).ToLocal(&m_v8Object);
     }
 
     bool prepare(ExceptionState& exceptionState)
@@ -214,10 +216,12 @@ public:
         if (prepareFast())
             return true;
 
-        v8::TryCatch block;
-        m_v8Object = m_v8Object->ToString();
+        // TODO(bashi): Pass an isolate to this function and remove
+        // v8::Isolate::GetCurrent().
+        v8::Isolate* isolate = v8::Isolate::GetCurrent();
+        v8::TryCatch block(isolate);
         // Handle the case where an exception is thrown as part of invoking toString on the object.
-        if (block.HasCaught()) {
+        if (!m_v8Object->ToString(isolate->GetCurrentContext()).ToLocal(&m_v8Object)) {
             exceptionState.rethrowV8Exception(block.Exception());
             return false;
         }
@@ -242,7 +246,7 @@ private:
             return true;
 
         if (LIKELY(m_v8Object->IsInt32())) {
-            setString(int32ToWebCoreString(m_v8Object->Int32Value()));
+            setString(int32ToWebCoreString(m_v8Object.As<v8::Int32>()->Value()));
             return true;
         }
 
@@ -263,12 +267,12 @@ private:
     StringType toString() const
     {
         if (LIKELY(!m_v8Object.IsEmpty()))
-            return v8StringToWebCoreString<StringType>(const_cast<v8::Handle<v8::Value>*>(&m_v8Object)->As<v8::String>(), m_mode);
+            return v8StringToWebCoreString<StringType>(const_cast<v8::Local<v8::Value>*>(&m_v8Object)->As<v8::String>(), m_mode);
 
         return StringType(m_string);
     }
 
-    v8::Handle<v8::Value> m_v8Object;
+    v8::Local<v8::Value> m_v8Object;
     ExternalMode m_mode;
     String m_string;
 };

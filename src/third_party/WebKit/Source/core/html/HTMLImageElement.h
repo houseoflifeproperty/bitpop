@@ -24,29 +24,33 @@
 #ifndef HTMLImageElement_h
 #define HTMLImageElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/canvas/CanvasImageSource.h"
 #include "platform/graphics/GraphicsTypes.h"
+#include "platform/network/ResourceResponse.h"
 #include "wtf/WeakPtr.h"
 
 namespace blink {
 
 class HTMLFormElement;
 class ImageCandidate;
-class MediaQueryList;
+class ShadowRoot;
 
-class HTMLImageElement FINAL : public HTMLElement, public CanvasImageSource {
+class CORE_EXPORT HTMLImageElement final : public HTMLElement, public CanvasImageSource {
     DEFINE_WRAPPERTYPEINFO();
 public:
     class ViewportChangeListener;
 
     static PassRefPtrWillBeRawPtr<HTMLImageElement> create(Document&);
     static PassRefPtrWillBeRawPtr<HTMLImageElement> create(Document&, HTMLFormElement*, bool createdByParser);
+    static PassRefPtrWillBeRawPtr<HTMLImageElement> createForJSConstructor(Document&);
+    static PassRefPtrWillBeRawPtr<HTMLImageElement> createForJSConstructor(Document&, int width);
     static PassRefPtrWillBeRawPtr<HTMLImageElement> createForJSConstructor(Document&, int width, int height);
 
     virtual ~HTMLImageElement();
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
     int width(bool ignorePendingStylesheets = false);
     int height(bool ignorePendingStylesheets = false);
@@ -57,9 +61,7 @@ public:
 
     bool isServerMap() const;
 
-    const AtomicString& altText() const;
-
-    CompositeOperator compositeOperator() const { return m_compositeOperator; }
+    virtual String altText() const override final;
 
     ImageResource* cachedImage() const { return imageLoader().image(); }
     void setImageResource(ImageResource* i) { imageLoader().setImage(i); };
@@ -80,54 +82,68 @@ public:
 
     bool hasPendingActivity() const { return imageLoader().hasPendingActivity(); }
 
-    virtual bool canContainRangeEndPoint() const OVERRIDE { return false; }
+    virtual bool canContainRangeEndPoint() const override { return false; }
 
     void addClient(ImageLoaderClient* client) { imageLoader().addClient(client); }
     void removeClient(ImageLoaderClient* client) { imageLoader().removeClient(client); }
 
-    virtual const AtomicString imageSourceURL() const OVERRIDE;
+    virtual const AtomicString imageSourceURL() const override;
 
-    virtual HTMLFormElement* formOwner() const OVERRIDE;
+    virtual HTMLFormElement* formOwner() const override;
     void formRemovedFromTree(const Node& formRoot);
+    virtual void ensureFallbackContent();
+    virtual void ensurePrimaryContent();
 
-    // CanvasImageSourceImplementations
-    virtual PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const;
-    virtual bool wouldTaintOrigin(SecurityOrigin*) const OVERRIDE;
-    virtual FloatSize sourceSize() const OVERRIDE;
-    virtual FloatSize defaultDestinationSize() const OVERRIDE;
-    virtual const KURL& sourceURL() const OVERRIDE;
+    // CanvasImageSource implementation
+    virtual PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const override;
+    virtual bool wouldTaintOrigin(SecurityOrigin*) const override;
+    virtual FloatSize elementSize() const override;
+    virtual FloatSize defaultDestinationSize() const override;
+    virtual const KURL& sourceURL() const override;
+    virtual bool isOpaque() const override;
 
     // public so that HTMLPictureElement can call this as well.
     void selectSourceURL(ImageLoader::UpdateFromElementBehavior);
+    void reattachFallbackContent();
+    void setUseFallbackContent();
+    void setIsFallbackImage() { m_isFallbackImage = true; }
+
+    float sourceSize(Element&);
+
+    void forceReload() const;
+
 protected:
     explicit HTMLImageElement(Document&, HTMLFormElement* = 0, bool createdByParser = false);
 
-    virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
+    virtual void didMoveToNewDocument(Document& oldDocument) override;
+    virtual bool useFallbackContent() const { return m_useFallbackContent; }
 
+    virtual void didAddUserAgentShadowRoot(ShadowRoot&) override;
+    virtual PassRefPtr<ComputedStyle> customStyleForLayoutObject() override;
 private:
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
+    virtual bool areAuthorShadowsAllowed() const override { return false; }
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual bool isPresentationAttribute(const QualifiedName&) const override;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
-    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual void attach(const AttachContext& = AttachContext()) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
-    virtual bool canStartSelection() const OVERRIDE;
+    virtual bool canStartSelection() const override { return false; }
 
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
-    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
+    virtual bool isURLAttribute(const Attribute&) const override;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const override;
+    virtual const QualifiedName& subResourceAttributeName() const override;
 
-    virtual bool draggable() const OVERRIDE;
+    virtual bool draggable() const override;
 
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual bool shouldRegisterAsNamedItem() const OVERRIDE { return true; }
-    virtual bool shouldRegisterAsExtraNamedItem() const OVERRIDE { return true; }
-    virtual bool isInteractiveContent() const OVERRIDE;
-    virtual Image* imageContents() OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void removedFrom(ContainerNode*) override;
+    virtual bool shouldRegisterAsNamedItem() const override { return true; }
+    virtual bool shouldRegisterAsExtraNamedItem() const override { return true; }
+    virtual bool isInteractiveContent() const override;
+    virtual Image* imageContents() override;
 
     void resetFormOwner();
     ImageCandidate findBestFitImageFromPictureParent();
@@ -143,15 +159,14 @@ private:
 #else
     WeakPtr<HTMLFormElement> m_form;
 #endif
-    CompositeOperator m_compositeOperator;
     AtomicString m_bestFitImageURL;
     float m_imageDevicePixelRatio;
     unsigned m_formWasSetByParser : 1;
     unsigned m_elementCreatedByParser : 1;
     // Intrinsic sizing is viewport dependant if the 'w' descriptor was used for the picked resource.
     unsigned m_intrinsicSizingViewportDependant : 1;
-    // Effective size is viewport dependant if the sizes attribute's effective size used v* length units.
-    unsigned m_effectiveSizeViewportDependant : 1;
+    unsigned m_useFallbackContent : 1;
+    unsigned m_isFallbackImage : 1;
 };
 
 } // namespace blink

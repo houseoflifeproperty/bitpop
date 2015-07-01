@@ -43,7 +43,7 @@ class StorageErrorCallback;
 class StorageQuotaCallback;
 class StorageUsageCallback;
 
-class DeprecatedStorageInfo FINAL : public GarbageCollected<DeprecatedStorageInfo>, public ScriptWrappable {
+class DeprecatedStorageInfo final : public GarbageCollected<DeprecatedStorageInfo>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     enum {
@@ -60,7 +60,7 @@ public:
 
     void requestQuota(ExecutionContext*, int storageType, unsigned long long newQuotaInBytes, StorageQuotaCallback*, StorageErrorCallback*);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     DeprecatedStorageInfo();

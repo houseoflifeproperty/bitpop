@@ -10,10 +10,6 @@
 #include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/services/gcm/push_messaging_service_impl.h"
-// TODO(jianli): include needed for obsolete methods that are going to be
-// removed soon.
-#include "components/gcm_driver/gcm_driver.h"
 #include "components/keyed_service/core/keyed_service.h"
 
 class Profile;
@@ -27,14 +23,15 @@ namespace gcm {
 class GCMClientFactory;
 class GCMDriver;
 
+#if defined(OS_CHROMEOS)
+class GCMConnectionObserver;
+#endif
+
 // Providing GCM service, via GCMDriver, to a profile.
 class GCMProfileService : public KeyedService {
  public:
   // Returns whether GCM is enabled for |profile|.
   static bool IsGCMEnabled(Profile* profile);
-
-  // Register profile-specific prefs for GCM.
-  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
 #if defined(OS_ANDROID)
   explicit GCMProfileService(Profile* profile);
@@ -42,31 +39,15 @@ class GCMProfileService : public KeyedService {
   GCMProfileService(Profile* profile,
                     scoped_ptr<GCMClientFactory> gcm_client_factory);
 #endif
-  virtual ~GCMProfileService();
-
-  // TODO(jianli): obsolete methods that are going to be removed soon.
-  void AddAppHandler(const std::string& app_id, GCMAppHandler* handler);
-  void RemoveAppHandler(const std::string& app_id);
-  void Register(const std::string& app_id,
-                const std::vector<std::string>& sender_ids,
-                const GCMDriver::RegisterCallback& callback);
+  ~GCMProfileService() override;
 
   // KeyedService:
-  virtual void Shutdown() OVERRIDE;
-
-  // Returns the user name if the profile is signed in or an empty string
-  // otherwise.
-  // TODO(jianli): To be removed when sign-in enforcement is dropped.
-  std::string SignedInUserName() const;
+  void Shutdown() override;
 
   // For testing purpose.
   void SetDriverForTesting(GCMDriver* driver);
 
   GCMDriver* driver() const { return driver_.get(); }
-
-  content::PushMessagingService* push_messaging_service() {
-    return &push_messaging_service_;
-  }
 
  protected:
   // Used for constructing fake GCMProfileService for testing purpose.
@@ -78,16 +59,10 @@ class GCMProfileService : public KeyedService {
 
   scoped_ptr<GCMDriver> driver_;
 
-  // Implementation of content::PushMessagingService using GCMProfileService.
-  PushMessagingServiceImpl push_messaging_service_;
-
-  // TODO(jianli): To be removed when sign-in enforcement is dropped.
+  // Used for both account tracker and GCM.UserSignedIn UMA.
 #if !defined(OS_ANDROID)
   class IdentityObserver;
   scoped_ptr<IdentityObserver> identity_observer_;
-#endif
-#if defined(OS_CHROMEOS)
-  scoped_ptr<GCMConnectionObserver> chromeos_connection_observer_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(GCMProfileService);

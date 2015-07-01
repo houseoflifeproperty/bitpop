@@ -31,26 +31,30 @@
 #ifndef V8GCController_h
 #define V8GCController_h
 
+#include "core/CoreExport.h"
+#include "platform/heap/Handle.h"
 #include <v8.h>
 
 namespace blink {
 
 class Node;
 
-class V8GCController {
+class CORE_EXPORT V8GCController {
 public:
     static void gcPrologue(v8::GCType, v8::GCCallbackFlags);
     static void gcEpilogue(v8::GCType, v8::GCCallbackFlags);
     static void minorGCPrologue(v8::Isolate*);
     static void minorGCEpilogue(v8::Isolate*);
-    static void majorGCPrologue(bool constructRetainedObjectInfos, v8::Isolate*);
+    static void majorGCPrologue(v8::Isolate*, bool constructRetainedObjectInfos);
     static void majorGCEpilogue(v8::Isolate*);
 
     static void collectGarbage(v8::Isolate*);
 
-    static Node* opaqueRootForGC(Node*, v8::Isolate*);
+    static Node* opaqueRootForGC(v8::Isolate*, Node*);
 
     static void reportDOMMemoryUsageToV8(v8::Isolate*);
+
+    static void traceDOMWrappers(v8::Isolate*, Visitor*);
 };
 
 }

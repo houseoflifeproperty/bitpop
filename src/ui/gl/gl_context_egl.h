@@ -24,27 +24,28 @@ class GLContextEGL : public GLContextReal {
   explicit GLContextEGL(GLShareGroup* share_group);
 
   // Implement GLContext.
-  virtual bool Initialize(
-      GLSurface* compatible_surface, GpuPreference gpu_preference) OVERRIDE;
-  virtual void Destroy() OVERRIDE;
-  virtual bool MakeCurrent(GLSurface* surface) OVERRIDE;
-  virtual void ReleaseCurrent(GLSurface* surface) OVERRIDE;
-  virtual bool IsCurrent(GLSurface* surface) OVERRIDE;
-  virtual void* GetHandle() OVERRIDE;
-  virtual void SetSwapInterval(int interval) OVERRIDE;
-  virtual std::string GetExtensions() OVERRIDE;
-  virtual bool WasAllocatedUsingRobustnessExtension() OVERRIDE;
-  virtual bool GetTotalGpuMemory(size_t* bytes) OVERRIDE;
-  virtual void SetUnbindFboOnMakeCurrent() OVERRIDE;
+  bool Initialize(GLSurface* compatible_surface,
+                  GpuPreference gpu_preference) override;
+  void Destroy() override;
+  bool MakeCurrent(GLSurface* surface) override;
+  void ReleaseCurrent(GLSurface* surface) override;
+  bool IsCurrent(GLSurface* surface) override;
+  void* GetHandle() override;
+  void OnSetSwapInterval(int interval) override;
+  std::string GetExtensions() override;
+  bool WasAllocatedUsingRobustnessExtension() override;
+  bool GetTotalGpuMemory(size_t* bytes) override;
+  void SetUnbindFboOnMakeCurrent() override;
 
  protected:
-  virtual ~GLContextEGL();
+  ~GLContextEGL() override;
 
  private:
   EGLContext context_;
   EGLDisplay display_;
   EGLConfig config_;
   bool unbind_fbo_on_makecurrent_;
+  int swap_interval_;
 
   DISALLOW_COPY_AND_ASSIGN(GLContextEGL);
 };

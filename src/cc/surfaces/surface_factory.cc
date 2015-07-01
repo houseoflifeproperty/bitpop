@@ -13,14 +13,28 @@
 namespace cc {
 SurfaceFactory::SurfaceFactory(SurfaceManager* manager,
                                SurfaceFactoryClient* client)
-    : manager_(manager), client_(client), holder_(client) {
+    : manager_(manager),
+      client_(client),
+      holder_(client),
+      needs_sync_points_(true) {
 }
 
 SurfaceFactory::~SurfaceFactory() {
+  if (!surface_map_.empty()) {
+    LOG(ERROR) << "SurfaceFactory has " << surface_map_.size()
+               << " entries in map on destruction.";
+  }
+  DestroyAll();
 }
 
-void SurfaceFactory::Create(SurfaceId surface_id, const gfx::Size& size) {
-  scoped_ptr<Surface> surface(new Surface(surface_id, size, this));
+void SurfaceFactory::DestroyAll() {
+  for (auto it = surface_map_.begin(); it != surface_map_.end(); ++it)
+    manager_->Destroy(surface_map_.take(it));
+  surface_map_.clear();
+}
+
+void SurfaceFactory::Create(SurfaceId surface_id) {
+  scoped_ptr<Surface> surface(new Surface(surface_id, this));
   manager_->RegisterSurface(surface.get());
   DCHECK(!surface_map_.count(surface_id));
   surface_map_.add(surface_id, surface.Pass());
@@ -29,19 +43,19 @@ void SurfaceFactory::Create(SurfaceId surface_id, const gfx::Size& size) {
 void SurfaceFactory::Destroy(SurfaceId surface_id) {
   OwningSurfaceMap::iterator it = surface_map_.find(surface_id);
   DCHECK(it != surface_map_.end());
-  DCHECK(it->second->factory() == this);
-  manager_->DeregisterSurface(surface_id);
-  surface_map_.erase(it);
+  DCHECK(it->second->factory().get() == this);
+  manager_->Destroy(surface_map_.take_and_erase(it));
 }
 
 void SurfaceFactory::SubmitFrame(SurfaceId surface_id,
                                  scoped_ptr<CompositorFrame> frame,
-                                 const base::Closure& callback) {
+                                 const DrawCallback& callback) {
   OwningSurfaceMap::iterator it = surface_map_.find(surface_id);
   DCHECK(it != surface_map_.end());
-  DCHECK(it->second->factory() == this);
+  DCHECK(it->second->factory().get() == this);
   it->second->QueueFrame(frame.Pass(), callback);
-  manager_->SurfaceModified(surface_id);
+  if (!manager_->SurfaceModified(surface_id))
+    it->second->RunDrawCallbacks(SurfaceDrawStatus::DRAW_SKIPPED);
 }
 
 void SurfaceFactory::RequestCopyOfSurface(
@@ -52,7 +66,7 @@ void SurfaceFactory::RequestCopyOfSurface(
     copy_request->SendEmptyResult();
     return;
   }
-  DCHECK(it->second->factory() == this);
+  DCHECK(it->second->factory().get() == this);
   it->second->RequestCopyOfOutput(copy_request.Pass());
   manager_->SurfaceModified(surface_id);
 }

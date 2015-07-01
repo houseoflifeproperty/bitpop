@@ -10,9 +10,12 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/containers/scoped_ptr_hash_map.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/observer_list.h"
+#include "base/process/process.h"
 #include "content/browser/renderer_host/pepper/content_browser_pepper_host_factory.h"
 #include "content/browser/renderer_host/pepper/ssl_context_helper.h"
 #include "content/common/content_export.h"
@@ -30,9 +33,19 @@ namespace content {
 
 class CONTENT_EXPORT BrowserPpapiHostImpl : public BrowserPpapiHost {
  public:
-  // The creator is responsible for calling set_plugin_process_handle as soon
-  // as it is known (we start the process asynchronously so it won't be known
-  // when this object is created).
+  class InstanceObserver {
+   public:
+    // Called when the plugin instance is throttled or unthrottled because of
+    // the Plugin Power Saver feature. Invoked on the IO thread.
+    virtual void OnThrottleStateChanged(bool is_throttled) = 0;
+
+    // Called right before the instance is destroyed.
+    virtual void OnHostDestroyed() = 0;
+  };
+
+  // The creator is responsible for calling set_plugin_process as soon as it is
+  // known (we start the process asynchronously so it won't be known when this
+   // object is created).
   // |external_plugin| signfies that this is a proxy created for an embedder's
   // plugin, i.e. using BrowserPpapiHost::CreateExternalPluginProcess.
   BrowserPpapiHostImpl(IPC::Sender* sender,
@@ -42,26 +55,30 @@ class CONTENT_EXPORT BrowserPpapiHostImpl : public BrowserPpapiHost {
                        const base::FilePath& profile_data_directory,
                        bool in_process,
                        bool external_plugin);
-  virtual ~BrowserPpapiHostImpl();
+  ~BrowserPpapiHostImpl() override;
 
   // BrowserPpapiHost.
-  virtual ppapi::host::PpapiHost* GetPpapiHost() OVERRIDE;
-  virtual base::ProcessHandle GetPluginProcessHandle() const OVERRIDE;
-  virtual bool IsValidInstance(PP_Instance instance) const OVERRIDE;
-  virtual bool GetRenderFrameIDsForInstance(PP_Instance instance,
-                                            int* render_process_id,
-                                            int* render_frame_id) const
-      OVERRIDE;
-  virtual const std::string& GetPluginName() OVERRIDE;
-  virtual const base::FilePath& GetPluginPath() OVERRIDE;
-  virtual const base::FilePath& GetProfileDataDirectory() OVERRIDE;
-  virtual GURL GetDocumentURLForInstance(PP_Instance instance) OVERRIDE;
-  virtual GURL GetPluginURLForInstance(PP_Instance instance) OVERRIDE;
-  virtual void SetOnKeepaliveCallback(
-      const BrowserPpapiHost::OnKeepaliveCallback& callback) OVERRIDE;
+  ppapi::host::PpapiHost* GetPpapiHost() override;
+  const base::Process& GetPluginProcess() const override;
+  bool IsValidInstance(PP_Instance instance) const override;
+  bool GetRenderFrameIDsForInstance(PP_Instance instance,
+                                    int* render_process_id,
+                                    int* render_frame_id) const override;
+  const std::string& GetPluginName() override;
+  const base::FilePath& GetPluginPath() override;
+  const base::FilePath& GetProfileDataDirectory() override;
+  GURL GetDocumentURLForInstance(PP_Instance instance) override;
+  GURL GetPluginURLForInstance(PP_Instance instance) override;
+  void SetOnKeepaliveCallback(
+      const BrowserPpapiHost::OnKeepaliveCallback& callback) override;
 
-  void set_plugin_process_handle(base::ProcessHandle handle) {
-    plugin_process_handle_ = handle;
+  // Whether the plugin context is secure. That is, it is served from a secure
+  // origin and it is embedded within a hierarchy of secure frames. This value
+  // comes from the renderer so should not be trusted. It is used for metrics.
+  bool IsPotentiallySecurePluginContext(PP_Instance instance);
+
+  void set_plugin_process(base::Process process) {
+    plugin_process_ = process.Pass();
   }
 
   bool external_plugin() const { return external_plugin_; }
@@ -70,8 +87,14 @@ class CONTENT_EXPORT BrowserPpapiHostImpl : public BrowserPpapiHost {
   // or destroyed. They allow us to maintain a mapping of PP_Instance to data
   // associated with the instance including view IDs in the browser process.
   void AddInstance(PP_Instance instance,
-                   const PepperRendererInstanceData& instance_data);
+                   const PepperRendererInstanceData& renderer_instance_data);
   void DeleteInstance(PP_Instance instance);
+
+  void AddInstanceObserver(PP_Instance instance, InstanceObserver* observer);
+  void RemoveInstanceObserver(PP_Instance instance, InstanceObserver* observer);
+
+  void OnThrottleStateChanged(PP_Instance instance, bool is_throttled);
+  bool IsThrottled(PP_Instance instance) const;
 
   scoped_refptr<IPC::MessageFilter> message_filter() {
     return message_filter_;
@@ -93,12 +116,12 @@ class CONTENT_EXPORT BrowserPpapiHostImpl : public BrowserPpapiHost {
                       BrowserPpapiHostImpl* browser_ppapi_host_impl);
 
     // IPC::MessageFilter.
-    virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+    bool OnMessageReceived(const IPC::Message& msg) override;
 
     void OnHostDestroyed();
 
    private:
-    virtual ~HostMessageFilter();
+    ~HostMessageFilter() override;
 
     void OnKeepalive();
     void OnHostMsgLogInterfaceUsage(int hash) const;
@@ -108,11 +131,21 @@ class CONTENT_EXPORT BrowserPpapiHostImpl : public BrowserPpapiHost {
     BrowserPpapiHostImpl* browser_ppapi_host_impl_;
   };
 
+  struct InstanceData {
+    InstanceData(const PepperRendererInstanceData& renderer_data);
+    ~InstanceData();
+
+    PepperRendererInstanceData renderer_data;
+    bool is_throttled;
+
+    ObserverList<InstanceObserver> observer_list;
+  };
+
   // Reports plugin activity to the callback set with SetOnKeepaliveCallback.
   void OnKeepalive();
 
   scoped_ptr<ppapi::host::PpapiHost> ppapi_host_;
-  base::ProcessHandle plugin_process_handle_;
+  base::Process plugin_process_;
   std::string plugin_name_;
   base::FilePath plugin_path_;
   base::FilePath profile_data_directory_;
@@ -126,10 +159,8 @@ class CONTENT_EXPORT BrowserPpapiHostImpl : public BrowserPpapiHost {
 
   scoped_refptr<SSLContextHelper> ssl_context_helper_;
 
-  // Tracks all PP_Instances in this plugin and associated renderer-related
-  // data.
-  typedef std::map<PP_Instance, PepperRendererInstanceData> InstanceMap;
-  InstanceMap instance_map_;
+  // Tracks all PP_Instances in this plugin and associated data.
+  base::ScopedPtrHashMap<PP_Instance, scoped_ptr<InstanceData>> instance_map_;
 
   scoped_refptr<HostMessageFilter> message_filter_;
 

@@ -6,12 +6,12 @@ import shutil
 import tempfile
 import unittest
 
+from telemetry.core import exceptions
 from telemetry.core import util
 
 
 class TestWait(unittest.TestCase):
-  @staticmethod
-  def testNonTimeout():
+  def testNonTimeout(self):
     def test():
       return True
     util.WaitFor(test, 0.1)
@@ -19,7 +19,8 @@ class TestWait(unittest.TestCase):
   def testTimeout(self):
     def test():
       return False
-    self.assertRaises(util.TimeoutException, lambda: util.WaitFor(test, 0.1))
+    self.assertRaises(exceptions.TimeoutException,
+                      lambda: util.WaitFor(test, 0.1))
 
   def testCallable(self):
     """Test methods and anonymous functions, functions are tested elsewhere."""

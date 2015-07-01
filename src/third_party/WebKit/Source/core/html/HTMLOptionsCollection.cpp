@@ -24,6 +24,7 @@
 
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/UnionTypesCore.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/StaticNodeList.h"
 #include "core/html/HTMLOptionElement.h"
@@ -68,33 +69,9 @@ PassRefPtrWillBeRawPtr<HTMLOptionsCollection> HTMLOptionsCollection::create(Cont
     return adoptRefWillBeNoop(new HTMLOptionsCollection(select));
 }
 
-void HTMLOptionsCollection::add(PassRefPtrWillBeRawPtr<HTMLOptionElement> element, ExceptionState& exceptionState)
+void HTMLOptionsCollection::add(const HTMLOptionElementOrHTMLOptGroupElement& element, const HTMLElementOrLong& before, ExceptionState& exceptionState)
 {
-    add(element, length(), exceptionState);
-}
-
-void HTMLOptionsCollection::add(PassRefPtrWillBeRawPtr<HTMLOptionElement> element, int index, ExceptionState& exceptionState)
-{
-    HTMLOptionElement* newOption = element.get();
-
-    if (!newOption) {
-        exceptionState.throwTypeError("The element provided was not an HTMLOptionElement.");
-        return;
-    }
-
-    if (index < -1) {
-        exceptionState.throwDOMException(IndexSizeError, "The index provided (" + String::number(index) + ") is less than -1.");
-        return;
-    }
-
-    HTMLSelectElement& select = toHTMLSelectElement(ownerNode());
-
-    if (index == -1 || unsigned(index) >= length())
-        select.add(newOption, 0, exceptionState);
-    else
-        select.addBeforeOptionAtIndex(newOption, index, exceptionState);
-
-    ASSERT(!exceptionState.hadException());
+    toHTMLSelectElement(ownerNode()).add(element, before, exceptionState);
 }
 
 void HTMLOptionsCollection::remove(int index)
@@ -117,21 +94,21 @@ void HTMLOptionsCollection::setLength(unsigned length, ExceptionState& exception
     toHTMLSelectElement(ownerNode()).setLength(length, exceptionState);
 }
 
-void HTMLOptionsCollection::namedGetter(const AtomicString& name, RefPtrWillBeRawPtr<NodeList>& returnValue0, RefPtrWillBeRawPtr<Element>& returnValue1)
+void HTMLOptionsCollection::namedGetter(const AtomicString& name, NodeListOrElement& returnValue)
 {
-    WillBeHeapVector<RefPtrWillBeMember<Element> > namedItems;
+    WillBeHeapVector<RefPtrWillBeMember<Element>> namedItems;
     this->namedItems(name, namedItems);
 
     if (!namedItems.size())
         return;
 
     if (namedItems.size() == 1) {
-        returnValue1 = namedItems.at(0);
+        returnValue.setElement(namedItems.at(0));
         return;
     }
 
     // FIXME: The spec and Firefox do not return a NodeList. They always return the first matching Element.
-    returnValue0 = StaticElementList::adopt(namedItems);
+    returnValue.setNodeList(StaticElementList::adopt(namedItems));
 }
 
 bool HTMLOptionsCollection::anonymousIndexedSetter(unsigned index, PassRefPtrWillBeRawPtr<HTMLOptionElement> value, ExceptionState& exceptionState)

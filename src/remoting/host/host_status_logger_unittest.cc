@@ -5,7 +5,6 @@
 #include "remoting/host/host_status_logger.h"
 
 #include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "remoting/host/fake_host_status_monitor.h"
 #include "remoting/signaling/mock_signal_strategy.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -125,8 +124,7 @@ MATCHER(IsClientDisconnected, "") {
 class HostStatusLoggerTest : public testing::Test {
  public:
   HostStatusLoggerTest() {}
-  virtual void SetUp() OVERRIDE {
-    message_loop_proxy_ = base::MessageLoopProxy::current();
+  void SetUp() override {
     EXPECT_CALL(signal_strategy_, AddListener(_));
     host_status_logger_.reset(
         new HostStatusLogger(host_status_monitor_.AsWeakPtr(),
@@ -138,7 +136,6 @@ class HostStatusLoggerTest : public testing::Test {
 
  protected:
   base::MessageLoop message_loop_;
-  scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
   MockSignalStrategy signal_strategy_;
   scoped_ptr<HostStatusLogger> host_status_logger_;
   FakeHostStatusMonitor host_status_monitor_;

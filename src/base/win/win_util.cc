@@ -5,6 +5,7 @@
 #include "base/win/win_util.h"
 
 #include <aclapi.h>
+#include <cfgmgr32.h>
 #include <lm.h>
 #include <powrprof.h>
 #include <shellapi.h>
@@ -14,6 +15,7 @@
 #include <propkey.h>
 #include <propvarutil.h>
 #include <sddl.h>
+#include <setupapi.h>
 #include <signal.h>
 #include <stdlib.h>
 
@@ -53,6 +55,109 @@ const wchar_t kWindows8OSKRegPath[] =
     L"Software\\Classes\\CLSID\\{054AAE20-4BEA-4347-8A35-64A533254A9D}"
     L"\\LocalServer32";
 
+// Returns true if a physical keyboard is detected on Windows 8 and up.
+// Uses the Setup APIs to enumerate the attached keyboards and returns true
+// if the keyboard count is 1 or more.. While this will work in most cases
+// it won't work if there are devices which expose keyboard interfaces which
+// are attached to the machine.
+bool IsKeyboardPresentOnSlate() {
+  // This function is only supported for Windows 8 and up.
+  DCHECK(base::win::GetVersion() >= base::win::VERSION_WIN8);
+
+  // This function should be only invoked for machines with touch screens.
+  if ((GetSystemMetrics(SM_DIGITIZER) & NID_INTEGRATED_TOUCH)
+        != NID_INTEGRATED_TOUCH) {
+    return true;
+  }
+
+  // If the device is docked, the user is treating the device as a PC.
+  if (GetSystemMetrics(SM_SYSTEMDOCKED) != 0)
+    return true;
+
+  // To determine whether a keyboard is present on the device, we do the
+  // following:-
+  // 1. Check whether the device supports auto rotation. If it does then
+  //    it possibly supports flipping from laptop to slate mode. If it
+  //    does not support auto rotation, then we assume it is a desktop
+  //    or a normal laptop and assume that there is a keyboard.
+
+  // 2. If the device supports auto rotation, then we get its platform role
+  //    and check the system metric SM_CONVERTIBLESLATEMODE to see if it is
+  //    being used in slate mode. If yes then we return false here to ensure
+  //    that the OSK is displayed.
+
+  // 3. If step 1 and 2 fail then we check attached keyboards and return true
+  //    if we find ACPI\* or HID\VID* keyboards.
+
+  typedef BOOL (WINAPI* GetAutoRotationState)(PAR_STATE state);
+
+  GetAutoRotationState get_rotation_state =
+      reinterpret_cast<GetAutoRotationState>(::GetProcAddress(
+          GetModuleHandle(L"user32.dll"), "GetAutoRotationState"));
+
+  if (get_rotation_state) {
+    AR_STATE auto_rotation_state = AR_ENABLED;
+    get_rotation_state(&auto_rotation_state);
+    if ((auto_rotation_state & AR_NOSENSOR) ||
+        (auto_rotation_state & AR_NOT_SUPPORTED)) {
+      // If there is no auto rotation sensor or rotation is not supported in
+      // the current configuration, then we can assume that this is a desktop
+      // or a traditional laptop.
+      return true;
+    }
+  }
+
+  // Check if the device is being used as a laptop or a tablet. This can be
+  // checked by first checking the role of the device and then the
+  // corresponding system metric (SM_CONVERTIBLESLATEMODE). If it is being used
+  // as a tablet then we want the OSK to show up.
+  POWER_PLATFORM_ROLE role = PowerDeterminePlatformRole();
+
+  if (((role == PlatformRoleMobile) || (role == PlatformRoleSlate)) &&
+       (GetSystemMetrics(SM_CONVERTIBLESLATEMODE) == 0))
+    return false;
+
+  const GUID KEYBOARD_CLASS_GUID =
+      { 0x4D36E96B, 0xE325,  0x11CE,
+          { 0xBF, 0xC1, 0x08, 0x00, 0x2B, 0xE1, 0x03, 0x18 } };
+
+  // Query for all the keyboard devices.
+  HDEVINFO device_info =
+      SetupDiGetClassDevs(&KEYBOARD_CLASS_GUID, NULL, NULL, DIGCF_PRESENT);
+  if (device_info == INVALID_HANDLE_VALUE)
+    return false;
+
+  // Enumerate all keyboards and look for ACPI\PNP and HID\VID devices. If
+  // the count is more than 1 we assume that a keyboard is present. This is
+  // under the assumption that there will always be one keyboard device.
+  int keyboard_count = 0;
+  for (DWORD i = 0;; ++i) {
+    SP_DEVINFO_DATA device_info_data = { 0 };
+    device_info_data.cbSize = sizeof(device_info_data);
+    if (!SetupDiEnumDeviceInfo(device_info, i, &device_info_data))
+      break;
+
+    // Get the device ID.
+    wchar_t device_id[MAX_DEVICE_ID_LEN];
+    CONFIGRET status = CM_Get_Device_ID(device_info_data.DevInst,
+                                        device_id,
+                                        MAX_DEVICE_ID_LEN,
+                                        0);
+    if (status == CR_SUCCESS) {
+      // To reduce the scope of the hack we only look for ACPI and HID\\VID
+      // prefixes in the keyboard device ids.
+      if (StartsWith(device_id, L"ACPI", false) ||
+          StartsWith(device_id, L"HID\\VID", false)) {
+        keyboard_count++;
+      }
+    }
+  }
+  // The heuristic we are using is to check the count of keyboards and return
+  // true if the API's report one or more keyboards. Please note that this
+  // will break for non keyboard devices which expose a keyboard PDO.
+  return keyboard_count >= 1;
+}
+
 }  // namespace
 
 namespace base {
@@ -60,19 +165,14 @@ namespace win {
 
 static bool g_crash_on_process_detach = false;
 
-#define NONCLIENTMETRICS_SIZE_PRE_VISTA \
-    SIZEOF_STRUCT_WITH_SPECIFIED_LAST_MEMBER(NONCLIENTMETRICS, lfMessageFont)
-
-void GetNonClientMetrics(NONCLIENTMETRICS* metrics) {
+void GetNonClientMetrics(NONCLIENTMETRICS_XP* metrics) {
   DCHECK(metrics);
-
-  static const UINT SIZEOF_NONCLIENTMETRICS =
-      (base::win::GetVersion() >= base::win::VERSION_VISTA) ?
-      sizeof(NONCLIENTMETRICS) : NONCLIENTMETRICS_SIZE_PRE_VISTA;
-  metrics->cbSize = SIZEOF_NONCLIENTMETRICS;
-  const bool success = !!SystemParametersInfo(SPI_GETNONCLIENTMETRICS,
-                                              SIZEOF_NONCLIENTMETRICS, metrics,
-                                              0);
+  metrics->cbSize = sizeof(*metrics);
+  const bool success = !!SystemParametersInfo(
+      SPI_GETNONCLIENTMETRICS,
+      metrics->cbSize,
+      reinterpret_cast<NONCLIENTMETRICS*>(metrics),
+      0);
   DCHECK(success);
 }
 
@@ -252,6 +352,9 @@ bool DisplayVirtualKeyboard() {
   if (base::win::GetVersion() < base::win::VERSION_WIN8)
     return false;
 
+  if (IsKeyboardPresentOnSlate())
+    return false;
+
   static base::LazyInstance<string16>::Leaky osk_path =
       LAZY_INSTANCE_INITIALIZER;
 
@@ -325,7 +428,7 @@ bool DisplayVirtualKeyboard() {
                                   NULL,
                                   NULL,
                                   SW_SHOW);
-  return reinterpret_cast<int>(ret) > 32;
+  return reinterpret_cast<intptr_t>(ret) > 32;
 }
 
 bool DismissVirtualKeyboard() {
@@ -391,29 +494,3 @@ bool MaybeHasSHA256Support() {
 
 }  // namespace win
 }  // namespace base
-
-#ifdef _MSC_VER
-
-// There are optimizer bugs in x86 VS2012 pre-Update 1.
-#if _MSC_VER == 1700 && defined _M_IX86 && _MSC_FULL_VER < 170051106
-
-#pragma message("Relevant defines:")
-#define __STR2__(x) #x
-#define __STR1__(x) __STR2__(x)
-#define __PPOUT__(x) "#define " #x " " __STR1__(x)
-#if defined(_M_IX86)
-  #pragma message(__PPOUT__(_M_IX86))
-#endif
-#if defined(_M_X64)
-  #pragma message(__PPOUT__(_M_X64))
-#endif
-#if defined(_MSC_FULL_VER)
-  #pragma message(__PPOUT__(_MSC_FULL_VER))
-#endif
-
-#pragma message("Visual Studio 2012 x86 must be updated to at least Update 1")
-#error Must install Update 1 to Visual Studio 2012.
-#endif
-
-#endif  // _MSC_VER
-

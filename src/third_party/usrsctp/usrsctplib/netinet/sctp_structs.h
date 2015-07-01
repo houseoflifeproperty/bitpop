@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_structs.h 269945 2014-08-13 15:50:16Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_structs.h 279859 2015-03-10 19:49:25Z tuexen $");
 #endif
 
 #ifndef _NETINET_SCTP_STRUCTS_H_
@@ -428,9 +428,7 @@ struct sctp_nets {
 	uint8_t rto_needed;
 #if defined(__FreeBSD__)
 	uint32_t flowid;
-#ifdef INVARIANTS
-	uint8_t flowidset;
-#endif
+	uint8_t flowtype;
 #endif
 };
 
@@ -468,8 +466,8 @@ TAILQ_HEAD(sctpchunk_listhead, sctp_tmit_chunk);
 #define CHUNK_FLAGS_FRAGMENT_OK	        0x0100
 
 struct chk_id {
-	uint16_t id;
-	uint16_t can_take_data;
+	uint8_t id;
+	uint8_t can_take_data;
 };
 
 
@@ -1251,6 +1249,7 @@ struct sctp_association {
 	uint8_t sctp_cmt_pf;
 	uint8_t use_precise_time;
 	uint64_t sctp_features;
+	uint32_t max_cwnd;
 	uint16_t port; /* remote UDP encapsulation port */
 	/*
 	 * The mapping array is used to track out of order sequences above

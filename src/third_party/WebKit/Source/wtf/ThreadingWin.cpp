@@ -95,7 +95,6 @@
 #include "wtf/MathExtras.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
-#include "wtf/ThreadFunctionInvocation.h"
 #include "wtf/ThreadSpecific.h"
 #include "wtf/ThreadingPrimitives.h"
 #include "wtf/WTFThreadData.h"
@@ -391,6 +390,25 @@ DWORD absoluteTimeToWaitTimeoutInterval(double absoluteTime)
 
     return static_cast<DWORD>((absoluteTime - currentTime) * 1000.0);
 }
+
+#if ENABLE(ASSERT)
+static bool s_threadCreated = false;
+
+bool isAtomicallyInitializedStaticMutexLockHeld()
+{
+    return atomicallyInitializedStaticMutex && atomicallyInitializedStaticMutex->locked();
+}
+
+bool isBeforeThreadCreated()
+{
+    return !s_threadCreated;
+}
+
+void willCreateThread()
+{
+    s_threadCreated = true;
+}
+#endif
 
 } // namespace WTF
 

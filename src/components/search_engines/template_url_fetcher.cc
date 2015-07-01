@@ -32,7 +32,7 @@ class TemplateURLFetcher::RequestDelegate : public net::URLFetcherDelegate {
   // net::URLFetcherDelegate:
   // If data contains a valid OSDD, a TemplateURL is created and added to
   // the TemplateURLService.
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
 
   // URL of the OSDD.
   GURL url() const { return osdd_url_; }
@@ -69,8 +69,8 @@ TemplateURLFetcher::RequestDelegate::RequestDelegate(
     const URLFetcherCustomizeCallback& url_fetcher_customize_callback,
     const ConfirmAddSearchProviderCallback& confirm_add_callback,
     ProviderType provider_type)
-    : url_fetcher_(net::URLFetcher::Create(
-          osdd_url, net::URLFetcher::GET, this)),
+    : url_fetcher_(
+          net::URLFetcher::Create(osdd_url, net::URLFetcher::GET, this).Pass()),
       fetcher_(fetcher),
       keyword_(keyword),
       osdd_url_(osdd_url),

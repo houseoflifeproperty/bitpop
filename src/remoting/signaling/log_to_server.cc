@@ -7,8 +7,8 @@
 #include "remoting/base/constants.h"
 #include "remoting/signaling/iq_sender.h"
 #include "remoting/signaling/signal_strategy.h"
-#include "third_party/libjingle/source/talk/xmpp/constants.h"
 #include "third_party/webrtc/libjingle/xmllite/xmlelement.h"
+#include "third_party/webrtc/libjingle/xmpp/constants.h"
 
 using buzz::QName;
 using buzz::XmlElement;
@@ -50,7 +50,7 @@ void LogToServer::Log(const ServerLogEntry& entry) {
 }
 
 void LogToServer::SendPendingEntries() {
-  if (iq_sender_ == NULL) {
+  if (iq_sender_ == nullptr) {
     return;
   }
   if (pending_entries_.empty()) {

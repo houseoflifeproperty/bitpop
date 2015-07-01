@@ -105,7 +105,7 @@ EVP_PKEY *d2i_PrivateKey(int type, EVP_PKEY **out, const uint8_t **inp,
   return ret;
 
 err:
-  if (ret != NULL && (out == NULL || *out != ret)) {
+  if (out == NULL || *out != ret) {
     EVP_PKEY_free(ret);
   }
   return NULL;
@@ -128,9 +128,6 @@ EVP_PKEY *d2i_AutoPrivateKey(EVP_PKEY **out, const uint8_t **inp, long len) {
   } else if (sk_ASN1_TYPE_num(inkey) == 4) {
     keytype = EVP_PKEY_EC;
   } else if (sk_ASN1_TYPE_num(inkey) == 3) {
-    OPENSSL_PUT_ERROR(EVP, d2i_AutoPrivateKey, EVP_R_UNSUPPORTED_PUBLIC_KEY_TYPE);
-    return 0;
-
     /* This seems to be PKCS8, not traditional format */
     PKCS8_PRIV_KEY_INFO *p8 = d2i_PKCS8_PRIV_KEY_INFO(NULL, inp, len);
     EVP_PKEY *ret;

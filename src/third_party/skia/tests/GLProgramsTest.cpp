@@ -12,384 +12,311 @@
 
 #if SK_SUPPORT_GPU && SK_ALLOW_STATIC_GLOBAL_INITIALIZERS
 
-#include "GrBackendProcessorFactory.h"
+#include "GrAutoLocaleSetter.h"
+#include "GrBatch.h"
+#include "GrBatchTest.h"
 #include "GrContextFactory.h"
-#include "GrOptDrawState.h"
-#include "effects/GrConfigConversionEffect.h"
-#include "gl/GrGLPathRendering.h"
-#include "gl/GrGpuGL.h"
+#include "GrInvariantOutput.h"
+#include "GrPipeline.h"
+#include "GrTest.h"
+#include "GrXferProcessor.h"
 #include "SkChecksum.h"
 #include "SkRandom.h"
 #include "Test.h"
-
-static void get_stage_stats(const GrFragmentStage stage, bool* readsDst,
-                            bool* readsFragPosition, bool* requiresVertexShader) {
-    if (stage.getFragmentProcessor()->willReadDstColor()) {
-        *readsDst = true;
-    }
-    if (stage.getProcessor()->willReadFragmentPosition()) {
-        *readsFragPosition = true;
-    }
-}
-
-bool GrGLProgramDesc::setRandom(SkRandom* random,
-                                GrGpuGL* gpu,
-                                const GrRenderTarget* dstRenderTarget,
-                                const GrTexture* dstCopyTexture,
-                                const GrGeometryStage* geometryProcessor,
-                                const GrFragmentStage* stages[],
-                                int numColorStages,
-                                int numCoverageStages,
-                                int currAttribIndex,
-                                GrGpu::DrawType drawType) {
-    bool isPathRendering = GrGpu::IsPathRenderingDrawType(drawType);
-    bool useLocalCoords = !isPathRendering &&
-                          random->nextBool() &&
-                          currAttribIndex < GrDrawState::kMaxVertexAttribCnt;
-
-    int numStages = numColorStages + numCoverageStages;
-    fKey.reset();
-
-    GR_STATIC_ASSERT(0 == kEffectKeyOffsetsAndLengthOffset % sizeof(uint32_t));
-
-    // Make room for everything up to and including the array of offsets to effect keys.
-    fKey.push_back_n(kEffectKeyOffsetsAndLengthOffset + 2 * sizeof(uint16_t) * (numStages +
-            (geometryProcessor ? 1 : 0)));
-
-    bool dstRead = false;
-    bool fragPos = false;
-    bool vertexShader = SkToBool(geometryProcessor);
-    int offset = 0;
-    if (geometryProcessor) {
-        const GrGeometryStage* stage = geometryProcessor;
-        uint16_t* offsetAndSize = reinterpret_cast<uint16_t*>(fKey.begin() +
-                                                              kEffectKeyOffsetsAndLengthOffset +
-                                                              offset * 2 * sizeof(uint16_t));
-        uint32_t effectKeyOffset = fKey.count();
-        if (effectKeyOffset > SK_MaxU16) {
-            fKey.reset();
-            return false;
-        }
-        GrProcessorKeyBuilder b(&fKey);
-        uint16_t effectKeySize;
-        if (!GetProcessorKey(*stage, gpu->glCaps(), useLocalCoords, &b, &effectKeySize)) {
-            fKey.reset();
-            return false;
-        }
-        vertexShader = true;
-        fragPos = stage->getProcessor()->willReadFragmentPosition();
-        offsetAndSize[0] = effectKeyOffset;
-        offsetAndSize[1] = effectKeySize;
-        offset++;
-    }
-
-    for (int s = 0; s < numStages; ++s, ++offset) {
-        const GrFragmentStage* stage = stages[s];
-        uint16_t* offsetAndSize = reinterpret_cast<uint16_t*>(fKey.begin() +
-                                                              kEffectKeyOffsetsAndLengthOffset +
-                                                              offset * 2 * sizeof(uint16_t));
-        uint32_t effectKeyOffset = fKey.count();
-        if (effectKeyOffset > SK_MaxU16) {
-            fKey.reset();
-            return false;
-        }
-        GrProcessorKeyBuilder b(&fKey);
-        uint16_t effectKeySize;
-        if (!GetProcessorKey(*stages[s], gpu->glCaps(), useLocalCoords, &b, &effectKeySize)) {
-            fKey.reset();
-            return false;
-        }
-        get_stage_stats(*stage, &dstRead, &fragPos, &vertexShader);
-        offsetAndSize[0] = effectKeyOffset;
-        offsetAndSize[1] = effectKeySize;
-    }
-
-    KeyHeader* header = this->header();
-    memset(header, 0, kHeaderSize);
-    header->fEmitsPointSize = random->nextBool();
-
-    header->fPositionAttributeIndex = 0;
-
-    // if the effects have used up all off the available attributes,
-    // don't try to use color or coverage attributes as input
-    do {
-        header->fColorInput = static_cast<GrGLProgramDesc::ColorInput>(
-                                     random->nextULessThan(kColorInputCnt));
-    } while ((GrDrawState::kMaxVertexAttribCnt <= currAttribIndex || isPathRendering) &&
-             kAttribute_ColorInput == header->fColorInput);
-    header->fColorAttributeIndex = (header->fColorInput == kAttribute_ColorInput) ?
-                                        currAttribIndex++ :
-                                        -1;
-
-    do {
-        header->fCoverageInput = static_cast<GrGLProgramDesc::ColorInput>(
-                                     random->nextULessThan(kColorInputCnt));
-    } while ((GrDrawState::kMaxVertexAttribCnt <= currAttribIndex || isPathRendering)  &&
-             kAttribute_ColorInput == header->fCoverageInput);
-    header->fCoverageAttributeIndex = (header->fCoverageInput == kAttribute_ColorInput) ?
-                                        currAttribIndex++ :
-                                        -1;
-    bool useGS = random->nextBool();
-#if GR_GL_EXPERIMENTAL_GS
-    header->fExperimentalGS = gpu->caps()->geometryShaderSupport() && useGS;
-#else
-    (void) useGS;
-#endif
-
-    header->fLocalCoordAttributeIndex = useLocalCoords ? currAttribIndex++ : -1;
-
-    header->fColorEffectCnt = numColorStages;
-    header->fCoverageEffectCnt = numCoverageStages;
-
-    if (dstRead) {
-        header->fDstReadKey = SkToU8(GrGLFragmentShaderBuilder::KeyForDstRead(dstCopyTexture,
-                                                                      gpu->glCaps()));
-    } else {
-        header->fDstReadKey = 0;
-    }
-    if (fragPos) {
-        header->fFragPosKey = SkToU8(GrGLFragmentShaderBuilder::KeyForFragmentPosition(dstRenderTarget,
-                                                                               gpu->glCaps()));
-    } else {
-        header->fFragPosKey = 0;
-    }
-
-    header->fUseFragShaderOnly = isPathRendering && gpu->glPathRendering()->texturingMode() ==
-                                                    GrGLPathRendering::FixedFunction_TexturingMode;
-    header->fHasGeometryProcessor = vertexShader;
-
-    GrOptDrawState::PrimaryOutputType primaryOutput;
-    GrOptDrawState::SecondaryOutputType secondaryOutput;
-    if (!dstRead) {
-        primaryOutput = GrOptDrawState::kModulate_PrimaryOutputType;
-    } else {
-        primaryOutput = static_cast<GrOptDrawState::PrimaryOutputType>(
-            random->nextULessThan(GrOptDrawState::kPrimaryOutputTypeCnt));
-    }
-
-    if (GrOptDrawState::kCombineWithDst_PrimaryOutputType == primaryOutput ||
-        !gpu->caps()->dualSourceBlendingSupport()) {
-        secondaryOutput = GrOptDrawState::kNone_SecondaryOutputType;
-    } else {
-        secondaryOutput = static_cast<GrOptDrawState::SecondaryOutputType>(
-            random->nextULessThan(GrOptDrawState::kSecondaryOutputTypeCnt));
-    }
-
-    header->fPrimaryOutputType = primaryOutput;
-    header->fSecondaryOutputType = secondaryOutput;
-
-    this->finalize();
-    return true;
-}
-
-// TODO clean this up, we have to do this to test geometry processors but there has got to be
-// a better way.  In the mean time, we actually fill out these generic vertex attribs below with
-// the correct vertex attribs from the GP.  We have to ensure, however, we don't try to add more
-// than two attributes.
-GrVertexAttrib genericVertexAttribs[] = {
-    { kVec2f_GrVertexAttribType, 0,   kPosition_GrVertexAttribBinding },
-    { kVec2f_GrVertexAttribType, 0,   kGeometryProcessor_GrVertexAttribBinding },
-    { kVec2f_GrVertexAttribType, 0,   kGeometryProcessor_GrVertexAttribBinding }
-};
+#include "effects/GrConfigConversionEffect.h"
+#include "effects/GrPorterDuffXferProcessor.h"
+#include "gl/GrGLGpu.h"
+#include "gl/GrGLPathRendering.h"
+#include "gl/builders/GrGLProgramBuilder.h"
 
 /*
- * convert sl type to vertexattrib type, not a complete implementation, only use for debugging
+ * A dummy processor which just tries to insert a massive key and verify that it can retrieve the
+ * whole thing correctly
  */
-GrVertexAttribType convert_sltype_to_attribtype(GrSLType type) {
-    switch (type) {
-        case kFloat_GrSLType:
-            return kFloat_GrVertexAttribType;
-        case kVec2f_GrSLType:
-            return kVec2f_GrVertexAttribType;
-        case kVec3f_GrSLType:
-            return kVec3f_GrVertexAttribType;
-        case kVec4f_GrSLType:
-            return kVec4f_GrVertexAttribType;
-        default:
-            SkFAIL("Type isn't convertible");
-            return kFloat_GrVertexAttribType;
+static const uint32_t kMaxKeySize = 1024;
+
+class GLBigKeyProcessor : public GrGLFragmentProcessor {
+public:
+    GLBigKeyProcessor(const GrProcessor&) {}
+
+    virtual void emitCode(GrGLFPBuilder* builder,
+                          const GrFragmentProcessor& fp,
+                          const char* outputColor,
+                          const char* inputColor,
+                          const TransformedCoordsArray&,
+                          const TextureSamplerArray&) {
+        // pass through
+        GrGLFragmentBuilder* fsBuilder = builder->getFragmentShaderBuilder();
+        fsBuilder->codeAppendf("%s = %s;\n", outputColor, inputColor);
+    }
+
+    static void GenKey(const GrProcessor& processor, const GrGLSLCaps&, GrProcessorKeyBuilder* b) {
+        for (uint32_t i = 0; i < kMaxKeySize; i++) {
+            b->add32(i);
+        }
+    }
+
+private:
+    typedef GrGLFragmentProcessor INHERITED;
+};
+
+class BigKeyProcessor : public GrFragmentProcessor {
+public:
+    static GrFragmentProcessor* Create() {
+        GR_CREATE_STATIC_PROCESSOR(gBigKeyProcessor, BigKeyProcessor, ())
+        return SkRef(gBigKeyProcessor);
+    }
+
+    const char* name() const override { return "Big Ole Key"; }
+
+    virtual void getGLProcessorKey(const GrGLSLCaps& caps,
+                                   GrProcessorKeyBuilder* b) const override {
+        GLBigKeyProcessor::GenKey(*this, caps, b);
+    }
+
+    GrGLFragmentProcessor* createGLInstance() const override {
+        return SkNEW_ARGS(GLBigKeyProcessor, (*this));
+    }
+
+private:
+    BigKeyProcessor() {
+        this->initClassID<BigKeyProcessor>();
+    }
+    bool onIsEqual(const GrFragmentProcessor&) const override { return true; }
+    void onComputeInvariantOutput(GrInvariantOutput* inout) const override { }
+
+    GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
+
+    typedef GrFragmentProcessor INHERITED;
+};
+
+GR_DEFINE_FRAGMENT_PROCESSOR_TEST(BigKeyProcessor);
+
+GrFragmentProcessor* BigKeyProcessor::TestCreate(SkRandom*,
+                                                 GrContext*,
+                                                 const GrDrawTargetCaps&,
+                                                 GrTexture*[]) {
+    return BigKeyProcessor::Create();
+}
+
+/*
+ * Begin test code
+ */
+static const int kRenderTargetHeight = 1;
+static const int kRenderTargetWidth = 1;
+
+static GrRenderTarget* random_render_target(GrContext* context, SkRandom* random,
+                                            const GrDrawTargetCaps* caps) {
+    // setup render target
+    GrTextureParams params;
+    GrSurfaceDesc texDesc;
+    texDesc.fWidth = kRenderTargetWidth;
+    texDesc.fHeight = kRenderTargetHeight;
+    texDesc.fFlags = kRenderTarget_GrSurfaceFlag;
+    texDesc.fConfig = kRGBA_8888_GrPixelConfig;
+    texDesc.fOrigin = random->nextBool() == true ? kTopLeft_GrSurfaceOrigin :
+                                                   kBottomLeft_GrSurfaceOrigin;
+    texDesc.fSampleCnt = random->nextBool() == true ? SkTMin(4, caps->maxSampleCount()) : 0;
+
+    GrUniqueKey key;
+    static const GrUniqueKey::Domain kDomain = GrUniqueKey::GenerateDomain();
+    GrUniqueKey::Builder builder(&key, kDomain, 2);
+    builder[0] = texDesc.fOrigin;
+    builder[1] = texDesc.fSampleCnt;
+    builder.finish();
+
+    GrTexture* texture = context->textureProvider()->findAndRefTextureByUniqueKey(key);
+    if (!texture) {
+        texture = context->textureProvider()->createTexture(texDesc, true);
+        if (texture) {
+            context->textureProvider()->assignUniqueKeyToTexture(key, texture);
+        }
+    }
+    return texture ? texture->asRenderTarget() : NULL;
+}
+
+static void set_random_xpf(GrContext* context, const GrDrawTargetCaps& caps,
+                           GrPipelineBuilder* pipelineBuilder, SkRandom* random,
+                           GrTexture* dummyTextures[]) {
+    SkAutoTUnref<const GrXPFactory> xpf(
+        GrProcessorTestFactory<GrXPFactory>::CreateStage(random, context, caps, dummyTextures));
+    SkASSERT(xpf);
+    pipelineBuilder->setXPFactory(xpf.get());
+}
+
+static void set_random_color_coverage_stages(GrGLGpu* gpu,
+                                             GrPipelineBuilder* pipelineBuilder,
+                                             int maxStages,
+                                             SkRandom* random,
+                                             GrTexture* dummyTextures[]) {
+    int numProcs = random->nextULessThan(maxStages + 1);
+    int numColorProcs = random->nextULessThan(numProcs + 1);
+
+    for (int s = 0; s < numProcs;) {
+        SkAutoTUnref<const GrFragmentProcessor> fp(
+                GrProcessorTestFactory<GrFragmentProcessor>::CreateStage(random,
+                                                                         gpu->getContext(),
+                                                                         *gpu->caps(),
+                                                                         dummyTextures));
+        SkASSERT(fp);
+
+        // finally add the stage to the correct pipeline in the drawstate
+        if (s < numColorProcs) {
+            pipelineBuilder->addColorProcessor(fp);
+        } else {
+            pipelineBuilder->addCoverageProcessor(fp);
+        }
+        ++s;
     }
 }
-// TODO end test hack
 
+static void set_random_state(GrPipelineBuilder* pipelineBuilder, SkRandom* random) {
+    int state = 0;
+    for (int i = 1; i <= GrPipelineBuilder::kLast_Flag; i <<= 1) {
+        state |= random->nextBool() * i;
+    }
 
-bool GrGpuGL::programUnitTest(int maxStages) {
+    // If we don't have an MSAA rendertarget then we have to disable useHWAA
+    if ((state | GrPipelineBuilder::kHWAntialias_Flag) &&
+        !pipelineBuilder->getRenderTarget()->isMultisampled()) {
+        state &= ~GrPipelineBuilder::kHWAntialias_Flag;
+    }
+    pipelineBuilder->enableState(state);
+}
 
-    GrTextureDesc dummyDesc;
-    dummyDesc.fFlags = kRenderTarget_GrTextureFlagBit;
+// right now, the only thing we seem to care about in drawState's stencil is 'doesWrite()'
+static void set_random_stencil(GrPipelineBuilder* pipelineBuilder, SkRandom* random) {
+    GR_STATIC_CONST_SAME_STENCIL(kDoesWriteStencil,
+                                 kReplace_StencilOp,
+                                 kReplace_StencilOp,
+                                 kAlways_StencilFunc,
+                                 0xffff,
+                                 0xffff,
+                                 0xffff);
+    GR_STATIC_CONST_SAME_STENCIL(kDoesNotWriteStencil,
+                                 kKeep_StencilOp,
+                                 kKeep_StencilOp,
+                                 kNever_StencilFunc,
+                                 0xffff,
+                                 0xffff,
+                                 0xffff);
+
+    if (random->nextBool()) {
+        pipelineBuilder->setStencil(kDoesWriteStencil);
+    } else {
+        pipelineBuilder->setStencil(kDoesNotWriteStencil);
+    }
+}
+
+bool GrDrawTarget::programUnitTest(int maxStages) {
+    GrGLGpu* gpu = static_cast<GrGLGpu*>(fContext->getGpu());
+    // setup dummy textures
+    GrSurfaceDesc dummyDesc;
+    dummyDesc.fFlags = kRenderTarget_GrSurfaceFlag;
     dummyDesc.fConfig = kSkia8888_GrPixelConfig;
     dummyDesc.fWidth = 34;
     dummyDesc.fHeight = 18;
-    SkAutoTUnref<GrTexture> dummyTexture1(this->createTexture(dummyDesc, NULL, 0));
-    dummyDesc.fFlags = kNone_GrTextureFlags;
+    SkAutoTUnref<GrTexture> dummyTexture1(gpu->createTexture(dummyDesc, false, NULL, 0));
+    dummyDesc.fFlags = kNone_GrSurfaceFlags;
     dummyDesc.fConfig = kAlpha_8_GrPixelConfig;
     dummyDesc.fWidth = 16;
     dummyDesc.fHeight = 22;
-    SkAutoTUnref<GrTexture> dummyTexture2(this->createTexture(dummyDesc, NULL, 0));
+    SkAutoTUnref<GrTexture> dummyTexture2(gpu->createTexture(dummyDesc, false, NULL, 0));
 
     if (!dummyTexture1 || ! dummyTexture2) {
+        SkDebugf("Could not allocate dummy textures");
         return false;
     }
 
-    static const int NUM_TESTS = 512;
+    GrTexture* dummyTextures[] = {dummyTexture1.get(), dummyTexture2.get()};
+
+    // dummy scissor state
+    GrScissorState scissor;
+
+    // wide open clip
+    GrClip clip;
 
     SkRandom random;
-    for (int t = 0; t < NUM_TESTS; ++t) {
-
-#if 0
-        GrPrintf("\nTest Program %d\n-------------\n", t);
-        static const int stop = -1;
-        if (t == stop) {
-            int breakpointhere = 9;
-        }
-#endif
-
-        GrGLProgramDesc pdesc;
-
-        int currAttribIndex = 1;  // we need to always leave room for position
-        int currTextureCoordSet = 0;
-        GrTexture* dummyTextures[] = {dummyTexture1.get(), dummyTexture2.get()};
-
-        int numStages = random.nextULessThan(maxStages + 1);
-        int numColorStages = random.nextULessThan(numStages + 1);
-        int numCoverageStages = numStages - numColorStages;
-
-        SkAutoSTMalloc<8, const GrFragmentStage*> stages(numStages);
-
-        bool usePathRendering = this->glCaps().pathRenderingSupport() && random.nextBool();
-
-        GrGpu::DrawType drawType = usePathRendering ? GrGpu::kDrawPath_DrawType :
-                                                      GrGpu::kDrawPoints_DrawType;
-
-        SkAutoTDelete<GrGeometryStage> geometryProcessor;
-        bool hasGeometryProcessor = usePathRendering ? false : random.nextBool();
-        if (hasGeometryProcessor) {
-            while (true) {
-                SkAutoTUnref<const GrGeometryProcessor> effect(
-                        GrProcessorTestFactory<GrGeometryProcessor>::CreateStage(&random, this->getContext(), *this->caps(),
-                                                         dummyTextures));
-                SkASSERT(effect);
-                // Only geometryProcessor can use vertex shader
-                GrGeometryStage* stage = SkNEW_ARGS(GrGeometryStage, (effect.get()));
-                geometryProcessor.reset(stage);
-
-                // we have to set dummy vertex attribs
-                const GrGeometryProcessor::VertexAttribArray& v = effect->getVertexAttribs();
-                int numVertexAttribs = v.count();
-
-                SkASSERT(GrGeometryProcessor::kMaxVertexAttribs == 2 &&
-                         GrGeometryProcessor::kMaxVertexAttribs >= numVertexAttribs);
-                size_t runningStride = GrVertexAttribTypeSize(genericVertexAttribs[0].fType);
-                for (int i = 0; i < numVertexAttribs; i++) {
-                    genericVertexAttribs[i + 1].fOffset = runningStride;
-                    genericVertexAttribs[i + 1].fType =
-                            convert_sltype_to_attribtype(v[i].getType());
-                    runningStride += GrVertexAttribTypeSize(genericVertexAttribs[i + 1].fType);
-                }
-
-                // update the vertex attributes with the ds
-                GrDrawState* ds = this->drawState();
-                ds->setVertexAttribs<genericVertexAttribs>(numVertexAttribs + 1, runningStride);
-                currAttribIndex = numVertexAttribs + 1;
-                break;
-            }
-        }
-        for (int s = 0; s < numStages;) {
-            SkAutoTUnref<const GrFragmentProcessor> effect(
-                    GrProcessorTestFactory<GrFragmentProcessor>::CreateStage(
-                                                                            &random,
-                                                                            this->getContext(),
-                                                                            *this->caps(),
-                                                                            dummyTextures));
-            SkASSERT(effect);
-
-            // If adding this effect would exceed the max texture coord set count then generate a
-            // new random effect.
-            if (usePathRendering && this->glPathRendering()->texturingMode() ==
-                                    GrGLPathRendering::FixedFunction_TexturingMode) {;
-                int numTransforms = effect->numTransforms();
-                if (currTextureCoordSet + numTransforms > this->glCaps().maxFixedFunctionTextureCoords()) {
-                    continue;
-                }
-                currTextureCoordSet += numTransforms;
-            }
-            GrFragmentStage* stage = SkNEW_ARGS(GrFragmentStage, (effect.get()));
-
-            stages[s] = stage;
-            ++s;
-        }
-        const GrTexture* dstTexture = random.nextBool() ? dummyTextures[0] : dummyTextures[1];
-        if (!pdesc.setRandom(&random,
-                             this,
-                             dummyTextures[0]->asRenderTarget(),
-                             dstTexture,
-                             geometryProcessor.get(),
-                             stages.get(),
-                             numColorStages,
-                             numCoverageStages,
-                             currAttribIndex,
-                             drawType)) {
+    static const int NUM_TESTS = 2048;
+    for (int t = 0; t < NUM_TESTS; t++) {
+        // setup random render target(can fail)
+        SkAutoTUnref<GrRenderTarget> rt(random_render_target(fContext, &random, this->caps()));
+        if (!rt.get()) {
+            SkDebugf("Could not allocate render target");
             return false;
         }
 
-        SkAutoTUnref<GrGLProgram> program(GrGLProgram::Create(this,
-                                                              pdesc,
-                                                              geometryProcessor.get(),
-                                                              stages,
-                                                              stages + numColorStages));
-        for (int s = 0; s < numStages; ++s) {
-            SkDELETE(stages[s]);
-        }
-        if (NULL == program.get()) {
-            return false;
-        }
+        GrPipelineBuilder pipelineBuilder;
+        pipelineBuilder.setRenderTarget(rt.get());
+        pipelineBuilder.setClip(clip);
 
-        // We have to reset the drawstate because we might have added a gp
-        this->drawState()->reset();
+        SkAutoTUnref<GrBatch> batch(GrRandomBatch(&random, fContext));
+        SkASSERT(batch);
+
+        set_random_color_coverage_stages(gpu,
+                                         &pipelineBuilder,
+                                         maxStages,
+                                         &random,
+                                         dummyTextures);
+
+        // creates a random xfer processor factory on the draw state 
+        set_random_xpf(fContext, gpu->glCaps(), &pipelineBuilder, &random, dummyTextures);
+
+        set_random_state(&pipelineBuilder, &random);
+        set_random_stencil(&pipelineBuilder, &random);
+
+        this->drawBatch(&pipelineBuilder, batch);
     }
+
+    // Flush everything, test passes if flush is successful(ie, no asserts are hit, no crashes)
+    this->flush();
     return true;
 }
 
 DEF_GPUTEST(GLPrograms, reporter, factory) {
+    // Set a locale that would cause shader compilation to fail because of , as decimal separator.
+    // skbug 3330
+#ifdef SK_BUILD_FOR_WIN
+    GrAutoLocaleSetter als("sv-SE");
+#else
+    GrAutoLocaleSetter als("sv_SE.UTF-8");
+#endif
+
+    // We suppress prints to avoid spew
+    GrContext::Options opts;
+    opts.fSuppressPrints = true;
+    GrContextFactory debugFactory(opts);
     for (int type = 0; type < GrContextFactory::kLastGLContextType; ++type) {
-        GrContext* context = factory->get(static_cast<GrContextFactory::GLContextType>(type));
+        GrContext* context = debugFactory.get(static_cast<GrContextFactory::GLContextType>(type));
         if (context) {
-            GrGpuGL* gpu = static_cast<GrGpuGL*>(context->getGpu());
-            int maxStages = 6;
+            GrGLGpu* gpu = static_cast<GrGLGpu*>(context->getGpu());
+
+            /*
+             * For the time being, we only support the test with desktop GL or for android on
+             * ARM platforms
+             * TODO When we run ES 3.00 GLSL in more places, test again
+             */
+            int maxStages;
+            if (kGL_GrGLStandard == gpu->glStandard() ||
+                kARM_GrGLVendor == gpu->ctxInfo().vendor()) {
+                maxStages = 6;
+            } else if (kTegra3_GrGLRenderer == gpu->ctxInfo().renderer() ||
+                       kOther_GrGLRenderer == gpu->ctxInfo().renderer()) {
+                maxStages = 1;
+            } else {
+                return;
+            }
 #if SK_ANGLE
             // Some long shaders run out of temporary registers in the D3D compiler on ANGLE.
             if (type == GrContextFactory::kANGLE_GLContextType) {
-                maxStages = 3;
+                maxStages = 2;
             }
 #endif
-            REPORTER_ASSERT(reporter, gpu->programUnitTest(maxStages));
+            GrTestTarget target;
+            context->getTestTarget(&target);
+            REPORTER_ASSERT(reporter, target.target()->programUnitTest(maxStages));
         }
     }
-}
-
-// This is evil evil evil. The linker may throw away whole translation units as dead code if it
-// thinks none of the functions are called. It will do this even if there are static initializers
-// in the unit that could pass pointers to functions from the unit out to other translation units!
-// We force some of the effects that would otherwise be discarded to link here.
-
-#include "SkAlphaThresholdFilter.h"
-#include "SkColorMatrixFilter.h"
-#include "SkLightingImageFilter.h"
-#include "SkMagnifierImageFilter.h"
-
-void forceLinking();
-
-void forceLinking() {
-    SkLightingImageFilter::CreateDistantLitDiffuse(SkPoint3(0,0,0), 0, 0, 0);
-    SkAlphaThresholdFilter::Create(SkRegion(), .5f, .5f);
-    SkAutoTUnref<SkImageFilter> mag(SkMagnifierImageFilter::Create(
-        SkRect::MakeWH(SK_Scalar1, SK_Scalar1), SK_Scalar1));
-    GrConfigConversionEffect::Create(NULL,
-                                     false,
-                                     GrConfigConversionEffect::kNone_PMConversion,
-                                     SkMatrix::I());
-    SkScalar matrix[20];
-    SkAutoTUnref<SkColorMatrixFilter> cmf(SkColorMatrixFilter::Create(matrix));
 }
 
 #endif

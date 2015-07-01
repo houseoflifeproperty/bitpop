@@ -66,7 +66,7 @@ class FeedbackSenderTest : public testing::Test {
     feedback_->StartFeedbackCollection();
   }
 
-  virtual ~FeedbackSenderTest() {}
+  ~FeedbackSenderTest() override {}
 
  protected:
   // Appends the "--enable-spelling-service-feedback" switch to the
@@ -74,7 +74,7 @@ class FeedbackSenderTest : public testing::Test {
   void AppendCommandLineSwitch() {
     // The command-line switch is temporary.
     // TODO(rouslan): Remove the command-line switch. http://crbug.com/247726
-    CommandLine::ForCurrentProcess()->AppendSwitch(
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kEnableSpellingFeedbackFieldTrial);
     feedback_.reset(new FeedbackSender(NULL, kLanguage, kCountry));
     feedback_->StartFeedbackCollection();
@@ -141,8 +141,8 @@ class FeedbackSenderTest : public testing::Test {
   scoped_ptr<spellcheck::FeedbackSender> feedback_;
 
  private:
-  TestingProfile profile_;
   base::MessageLoop loop_;
+  TestingProfile profile_;
   content::TestBrowserThread ui_thread_;
   scoped_ptr<base::FieldTrialList> field_trial_list_;
   scoped_refptr<base::FieldTrial> field_trial_;

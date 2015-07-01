@@ -154,10 +154,10 @@ class UserStringSubstitution : public chromeos::onc::StringSubstitution {
  public:
   explicit UserStringSubstitution(const user_manager::User* user)
       : user_(user) {}
-  virtual ~UserStringSubstitution() {}
+  ~UserStringSubstitution() override {}
 
-  virtual bool GetSubstitute(const std::string& placeholder,
-                             std::string* substitute) const OVERRIDE {
+  bool GetSubstitute(const std::string& placeholder,
+                     std::string* substitute) const override {
     if (placeholder == ::onc::substitutes::kLoginIDField)
       *substitute = user_->GetAccountName(false);
     else if (placeholder == ::onc::substitutes::kEmailField)
@@ -217,6 +217,8 @@ void ImportNetworksForUser(const user_manager::User* user,
         normalizer.NormalizeObject(&onc::kNetworkConfigurationSignature,
                                    *network);
 
+    // TODO(pneubeck): Use ONC and ManagedNetworkConfigurationHandler instead.
+    // crbug.com/457936
     scoped_ptr<base::DictionaryValue> shill_dict =
         onc::TranslateONCObjectToShill(&onc::kNetworkConfigurationSignature,
                                        *normalized_network);
@@ -243,17 +245,17 @@ void ImportNetworksForUser(const user_manager::User* user,
           NetworkHandler::Get()->network_state_handler()->FirstNetworkByType(
               NetworkTypePattern::Ethernet());
       if (ethernet) {
-        config_handler->SetProperties(ethernet->path(),
-                                      *shill_dict,
-                                      base::Closure(),
-                                      network_handler::ErrorCallback());
+        config_handler->SetShillProperties(
+            ethernet->path(), *shill_dict,
+            NetworkConfigurationObserver::SOURCE_USER_ACTION, base::Closure(),
+            network_handler::ErrorCallback());
       } else {
         ethernet_not_found = true;
       }
 
     } else {
-      config_handler->CreateConfiguration(
-          *shill_dict,
+      config_handler->CreateShillConfiguration(
+          *shill_dict, NetworkConfigurationObserver::SOURCE_USER_ACTION,
           network_handler::StringResultCallback(),
           network_handler::ErrorCallback());
     }

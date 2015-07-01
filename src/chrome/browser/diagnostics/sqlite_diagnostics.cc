@@ -18,6 +18,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chromeos/chromeos_constants.h"
+#include "components/history/core/browser/history_constants.h"
 #include "components/webdata/common/webdata_constants.h"
 #include "content/public/common/content_constants.h"
 #include "sql/connection.h"
@@ -44,7 +45,7 @@ class SqliteIntegrityTest : public DiagnosticsTest {
                       const base::FilePath& db_path)
       : DiagnosticsTest(id), flags_(flags), db_path_(db_path) {}
 
-  virtual bool RecoveryImpl(DiagnosticsModel::Observer* observer) OVERRIDE {
+  bool RecoveryImpl(DiagnosticsModel::Observer* observer) override {
     int outcome_code = GetOutcomeCode();
     if (flags_ & REMOVE_IF_CORRUPT) {
       switch (outcome_code) {
@@ -55,7 +56,7 @@ class SqliteIntegrityTest : public DiagnosticsTest {
         case DIAG_SQLITE_DB_CORRUPTED:
           LOG(WARNING) << "Removing broken SQLite database: "
                        << db_path_.value();
-          base::DeleteFile(db_path_, false);
+          sql::Connection::Delete(db_path_);
           break;
         case DIAG_SQLITE_SUCCESS:
         case DIAG_SQLITE_FILE_NOT_FOUND_OK:
@@ -69,7 +70,7 @@ class SqliteIntegrityTest : public DiagnosticsTest {
     return true;
   }
 
-  virtual bool ExecuteImpl(DiagnosticsModel::Observer* observer) OVERRIDE {
+  bool ExecuteImpl(DiagnosticsModel::Observer* observer) override {
     // If we're given an absolute path, use it. If not, then assume it's under
     // the profile directory.
     base::FilePath path;
@@ -219,7 +220,7 @@ DiagnosticsTest* MakeSqliteWebDatabaseTrackerDbTest() {
 DiagnosticsTest* MakeSqliteHistoryDbTest() {
   return new SqliteIntegrityTest(SqliteIntegrityTest::CRITICAL,
                                  DIAGNOSTICS_SQLITE_INTEGRITY_HISTORY_TEST,
-                                 base::FilePath(chrome::kHistoryFilename));
+                                 base::FilePath(history::kHistoryFilename));
 }
 
 #if defined(OS_CHROMEOS)
@@ -243,7 +244,7 @@ DiagnosticsTest* MakeSqliteNssKeyDbTest() {
 DiagnosticsTest* MakeSqliteThumbnailsDbTest() {
   return new SqliteIntegrityTest(SqliteIntegrityTest::NO_FLAGS_SET,
                                  DIAGNOSTICS_SQLITE_INTEGRITY_THUMBNAILS_TEST,
-                                 base::FilePath(chrome::kThumbnailsFilename));
+                                 base::FilePath(history::kThumbnailsFilename));
 }
 
 DiagnosticsTest* MakeSqliteWebDataDbTest() {

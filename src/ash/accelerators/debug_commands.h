@@ -5,16 +5,24 @@
 #ifndef ASH_ACCELERATORS_DEBUG_COMMANDS_H_
 #define ASH_ACCELERATORS_DEBUG_COMMANDS_H_
 
+#include "ash/accelerators/accelerator_table.h"
 #include "ash/ash_export.h"
 
-// This file contains implementations of commands that are used only
-// when running on desktop for debugging.
+// This file contains implementations of commands that are used only when
+// debugging.
 namespace ash {
 namespace debug {
 
-// Cycle through different wallpaper modes. This is used when running
-// on desktop for testing.
-ASH_EXPORT bool CycleDesktopBackgroundMode();
+// Print the views::View, ui::Layer and aura::Window hierarchies. This may be
+// useful in debugging user reported bugs.
+ASH_EXPORT void PrintUIHierarchies();
+
+// Returns true if debug accelerators are enabled.
+ASH_EXPORT bool DebugAcceleratorsEnabled();
+
+// Performs |action| if |action| belongs to a debug-only accelerator and debug
+// accelerators are enabled.
+ASH_EXPORT void PerformDebugActionIfEnabled(AcceleratorAction action);
 
 }  // namespace debug
 }  // namespace ash

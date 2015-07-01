@@ -70,7 +70,7 @@ class ChannelMultiplexerTest : public testing::Test {
   }
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // Create pair of multiplexers and connect them to each other.
     host_mux_.reset(new ChannelMultiplexer(
         host_session_.GetTransportChannelFactory(), kMuxChannelName));
@@ -363,7 +363,7 @@ TEST_F(ChannelMultiplexerTest, SessionFail) {
   host_mux_->CreateChannel(kTestChannelName2, base::Bind(
       &MockConnectCallback::OnConnected, base::Unretained(&cb2)));
 
-  EXPECT_CALL(cb1, OnConnectedPtr(NULL))
+  EXPECT_CALL(cb1, OnConnectedPtr(nullptr))
       .Times(AtMost(1))
       .WillOnce(InvokeWithoutArgs(
           this, &ChannelMultiplexerTest::DeleteAfterSessionFail));

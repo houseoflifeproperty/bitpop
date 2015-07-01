@@ -6,6 +6,7 @@
 
 #include "base/threading/worker_pool.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/network/auto_connect_handler.h"
 #include "chromeos/network/client_cert_resolver.h"
 #include "chromeos/network/geolocation_handler.h"
 #include "chromeos/network/managed_network_configuration_handler_impl.h"
@@ -14,7 +15,6 @@
 #include "chromeos/network/network_configuration_handler.h"
 #include "chromeos/network/network_connection_handler.h"
 #include "chromeos/network/network_device_handler_impl.h"
-#include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_profile_handler.h"
 #include "chromeos/network/network_profile_observer.h"
 #include "chromeos/network/network_sms_handler.h"
@@ -29,8 +29,6 @@ NetworkHandler::NetworkHandler()
     : message_loop_(base::MessageLoopProxy::current()) {
   CHECK(DBusThreadManager::IsInitialized());
 
-  network_event_log::Initialize();
-
   network_state_handler_.reset(new NetworkStateHandler());
   network_device_handler_.reset(new NetworkDeviceHandlerImpl());
   network_profile_handler_.reset(new NetworkProfileHandler());
@@ -38,6 +36,7 @@ NetworkHandler::NetworkHandler()
   managed_network_configuration_handler_.reset(
       new ManagedNetworkConfigurationHandlerImpl());
   if (CertLoader::IsInitialized()) {
+    auto_connect_handler_.reset(new AutoConnectHandler());
     network_cert_migrator_.reset(new NetworkCertMigrator());
     client_cert_resolver_.reset(new ClientCertResolver());
   }
@@ -48,14 +47,14 @@ NetworkHandler::NetworkHandler()
 }
 
 NetworkHandler::~NetworkHandler() {
-  network_event_log::Shutdown();
 }
 
 void NetworkHandler::Init() {
   network_state_handler_->InitShillPropertyHandler();
   network_device_handler_->Init(network_state_handler_.get());
   network_profile_handler_->Init();
-  network_configuration_handler_->Init(network_state_handler_.get());
+  network_configuration_handler_->Init(network_state_handler_.get(),
+                                       network_device_handler_.get());
   managed_network_configuration_handler_->Init(
       network_state_handler_.get(),
       network_profile_handler_.get(),
@@ -69,6 +68,12 @@ void NetworkHandler::Init() {
     network_cert_migrator_->Init(network_state_handler_.get());
   if (client_cert_resolver_) {
     client_cert_resolver_->Init(network_state_handler_.get(),
+                                managed_network_configuration_handler_.get());
+  }
+  if (auto_connect_handler_) {
+    auto_connect_handler_->Init(client_cert_resolver_.get(),
+                                network_connection_handler_.get(),
+                                network_state_handler_.get(),
                                 managed_network_configuration_handler_.get());
   }
   network_sms_handler_->Init();

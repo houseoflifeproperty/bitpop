@@ -18,12 +18,10 @@
 const int EncodingMenuController::kValidEncodingIds[] = {
     IDC_ENCODING_UTF8,
     IDC_ENCODING_UTF16LE,
-    IDC_ENCODING_ISO88591,
     IDC_ENCODING_WINDOWS1252,
     IDC_ENCODING_GBK,
     IDC_ENCODING_GB18030,
     IDC_ENCODING_BIG5,
-    IDC_ENCODING_BIG5HKSCS,
     IDC_ENCODING_KOREAN,
     IDC_ENCODING_SHIFTJIS,
     IDC_ENCODING_ISO2022JP,
@@ -53,6 +51,7 @@ const int EncodingMenuController::kValidEncodingIds[] = {
     IDC_ENCODING_WINDOWS1255,
     IDC_ENCODING_WINDOWS1258,
     IDC_ENCODING_ISO88598I,
+    IDC_ENCODING_IBM866,
 };
 
 bool EncodingMenuController::DoesCommandBelongToEncodingMenu(int id) {

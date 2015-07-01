@@ -4,10 +4,14 @@
 
 #include "components/omnibox/search_suggestion_parser.h"
 
+#include <algorithm>
+
 #include "base/i18n/icu_string_conversions.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
@@ -22,10 +26,12 @@
 namespace {
 
 AutocompleteMatchType::Type GetAutocompleteMatchType(const std::string& type) {
+  if (type == "CALCULATOR")
+    return AutocompleteMatchType::CALCULATOR;
   if (type == "ENTITY")
     return AutocompleteMatchType::SEARCH_SUGGEST_ENTITY;
-  if (type == "INFINITE")
-    return AutocompleteMatchType::SEARCH_SUGGEST_INFINITE;
+  if (type == "TAIL")
+    return AutocompleteMatchType::SEARCH_SUGGEST_TAIL;
   if (type == "PERSONALIZED_QUERY")
     return AutocompleteMatchType::SEARCH_SUGGEST_PERSONALIZED;
   if (type == "PROFILE")
@@ -65,6 +71,7 @@ SearchSuggestionParser::SuggestResult::SuggestResult(
     const base::string16& annotation,
     const base::string16& answer_contents,
     const base::string16& answer_type,
+    scoped_ptr<SuggestionAnswer> answer,
     const std::string& suggest_query_params,
     const std::string& deletion_url,
     bool from_keyword_provider,
@@ -83,13 +90,47 @@ SearchSuggestionParser::SuggestResult::SuggestResult(
       suggest_query_params_(suggest_query_params),
       answer_contents_(answer_contents),
       answer_type_(answer_type),
+      answer_(answer.Pass()),
       should_prefetch_(should_prefetch) {
   match_contents_ = match_contents;
   DCHECK(!match_contents_.empty());
   ClassifyMatchContents(true, input_text);
 }
 
+SearchSuggestionParser::SuggestResult::SuggestResult(
+    const SuggestResult& result)
+    : Result(result),
+      suggestion_(result.suggestion_),
+      match_contents_prefix_(result.match_contents_prefix_),
+      annotation_(result.annotation_),
+      suggest_query_params_(result.suggest_query_params_),
+      answer_contents_(result.answer_contents_),
+      answer_type_(result.answer_type_),
+      answer_(SuggestionAnswer::copy(result.answer_.get())),
+      should_prefetch_(result.should_prefetch_) {
+}
+
 SearchSuggestionParser::SuggestResult::~SuggestResult() {}
+
+SearchSuggestionParser::SuggestResult&
+    SearchSuggestionParser::SuggestResult::operator=(const SuggestResult& rhs) {
+  if (this == &rhs)
+    return *this;
+
+  // Assign via parent class first.
+  Result::operator=(rhs);
+
+  suggestion_ = rhs.suggestion_;
+  match_contents_prefix_ = rhs.match_contents_prefix_;
+  annotation_ = rhs.annotation_;
+  suggest_query_params_ = rhs.suggest_query_params_;
+  answer_contents_ = rhs.answer_contents_;
+  answer_type_ = rhs.answer_type_;
+  answer_ = SuggestionAnswer::copy(rhs.answer_.get());
+  should_prefetch_ = rhs.should_prefetch_;
+
+  return *this;
+}
 
 void SearchSuggestionParser::SuggestResult::ClassifyMatchContents(
     const bool allow_bolding_all,
@@ -102,7 +143,7 @@ void SearchSuggestionParser::SuggestResult::ClassifyMatchContents(
   }
 
   base::string16 lookup_text = input_text;
-  if (type_ == AutocompleteMatchType::SEARCH_SUGGEST_INFINITE) {
+  if (type_ == AutocompleteMatchType::SEARCH_SUGGEST_TAIL) {
     const size_t contents_index =
         suggestion_.length() - match_contents_.length();
     // Ensure the query starts with the input text, and ends with the match
@@ -113,8 +154,11 @@ void SearchSuggestionParser::SuggestResult::ClassifyMatchContents(
       lookup_text = input_text.substr(contents_index);
     }
   }
-  size_t lookup_position = match_contents_.find(lookup_text);
-  if (!allow_bolding_all && (lookup_position == base::string16::npos)) {
+  // Do a case-insensitive search for |lookup_text|.
+  base::string16::const_iterator lookup_position = std::search(
+      match_contents_.begin(), match_contents_.end(), lookup_text.begin(),
+      lookup_text.end(), base::CaseInsensitiveCompare<base::char16>());
+  if (!allow_bolding_all && (lookup_position == match_contents_.end())) {
     // Bail if the code below to update the bolding would bold the whole
     // string.  Note that the string may already be entirely bolded; if
     // so, leave it as is.
@@ -125,7 +169,7 @@ void SearchSuggestionParser::SuggestResult::ClassifyMatchContents(
   // will be highlighted, e.g. for input_text = "you" the suggestion may be
   // "youtube", so we'll bold the "tube" section: you*tube*.
   if (input_text != match_contents_) {
-    if (lookup_position == base::string16::npos) {
+    if (lookup_position == match_contents_.end()) {
       // The input text is not a substring of the query string, e.g. input
       // text is "slasdot" and the query string is "slashdot", so we bold the
       // whole thing.
@@ -137,13 +181,14 @@ void SearchSuggestionParser::SuggestResult::ClassifyMatchContents(
       // short as a single character highlighted in a query suggestion result,
       // e.g. for input text "s" and query string "southwest airlines", it
       // looks odd if both the first and last s are highlighted.
-      if (lookup_position != 0) {
+      const size_t lookup_index = lookup_position - match_contents_.begin();
+      if (lookup_index != 0) {
         match_contents_class_.push_back(
             ACMatchClassification(0, ACMatchClassification::MATCH));
       }
       match_contents_class_.push_back(
-          ACMatchClassification(lookup_position, ACMatchClassification::NONE));
-      size_t next_fragment_position = lookup_position + lookup_text.length();
+          ACMatchClassification(lookup_index, ACMatchClassification::NONE));
+      size_t next_fragment_position = lookup_index + lookup_text.length();
       if (next_fragment_position < match_contents_.length()) {
         match_contents_class_.push_back(ACMatchClassification(
             next_fragment_position, ACMatchClassification::MATCH));
@@ -306,16 +351,15 @@ std::string SearchSuggestionParser::ExtractJsonData(
 
 // static
 scoped_ptr<base::Value> SearchSuggestionParser::DeserializeJsonData(
-    std::string json_data) {
+    base::StringPiece json_data) {
   // The JSON response should be an array.
   for (size_t response_start_index = json_data.find("["), i = 0;
-       response_start_index != std::string::npos && i < 5;
+       response_start_index != base::StringPiece::npos && i < 5;
        response_start_index = json_data.find("[", 1), i++) {
     // Remove any XSSI guards to allow for JSON parsing.
-    if (response_start_index > 0)
-      json_data.erase(0, response_start_index);
+    json_data.remove_prefix(response_start_index);
 
-    JSONStringValueSerializer deserializer(json_data);
+    JSONStringValueDeserializer deserializer(json_data);
     deserializer.set_allow_trailing_comma(true);
     int error_code = 0;
     scoped_ptr<base::Value> data(deserializer.Deserialize(&error_code, NULL));
@@ -435,11 +479,18 @@ bool SearchSuggestionParser::ParseSuggestResults(
             languages));
       }
     } else {
+      // TODO(dschuyler) If the "= " is no longer sent from the back-end
+      // then this may be removed.
+      if ((match_type == AutocompleteMatchType::CALCULATOR) &&
+          !suggestion.compare(0, 2, base::UTF8ToUTF16("= ")))
+        suggestion.erase(0, 2);
+
       base::string16 match_contents = suggestion;
       base::string16 match_contents_prefix;
       base::string16 annotation;
       base::string16 answer_contents;
-      base::string16 answer_type;
+      base::string16 answer_type_str;
+      scoped_ptr<SuggestionAnswer> answer;
       std::string suggest_query_params;
 
       if (suggestion_details) {
@@ -453,61 +504,40 @@ bool SearchSuggestionParser::ParseSuggestResults(
           suggestion_detail->GetString("a", &annotation);
           suggestion_detail->GetString("q", &suggest_query_params);
 
-          // Extract Answers, if provided.
+          // Extract the Answer, if provided.
           const base::DictionaryValue* answer_json = NULL;
-          if (suggestion_detail->GetDictionary("ansa", &answer_json)) {
-            match_type = AutocompleteMatchType::SEARCH_SUGGEST_ANSWER;
-            GetAnswersImageURLs(answer_json, &results->answers_image_urls);
-            std::string contents;
-            base::JSONWriter::Write(answer_json, &contents);
-            answer_contents = base::UTF8ToUTF16(contents);
-            suggestion_detail->GetString("ansb", &answer_type);
+          if (suggestion_detail->GetDictionary("ansa", &answer_json) &&
+              suggestion_detail->GetString("ansb", &answer_type_str)) {
+            bool answer_parsed_successfully = false;
+            answer = SuggestionAnswer::ParseAnswer(answer_json);
+            int answer_type = 0;
+            if (answer && base::StringToInt(answer_type_str, &answer_type)) {
+              answer_parsed_successfully = true;
+
+              answer->set_type(answer_type);
+              answer->AddImageURLsTo(&results->answers_image_urls);
+
+              std::string contents;
+              base::JSONWriter::Write(answer_json, &contents);
+              answer_contents = base::UTF8ToUTF16(contents);
+            } else {
+              answer_type_str = base::string16();
+            }
+            UMA_HISTOGRAM_BOOLEAN("Omnibox.AnswerParseSuccess",
+                                  answer_parsed_successfully);
           }
         }
       }
 
       bool should_prefetch = static_cast<int>(index) == prefetch_index;
-      // TODO(kochi): Improve calculator suggestion presentation.
       results->suggest_results.push_back(SuggestResult(
           base::CollapseWhitespace(suggestion, false), match_type,
           base::CollapseWhitespace(match_contents, false),
-          match_contents_prefix, annotation, answer_contents, answer_type,
-          suggest_query_params, deletion_url, is_keyword_result, relevance,
-          relevances != NULL, should_prefetch, trimmed_input));
+          match_contents_prefix, annotation, answer_contents, answer_type_str,
+          answer.Pass(), suggest_query_params, deletion_url, is_keyword_result,
+          relevance, relevances != NULL, should_prefetch, trimmed_input));
     }
   }
   results->relevances_from_server = relevances != NULL;
   return true;
-}
-
-// static
-void SearchSuggestionParser::GetAnswersImageURLs(
-    const base::DictionaryValue* answer_json,
-    std::vector<GURL>* urls) {
-  DCHECK(answer_json);
-
-  const base::ListValue* lines = NULL;
-  if (!answer_json->GetList("l", &lines) || !lines || lines->GetSize() == 0)
-    return;
-
-  for (base::ListValue::const_iterator iter = lines->begin();
-       iter != lines->end();
-       ++iter) {
-    const base::DictionaryValue* line = NULL;
-    if (!(*iter)->GetAsDictionary(&line) || !line)
-      continue;
-
-    std::string image_host_and_path;
-    if (!line->GetString("il.i.d", &image_host_and_path) ||
-        image_host_and_path.empty())
-      continue;
-    // Concatenate scheme and host/path using only ':' as separator. This is
-    // due to the results delivering strings of the form '//host/path', which
-    // is web-speak for "use the enclosing page's scheme", but not a valid path
-    // of an URL.
-    GURL image_url(
-        GURL(std::string(url::kHttpsScheme) + ":" + image_host_and_path));
-    if (image_url.is_valid())
-      urls->push_back(image_url);
-  }
 }

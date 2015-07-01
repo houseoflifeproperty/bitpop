@@ -10,7 +10,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/values.h"
-#include "components/web_modal/native_web_contents_modal_dialog.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "net/cert/x509_certificate.h"
 #include "ui/gfx/native_widget_types.h"
@@ -32,30 +31,28 @@ class CertificateViewerModalDialog : public ui::WebDialogDelegate {
   // viewer.
   explicit CertificateViewerModalDialog(
       net::X509Certificate* cert);
-  virtual ~CertificateViewerModalDialog();
+  ~CertificateViewerModalDialog() override;
 
   virtual void Show(content::WebContents* web_contents,
                     gfx::NativeWindow parent);
-  virtual web_modal::NativeWebContentsModalDialog
-  GetNativeWebContentsModalDialog();
+  virtual gfx::NativeWindow GetNativeWebContentsModalDialog();
   const content::WebUI* GetWebUI() const { return webui_; }
 
  protected:
   // Overridden from ui::WebDialogDelegate:
-  virtual ui::ModalType GetDialogModalType() const OVERRIDE;
-  virtual base::string16 GetDialogTitle() const OVERRIDE;
-  virtual GURL GetDialogContentURL() const OVERRIDE;
-  virtual void GetWebUIMessageHandlers(
-      std::vector<content::WebUIMessageHandler*>* handlers) const OVERRIDE;
-  virtual void GetDialogSize(gfx::Size* size) const OVERRIDE;
-  virtual std::string GetDialogArgs() const OVERRIDE;
-  virtual void OnDialogShown(
-      content::WebUI* webui,
-      content::RenderViewHost* render_view_host) OVERRIDE;
-  virtual void OnDialogClosed(const std::string& json_retval) OVERRIDE;
-  virtual void OnCloseContents(
-      content::WebContents* source, bool* out_close_dialog) OVERRIDE;
-  virtual bool ShouldShowDialogTitle() const OVERRIDE;
+  ui::ModalType GetDialogModalType() const override;
+  base::string16 GetDialogTitle() const override;
+  GURL GetDialogContentURL() const override;
+  void GetWebUIMessageHandlers(
+      std::vector<content::WebUIMessageHandler*>* handlers) const override;
+  void GetDialogSize(gfx::Size* size) const override;
+  std::string GetDialogArgs() const override;
+  void OnDialogShown(content::WebUI* webui,
+                     content::RenderViewHost* render_view_host) override;
+  void OnDialogClosed(const std::string& json_retval) override;
+  void OnCloseContents(content::WebContents* source,
+                       bool* out_close_dialog) override;
+  bool ShouldShowDialogTitle() const override;
 
   // The certificate being viewed.
   scoped_refptr<net::X509Certificate> cert_;
@@ -79,18 +76,17 @@ class CertificateViewerDialog : public CertificateViewerModalDialog {
   // to the certificate pointer is added for the lifetime of the certificate
   // viewer.
   explicit CertificateViewerDialog(net::X509Certificate* cert);
-  virtual ~CertificateViewerDialog();
+  ~CertificateViewerDialog() override;
 
   // CertificateViewerModalDialog overrides.
-  virtual void Show(content::WebContents* web_contents,
-                    gfx::NativeWindow parent) OVERRIDE;
-  virtual web_modal::NativeWebContentsModalDialog
-  GetNativeWebContentsModalDialog() OVERRIDE;
+  void Show(content::WebContents* web_contents,
+            gfx::NativeWindow parent) override;
+  gfx::NativeWindow GetNativeWebContentsModalDialog() override;
 
  protected:
   // Overridden from ui::WebDialogDelegate:
-  virtual GURL GetDialogContentURL() const OVERRIDE;
-  virtual ui::ModalType GetDialogModalType() const OVERRIDE;
+  GURL GetDialogContentURL() const override;
+  ui::ModalType GetDialogModalType() const override;
 
  private:
   ConstrainedWebDialogDelegate* dialog_;
@@ -104,10 +100,10 @@ class CertificateViewerDialogHandler : public content::WebUIMessageHandler {
  public:
   CertificateViewerDialogHandler(CertificateViewerModalDialog* dialog,
                                  net::X509Certificate* cert);
-  virtual ~CertificateViewerDialogHandler();
+  ~CertificateViewerDialogHandler() override;
 
   // Overridden from WebUIMessageHandler
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
  private:
   // Brings up the export certificate dialog for the chosen certificate in the

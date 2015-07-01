@@ -24,7 +24,6 @@ class DevToolsTargetsUIHandler {
  public:
   typedef base::Callback<void(const std::string&,
                               const base::ListValue&)> Callback;
-  typedef base::Callback<void(DevToolsTargetImpl*)> TargetCallback;
 
   DevToolsTargetsUIHandler(const std::string& source_id,
                            const Callback& callback);
@@ -40,8 +39,7 @@ class DevToolsTargetsUIHandler {
 
   DevToolsTargetImpl* GetTarget(const std::string& target_id);
 
-  virtual void Open(const std::string& browser_id, const std::string& url,
-                    const TargetCallback& callback);
+  virtual void Open(const std::string& browser_id, const std::string& url);
 
   virtual scoped_refptr<content::DevToolsAgentHost> GetBrowserAgentHost(
       const std::string& browser_id);
@@ -68,9 +66,9 @@ class PortForwardingStatusSerializer
   typedef base::Callback<void(const base::Value&)> Callback;
 
   PortForwardingStatusSerializer(const Callback& callback, Profile* profile);
-  virtual ~PortForwardingStatusSerializer();
+  ~PortForwardingStatusSerializer() override;
 
-  virtual void PortStatusChanged(const DevicesStatus&) OVERRIDE;
+  void PortStatusChanged(const ForwardingStatus& status) override;
 
  private:
   Callback callback_;

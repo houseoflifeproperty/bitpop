@@ -24,9 +24,10 @@
 #include "core/svg/SVGGraphicsElement.h"
 
 #include "core/SVGNames.h"
-#include "core/rendering/svg/RenderSVGPath.h"
-#include "core/rendering/svg/RenderSVGResource.h"
-#include "core/rendering/svg/SVGPathData.h"
+#include "core/css/resolver/StyleResolver.h"
+#include "core/layout/svg/LayoutSVGPath.h"
+#include "core/layout/svg/SVGPathData.h"
+#include "core/svg/SVGElementRareData.h"
 #include "platform/transforms/AffineTransform.h"
 
 namespace blink {
@@ -43,7 +44,14 @@ SVGGraphicsElement::~SVGGraphicsElement()
 {
 }
 
-PassRefPtr<SVGMatrixTearOff> SVGGraphicsElement::getTransformToElement(SVGElement* target, ExceptionState& exceptionState)
+DEFINE_TRACE(SVGGraphicsElement)
+{
+    visitor->trace(m_transform);
+    SVGElement::trace(visitor);
+    SVGTests::trace(visitor);
+}
+
+PassRefPtrWillBeRawPtr<SVGMatrixTearOff> SVGGraphicsElement::getTransformToElement(SVGElement* target, ExceptionState& exceptionState)
 {
     AffineTransform ctm = getCTM(AllowStyleUpdate);
 
@@ -111,42 +119,56 @@ AffineTransform SVGGraphicsElement::getScreenCTM(StyleUpdateStrategy styleUpdate
     return computeCTM(ScreenScope, styleUpdateStrategy);
 }
 
-PassRefPtr<SVGMatrixTearOff> SVGGraphicsElement::getCTMFromJavascript()
+PassRefPtrWillBeRawPtr<SVGMatrixTearOff> SVGGraphicsElement::getCTMFromJavascript()
 {
     return SVGMatrixTearOff::create(getCTM());
 }
 
-PassRefPtr<SVGMatrixTearOff> SVGGraphicsElement::getScreenCTMFromJavascript()
+PassRefPtrWillBeRawPtr<SVGMatrixTearOff> SVGGraphicsElement::getScreenCTMFromJavascript()
 {
     return SVGMatrixTearOff::create(getScreenCTM());
 }
 
-AffineTransform SVGGraphicsElement::animatedLocalTransform() const
+bool SVGGraphicsElement::hasAnimatedLocalTransform() const
+{
+    const ComputedStyle* style = layoutObject() ? layoutObject()->style() : nullptr;
+
+    // Each of these is used in SVGGraphicsElement::calculateAnimatedLocalTransform to create an animated local transform.
+    return (style && style->hasTransform()) || !m_transform->currentValue()->isEmpty() || hasSVGRareData();
+}
+
+AffineTransform SVGGraphicsElement::calculateAnimatedLocalTransform() const
 {
     AffineTransform matrix;
-    RenderStyle* style = renderer() ? renderer()->style() : 0;
+    const ComputedStyle* style = layoutObject() ? layoutObject()->style() : nullptr;
 
     // If CSS property was set, use that, otherwise fallback to attribute (if set).
     if (style && style->hasTransform()) {
         TransformationMatrix transform;
         float zoom = style->effectiveZoom();
 
-        // CSS transforms operate with pre-scaled lengths. To make this work with SVG
-        // (which applies the zoom factor globally, at the root level) we
-        //
-        //   * pre-scale the bounding box (to bring it into the same space as the other CSS values)
-        //   * invert the zoom factor (to effectively compute the CSS transform under a 1.0 zoom)
-        //
-        // Note: objectBoundingBox is an emptyRect for elements like pattern or clipPath.
-        // See the "Object bounding box units" section of http://dev.w3.org/csswg/css3-transforms/
-        if (zoom != 1) {
-            FloatRect scaledBBox = renderer()->objectBoundingBox();
-            scaledBBox.scale(zoom);
-            transform.scale(1 / zoom);
-            style->applyTransform(transform, scaledBBox);
-            transform.scale(zoom);
+        // SVGTextElements need special handling for the text positioning code.
+        if (isSVGTextElement(this)) {
+            // Do not take into account SVG's zoom rules, transform-origin, or percentage values.
+            style->applyTransform(transform, LayoutSize(0, 0), ComputedStyle::ExcludeTransformOrigin);
         } else {
-            style->applyTransform(transform, renderer()->objectBoundingBox());
+            // CSS transforms operate with pre-scaled lengths. To make this work with SVG
+            // (which applies the zoom factor globally, at the root level) we
+            //
+            //   * pre-scale the bounding box (to bring it into the same space as the other CSS values)
+            //   * invert the zoom factor (to effectively compute the CSS transform under a 1.0 zoom)
+            //
+            // Note: objectBoundingBox is an emptyRect for elements like pattern or clipPath.
+            // See the "Object bounding box units" section of http://dev.w3.org/csswg/css3-transforms/
+            if (zoom != 1) {
+                FloatRect scaledBBox = layoutObject()->objectBoundingBox();
+                scaledBBox.scale(zoom);
+                transform.scale(1 / zoom);
+                style->applyTransform(transform, scaledBBox);
+                transform.scale(zoom);
+            } else {
+                style->applyTransform(transform, layoutObject()->objectBoundingBox());
+            }
         }
 
         // Flatten any 3D transform.
@@ -155,59 +177,37 @@ AffineTransform SVGGraphicsElement::animatedLocalTransform() const
         m_transform->currentValue()->concatenate(matrix);
     }
 
-    if (m_supplementalTransform)
-        return *m_supplementalTransform * matrix;
+    if (hasSVGRareData())
+        return *svgRareData()->animateMotionTransform() * matrix;
     return matrix;
 }
 
-AffineTransform* SVGGraphicsElement::supplementalTransform()
+AffineTransform* SVGGraphicsElement::animateMotionTransform()
 {
-    if (!m_supplementalTransform)
-        m_supplementalTransform = adoptPtr(new AffineTransform);
-    return m_supplementalTransform.get();
-}
-
-bool SVGGraphicsElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        SVGTests::addSupportedAttributes(supportedAttributes);
-        supportedAttributes.add(SVGNames::transformAttr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
-void SVGGraphicsElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
+    return ensureSVGRareData()->animateMotionTransform();
 }
 
 void SVGGraphicsElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGElement::svgAttributeChanged(attrName);
-        return;
-    }
-
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
-    // Reattach so the isValid() check will be run again during renderer creation.
+    // Reattach so the isValid() check will be run again during layoutObject creation.
     if (SVGTests::isKnownAttribute(attrName)) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
         lazyReattachIfAttached();
         return;
     }
 
-    RenderObject* object = renderer();
-    if (!object)
-        return;
-
     if (attrName == SVGNames::transformAttr) {
+        LayoutObject* object = layoutObject();
+        if (!object)
+            return;
+
+        SVGElement::InvalidationGuard invalidationGuard(this);
         object->setNeedsTransformUpdate();
-        RenderSVGResource::markForLayoutAndParentResourceInvalidation(object);
+        markForLayoutAndParentResourceInvalidation(object);
         return;
     }
 
-    ASSERT_NOT_REACHED();
+    SVGElement::svgAttributeChanged(attrName);
 }
 
 SVGElement* SVGGraphicsElement::nearestViewportElement() const
@@ -217,7 +217,7 @@ SVGElement* SVGGraphicsElement::nearestViewportElement() const
             return toSVGElement(current);
     }
 
-    return 0;
+    return nullptr;
 }
 
 SVGElement* SVGGraphicsElement::farthestViewportElement() const
@@ -235,28 +235,27 @@ FloatRect SVGGraphicsElement::getBBox()
     document().updateLayoutIgnorePendingStylesheets();
 
     // FIXME: Eventually we should support getBBox for detached elements.
-    if (!renderer())
+    if (!layoutObject())
         return FloatRect();
 
-    return renderer()->objectBoundingBox();
+    return layoutObject()->objectBoundingBox();
 }
 
-PassRefPtr<SVGRectTearOff> SVGGraphicsElement::getBBoxFromJavascript()
+PassRefPtrWillBeRawPtr<SVGRectTearOff> SVGGraphicsElement::getBBoxFromJavascript()
 {
     return SVGRectTearOff::create(SVGRect::create(getBBox()), 0, PropertyIsNotAnimVal);
 }
 
-RenderObject* SVGGraphicsElement::createRenderer(RenderStyle*)
+LayoutObject* SVGGraphicsElement::createLayoutObject(const ComputedStyle&)
 {
     // By default, any subclass is expected to do path-based drawing
-    return new RenderSVGPath(this);
+    return new LayoutSVGPath(this);
 }
 
 void SVGGraphicsElement::toClipPath(Path& path)
 {
     updatePathFromGraphicsElement(this, path);
-    // FIXME: How do we know the element has done a layout?
-    path.transform(animatedLocalTransform());
+    path.transform(calculateAnimatedLocalTransform());
 }
 
 }

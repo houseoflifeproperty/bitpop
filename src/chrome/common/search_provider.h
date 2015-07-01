@@ -14,6 +14,7 @@ enum OSDDType {
 
   // The Open Search Description URL was given by Javascript.
   EXPLICIT_PROVIDER,
+  OSDD_TYPE_LAST = EXPLICIT_PROVIDER
 };
 
 // The install state of the search provider (not installed, installed, default).
@@ -32,7 +33,9 @@ enum InstallState {
   INSTALLED_BUT_NOT_DEFAULT = 1,
 
   // The search provider is set as the user's default.
-  INSTALLED_AS_DEFAULT = 2
+  INSTALLED_AS_DEFAULT = 2,
+
+  INSTALLED_STATE_LAST = INSTALLED_AS_DEFAULT
 };
 
 }  // namespace search_provider

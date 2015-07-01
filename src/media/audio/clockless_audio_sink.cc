@@ -5,8 +5,6 @@
 #include "media/audio/clockless_audio_sink.h"
 
 #include "base/threading/simple_thread.h"
-#include "base/time/time.h"
-#include "media/base/audio_renderer_sink.h"
 
 namespace media {
 
@@ -35,7 +33,7 @@ class ClocklessAudioSinkThread : public base::DelegateSimpleThread::Delegate {
 
  private:
    // Call Render() repeatedly, keeping track of the rendering time.
-   virtual void Run() OVERRIDE {
+  void Run() override {
      base::TimeTicks start;
      while (!stop_event_->IsSignaled()) {
        int frames_received = callback_->Render(audio_bus_.get(), 0);
@@ -44,10 +42,10 @@ class ClocklessAudioSinkThread : public base::DelegateSimpleThread::Delegate {
          base::PlatformThread::YieldCurrentThread();
        } else if (start.is_null()) {
          // First time we processed some audio, so record the starting time.
-         start = base::TimeTicks::HighResNow();
+         start = base::TimeTicks::Now();
        } else {
          // Keep track of the last time data was rendered.
-         playback_time_ = base::TimeTicks::HighResNow() - start;
+         playback_time_ = base::TimeTicks::Now() - start;
        }
      }
    }

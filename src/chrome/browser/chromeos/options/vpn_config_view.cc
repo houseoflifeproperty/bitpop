@@ -4,7 +4,6 @@
 
 #include "chrome/browser/chromeos/options/vpn_config_view.h"
 
-#include "ash/system/chromeos/network/network_connect.h"
 #include "base/bind.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -24,6 +23,7 @@
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/combobox_model.h"
+#include "ui/chromeos/network/network_connect.h"
 #include "ui/events/event.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/combobox/combobox.h"
@@ -106,11 +106,11 @@ namespace internal {
 class ProviderTypeComboboxModel : public ui::ComboboxModel {
  public:
   ProviderTypeComboboxModel();
-  virtual ~ProviderTypeComboboxModel();
+  ~ProviderTypeComboboxModel() override;
 
   // Overridden from ui::ComboboxModel:
-  virtual int GetItemCount() const OVERRIDE;
-  virtual base::string16 GetItemAt(int index) OVERRIDE;
+  int GetItemCount() const override;
+  base::string16 GetItemAt(int index) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ProviderTypeComboboxModel);
@@ -119,11 +119,11 @@ class ProviderTypeComboboxModel : public ui::ComboboxModel {
 class VpnServerCACertComboboxModel : public ui::ComboboxModel {
  public:
   VpnServerCACertComboboxModel();
-  virtual ~VpnServerCACertComboboxModel();
+  ~VpnServerCACertComboboxModel() override;
 
   // Overridden from ui::ComboboxModel:
-  virtual int GetItemCount() const OVERRIDE;
-  virtual base::string16 GetItemAt(int index) OVERRIDE;
+  int GetItemCount() const override;
+  base::string16 GetItemAt(int index) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(VpnServerCACertComboboxModel);
@@ -132,11 +132,11 @@ class VpnServerCACertComboboxModel : public ui::ComboboxModel {
 class VpnUserCertComboboxModel : public ui::ComboboxModel {
  public:
   VpnUserCertComboboxModel();
-  virtual ~VpnUserCertComboboxModel();
+  ~VpnUserCertComboboxModel() override;
 
   // Overridden from ui::ComboboxModel:
-  virtual int GetItemCount() const OVERRIDE;
-  virtual base::string16 GetItemAt(int index) OVERRIDE;
+  int GetItemCount() const override;
+  base::string16 GetItemAt(int index) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(VpnUserCertComboboxModel);
@@ -374,7 +374,8 @@ bool VPNConfigView::Login() {
                                                 false);
     }
 
-    ash::network_connect::CreateConfigurationAndConnect(&properties, shared);
+    ui::NetworkConnect::Get()->CreateConfigurationAndConnect(&properties,
+                                                             shared);
   } else {
     const NetworkState* vpn = NetworkHandler::Get()->network_state_handler()->
         GetNetworkState(service_path_);
@@ -386,7 +387,7 @@ bool VPNConfigView::Login() {
     }
     base::DictionaryValue properties;
     SetConfigProperties(&properties);
-    ash::network_connect::ConfigureNetworkAndConnect(
+    ui::NetworkConnect::Get()->ConfigureNetworkAndConnect(
         service_path_, properties, false /* not shared */);
   }
   return true;  // Close dialog.
@@ -692,10 +693,9 @@ void VPNConfigView::Init() {
   Refresh();
 
   if (vpn) {
-    NetworkHandler::Get()->network_configuration_handler()->GetProperties(
-        service_path_,
-        base::Bind(&VPNConfigView::InitFromProperties,
-                   weak_ptr_factory_.GetWeakPtr()),
+    NetworkHandler::Get()->network_configuration_handler()->GetShillProperties(
+        service_path_, base::Bind(&VPNConfigView::InitFromProperties,
+                                  weak_ptr_factory_.GetWeakPtr()),
         base::Bind(&VPNConfigView::GetPropertiesError,
                    weak_ptr_factory_.GetWeakPtr()));
   }
@@ -999,7 +999,7 @@ void VPNConfigView::UpdateErrorLabel() {
     const NetworkState* vpn = NetworkHandler::Get()->network_state_handler()->
         GetNetworkState(service_path_);
     if (vpn && vpn->connection_state() == shill::kStateFailure)
-      error_msg = ash::network_connect::ErrorString(
+      error_msg = ui::NetworkConnect::Get()->GetShillErrorString(
           vpn->last_error(), vpn->path());
   }
   if (!error_msg.empty()) {
@@ -1025,10 +1025,10 @@ bool VPNConfigView::IsUserCertValid() const {
   if (index < 0)
     return false;
   // Currently only hardware-backed user certificates are valid.
-  if (CertLibrary::Get()->IsHardwareBacked() &&
-      !CertLibrary::Get()->IsCertHardwareBackedAt(
-          CertLibrary::CERT_TYPE_USER, index))
+  if (!CertLibrary::Get()->IsCertHardwareBackedAt(CertLibrary::CERT_TYPE_USER,
+                                                  index)) {
     return false;
+  }
   return true;
 }
 

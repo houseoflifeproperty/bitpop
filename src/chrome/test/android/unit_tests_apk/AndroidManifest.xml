@@ -10,12 +10,12 @@ found in the LICENSE file.
       android:versionCode="1"
       android:versionName="1.0">
 
-    <uses-sdk android:minSdkVersion="14" android:targetSdkVersion="20" />
+    <uses-sdk android:minSdkVersion="16" android:targetSdkVersion="22" />
 
-    <application android:label="ChromeNativeTests"
+    <application android:label="NativeTests"
             android:name="org.chromium.chrome.unit_tests_apk.ChromeNativeTestApplication">
-        <activity android:name="org.chromium.native_test.ChromeNativeTestActivity"
-                android:label="ChromeNativeTest"
+        <activity android:name="org.chromium.native_test.NativeTestActivity"
+                android:label="NativeTest"
                 android:configChanges="orientation|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -23,6 +23,10 @@ found in the LICENSE file.
             </intent-filter>
         </activity>
     </application>
+
+    <instrumentation android:name="org.chromium.native_test.NativeTestInstrumentationTestRunner"
+            android:targetPackage="org.chromium.native_test"
+            android:label="Instrumentation entry point for org.chromium.native_test"/>
 
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.INTERNET"/>

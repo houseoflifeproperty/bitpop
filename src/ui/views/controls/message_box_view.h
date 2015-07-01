@@ -23,6 +23,9 @@ class Textfield;
 // and Cancel buttons.
 class VIEWS_EXPORT MessageBoxView : public View {
  public:
+  // Internal class name.
+  static const char kViewClassName[];
+
   enum Options {
     NO_OPTIONS = 0,
     // For a message from a web page (not from Chrome's UI), such as script
@@ -49,7 +52,7 @@ class VIEWS_EXPORT MessageBoxView : public View {
 
   explicit MessageBoxView(const InitParams& params);
 
-  virtual ~MessageBoxView();
+  ~MessageBoxView() override;
 
   // Returns the text box.
   views::Textfield* text_box() { return prompt_field_; }
@@ -74,14 +77,15 @@ class VIEWS_EXPORT MessageBoxView : public View {
   void SetLink(const base::string16& text, LinkListener* listener);
 
   // View:
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  void GetAccessibleState(ui::AXViewState* state) override;
 
  protected:
   // View:
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE;
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override;
   // Handles Ctrl-C and writes the message in the system clipboard.
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
+  const char* GetClassName() const override;
 
  private:
   // Sets up the layout manager and initializes the message labels and prompt

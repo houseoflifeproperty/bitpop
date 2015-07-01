@@ -32,7 +32,7 @@
 #include "core/html/HTMLFormControlsCollection.h"
 #include "core/html/HTMLLegendElement.h"
 #include "core/html/HTMLObjectElement.h"
-#include "core/rendering/RenderFieldset.h"
+#include "core/layout/LayoutFieldset.h"
 #include "wtf/StdLibExtras.h"
 
 namespace blink {
@@ -50,7 +50,7 @@ PassRefPtrWillBeRawPtr<HTMLFieldSetElement> HTMLFieldSetElement::create(Document
     return adoptRefWillBeNoop(new HTMLFieldSetElement(document, form));
 }
 
-void HTMLFieldSetElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLFieldSetElement)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_associatedElements);
@@ -58,10 +58,28 @@ void HTMLFieldSetElement::trace(Visitor* visitor)
     HTMLFormControlElement::trace(visitor);
 }
 
+bool HTMLFieldSetElement::matchesValidityPseudoClasses() const
+{
+    return true;
+}
+
+bool HTMLFieldSetElement::isValidElement()
+{
+    const FormAssociatedElement::List& elements = associatedElements();
+    for (unsigned i = 0; i < elements.size(); ++i) {
+        if (elements[i]->isFormControlElement()) {
+            HTMLFormControlElement* control = toHTMLFormControlElement(elements[i].get());
+            if (!control->checkValidity(0, CheckValidityDispatchNoEvent))
+                return false;
+        }
+    }
+    return true;
+}
+
 void HTMLFieldSetElement::invalidateDisabledStateUnder(Element& base)
 {
-    for (HTMLFormControlElement* element = Traversal<HTMLFormControlElement>::firstWithin(base); element; element = Traversal<HTMLFormControlElement>::next(*element, &base))
-        element->ancestorDisabledStateWasChanged();
+    for (HTMLFormControlElement& element : Traversal<HTMLFormControlElement>::descendantsOf(base))
+        element.ancestorDisabledStateWasChanged();
 }
 
 void HTMLFieldSetElement::disabledAttributeChanged()
@@ -74,8 +92,8 @@ void HTMLFieldSetElement::disabledAttributeChanged()
 void HTMLFieldSetElement::childrenChanged(const ChildrenChange& change)
 {
     HTMLFormControlElement::childrenChanged(change);
-    for (HTMLLegendElement* legend = Traversal<HTMLLegendElement>::firstChild(*this); legend; legend = Traversal<HTMLLegendElement>::nextSibling(*legend))
-        invalidateDisabledStateUnder(*legend);
+    for (HTMLLegendElement& legend : Traversal<HTMLLegendElement>::childrenOf(*this))
+        invalidateDisabledStateUnder(legend);
 }
 
 bool HTMLFieldSetElement::supportsFocus() const
@@ -89,9 +107,9 @@ const AtomicString& HTMLFieldSetElement::formControlType() const
     return fieldset;
 }
 
-RenderObject* HTMLFieldSetElement::createRenderer(RenderStyle*)
+LayoutObject* HTMLFieldSetElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderFieldset(this);
+    return new LayoutFieldset(this);
 }
 
 HTMLLegendElement* HTMLFieldSetElement::legend() const
@@ -114,16 +132,16 @@ void HTMLFieldSetElement::refreshElementsIfNeeded() const
 
     m_associatedElements.clear();
 
-    for (HTMLElement* element = Traversal<HTMLElement>::firstWithin(*this); element; element = Traversal<HTMLElement>::next(*element, this)) {
-        if (isHTMLObjectElement(*element)) {
-            m_associatedElements.append(toHTMLObjectElement(element));
+    for (HTMLElement& element : Traversal<HTMLElement>::descendantsOf(*this)) {
+        if (isHTMLObjectElement(element)) {
+            m_associatedElements.append(toHTMLObjectElement(&element));
             continue;
         }
 
-        if (!element->isFormControlElement())
+        if (!element.isFormControlElement())
             continue;
 
-        m_associatedElements.append(toHTMLFormControlElement(element));
+        m_associatedElements.append(toHTMLFormControlElement(&element));
     }
 }
 

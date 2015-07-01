@@ -16,23 +16,28 @@ group("resources") {
 #              (generate_components_resources action)
 grit("components_resources") {
   source = "components_resources.grd"
+
   # TODO(hashimoto): Remove this line.
   output_name = "components_resources_new"
   outputs = [
     "grit/components_resources.h",
     "components_resources.pak",
   ]
+  output_dir = "$root_gen_dir/components"
 }
 
 # GYP version: components/components_resources.gyp
 #              (generate_scaled_components_resources action)
 grit("components_scaled_resources") {
   source = "components_scaled_resources.grd"
+
   # TODO(hashimoto): Remove this line.
   output_name = "components_scaled_resources_new"
   outputs = [
     "grit/components_scaled_resources.h",
     "components_resources_100_percent.pak",
     "components_resources_200_percent.pak",
+    "components_resources_300_percent.pak",
   ]
+  output_dir = "$root_gen_dir/components"
 }

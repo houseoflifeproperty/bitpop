@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#import "chrome/browser/ui/app_list/app_list_service_mac.h"
+#import "chrome/browser/ui/app_list/app_list_service_cocoa_mac.h"
 
 #include <vector>
 
@@ -21,7 +21,7 @@ namespace test {
 class AppListServiceMacTestApi {
  public:
   static AppListWindowController* window_controller() {
-    return AppListServiceMac::GetInstance()->window_controller_;
+    return AppListServiceCocoaMac::GetInstance()->window_controller_;
   }
 };
 
@@ -50,7 +50,7 @@ class AppListServiceMacInteractiveTest : public InProcessBrowserTest,
   }
 
   // testing::Test overrides:
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // At tear-down, NOTIFICATION_APP_TERMINATING should have been sent for the
     // browser shutdown. References to browser-owned objects must be removed
     // from the app list UI.
@@ -62,25 +62,20 @@ class AppListServiceMacInteractiveTest : public InProcessBrowserTest,
   }
 
   // AppShimHandler::Host overrides:
-  virtual void OnAppLaunchComplete(apps::AppShimLaunchResult result) OVERRIDE {
+  void OnAppLaunchComplete(apps::AppShimLaunchResult result) override {
     // AppList shims are always given APP_SHIM_LAUNCH_DUPLICATE_HOST, indicating
     // that the shim process should immediately close.
     EXPECT_EQ(apps::APP_SHIM_LAUNCH_DUPLICATE_HOST, result);
     ++launch_count_;
   }
-  virtual void OnAppClosed() OVERRIDE {
-    NOTREACHED();
-  }
-  virtual void OnAppHide() OVERRIDE {}
-  virtual void OnAppRequestUserAttention(
-      apps::AppShimAttentionType type) OVERRIDE {}
-  virtual base::FilePath GetProfilePath() const OVERRIDE {
+  void OnAppClosed() override { NOTREACHED(); }
+  void OnAppHide() override {}
+  void OnAppRequestUserAttention(apps::AppShimAttentionType type) override {}
+  base::FilePath GetProfilePath() const override {
     NOTREACHED();  // Currently unused in this test.
     return base::FilePath();
   }
-  virtual std::string GetAppId() const OVERRIDE {
-    return app_mode::kAppListModeId;
-  }
+  std::string GetAppId() const override { return app_mode::kAppListModeId; }
 
   int launch_count_;
 

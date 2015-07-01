@@ -27,7 +27,6 @@
 #define CheckedArithmetic_h
 
 #include "wtf/Assertions.h"
-#include "wtf/EnumClass.h"
 #include "wtf/TypeTraits.h"
 
 #include <limits>
@@ -67,11 +66,11 @@
 
 namespace WTF {
 
-ENUM_CLASS(CheckedState)
+enum class CheckedState
 {
     DidOverflow,
     DidNotOverflow
-} ENUM_CLASS_END(CheckedState);
+};
 
 class CrashOnOverflow {
 protected:
@@ -112,7 +111,7 @@ private:
 
 template <typename T, class OverflowHandler = CrashOnOverflow> class Checked;
 template <typename T> struct RemoveChecked;
-template <typename T> struct RemoveChecked<Checked<T> >;
+template <typename T> struct RemoveChecked<Checked<T>>;
 
 template <typename Target, typename Source, bool targetSigned = std::numeric_limits<Target>::is_signed, bool sourceSigned = std::numeric_limits<Source>::is_signed> struct BoundsChecker;
 template <typename Target, typename Source> struct BoundsChecker<Target, Source, false, false> {
@@ -178,12 +177,12 @@ template <typename T> struct RemoveChecked {
     static const CleanType DefaultValue = 0;
 };
 
-template <typename T> struct RemoveChecked<Checked<T, CrashOnOverflow> > {
+template <typename T> struct RemoveChecked<Checked<T, CrashOnOverflow>> {
     typedef typename RemoveChecked<T>::CleanType CleanType;
     static const CleanType DefaultValue = 0;
 };
 
-template <typename T> struct RemoveChecked<Checked<T, RecordOverflow> > {
+template <typename T> struct RemoveChecked<Checked<T, RecordOverflow>> {
     typedef typename RemoveChecked<T>::CleanType CleanType;
     static const CleanType DefaultValue = 0;
 };
@@ -251,7 +250,7 @@ template <typename LHS, typename RHS, typename ResultType> struct ArithmeticOper
                     return false;
             }
         } // if the signs do not match this operation can't overflow
-        result = lhs + rhs;
+        result = static_cast<ResultType>(lhs + rhs);
         return true;
     }
 
@@ -266,7 +265,7 @@ template <typename LHS, typename RHS, typename ResultType> struct ArithmeticOper
                     return false;
             }
         } // if the signs match this operation can't overflow
-        result = lhs - rhs;
+        result = static_cast<ResultType>(lhs - rhs);
         return true;
     }
 
@@ -291,7 +290,7 @@ template <typename LHS, typename RHS, typename ResultType> struct ArithmeticOper
                     return false;
             }
         }
-        result = lhs * rhs;
+        result = static_cast<ResultType>(lhs * rhs);
         return true;
     }
 

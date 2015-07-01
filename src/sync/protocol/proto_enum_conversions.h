@@ -35,6 +35,9 @@ SYNC_EXPORT_PRIVATE const char* GetPageTransitionRedirectTypeString(
     sync_pb::SyncEnums::PageTransitionRedirectType
         redirect_type);
 
+SYNC_EXPORT_PRIVATE const char* GetWifiCredentialSecurityClassString(
+    sync_pb::WifiCredentialSpecifics::SecurityClass security_class);
+
 SYNC_EXPORT const char* GetUpdatesSourceString(
     sync_pb::GetUpdatesCallerInfo::GetUpdatesSource updates_source);
 
@@ -53,6 +56,14 @@ SYNC_EXPORT_PRIVATE const char* GetActionString(
 SYNC_EXPORT_PRIVATE const char* GetLaunchTypeString(
     sync_pb::AppSpecifics::LaunchType launch_type);
 
+SYNC_EXPORT_PRIVATE const char* GetWalletInfoTypeString(
+    sync_pb::AutofillWalletSpecifics::WalletInfoType wallet_info_type);
+
+SYNC_EXPORT_PRIVATE const char* GetWalletCardStatusString(
+    sync_pb::WalletMaskedCreditCard::WalletCardStatus wallet_card_status);
+
+SYNC_EXPORT_PRIVATE const char* GetWalletCardTypeString(
+    sync_pb::WalletMaskedCreditCard::WalletCardType wallet_card_type);
 
 const char* GetDeviceTypeString(sync_pb::SyncEnums::DeviceType device_type);
 

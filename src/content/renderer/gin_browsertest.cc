@@ -28,7 +28,7 @@ class TestGinObject : public gin::Wrappable<TestGinObject> {
 
  private:
   TestGinObject(bool* alive) : alive_(alive) { *alive_ = true; }
-  virtual ~TestGinObject() { *alive_ = false; }
+  ~TestGinObject() override { *alive_ = false; }
 
   bool* alive_;
 
@@ -40,10 +40,10 @@ gin::WrapperInfo TestGinObject::kWrapperInfo = { gin::kEmbedderNativeGin };
 class GinBrowserTest : public RenderViewTest {
  public:
   GinBrowserTest() {}
-  virtual ~GinBrowserTest() {}
+  ~GinBrowserTest() override {}
 
-  virtual void SetUp() OVERRIDE {
-    CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+  void SetUp() override {
+    base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
         switches::kJavaScriptFlags, "--expose_gc");
 
     RenderViewTest::SetUp();

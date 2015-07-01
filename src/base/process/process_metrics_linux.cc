@@ -399,17 +399,36 @@ size_t GetSystemCommitCharge() {
   return meminfo.total - meminfo.free - meminfo.buffers - meminfo.cached;
 }
 
-// Exposed for testing.
 int ParseProcStatCPU(const std::string& input) {
-  std::vector<std::string> proc_stats;
-  if (!internal::ParseProcStats(input, &proc_stats))
+  // |input| may be empty if the process disappeared somehow.
+  // e.g. http://crbug.com/145811.
+  if (input.empty())
     return -1;
 
-  if (proc_stats.size() <= internal::VM_STIME)
+  size_t start = input.find_last_of(')');
+  if (start == input.npos)
     return -1;
-  int utime = GetProcStatsFieldAsInt64(proc_stats, internal::VM_UTIME);
-  int stime = GetProcStatsFieldAsInt64(proc_stats, internal::VM_STIME);
-  return utime + stime;
+
+  // Number of spaces remaining until reaching utime's index starting after the
+  // last ')'.
+  int num_spaces_remaining = internal::VM_UTIME - 1;
+
+  size_t i = start;
+  while ((i = input.find(' ', i + 1)) != input.npos) {
+    // Validate the assumption that there aren't any contiguous spaces
+    // in |input| before utime.
+    DCHECK_NE(input[i - 1], ' ');
+    if (--num_spaces_remaining == 0) {
+      int utime = 0;
+      int stime = 0;
+      if (sscanf(&input.data()[i], "%d %d", &utime, &stime) != 2)
+        return -1;
+
+      return utime + stime;
+    }
+  }
+
+  return -1;
 }
 
 const char kProcSelfExe[] = "/proc/self/exe";
@@ -524,7 +543,7 @@ scoped_ptr<Value> SystemMemoryInfoKB::ToValue() const {
   res->SetInteger("gem_size", gem_size);
 #endif
 
-  return res.PassAs<Value>();
+  return res.Pass();
 }
 
 // exposed for testing
@@ -650,13 +669,13 @@ bool GetSystemMemoryInfo(SystemMemoryInfoKB* meminfo) {
   }
 
 #if defined(OS_CHROMEOS)
-  // Report on Chrome OS GEM object graphics memory. /var/run/debugfs_gpu is a
+  // Report on Chrome OS GEM object graphics memory. /run/debugfs_gpu is a
   // bind mount into /sys/kernel/debug and synchronously reading the in-memory
   // files in /sys is fast.
 #if defined(ARCH_CPU_ARM_FAMILY)
-  FilePath geminfo_file("/var/run/debugfs_gpu/exynos_gem_objects");
+  FilePath geminfo_file("/run/debugfs_gpu/exynos_gem_objects");
 #else
-  FilePath geminfo_file("/var/run/debugfs_gpu/i915_gem_objects");
+  FilePath geminfo_file("/run/debugfs_gpu/i915_gem_objects");
 #endif
   std::string geminfo_data;
   meminfo->gem_objects = -1;
@@ -731,7 +750,7 @@ scoped_ptr<Value> SystemDiskInfo::ToValue() const {
   res->SetDouble("io_time", static_cast<double>(io_time));
   res->SetDouble("weighted_io_time", static_cast<double>(weighted_io_time));
 
-  return res.PassAs<Value>();
+  return res.Pass();
 }
 
 bool IsValidDiskName(const std::string& candidate) {
@@ -856,7 +875,7 @@ scoped_ptr<Value> SwapInfo::ToValue() const {
   else
     res->SetDouble("compression_ratio", 0);
 
-  return res.PassAs<Value>();
+  return res.Pass();
 }
 
 void GetSwapInfo(SwapInfo* swap_info) {

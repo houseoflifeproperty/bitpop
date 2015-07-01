@@ -23,11 +23,8 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "base/timer/timer.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/auth/login_performer.h"
 #include "chrome/browser/chromeos/login/lock/webui_screen_locker.h"
-#include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/session/user_session_manager.h"
 #include "chrome/browser/chromeos/login/supervised/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
@@ -46,6 +43,7 @@
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/login/auth/authenticator.h"
 #include "chromeos/login/auth/extended_authenticator.h"
+#include "chromeos/network/portal_detector/network_portal_detector.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/user_manager/user_manager.h"
 #include "components/user_manager/user_type.h"
@@ -84,7 +82,7 @@ class ScreenLockObserver : public SessionManagerClient::StubDelegate,
     DBusThreadManager::Get()->GetSessionManagerClient()->SetStubDelegate(this);
   }
 
-  virtual ~ScreenLockObserver() {
+  ~ScreenLockObserver() override {
     if (DBusThreadManager::IsInitialized()) {
       DBusThreadManager::Get()->GetSessionManagerClient()->SetStubDelegate(
           NULL);
@@ -94,14 +92,12 @@ class ScreenLockObserver : public SessionManagerClient::StubDelegate,
   bool session_started() const { return session_started_; }
 
   // SessionManagerClient::StubDelegate overrides:
-  virtual void LockScreenForStub() OVERRIDE {
-    ScreenLocker::HandleLockScreenRequest();
-  }
+  void LockScreenForStub() override { ScreenLocker::HandleLockScreenRequest(); }
 
   // NotificationObserver overrides:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     if (type == chrome::NOTIFICATION_SESSION_STARTED)
       session_started_ = true;
     else
@@ -109,7 +105,7 @@ class ScreenLockObserver : public SessionManagerClient::StubDelegate,
   }
 
   // UserAddingScreen::Observer overrides:
-  virtual void OnUserAddingFinished() OVERRIDE {
+  void OnUserAddingFinished() override {
     UserAddingScreen::Get()->RemoveObserver(this);
     ScreenLocker::HandleLockScreenRequest();
   }
@@ -148,14 +144,11 @@ ScreenLocker::ScreenLocker(const user_manager::UserList& users)
   manager->Initialize(SOUND_UNLOCK,
                       bundle.GetRawDataResource(IDR_SOUND_UNLOCK_WAV));
 
-#if !defined(USE_ATHENA)
-  // crbug.com/408733
   ash::Shell::GetInstance()->
       lock_state_controller()->SetLockScreenDisplayedCallback(
           base::Bind(base::IgnoreResult(&ash::PlaySystemSoundIfSpokenFeedback),
                      static_cast<media::SoundsManager::SoundKey>(
                          chromeos::SOUND_LOCK)));
-#endif
 }
 
 void ScreenLocker::Init() {
@@ -164,8 +157,8 @@ void ScreenLocker::Init() {
   saved_ime_state_ = imm->GetActiveIMEState();
   imm->SetState(saved_ime_state_->Clone());
 
-  authenticator_ = LoginUtils::Get()->CreateAuthenticator(this);
-  extended_authenticator_ = new ExtendedAuthenticator(this);
+  authenticator_ = UserSessionManager::GetInstance()->CreateAuthenticator(this);
+  extended_authenticator_ = ExtendedAuthenticator::Create(this);
   delegate_.reset(new WebUIScreenLocker(this));
   delegate_->LockScreen();
 
@@ -285,13 +278,12 @@ void ScreenLocker::Authenticate(const UserContext& user_context) {
     }
   }
 
-  // TODO(antrim) : migrate to new authenticator for all types of users.
-  // http://crbug.com/351268
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&Authenticator::AuthenticateToUnlock,
-                 authenticator_.get(),
-                 user_context));
+      base::Bind(&ExtendedAuthenticator::AuthenticateToCheck,
+                 extended_authenticator_.get(),
+                 user_context,
+                 base::Closure()));
 }
 
 const user_manager::User* ScreenLocker::FindUnlockUser(
@@ -375,24 +367,19 @@ void ScreenLocker::HandleLockScreenRequest() {
     VLOG(1) << "Calling session manager's StopSession D-Bus method";
     DBusThreadManager::Get()->GetSessionManagerClient()->StopSession();
   }
+  // Close captive portal window and clear signin profile.
+  NetworkPortalDetector::Get()->OnLockScreenRequest();
 }
 
 // static
 void ScreenLocker::Show() {
-#if defined(USE_ATHENA)
-  // crbug.com/413926
-  return;
-#endif
-
   content::RecordAction(UserMetricsAction("ScreenLocker_Show"));
   DCHECK(base::MessageLoopForUI::IsCurrent());
 
   // Check whether the currently logged in user is a guest account and if so,
   // refuse to lock the screen (crosbug.com/23764).
-  // For a demo user, we should never show the lock screen (crosbug.com/27647).
-  if (user_manager::UserManager::Get()->IsLoggedInAsGuest() ||
-      user_manager::UserManager::Get()->IsLoggedInAsDemoUser()) {
-    VLOG(1) << "Refusing to lock screen for guest/demo account";
+  if (user_manager::UserManager::Get()->IsLoggedInAsGuest()) {
+    VLOG(1) << "Refusing to lock screen for guest account";
     return;
   }
 
@@ -423,16 +410,10 @@ void ScreenLocker::Show() {
 
 // static
 void ScreenLocker::Hide() {
-#if defined(USE_ATHENA)
-  // crbug.com/413926
-  return;
-#endif
-
   DCHECK(base::MessageLoopForUI::IsCurrent());
-  // For a guest/demo user, screen_locker_ would have never been initialized.
-  if (user_manager::UserManager::Get()->IsLoggedInAsGuest() ||
-      user_manager::UserManager::Get()->IsLoggedInAsDemoUser()) {
-    VLOG(1) << "Refusing to hide lock screen for guest/demo account";
+  // For a guest user, screen_locker_ would have never been initialized.
+  if (user_manager::UserManager::Get()->IsLoggedInAsGuest()) {
+    VLOG(1) << "Refusing to hide lock screen for guest account";
     return;
   }
 
@@ -502,10 +483,6 @@ void ScreenLocker::ScreenLockReady() {
   ash::Shell::GetInstance()->
       desktop_background_controller()->MoveDesktopToLockedContainer();
 
-  input_method::InputMethodManager::Get()
-      ->GetActiveIMEState()
-      ->EnableLockScreenLayouts();
-
   bool state = true;
   VLOG(1) << "Emitting SCREEN_LOCK_STATE_CHANGED with state=" << state;
   content::NotificationService::current()->Notify(
@@ -514,6 +491,10 @@ void ScreenLocker::ScreenLockReady() {
       content::Details<bool>(&state));
   VLOG(1) << "Calling session manager's HandleLockScreenShown D-Bus method";
   DBusThreadManager::Get()->GetSessionManagerClient()->NotifyLockScreenShown();
+
+  input_method::InputMethodManager::Get()
+      ->GetActiveIMEState()
+      ->EnableLockScreenLayouts();
 }
 
 content::WebUI* ScreenLocker::GetAssociatedWebUI() {

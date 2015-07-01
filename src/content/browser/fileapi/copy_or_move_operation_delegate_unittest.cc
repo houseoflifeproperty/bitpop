@@ -18,15 +18,16 @@
 #include "content/public/test/test_file_system_backend.h"
 #include "content/public/test/test_file_system_context.h"
 #include "content/test/fileapi_test_file_set.h"
-#include "storage/browser/blob/file_stream_reader.h"
 #include "storage/browser/fileapi/copy_or_move_file_validator.h"
 #include "storage/browser/fileapi/copy_or_move_operation_delegate.h"
+#include "storage/browser/fileapi/file_stream_reader.h"
 #include "storage/browser/fileapi/file_stream_writer.h"
 #include "storage/browser/fileapi/file_system_backend.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/fileapi/file_system_operation.h"
 #include "storage/browser/fileapi/file_system_url.h"
 #include "storage/browser/quota/quota_manager.h"
+#include "storage/common/fileapi/file_system_mount_option.h"
 #include "storage/common/fileapi/file_system_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -52,11 +53,11 @@ class TestValidatorFactory : public storage::CopyOrMoveFileValidatorFactory {
  public:
   // A factory that creates validators that accept everything or nothing.
   TestValidatorFactory() {}
-  virtual ~TestValidatorFactory() {}
+  ~TestValidatorFactory() override {}
 
-  virtual storage::CopyOrMoveFileValidator* CreateCopyOrMoveFileValidator(
+  storage::CopyOrMoveFileValidator* CreateCopyOrMoveFileValidator(
       const FileSystemURL& /*src_url*/,
-      const base::FilePath& /*platform_path*/) OVERRIDE {
+      const base::FilePath& /*platform_path*/) override {
     // Move arg management to TestValidator?
     return new TestValidator(true, true, std::string("2"));
   }
@@ -73,18 +74,18 @@ class TestValidatorFactory : public storage::CopyOrMoveFileValidatorFactory {
                                           base::File::FILE_ERROR_SECURITY),
           reject_string_(reject_string) {
     }
-    virtual ~TestValidator() {}
+    ~TestValidator() override {}
 
-    virtual void StartPreWriteValidation(
-        const ResultCallback& result_callback) OVERRIDE {
+    void StartPreWriteValidation(
+        const ResultCallback& result_callback) override {
       // Post the result since a real validator must do work asynchronously.
       base::MessageLoop::current()->PostTask(
           FROM_HERE, base::Bind(result_callback, result_));
     }
 
-    virtual void StartPostWriteValidation(
+    void StartPostWriteValidation(
         const base::FilePath& dest_platform_path,
-        const ResultCallback& result_callback) OVERRIDE {
+        const ResultCallback& result_callback) override {
       base::File::Error result = write_result_;
       std::string unsafe = dest_platform_path.BaseName().AsUTF8Unsafe();
       if (unsafe.find(reject_string_) != std::string::npos) {
@@ -740,7 +741,7 @@ TEST(LocalFileSystemCopyOrMoveOperationTest, StreamCopyHelper) {
   std::vector<int64> progress;
   CopyOrMoveOperationDelegate::StreamCopyHelper helper(
       reader.Pass(), writer.Pass(),
-      false,  // don't need flush
+      storage::FlushPolicy::NO_FLUSH_ON_COMPLETION,
       10,  // buffer size
       base::Bind(&RecordFileProgressCallback, base::Unretained(&progress)),
       base::TimeDelta());  // For testing, we need all the progress.
@@ -796,7 +797,7 @@ TEST(LocalFileSystemCopyOrMoveOperationTest, StreamCopyHelperWithFlush) {
   std::vector<int64> progress;
   CopyOrMoveOperationDelegate::StreamCopyHelper helper(
       reader.Pass(), writer.Pass(),
-      true,  // need flush
+      storage::FlushPolicy::NO_FLUSH_ON_COMPLETION,
       10,  // buffer size
       base::Bind(&RecordFileProgressCallback, base::Unretained(&progress)),
       base::TimeDelta());  // For testing, we need all the progress.
@@ -847,7 +848,7 @@ TEST(LocalFileSystemCopyOrMoveOperationTest, StreamCopyHelper_Cancel) {
   std::vector<int64> progress;
   CopyOrMoveOperationDelegate::StreamCopyHelper helper(
       reader.Pass(), writer.Pass(),
-      false,  // need_flush
+      storage::FlushPolicy::NO_FLUSH_ON_COMPLETION,
       10,  // buffer size
       base::Bind(&RecordFileProgressCallback, base::Unretained(&progress)),
       base::TimeDelta());  // For testing, we need all the progress.

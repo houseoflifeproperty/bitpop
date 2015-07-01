@@ -27,15 +27,12 @@
 #define RTCDTMFToneChangeEvent_h
 
 #include "modules/EventModules.h"
+#include "modules/mediastream/RTCDTMFToneChangeEventInit.h"
 #include "wtf/text/AtomicString.h"
 
 namespace blink {
 
-struct RTCDTMFToneChangeEventInit : public EventInit {
-    String tone;
-};
-
-class RTCDTMFToneChangeEvent FINAL : public Event {
+class RTCDTMFToneChangeEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~RTCDTMFToneChangeEvent();
@@ -46,9 +43,9 @@ public:
 
     const String& tone() const;
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     RTCDTMFToneChangeEvent();

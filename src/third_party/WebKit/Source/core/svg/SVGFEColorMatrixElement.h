@@ -25,12 +25,13 @@
 #include "core/svg/SVGAnimatedNumberList.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FEColorMatrix.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<ColorMatrixType>();
 
-class SVGFEColorMatrixElement FINAL : public SVGFilterPrimitiveStandardAttributes {
+class SVGFEColorMatrixElement final : public SVGFilterPrimitiveStandardAttributes {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGFEColorMatrixElement);
@@ -39,18 +40,18 @@ public:
     SVGAnimatedString* in1() { return m_in1.get(); }
     SVGAnimatedEnumeration<ColorMatrixType>* type() { return m_type.get(); }
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
     explicit SVGFEColorMatrixElement(Document&);
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
+    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual PassRefPtrWillBeRawPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
-    RefPtr<SVGAnimatedNumberList> m_values;
-    RefPtr<SVGAnimatedString> m_in1;
-    RefPtr<SVGAnimatedEnumeration<ColorMatrixType> > m_type;
+    RefPtrWillBeMember<SVGAnimatedNumberList> m_values;
+    RefPtrWillBeMember<SVGAnimatedString> m_in1;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<ColorMatrixType>> m_type;
 };
 
 } // namespace blink

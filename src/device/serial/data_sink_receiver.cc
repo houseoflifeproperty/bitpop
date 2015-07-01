@@ -7,55 +7,29 @@
 #include <limits>
 
 #include "base/bind.h"
-#include "device/serial/async_waiter.h"
+#include "base/message_loop/message_loop.h"
 
 namespace device {
 
-// Represents a flush of data that has not been completed.
-class DataSinkReceiver::PendingFlush {
- public:
-  PendingFlush();
-
-  // Initializes this PendingFlush with |num_bytes|, the number of bytes to
-  // flush.
-  void SetNumBytesToFlush(uint32_t num_bytes);
-
-  // Attempts to discard |bytes_to_flush_| bytes from |handle|. Returns
-  // MOJO_RESULT_OK on success, MOJO_RESULT_SHOULD_WAIT if fewer than
-  // |bytes_to_flush_| bytes were flushed or the error if one is encountered
-  // discarding data from |handle|.
-  MojoResult Flush(mojo::DataPipeConsumerHandle handle);
-
-  // Whether this PendingFlush has received the number of bytes to flush.
-  bool received_flush() { return received_flush_; }
-
- private:
-  // Whether this PendingFlush has received the number of bytes to flush.
-  bool received_flush_;
-
-  // The remaining number of bytes to flush.
-  uint32_t bytes_to_flush_;
-};
-
-// A ReadOnlyBuffer implementation that provides a view of a data pipe owned by
-// a DataSinkReceiver.
+// A ReadOnlyBuffer implementation that provides a view of a buffer owned by a
+// DataSinkReceiver.
 class DataSinkReceiver::Buffer : public ReadOnlyBuffer {
  public:
   Buffer(scoped_refptr<DataSinkReceiver> receiver,
          const char* buffer,
          uint32_t buffer_size);
-  virtual ~Buffer();
+  ~Buffer() override;
 
   void Cancel(int32_t error);
 
   // ReadOnlyBuffer overrides.
-  virtual const char* GetData() OVERRIDE;
-  virtual uint32_t GetSize() OVERRIDE;
-  virtual void Done(uint32_t bytes_read) OVERRIDE;
-  virtual void DoneWithError(uint32_t bytes_read, int32_t error) OVERRIDE;
+  const char* GetData() override;
+  uint32_t GetSize() override;
+  void Done(uint32_t bytes_read) override;
+  void DoneWithError(uint32_t bytes_read, int32_t error) override;
 
  private:
-  // The DataSinkReceiver whose data pipe we are providing a view.
+  // The DataSinkReceiver of whose buffer we are providing a view.
   scoped_refptr<DataSinkReceiver> receiver_;
 
   const char* buffer_;
@@ -68,34 +42,51 @@ class DataSinkReceiver::Buffer : public ReadOnlyBuffer {
   int32_t cancellation_error_;
 };
 
-DataSinkReceiver::DataSinkReceiver(const ReadyCallback& ready_callback,
-                                   const CancelCallback& cancel_callback,
-                                   const ErrorCallback& error_callback)
-    : ready_callback_(ready_callback),
+// A frame of data received from the client.
+class DataSinkReceiver::DataFrame {
+ public:
+  explicit DataFrame(mojo::Array<uint8_t> data,
+                     const mojo::Callback<void(uint32_t, int32_t)>& callback);
+
+  // Returns the number of unconsumed bytes remaining of this data frame.
+  uint32_t GetRemainingBytes();
+
+  // Returns a pointer to the remaining data to be consumed.
+  const char* GetData();
+
+  // Reports that |bytes_read| bytes have been consumed.
+  void OnDataConsumed(uint32_t bytes_read);
+
+  // Reports that an error occurred.
+  void ReportError(uint32_t bytes_read, int32_t error);
+
+ private:
+  mojo::Array<uint8_t> data_;
+  uint32_t offset_;
+  const mojo::Callback<void(uint32_t, int32_t)> callback_;
+};
+
+DataSinkReceiver::DataSinkReceiver(
+    mojo::InterfaceRequest<serial::DataSink> request,
+    const ReadyCallback& ready_callback,
+    const CancelCallback& cancel_callback,
+    const ErrorCallback& error_callback)
+    : binding_(this, request.Pass()),
+      ready_callback_(ready_callback),
       cancel_callback_(cancel_callback),
       error_callback_(error_callback),
+      current_error_(0),
       buffer_in_use_(NULL),
       shut_down_(false),
       weak_factory_(this) {
+  binding_.set_error_handler(this);
 }
 
 void DataSinkReceiver::ShutDown() {
   shut_down_ = true;
-  if (waiter_)
-    waiter_.reset();
 }
 
 DataSinkReceiver::~DataSinkReceiver() {
-}
-
-void DataSinkReceiver::Init(mojo::ScopedDataPipeConsumerHandle handle) {
-  if (handle_.is_valid()) {
-    DispatchFatalError();
-    return;
-  }
-
-  handle_ = handle.Pass();
-  StartWaiting();
 }
 
 void DataSinkReceiver::Cancel(int32_t error) {
@@ -103,7 +94,7 @@ void DataSinkReceiver::Cancel(int32_t error) {
   // response, that ReportBytesSentAndError message will appear to the
   // DataSinkClient to be caused by this Cancel message. In that case, we ignore
   // the cancel.
-  if (!pending_flushes_.empty() && !pending_flushes_.back()->received_flush())
+  if (current_error_)
     return;
 
   // If there is a buffer is in use, mark the buffer as cancelled and notify the
@@ -120,68 +111,57 @@ void DataSinkReceiver::Cancel(int32_t error) {
       cancel_callback_.Run(error);
     return;
   }
-  // If there is no buffer in use, immediately report the error and cancel the
-  // waiting for the data pipe if one exists. This transitions straight into the
-  // state after the sink has returned an error.
-  waiter_.reset();
-  ReportBytesSentAndError(0, error);
+  ReportError(0, error);
+}
+
+void DataSinkReceiver::OnData(
+    mojo::Array<uint8_t> data,
+    const mojo::Callback<void(uint32_t, int32_t)>& callback) {
+  if (current_error_) {
+    callback.Run(0, current_error_);
+    return;
+  }
+  pending_data_buffers_.push(
+      linked_ptr<DataFrame>(new DataFrame(data.Pass(), callback)));
+  if (!buffer_in_use_)
+    RunReadyCallback();
 }
 
 void DataSinkReceiver::OnConnectionError() {
   DispatchFatalError();
 }
 
-void DataSinkReceiver::StartWaiting() {
-  DCHECK(!waiter_ && !shut_down_);
-  waiter_.reset(
-      new AsyncWaiter(handle_.get(),
-                      MOJO_HANDLE_SIGNAL_READABLE,
-                      base::Bind(&DataSinkReceiver::OnDoneWaiting, this)));
-}
-
-void DataSinkReceiver::OnDoneWaiting(MojoResult result) {
-  DCHECK(waiter_ && !shut_down_);
-  waiter_.reset();
-  if (result != MOJO_RESULT_OK) {
-    DispatchFatalError();
+void DataSinkReceiver::RunReadyCallback() {
+  DCHECK(!shut_down_ && !current_error_);
+  // If data arrives while a call to RunReadyCallback() is posted, we can be
+  // called with buffer_in_use_ already set.
+  if (buffer_in_use_)
     return;
-  }
-  // If there are any queued flushes (from ReportBytesSentAndError()), let them
-  // flush data from the data pipe.
-  if (!pending_flushes_.empty()) {
-    MojoResult result = pending_flushes_.front()->Flush(handle_.get());
-    if (result == MOJO_RESULT_OK) {
-      pending_flushes_.pop();
-    } else if (result != MOJO_RESULT_SHOULD_WAIT) {
-      DispatchFatalError();
-      return;
-    }
-    StartWaiting();
-    return;
-  }
-  const void* data = NULL;
-  uint32_t num_bytes = std::numeric_limits<uint32_t>::max();
-  result = mojo::BeginReadDataRaw(
-      handle_.get(), &data, &num_bytes, MOJO_READ_DATA_FLAG_NONE);
-  if (result != MOJO_RESULT_OK) {
-    DispatchFatalError();
-    return;
-  }
-  buffer_in_use_ = new Buffer(this, static_cast<const char*>(data), num_bytes);
+  buffer_in_use_ =
+      new Buffer(this,
+                 pending_data_buffers_.front()->GetData(),
+                 pending_data_buffers_.front()->GetRemainingBytes());
   ready_callback_.Run(scoped_ptr<ReadOnlyBuffer>(buffer_in_use_));
 }
 
 void DataSinkReceiver::Done(uint32_t bytes_read) {
   if (!DoneInternal(bytes_read))
     return;
-  client()->ReportBytesSent(bytes_read);
-  StartWaiting();
+  pending_data_buffers_.front()->OnDataConsumed(bytes_read);
+  if (pending_data_buffers_.front()->GetRemainingBytes() == 0)
+    pending_data_buffers_.pop();
+  if (!pending_data_buffers_.empty()) {
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&DataSinkReceiver::RunReadyCallback,
+                   weak_factory_.GetWeakPtr()));
+  }
 }
 
 void DataSinkReceiver::DoneWithError(uint32_t bytes_read, int32_t error) {
   if (!DoneInternal(bytes_read))
     return;
-  ReportBytesSentAndError(bytes_read, error);
+  ReportError(bytes_read, error);
 }
 
 bool DataSinkReceiver::DoneInternal(uint32_t bytes_read) {
@@ -190,35 +170,23 @@ bool DataSinkReceiver::DoneInternal(uint32_t bytes_read) {
 
   DCHECK(buffer_in_use_);
   buffer_in_use_ = NULL;
-  MojoResult result = mojo::EndReadDataRaw(handle_.get(), bytes_read);
-  if (result != MOJO_RESULT_OK) {
-    DispatchFatalError();
-    return false;
-  }
   return true;
 }
 
-void DataSinkReceiver::ReportBytesSentAndError(uint32_t bytes_read,
-                                               int32_t error) {
-  // When we encounter an error, we must discard the data from any sends already
-  // in the data pipe before we can resume dispatching data to the sink. We add
-  // a pending flush here. The response containing the number of bytes to flush
-  // is handled in SetNumBytesToFlush(). The actual flush is handled in
-  // OnDoneWaiting().
-  pending_flushes_.push(linked_ptr<PendingFlush>(new PendingFlush()));
-  client()->ReportBytesSentAndError(
-      bytes_read,
-      error,
-      base::Bind(&DataSinkReceiver::SetNumBytesToFlush,
-                 weak_factory_.GetWeakPtr()));
+void DataSinkReceiver::ReportError(uint32_t bytes_read, int32_t error) {
+  // When we encounter an error, we must discard the data from any send buffers
+  // transmitted by the DataSink client before it receives this error.
+  DCHECK(error);
+  current_error_ = error;
+  while (!pending_data_buffers_.empty()) {
+    pending_data_buffers_.front()->ReportError(bytes_read, error);
+    pending_data_buffers_.pop();
+    bytes_read = 0;
+  }
 }
 
-void DataSinkReceiver::SetNumBytesToFlush(uint32_t bytes_to_flush) {
-  DCHECK(!pending_flushes_.empty());
-  DCHECK(!pending_flushes_.back()->received_flush());
-  pending_flushes_.back()->SetNumBytesToFlush(bytes_to_flush);
-  if (!waiter_)
-    StartWaiting();
+void DataSinkReceiver::ClearError() {
+  current_error_ = 0;
 }
 
 void DataSinkReceiver::DispatchFatalError() {
@@ -263,44 +231,54 @@ uint32_t DataSinkReceiver::Buffer::GetSize() {
 }
 
 void DataSinkReceiver::Buffer::Done(uint32_t bytes_read) {
+  scoped_refptr<DataSinkReceiver> receiver = receiver_;
+  receiver_ = nullptr;
   if (cancelled_)
-    receiver_->DoneWithError(bytes_read, cancellation_error_);
+    receiver->DoneWithError(bytes_read, cancellation_error_);
   else
-    receiver_->Done(bytes_read);
-  receiver_ = NULL;
+    receiver->Done(bytes_read);
   buffer_ = NULL;
   buffer_size_ = 0;
 }
 
 void DataSinkReceiver::Buffer::DoneWithError(uint32_t bytes_read,
                                              int32_t error) {
-  receiver_->DoneWithError(bytes_read, error);
-  receiver_ = NULL;
+  scoped_refptr<DataSinkReceiver> receiver = receiver_;
+  receiver_ = nullptr;
+  receiver->DoneWithError(bytes_read, error);
   buffer_ = NULL;
   buffer_size_ = 0;
 }
 
-DataSinkReceiver::PendingFlush::PendingFlush()
-    : received_flush_(false), bytes_to_flush_(0) {
+DataSinkReceiver::DataFrame::DataFrame(
+    mojo::Array<uint8_t> data,
+    const mojo::Callback<void(uint32_t, int32_t)>& callback)
+    : data_(data.Pass()), offset_(0), callback_(callback) {
+  DCHECK_LT(0u, data_.size());
 }
 
-void DataSinkReceiver::PendingFlush::SetNumBytesToFlush(uint32_t num_bytes) {
-  DCHECK(!received_flush_);
-  received_flush_ = true;
-  bytes_to_flush_ = num_bytes;
+// Returns the number of uncomsumed bytes remaining of this data frame.
+uint32_t DataSinkReceiver::DataFrame::GetRemainingBytes() {
+  return static_cast<uint32_t>(data_.size() - offset_);
 }
 
-MojoResult DataSinkReceiver::PendingFlush::Flush(
-    mojo::DataPipeConsumerHandle handle) {
-  DCHECK(received_flush_);
-  uint32_t num_bytes = bytes_to_flush_;
-  MojoResult result =
-      mojo::ReadDataRaw(handle, NULL, &num_bytes, MOJO_READ_DATA_FLAG_DISCARD);
-  if (result != MOJO_RESULT_OK)
-    return result;
-  DCHECK(num_bytes <= bytes_to_flush_);
-  bytes_to_flush_ -= num_bytes;
-  return bytes_to_flush_ == 0 ? MOJO_RESULT_OK : MOJO_RESULT_SHOULD_WAIT;
+// Returns a pointer to the remaining data to be consumed.
+const char* DataSinkReceiver::DataFrame::GetData() {
+  DCHECK_LT(offset_, data_.size());
+  return reinterpret_cast<const char*>(&data_[0]) + offset_;
+}
+
+void DataSinkReceiver::DataFrame::OnDataConsumed(uint32_t bytes_read) {
+  offset_ += bytes_read;
+  DCHECK_LE(offset_, data_.size());
+  if (offset_ == data_.size())
+    callback_.Run(offset_, 0);
+}
+void DataSinkReceiver::DataFrame::ReportError(uint32_t bytes_read,
+                                              int32_t error) {
+  offset_ += bytes_read;
+  DCHECK_LE(offset_, data_.size());
+  callback_.Run(offset_, error);
 }
 
 }  // namespace device

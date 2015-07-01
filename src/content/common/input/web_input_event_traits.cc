@@ -8,19 +8,116 @@
 #include <limits>
 
 #include "base/logging.h"
+#include "base/strings/stringprintf.h"
 
+using base::StringAppendF;
+using base::SStringPrintf;
 using blink::WebGestureEvent;
 using blink::WebInputEvent;
 using blink::WebKeyboardEvent;
 using blink::WebMouseEvent;
 using blink::WebMouseWheelEvent;
 using blink::WebTouchEvent;
+using blink::WebTouchPoint;
 using std::numeric_limits;
 
 namespace content {
 namespace {
 
 const int kInvalidTouchIndex = -1;
+
+void ApppendEventDetails(const WebKeyboardEvent& event, std::string* result) {
+  StringAppendF(result,
+                "{\n WinCode: %d\n NativeCode: %d\n IsSystem: %d\n"
+                " Text: %s\n UnmodifiedText: %s\n KeyIdentifier: %s\n}",
+                event.windowsKeyCode,
+                event.nativeKeyCode,
+                event.isSystemKey,
+                reinterpret_cast<const char*>(event.text),
+                reinterpret_cast<const char*>(event.unmodifiedText),
+                reinterpret_cast<const char*>(event.keyIdentifier));
+}
+
+void ApppendEventDetails(const WebMouseEvent& event, std::string* result) {
+  StringAppendF(result,
+                "{\n Button: %d\n Pos: (%d, %d)\n WindowPos: (%d, %d)\n"
+                " GlobalPos: (%d, %d)\n Movement: (%d, %d)\n Clicks: %d\n}",
+                event.button,
+                event.x,
+                event.y,
+                event.windowX,
+                event.windowY,
+                event.globalX,
+                event.globalY,
+                event.movementX,
+                event.movementY,
+                event.clickCount);
+}
+
+void ApppendEventDetails(const WebMouseWheelEvent& event, std::string* result) {
+  StringAppendF(result,
+                "{\n Delta: (%f, %f)\n WheelTicks: (%f, %f)\n Accel: (%f, %f)\n"
+                " ScrollByPage: %d\n HasPreciseScrollingDeltas: %d\n"
+                " Phase: (%d, %d)\n CanRubberband: (%d, %d)\n CanScroll: %d\n}",
+                event.deltaX,
+                event.deltaY,
+                event.wheelTicksX,
+                event.wheelTicksY,
+                event.accelerationRatioX,
+                event.accelerationRatioY,
+                event.scrollByPage,
+                event.hasPreciseScrollingDeltas,
+                event.phase,
+                event.momentumPhase,
+                event.canRubberbandLeft,
+                event.canRubberbandRight,
+                event.canScroll);
+}
+
+void ApppendEventDetails(const WebGestureEvent& event, std::string* result) {
+  StringAppendF(result,
+                "{\n Pos: (%d, %d)\n GlobalPos: (%d, %d)\n SourceDevice: %d\n"
+                " RawData: (%f, %f, %f, %f, %d)\n}",
+                event.x,
+                event.y,
+                event.globalX,
+                event.globalY,
+                event.sourceDevice,
+                event.data.scrollUpdate.deltaX,
+                event.data.scrollUpdate.deltaY,
+                event.data.scrollUpdate.velocityX,
+                event.data.scrollUpdate.velocityY,
+                event.data.scrollUpdate.previousUpdateInSequencePrevented);
+}
+
+void ApppendTouchPointDetails(const WebTouchPoint& point, std::string* result) {
+  StringAppendF(result,
+                 "  (ID: %d, State: %d, ScreenPos: (%f, %f), Pos: (%f, %f),"
+                     " Radius: (%f, %f), Rot: %f, Force: %f),\n",
+  point.id,
+  point.state,
+  point.screenPosition.x,
+  point.screenPosition.y,
+  point.position.x,
+  point.position.y,
+  point.radiusX,
+  point.radiusY,
+  point.rotationAngle,
+  point.force);
+}
+
+void ApppendEventDetails(const WebTouchEvent& event, std::string* result) {
+  StringAppendF(result,
+                "{\n Touches: %u, Cancelable: %d, CausesScrolling: %d,"
+                " uniqueTouchEventId: %u\n[\n",
+                event.touchesLength,
+                event.cancelable,
+                event.causesScrollingIfUncanceled,
+                static_cast<uint32>(event.uniqueTouchEventId));
+  for (unsigned i = 0; i < event.touchesLength; ++i)
+    ApppendTouchPointDetails(event.touches[i], result);
+  result->append(" ]\n}");
+}
 
 bool CanCoalesce(const WebKeyboardEvent& event_to_coalesce,
                  const WebKeyboardEvent& event) {
@@ -55,7 +152,8 @@ bool CanCoalesce(const WebMouseWheelEvent& event_to_coalesce,
          event.phase == event_to_coalesce.phase &&
          event.momentumPhase == event_to_coalesce.momentumPhase &&
          event.hasPreciseScrollingDeltas ==
-             event_to_coalesce.hasPreciseScrollingDeltas;
+             event_to_coalesce.hasPreciseScrollingDeltas &&
+         event.canScroll == event_to_coalesce.canScroll;
 }
 
 float GetUnacceleratedDelta(float accelerated_delta, float acceleration_ratio) {
@@ -111,8 +209,8 @@ bool CanCoalesce(const WebTouchEvent& event_to_coalesce,
       event.touchesLength > WebTouchEvent::touchesLengthCap)
     return false;
 
-  COMPILE_ASSERT(WebTouchEvent::touchesLengthCap <= sizeof(int32_t) * 8U,
-                 suboptimal_touches_length_cap_size);
+  static_assert(WebTouchEvent::touchesLengthCap <= sizeof(int32_t) * 8U,
+                "suboptimal touchesLengthCap size");
   // Ensure that we have a 1-to-1 mapping of pointer ids between touches.
   std::bitset<WebTouchEvent::touchesLengthCap> unmatched_event_touches(
       (1 << event.touchesLength) - 1);
@@ -143,6 +241,7 @@ void Coalesce(const WebTouchEvent& event_to_coalesce, WebTouchEvent* event) {
     if (old_event.touches[i_old].state == blink::WebTouchPoint::StateMoved)
       event->touches[i].state = blink::WebTouchPoint::StateMoved;
   }
+  event->causesScrollingIfUncanceled |= old_event.causesScrollingIfUncanceled;
 }
 
 bool CanCoalesce(const WebGestureEvent& event_to_coalesce,
@@ -173,6 +272,9 @@ void Coalesce(const WebGestureEvent& event_to_coalesce,
         event_to_coalesce.data.scrollUpdate.deltaX;
     event->data.scrollUpdate.deltaY +=
         event_to_coalesce.data.scrollUpdate.deltaY;
+    DCHECK_EQ(
+        event->data.scrollUpdate.previousUpdateInSequencePrevented,
+        event_to_coalesce.data.scrollUpdate.previousUpdateInSequencePrevented);
   } else if (event->type == WebInputEvent::GesturePinchUpdate) {
     event->data.pinchUpdate.scale *= event_to_coalesce.data.pinchUpdate.scale;
     // Ensure the scale remains bounded above 0 and below Infinity so that
@@ -183,6 +285,19 @@ void Coalesce(const WebGestureEvent& event_to_coalesce,
       event->data.pinchUpdate.scale = numeric_limits<float>::max();
   }
 }
+
+struct WebInputEventToString {
+  template <class EventType>
+  bool Execute(const WebInputEvent& event, std::string* result) const {
+    SStringPrintf(result, "%s (Time: %lf, Modifiers: %d)\n",
+                  WebInputEventTraits::GetName(event.type),
+                  event.timeStampSeconds,
+                  event.modifiers);
+    const EventType& typed_event = static_cast<const EventType&>(event);
+    ApppendEventDetails(typed_event, result);
+    return true;
+  }
+};
 
 struct WebInputEventSize {
   template <class EventType>
@@ -304,6 +419,12 @@ const char* WebInputEventTraits::GetName(WebInputEvent::Type type) {
   }
 #undef CASE_TYPE
   return "";
+}
+
+std::string WebInputEventTraits::ToString(const WebInputEvent& event) {
+  std::string result;
+  Apply(WebInputEventToString(), event.type, event, &result);
+  return result;
 }
 
 size_t WebInputEventTraits::GetSize(WebInputEvent::Type type) {

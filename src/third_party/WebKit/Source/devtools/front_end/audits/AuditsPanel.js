@@ -30,23 +30,28 @@
 
 /**
  * @constructor
- * @extends {WebInspector.PanelWithSidebarTree}
+ * @extends {WebInspector.PanelWithSidebar}
  */
 WebInspector.AuditsPanel = function()
 {
-    WebInspector.PanelWithSidebarTree.call(this, "audits");
-    this.registerRequiredCSS("panelEnablerView.css");
-    this.registerRequiredCSS("auditsPanel.css");
+    WebInspector.PanelWithSidebar.call(this, "audits");
+    this.registerRequiredCSS("ui/panelEnablerView.css");
+    this.registerRequiredCSS("audits/auditsPanel.css");
 
-    this.auditsTreeElement = new WebInspector.SidebarSectionTreeElement("", {}, true);
-    this.sidebarTree.appendChild(this.auditsTreeElement);
+    var sidebarTree = new TreeOutline();
+    sidebarTree.element.classList.add("sidebar-tree");
+    this.panelSidebarElement().appendChild(sidebarTree.element);
+    this.setDefaultFocusedElement(sidebarTree.element);
+
+    this.auditsTreeElement = new WebInspector.SidebarSectionTreeElement("");
+    sidebarTree.appendChild(this.auditsTreeElement);
     this.auditsTreeElement.listItemElement.classList.add("hidden");
 
     this.auditsItemTreeElement = new WebInspector.AuditsSidebarTreeElement(this);
     this.auditsTreeElement.appendChild(this.auditsItemTreeElement);
 
-    this.auditResultsTreeElement = new WebInspector.SidebarSectionTreeElement(WebInspector.UIString("RESULTS"), {}, true);
-    this.sidebarTree.appendChild(this.auditResultsTreeElement);
+    this.auditResultsTreeElement = new WebInspector.SidebarSectionTreeElement(WebInspector.UIString("RESULTS"));
+    sidebarTree.appendChild(this.auditResultsTreeElement);
     this.auditResultsTreeElement.expand();
 
     this._constructCategories();
@@ -55,16 +60,16 @@ WebInspector.AuditsPanel = function()
     this._launcherView = new WebInspector.AuditLauncherView(this._auditController);
     for (var id in this.categoriesById)
         this._launcherView.addCategory(this.categoriesById[id]);
+
+    var extensionCategories = WebInspector.extensionServer.auditCategories();
+    for (var i = 0; i < extensionCategories.length; ++i) {
+        var category = extensionCategories[i];
+        this.addCategory(new WebInspector.AuditExtensionCategory(category.extensionOrigin, category.id, category.displayName, category.ruleCount));
+    }
+    WebInspector.extensionServer.addEventListener(WebInspector.ExtensionServer.Events.AuditCategoryAdded, this._extensionAuditCategoryAdded, this);
 }
 
 WebInspector.AuditsPanel.prototype = {
-    /**
-     * @return {boolean}
-     */
-    canSearch: function()
-    {
-        return false;
-    },
 
     /**
      * @return {!Object.<string, !WebInspector.AuditCategory>}
@@ -108,10 +113,9 @@ WebInspector.AuditsPanel.prototype = {
      */
     auditFinishedCallback: function(mainResourceURL, results)
     {
-        var children = this.auditResultsTreeElement.children;
         var ordinal = 1;
-        for (var i = 0; i < children.length; ++i) {
-            if (children[i].mainResourceURL === mainResourceURL)
+        for (var child of this.auditResultsTreeElement.children()) {
+            if (child.mainResourceURL === mainResourceURL)
                 ordinal++;
         }
 
@@ -152,7 +156,7 @@ WebInspector.AuditsPanel.prototype = {
         this._visibleView = x;
 
         if (x)
-            x.show(this.mainElement());
+            this.splitWidget().setMainWidget(x);
     },
 
     wasShown: function()
@@ -168,7 +172,16 @@ WebInspector.AuditsPanel.prototype = {
         this.auditResultsTreeElement.removeChildren();
     },
 
-    __proto__: WebInspector.PanelWithSidebarTree.prototype
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _extensionAuditCategoryAdded: function(event)
+    {
+        var category = /** @type {!WebInspector.ExtensionAuditCategory} */ (event.data);
+        this.addCategory(new WebInspector.AuditExtensionCategory(category.extensionOrigin, category.id, category.displayName, category.ruleCount));
+    },
+
+    __proto__: WebInspector.PanelWithSidebar.prototype
 }
 
 /**
@@ -294,7 +307,7 @@ WebInspector.AuditRule.prototype = {
     /**
      * @param {!WebInspector.Target} target
      * @param {!Array.<!WebInspector.NetworkRequest>} requests
-     * @param {function(!WebInspector.AuditRuleResult)} callback
+     * @param {function(?WebInspector.AuditRuleResult)} callback
      * @param {!WebInspector.Progress} progress
      */
     run: function(target, requests, callback, progress)
@@ -311,7 +324,7 @@ WebInspector.AuditRule.prototype = {
      * @param {!WebInspector.Target} target
      * @param {!Array.<!WebInspector.NetworkRequest>} requests
      * @param {!WebInspector.AuditRuleResult} result
-     * @param {function(!WebInspector.AuditRuleResult)} callback
+     * @param {function(?WebInspector.AuditRuleResult)} callback
      * @param {!WebInspector.Progress} progress
      */
     doRun: function(target, requests, result, callback, progress)
@@ -427,12 +440,12 @@ WebInspector.AuditRuleResult.prototype = {
     addFormatted: function(format, vararg)
     {
         var substitutions = Array.prototype.slice.call(arguments, 1);
-        var fragment = document.createDocumentFragment();
+        var fragment = createDocumentFragment();
 
         function append(a, b)
         {
             if (!(b instanceof Node))
-                b = document.createTextNode(b);
+                b = createTextNode(b);
             a.appendChild(b);
             return a;
         }
@@ -453,7 +466,7 @@ WebInspector.AuditsSidebarTreeElement = function(panel)
 {
     this._panel = panel;
     this.small = false;
-    WebInspector.SidebarTreeElement.call(this, "audits-sidebar-tree-item", WebInspector.UIString("Audits"), "", null, false);
+    WebInspector.SidebarTreeElement.call(this, "audits-sidebar-tree-item", WebInspector.UIString("Audits"));
 }
 
 WebInspector.AuditsSidebarTreeElement.prototype = {
@@ -463,6 +476,7 @@ WebInspector.AuditsSidebarTreeElement.prototype = {
     },
 
     /**
+     * @override
      * @return {boolean}
      */
     onselect: function()
@@ -497,11 +511,12 @@ WebInspector.AuditResultSidebarTreeElement = function(panel, results, mainResour
     this._panel = panel;
     this.results = results;
     this.mainResourceURL = mainResourceURL;
-    WebInspector.SidebarTreeElement.call(this, "audit-result-sidebar-tree-item", String.sprintf("%s (%d)", mainResourceURL, ordinal), "", {}, false);
+    WebInspector.SidebarTreeElement.call(this, "audit-result-sidebar-tree-item", String.sprintf("%s (%d)", mainResourceURL, ordinal));
 }
 
 WebInspector.AuditResultSidebarTreeElement.prototype = {
     /**
+     * @override
      * @return {boolean}
      */
     onselect: function()
@@ -516,6 +531,40 @@ WebInspector.AuditResultSidebarTreeElement.prototype = {
     },
 
     __proto__: WebInspector.SidebarTreeElement.prototype
+}
+
+WebInspector.AuditsPanel.show = function()
+{
+    WebInspector.inspectorView.setCurrentPanel(WebInspector.AuditsPanel.instance());
+}
+
+/**
+ * @return {!WebInspector.AuditsPanel}
+ */
+WebInspector.AuditsPanel.instance = function()
+{
+    if (!WebInspector.AuditsPanel._instanceObject)
+        WebInspector.AuditsPanel._instanceObject = new WebInspector.AuditsPanel();
+    return WebInspector.AuditsPanel._instanceObject;
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.PanelFactory}
+ */
+WebInspector.AuditsPanelFactory = function()
+{
+}
+
+WebInspector.AuditsPanelFactory.prototype = {
+    /**
+     * @override
+     * @return {!WebInspector.Panel}
+     */
+    createPanel: function()
+    {
+        return WebInspector.AuditsPanel.instance();
+    }
 }
 
 // Contributed audit rules should go into this namespace.

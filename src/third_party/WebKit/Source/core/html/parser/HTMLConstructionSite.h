@@ -56,7 +56,7 @@ public:
     {
     }
 
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(parent);
         visitor->trace(nextChild);
@@ -105,14 +105,14 @@ class Document;
 class Element;
 class HTMLFormElement;
 
-class HTMLConstructionSite FINAL {
+class HTMLConstructionSite final {
     WTF_MAKE_NONCOPYABLE(HTMLConstructionSite);
     DISALLOW_ALLOCATION();
 public:
     HTMLConstructionSite(Document*, ParserContentPolicy);
     HTMLConstructionSite(DocumentFragment*, ParserContentPolicy);
     ~HTMLConstructionSite();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     void detach();
 
@@ -256,7 +256,7 @@ private:
 
     TaskQueue m_taskQueue;
 
-    class PendingText FINAL {
+    class PendingText final {
         DISALLOW_ALLOCATION();
     public:
         PendingText()
@@ -297,7 +297,7 @@ private:
             return stringBuilder.isEmpty();
         }
 
-        void trace(Visitor*);
+        DECLARE_TRACE();
 
         RefPtrWillBeMember<ContainerNode> parent;
         RefPtrWillBeMember<Node> nextChild;

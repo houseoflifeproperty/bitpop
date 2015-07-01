@@ -31,6 +31,7 @@
 #ifndef SharedWorkerGlobalScope_h
 #define SharedWorkerGlobalScope_h
 
+#include "core/CoreExport.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerThreadStartupData.h"
@@ -41,17 +42,17 @@ namespace blink {
 class MessageEvent;
 class SharedWorkerThread;
 
-class SharedWorkerGlobalScope FINAL : public WorkerGlobalScope {
+class SharedWorkerGlobalScope final : public WorkerGlobalScope {
     DEFINE_WRAPPERTYPEINFO();
 public:
     typedef WorkerGlobalScope Base;
-    static PassRefPtrWillBeRawPtr<SharedWorkerGlobalScope> create(const String& name, SharedWorkerThread*, PassOwnPtrWillBeRawPtr<WorkerThreadStartupData>);
+    static PassRefPtrWillBeRawPtr<SharedWorkerGlobalScope> create(const String& name, SharedWorkerThread*, PassOwnPtr<WorkerThreadStartupData>);
     virtual ~SharedWorkerGlobalScope();
 
-    virtual bool isSharedWorkerGlobalScope() const OVERRIDE { return true; }
+    virtual bool isSharedWorkerGlobalScope() const override { return true; }
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
     // Setters/Getters for attributes in SharedWorkerGlobalScope.idl
     DEFINE_ATTRIBUTE_EVENT_LISTENER(connect);
@@ -59,16 +60,16 @@ public:
 
     SharedWorkerThread* thread();
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
-    SharedWorkerGlobalScope(const String& name, const KURL&, const String& userAgent, SharedWorkerThread*, PassOwnPtrWillBeRawPtr<WorkerClients>);
-    virtual void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) OVERRIDE;
+    SharedWorkerGlobalScope(const String& name, const KURL&, const String& userAgent, SharedWorkerThread*, const SecurityOrigin*, PassOwnPtrWillBeRawPtr<WorkerClients>);
+    virtual void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) override;
 
     String m_name;
 };
 
-PassRefPtrWillBeRawPtr<MessageEvent> createConnectEvent(PassRefPtrWillBeRawPtr<MessagePort>);
+CORE_EXPORT PassRefPtrWillBeRawPtr<MessageEvent> createConnectEvent(PassRefPtrWillBeRawPtr<MessagePort>);
 
 } // namespace blink
 

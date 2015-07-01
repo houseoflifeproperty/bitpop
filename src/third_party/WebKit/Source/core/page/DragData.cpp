@@ -49,16 +49,6 @@ DragData::DragData(DataObject* data, const IntPoint& clientPosition, const IntPo
 {
 }
 
-DragData::DragData(const String&, const IntPoint& clientPosition, const IntPoint& globalPosition,
-    DragOperation sourceOperationMask, DragApplicationFlags flags)
-    : m_clientPosition(clientPosition)
-    , m_globalPosition(globalPosition)
-    , m_platformDragData(0)
-    , m_draggingSourceOperationMask(sourceOperationMask)
-    , m_applicationFlags(flags)
-{
-}
-
 static bool containsHTML(const DataObject* dropData)
 {
     return dropData->types().contains(mimeTypeTextHTML);
@@ -85,21 +75,18 @@ bool DragData::containsFiles() const
     return m_platformDragData->containsFilenames();
 }
 
-unsigned DragData::numberOfFiles() const
+int DragData::modifiers() const
 {
-    return m_platformDragData->filenames().size();
+    return m_platformDragData->modifiers();
 }
 
-int DragData::modifierKeyState() const
-{
-    return m_platformDragData->modifierKeyState();
-}
-
-void DragData::asFilenames(Vector<String>& result) const
+void DragData::asFilePaths(Vector<String>& result) const
 {
     const Vector<String>& filenames = m_platformDragData->filenames();
-    for (size_t i = 0; i < filenames.size(); ++i)
-        result.append(filenames[i]);
+    for (size_t i = 0; i < filenames.size(); ++i) {
+        if (!filenames[i].isEmpty())
+            result.append(filenames[i]);
+    }
 }
 
 bool DragData::containsPlainText() const

@@ -4,7 +4,7 @@
 
 #include "content/browser/renderer_host/input/synthetic_gesture_controller.h"
 
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "content/browser/renderer_host/input/synthetic_gesture_target.h"
 #include "content/common/input/synthetic_smooth_scroll_gesture_params.h"
 #include "content/common/input_messages.h"
@@ -61,9 +61,10 @@ void SyntheticGestureController::OnDidFlushInput() {
     return;
 
   DCHECK(!pending_gesture_queue_.IsEmpty());
+  auto pending_gesture_result = pending_gesture_result_.Pass();
   StopGesture(*pending_gesture_queue_.FrontGesture(),
               pending_gesture_queue_.FrontCallback(),
-              *pending_gesture_result_.Pass());
+              *pending_gesture_result);
   pending_gesture_queue_.Pop();
 
   if (!pending_gesture_queue_.IsEmpty())

@@ -130,8 +130,8 @@ class VirtualSocketServerTest : public testing::Test {
                               kIPv6AnyAddress(IPAddress(in6addr_any), 0) {
   }
 
-  void CheckAddressIncrementalization(const SocketAddress& post,
-                                      const SocketAddress& pre) {
+  void CheckPortIncrementalization(const SocketAddress& post,
+                                   const SocketAddress& pre) {
     EXPECT_EQ(post.port(), pre.port() + 1);
     IPAddress post_ip = post.ipaddr();
     IPAddress pre_ip = pre.ipaddr();
@@ -139,14 +139,13 @@ class VirtualSocketServerTest : public testing::Test {
     if (post_ip.family() == AF_INET) {
       in_addr pre_ipv4 = pre_ip.ipv4_address();
       in_addr post_ipv4 = post_ip.ipv4_address();
-      int difference = ntohl(post_ipv4.s_addr) - ntohl(pre_ipv4.s_addr);
-      EXPECT_EQ(1, difference);
+      EXPECT_EQ(post_ipv4.s_addr, pre_ipv4.s_addr);
     } else if (post_ip.family() == AF_INET6) {
       in6_addr post_ip6 = post_ip.ipv6_address();
       in6_addr pre_ip6 = pre_ip.ipv6_address();
       uint32* post_as_ints = reinterpret_cast<uint32*>(&post_ip6.s6_addr);
       uint32* pre_as_ints = reinterpret_cast<uint32*>(&pre_ip6.s6_addr);
-      EXPECT_EQ(post_as_ints[3], pre_as_ints[3] + 1);
+      EXPECT_EQ(post_as_ints[3], pre_as_ints[3]);
     }
   }
 
@@ -179,7 +178,7 @@ class VirtualSocketServerTest : public testing::Test {
       SocketAddress next_client2_addr;
       EXPECT_EQ(3, client2->SendTo("foo", 3, server_addr));
       EXPECT_TRUE(client1->CheckNextPacket("foo", 3, &next_client2_addr));
-      CheckAddressIncrementalization(next_client2_addr, client2_addr);
+      CheckPortIncrementalization(next_client2_addr, client2_addr);
       // EXPECT_EQ(next_client2_addr.port(), client2_addr.port() + 1);
 
       SocketAddress server_addr2;
@@ -606,6 +605,9 @@ class VirtualSocketServerTest : public testing::Test {
     }
   }
 
+  // It is important that initial_addr's port has to be 0 such that the
+  // incremental port behavior could ensure the 2 Binds result in different
+  // address.
   void BandwidthTest(const SocketAddress& initial_addr) {
     AsyncSocket* send_socket =
         ss_->CreateAsyncSocket(initial_addr.family(), SOCK_DGRAM);
@@ -634,6 +636,9 @@ class VirtualSocketServerTest : public testing::Test {
     ss_->set_bandwidth(0);
   }
 
+  // It is important that initial_addr's port has to be 0 such that the
+  // incremental port behavior could ensure the 2 Binds result in different
+  // address.
   void DelayTest(const SocketAddress& initial_addr) {
     time_t seed = ::time(NULL);
     LOG(LS_VERBOSE) << "seed = " << seed;
@@ -736,7 +741,7 @@ class VirtualSocketServerTest : public testing::Test {
 
   // Test cross-family datagram sending between a client bound to client_addr
   // and a server bound to server_addr. shouldSucceed indicates if sending is
-  // expected to succed or not.
+  // expected to succeed or not.
   void CrossFamilyDatagramTest(const SocketAddress& client_addr,
                                const SocketAddress& server_addr,
                                bool shouldSucceed) {
@@ -759,7 +764,7 @@ class VirtualSocketServerTest : public testing::Test {
       EXPECT_EQ(client1_addr, bound_server_addr);
     } else {
       EXPECT_EQ(-1, client2->SendTo("foo", 3, bound_server_addr));
-      EXPECT_FALSE(client1->CheckNextPacket("foo", 3, 0));
+      EXPECT_TRUE(client1->CheckNoPacket());
     }
   }
 
@@ -776,37 +781,37 @@ class VirtualSocketServerTest : public testing::Test {
   const SocketAddress kIPv6AnyAddress;
 };
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(basic_v4)) {
+TEST_F(VirtualSocketServerTest, basic_v4) {
   SocketAddress ipv4_test_addr(IPAddress(INADDR_ANY), 5000);
   BasicTest(ipv4_test_addr);
 }
 
-TEST_F(VirtualSocketServerTest,DISABLED_ON_MAC( basic_v6)) {
+TEST_F(VirtualSocketServerTest, basic_v6) {
   SocketAddress ipv6_test_addr(IPAddress(in6addr_any), 5000);
   BasicTest(ipv6_test_addr);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(connect_v4)) {
+TEST_F(VirtualSocketServerTest, connect_v4) {
   ConnectTest(kIPv4AnyAddress);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(connect_v6)) {
+TEST_F(VirtualSocketServerTest, connect_v6) {
   ConnectTest(kIPv6AnyAddress);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(connect_to_non_listener_v4)) {
+TEST_F(VirtualSocketServerTest, connect_to_non_listener_v4) {
   ConnectToNonListenerTest(kIPv4AnyAddress);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(connect_to_non_listener_v6)) {
+TEST_F(VirtualSocketServerTest, connect_to_non_listener_v6) {
   ConnectToNonListenerTest(kIPv6AnyAddress);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(close_during_connect_v4)) {
+TEST_F(VirtualSocketServerTest, close_during_connect_v4) {
   CloseDuringConnectTest(kIPv4AnyAddress);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(close_during_connect_v6)) {
+TEST_F(VirtualSocketServerTest, close_during_connect_v6) {
   CloseDuringConnectTest(kIPv6AnyAddress);
 }
 
@@ -818,11 +823,11 @@ TEST_F(VirtualSocketServerTest, close_v6) {
   CloseTest(kIPv6AnyAddress);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(tcp_send_v4)) {
+TEST_F(VirtualSocketServerTest, tcp_send_v4) {
   TcpSendTest(kIPv4AnyAddress);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(tcp_send_v6)) {
+TEST_F(VirtualSocketServerTest, tcp_send_v6) {
   TcpSendTest(kIPv6AnyAddress);
 }
 
@@ -834,126 +839,122 @@ TEST_F(VirtualSocketServerTest, TcpSendsPacketsInOrder_v6) {
   TcpSendsPacketsInOrderTest(kIPv6AnyAddress);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(bandwidth_v4)) {
-  SocketAddress ipv4_test_addr(IPAddress(INADDR_ANY), 1000);
-  BandwidthTest(ipv4_test_addr);
+TEST_F(VirtualSocketServerTest, bandwidth_v4) {
+  BandwidthTest(kIPv4AnyAddress);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(bandwidth_v6)) {
-  SocketAddress ipv6_test_addr(IPAddress(in6addr_any), 1000);
-  BandwidthTest(ipv6_test_addr);
+TEST_F(VirtualSocketServerTest, bandwidth_v6) {
+  BandwidthTest(kIPv6AnyAddress);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(delay_v4)) {
-  SocketAddress ipv4_test_addr(IPAddress(INADDR_ANY), 1000);
-  DelayTest(ipv4_test_addr);
+TEST_F(VirtualSocketServerTest, delay_v4) {
+  DelayTest(kIPv4AnyAddress);
 }
 
 // See: https://code.google.com/p/webrtc/issues/detail?id=2409
 TEST_F(VirtualSocketServerTest, DISABLED_delay_v6) {
-  SocketAddress ipv6_test_addr(IPAddress(in6addr_any), 1000);
-  DelayTest(ipv6_test_addr);
+  DelayTest(kIPv6AnyAddress);
 }
 
 // Works, receiving socket sees 127.0.0.2.
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(CanConnectFromMappedIPv6ToIPv4Any)) {
+TEST_F(VirtualSocketServerTest, CanConnectFromMappedIPv6ToIPv4Any) {
   CrossFamilyConnectionTest(SocketAddress("::ffff:127.0.0.2", 0),
                             SocketAddress("0.0.0.0", 5000),
                             true);
 }
 
 // Fails.
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(CantConnectFromUnMappedIPv6ToIPv4Any)) {
+TEST_F(VirtualSocketServerTest, CantConnectFromUnMappedIPv6ToIPv4Any) {
   CrossFamilyConnectionTest(SocketAddress("::2", 0),
                             SocketAddress("0.0.0.0", 5000),
                             false);
 }
 
 // Fails.
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(CantConnectFromUnMappedIPv6ToMappedIPv6)) {
+TEST_F(VirtualSocketServerTest, CantConnectFromUnMappedIPv6ToMappedIPv6) {
   CrossFamilyConnectionTest(SocketAddress("::2", 0),
                             SocketAddress("::ffff:127.0.0.1", 5000),
                             false);
 }
 
 // Works. receiving socket sees ::ffff:127.0.0.2.
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(CanConnectFromIPv4ToIPv6Any)) {
+TEST_F(VirtualSocketServerTest, CanConnectFromIPv4ToIPv6Any) {
   CrossFamilyConnectionTest(SocketAddress("127.0.0.2", 0),
                             SocketAddress("::", 5000),
                             true);
 }
 
 // Fails.
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(CantConnectFromIPv4ToUnMappedIPv6)) {
+TEST_F(VirtualSocketServerTest, CantConnectFromIPv4ToUnMappedIPv6) {
   CrossFamilyConnectionTest(SocketAddress("127.0.0.2", 0),
                             SocketAddress("::1", 5000),
                             false);
 }
 
 // Works. Receiving socket sees ::ffff:127.0.0.1.
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(CanConnectFromIPv4ToMappedIPv6)) {
+TEST_F(VirtualSocketServerTest, CanConnectFromIPv4ToMappedIPv6) {
   CrossFamilyConnectionTest(SocketAddress("127.0.0.1", 0),
                             SocketAddress("::ffff:127.0.0.2", 5000),
                             true);
 }
 
 // Works, receiving socket sees a result from GetNextIP.
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(CanConnectFromUnboundIPv6ToIPv4Any)) {
+TEST_F(VirtualSocketServerTest, CanConnectFromUnboundIPv6ToIPv4Any) {
   CrossFamilyConnectionTest(SocketAddress("::", 0),
                             SocketAddress("0.0.0.0", 5000),
                             true);
 }
 
 // Works, receiving socket sees whatever GetNextIP gave the client.
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(CanConnectFromUnboundIPv4ToIPv6Any)) {
+TEST_F(VirtualSocketServerTest, CanConnectFromUnboundIPv4ToIPv6Any) {
   CrossFamilyConnectionTest(SocketAddress("0.0.0.0", 0),
                             SocketAddress("::", 5000),
                             true);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(CanSendDatagramFromUnboundIPv4ToIPv6Any)) {
+TEST_F(VirtualSocketServerTest, CanSendDatagramFromUnboundIPv4ToIPv6Any) {
   CrossFamilyDatagramTest(SocketAddress("0.0.0.0", 0),
                           SocketAddress("::", 5000),
                           true);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(CanSendDatagramFromMappedIPv6ToIPv4Any)) {
+TEST_F(VirtualSocketServerTest, CanSendDatagramFromMappedIPv6ToIPv4Any) {
   CrossFamilyDatagramTest(SocketAddress("::ffff:127.0.0.1", 0),
                           SocketAddress("0.0.0.0", 5000),
                           true);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(CantSendDatagramFromUnMappedIPv6ToIPv4Any)) {
+TEST_F(VirtualSocketServerTest, CantSendDatagramFromUnMappedIPv6ToIPv4Any) {
   CrossFamilyDatagramTest(SocketAddress("::2", 0),
                           SocketAddress("0.0.0.0", 5000),
                           false);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(CantSendDatagramFromUnMappedIPv6ToMappedIPv6)) {
+TEST_F(VirtualSocketServerTest, CantSendDatagramFromUnMappedIPv6ToMappedIPv6) {
   CrossFamilyDatagramTest(SocketAddress("::2", 0),
                           SocketAddress("::ffff:127.0.0.1", 5000),
                           false);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(CanSendDatagramFromIPv4ToIPv6Any)) {
+TEST_F(VirtualSocketServerTest, CanSendDatagramFromIPv4ToIPv6Any) {
   CrossFamilyDatagramTest(SocketAddress("127.0.0.2", 0),
                           SocketAddress("::", 5000),
                           true);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(CantSendDatagramFromIPv4ToUnMappedIPv6)) {
+TEST_F(VirtualSocketServerTest, CantSendDatagramFromIPv4ToUnMappedIPv6) {
   CrossFamilyDatagramTest(SocketAddress("127.0.0.2", 0),
                           SocketAddress("::1", 5000),
                           false);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(CanSendDatagramFromIPv4ToMappedIPv6)) {
+TEST_F(VirtualSocketServerTest, CanSendDatagramFromIPv4ToMappedIPv6) {
   CrossFamilyDatagramTest(SocketAddress("127.0.0.1", 0),
                           SocketAddress("::ffff:127.0.0.2", 5000),
                           true);
 }
 
-TEST_F(VirtualSocketServerTest, DISABLED_ON_MAC(CanSendDatagramFromUnboundIPv6ToIPv4Any)) {
+TEST_F(VirtualSocketServerTest, CanSendDatagramFromUnboundIPv6ToIPv4Any) {
   CrossFamilyDatagramTest(SocketAddress("::", 0),
                           SocketAddress("0.0.0.0", 5000),
                           true);

@@ -27,21 +27,12 @@
 #include "config.h"
 #include "core/fetch/FontResource.h"
 
-#include "core/dom/TagCollection.h"
 #include "core/fetch/ResourceClientWalker.h"
-#include "core/html/parser/TextResourceDecoder.h"
 #include "platform/SharedBuffer.h"
 #include "platform/fonts/FontCustomPlatformData.h"
 #include "platform/fonts/FontPlatformData.h"
 #include "public/platform/Platform.h"
 #include "wtf/CurrentTime.h"
-
-#if ENABLE(SVG_FONTS)
-#include "core/SVGNames.h"
-#include "core/dom/XMLDocument.h"
-#include "core/html/HTMLCollection.h"
-#include "core/svg/SVGFontElement.h"
-#endif
 
 namespace blink {
 
@@ -71,7 +62,7 @@ static FontPackageFormat packageFormatOf(SharedBuffer* buffer)
 
 static void recordPackageFormatHistogram(FontPackageFormat format)
 {
-    blink::Platform::current()->histogramEnumeration("WebFont.PackageFormat", format, PackageFormatEnumMax);
+    Platform::current()->histogramEnumeration("WebFont.PackageFormat", format, PackageFormatEnumMax);
 }
 
 FontResource::FontResource(const ResourceRequest& resourceRequest)
@@ -85,14 +76,6 @@ FontResource::FontResource(const ResourceRequest& resourceRequest)
 
 FontResource::~FontResource()
 {
-}
-
-void FontResource::trace(Visitor* visitor)
-{
-#if ENABLE(SVG_FONTS)
-    visitor->trace(m_externalSVGDocument);
-#endif
-    Resource::trace(visitor);
 }
 
 void FontResource::didScheduleLoad()
@@ -151,72 +134,11 @@ bool FontResource::ensureCustomFontData()
     return m_fontData;
 }
 
-FontPlatformData FontResource::platformDataFromCustomData(float size, bool bold, bool italic, FontOrientation orientation, FontWidthVariant widthVariant)
+FontPlatformData FontResource::platformDataFromCustomData(float size, bool bold, bool italic, FontOrientation orientation)
 {
-#if ENABLE(SVG_FONTS)
-    if (m_externalSVGDocument)
-        return FontPlatformData(size, bold, italic);
-#endif
     ASSERT(m_fontData);
-    return m_fontData->fontPlatformData(size, bold, italic, orientation, widthVariant);
+    return m_fontData->fontPlatformData(size, bold, italic, orientation);
 }
-
-#if ENABLE(SVG_FONTS)
-bool FontResource::ensureSVGFontData()
-{
-    if (!m_externalSVGDocument && !errorOccurred() && !isLoading()) {
-        if (m_data) {
-            m_externalSVGDocument = XMLDocument::createSVG();
-
-            OwnPtr<TextResourceDecoder> decoder = TextResourceDecoder::create("application/xml");
-            String svgSource = decoder->decode(m_data->data(), m_data->size());
-            svgSource = svgSource + decoder->flush();
-
-            m_externalSVGDocument->setContent(svgSource);
-
-            if (decoder->sawError())
-                m_externalSVGDocument = nullptr;
-        }
-        if (m_externalSVGDocument) {
-            recordPackageFormatHistogram(PackageFormatSVG);
-        } else {
-            setStatus(DecodeError);
-            recordPackageFormatHistogram(PackageFormatUnknown);
-        }
-    }
-
-    return m_externalSVGDocument;
-}
-
-SVGFontElement* FontResource::getSVGFontById(const String& fontName) const
-{
-    RefPtrWillBeRawPtr<TagCollection> collection = m_externalSVGDocument->getElementsByTagNameNS(SVGNames::fontTag.namespaceURI(), SVGNames::fontTag.localName());
-    if (!collection)
-        return 0;
-
-    unsigned collectionLength = collection->length();
-    if (!collectionLength)
-        return 0;
-
-#if ENABLE(ASSERT)
-    for (unsigned i = 0; i < collectionLength; ++i) {
-        ASSERT(collection->item(i));
-        ASSERT(isSVGFontElement(collection->item(i)));
-    }
-#endif
-
-    if (fontName.isEmpty())
-        return toSVGFontElement(collection->item(0));
-
-    for (unsigned i = 0; i < collectionLength; ++i) {
-        SVGFontElement* element = toSVGFontElement(collection->item(i));
-        if (element->getIdAttribute() == fontName)
-            return element;
-    }
-
-    return 0;
-}
-#endif
 
 bool FontResource::isSafeToUnlock() const
 {

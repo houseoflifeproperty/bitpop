@@ -32,8 +32,7 @@ class DownloadDangerPromptTest : public InProcessBrowserTest {
       did_receive_callback_(false) {
   }
 
-  virtual ~DownloadDangerPromptTest() {
-  }
+  ~DownloadDangerPromptTest() override {}
 
   // Opens a new tab and waits for navigations to finish. If there are pending
   // navigations, the constrained prompt might be dismissed when the navigation
@@ -102,7 +101,13 @@ class DownloadDangerPromptTest : public InProcessBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(DownloadDangerPromptTest);
 };
 
-IN_PROC_BROWSER_TEST_F(DownloadDangerPromptTest, TestAll) {
+// Disabled for flaky timeouts on Windows. crbug.com/446696
+#if defined(OS_WIN)
+#define MAYBE_TestAll DISABLED_TestAll
+#else
+#define MAYBE_TestAll TestAll
+#endif
+IN_PROC_BROWSER_TEST_F(DownloadDangerPromptTest, MAYBE_TestAll) {
   // ExperienceSampling: Set default actions for DownloadItem methods we need.
   ON_CALL(download(), GetURL()).WillByDefault(ReturnRef(GURL::EmptyGURL()));
   ON_CALL(download(), GetReferrerUrl())

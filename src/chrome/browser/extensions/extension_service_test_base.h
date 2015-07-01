@@ -9,6 +9,7 @@
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/test/base/scoped_testing_local_state.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -53,13 +54,16 @@ class ExtensionServiceTestBase : public testing::Test {
     ExtensionServiceInitParams();
   };
 
+  // Public because parameterized test cases need it to be, or else the compiler
+  // barfs.
+  static void SetUpTestCase();  // faux-verride (static override).
+
  protected:
   ExtensionServiceTestBase();
-  virtual ~ExtensionServiceTestBase();
+  ~ExtensionServiceTestBase() override;
 
   // testing::Test implementation.
-  virtual void SetUp() OVERRIDE;
-  static void SetUpTestCase();  // faux-verride (static override).
+  void SetUp() override;
 
   // Create a set of InitParams to install an ExtensionService into |temp_dir_|.
   ExtensionServiceInitParams CreateDefaultInitParams();
@@ -82,8 +86,8 @@ class ExtensionServiceTestBase : public testing::Test {
   // Initialize an ExtensionService with autoupdate enabled.
   void InitializeExtensionServiceWithUpdater();
 
-  // Initialize the associated ProcessManager.
-  void InitializeProcessManager();
+  // Resets the browser thread bundle to one with |options|.
+  void ResetThreadBundle(int options);
 
   // TODO(rdevlin.cronin): Pull out more methods from ExtensionServiceTest that
   // are commonly used and/or reimplemented. For instance, methods to install
@@ -99,6 +103,13 @@ class ExtensionServiceTestBase : public testing::Test {
   const base::FilePath& data_dir() const { return data_dir_; }
   const base::ScopedTempDir& temp_dir() const { return temp_dir_; }
 
+ private:
+  // Destroying at_exit_manager_ will delete all LazyInstances, so it must come
+  // after thread_bundle_ in the destruction order.
+  base::ShadowingAtExitManager at_exit_manager_;
+  scoped_ptr<content::TestBrowserThreadBundle> thread_bundle_;
+
+ protected:
   // It's unfortunate that these are exposed to subclasses (rather than used
   // through the accessor methods above), but too many tests already use them
   // directly.
@@ -109,6 +120,7 @@ class ExtensionServiceTestBase : public testing::Test {
   // The ExtensionService, whose lifetime is managed by |profile|'s
   // ExtensionSystem.
   ExtensionService* service_;
+  ScopedTestingLocalState testing_local_state_;
 
  private:
   void CreateExtensionService(const ExtensionServiceInitParams& params);
@@ -117,10 +129,8 @@ class ExtensionServiceTestBase : public testing::Test {
   // directory.
   base::ScopedTempDir temp_dir_;
 
-  // Destroying at_exit_manager_ will delete all LazyInstances, so it must come
-  // after thread_bundle_ in the destruction order.
-  base::ShadowingAtExitManager at_exit_manager_;
-  content::TestBrowserThreadBundle thread_bundle_;
+  // Whether or not the thread bundle was reset in the test.
+  bool did_reset_thread_bundle_;
 
   // The directory into which extensions are installed.
   base::FilePath extensions_install_dir_;

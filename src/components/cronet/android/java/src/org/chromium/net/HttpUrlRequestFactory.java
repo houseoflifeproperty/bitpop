@@ -22,7 +22,7 @@ public abstract class HttpUrlRequestFactory {
             "org.chromium.net.ChromiumUrlRequestFactory";
 
     public static HttpUrlRequestFactory createFactory(
-            Context context, HttpUrlRequestFactoryConfig config) {
+            Context context, UrlRequestContextConfig config) {
         HttpUrlRequestFactory factory = null;
         if (!config.legacyMode()) {
             factory = createChromiumFactory(context, config);
@@ -59,17 +59,35 @@ public abstract class HttpUrlRequestFactory {
             int requestPriority, Map<String, String> headers,
             WritableByteChannel channel, HttpUrlRequestListener listener);
 
+    /**
+     * Starts NetLog logging to a file named |fileName| in the
+     * application temporary directory. |fileName| must not be empty. Log may
+     * contain user's personal information (PII). If the file exists it is
+     * truncated before starting. If actively logging the call is ignored.
+     * @param fileName The complete file path. It must not be empty. If file
+     *            exists, it is truncated before starting.
+     * @param logAll {@code true} to also include all transferred bytes in the
+     *            log.
+     */
+    public abstract void startNetLogToFile(String fileName, boolean logAll);
+
+    /**
+     * Stops NetLog logging and flushes file to disk. If a logging session is
+     * not in progress this call is ignored.
+     */
+    public abstract void stopNetLog();
+
     private static HttpUrlRequestFactory createChromiumFactory(
-            Context context, HttpUrlRequestFactoryConfig config) {
+            Context context, UrlRequestContextConfig config) {
         HttpUrlRequestFactory factory = null;
         try {
             Class<? extends HttpUrlRequestFactory> factoryClass =
-                    HttpUrlRequestFactory.class.getClassLoader().
-                            loadClass(CHROMIUM_URL_REQUEST_FACTORY).
-                            asSubclass(HttpUrlRequestFactory.class);
+                    HttpUrlRequestFactory.class.getClassLoader()
+                            .loadClass(CHROMIUM_URL_REQUEST_FACTORY)
+                            .asSubclass(HttpUrlRequestFactory.class);
             Constructor<? extends HttpUrlRequestFactory> constructor =
                     factoryClass.getConstructor(
-                            Context.class, HttpUrlRequestFactoryConfig.class);
+                            Context.class, UrlRequestContextConfig.class);
             HttpUrlRequestFactory chromiumFactory =
                     constructor.newInstance(context, config);
             if (chromiumFactory.isEnabled()) {
@@ -79,8 +97,7 @@ public abstract class HttpUrlRequestFactory {
             // Leave as null
         } catch (Exception e) {
             throw new IllegalStateException(
-                    "Cannot instantiate: " +
-                    CHROMIUM_URL_REQUEST_FACTORY,
+                    "Cannot instantiate: " + CHROMIUM_URL_REQUEST_FACTORY,
                     e);
         }
         return factory;

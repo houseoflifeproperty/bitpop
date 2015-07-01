@@ -17,37 +17,29 @@ namespace {
 class CommonSwitches {
  public:
   CommonSwitches()
-      : easy_off_store_install(
-            NULL,
-            FeatureSwitch::DEFAULT_DISABLED),
-        force_dev_mode_highlighting(
-            switches::kForceDevModeHighlighting,
-            FeatureSwitch::DEFAULT_DISABLED),
-        prompt_for_external_extensions(
-            NULL,
+      : easy_off_store_install(NULL, FeatureSwitch::DEFAULT_DISABLED),
+        force_dev_mode_highlighting(switches::kForceDevModeHighlighting,
+                                    FeatureSwitch::DEFAULT_DISABLED),
+        prompt_for_external_extensions(NULL,
 #if defined(OS_WIN)
-            FeatureSwitch::DEFAULT_ENABLED),
+                                       FeatureSwitch::DEFAULT_ENABLED),
 #else
-            FeatureSwitch::DEFAULT_DISABLED),
+                                       FeatureSwitch::DEFAULT_DISABLED),
 #endif
-        error_console(
-            switches::kErrorConsole,
-            FeatureSwitch::DEFAULT_DISABLED),
-        enable_override_bookmarks_ui(
-            switches::kEnableOverrideBookmarksUI,
-            FeatureSwitch::DEFAULT_DISABLED),
-        extension_action_redesign(
-            switches::kExtensionActionRedesign,
-            FeatureSwitch::DEFAULT_DISABLED),
+        error_console(switches::kErrorConsole, FeatureSwitch::DEFAULT_DISABLED),
+        enable_override_bookmarks_ui(switches::kEnableOverrideBookmarksUI,
+                                     FeatureSwitch::DEFAULT_DISABLED),
+        extension_action_redesign(switches::kExtensionActionRedesign,
+                                  FeatureSwitch::DEFAULT_DISABLED),
         scripts_require_action(switches::kScriptsRequireAction,
                                FeatureSwitch::DEFAULT_DISABLED),
-        embedded_extension_options(
-            switches::kEmbeddedExtensionOptions,
-            FeatureSwitch::DEFAULT_DISABLED),
-        app_view(switches::kAppView,
-                 FeatureSwitch::DEFAULT_DISABLED),
-        mime_handler_view(switches::kMimeHandlerView,
-                          FeatureSwitch::DEFAULT_DISABLED) {}
+        embedded_extension_options(switches::kEmbeddedExtensionOptions,
+                                   FeatureSwitch::DEFAULT_DISABLED),
+        surface_worker(switches::kSurfaceWorker,
+                       FeatureSwitch::DEFAULT_DISABLED),
+        trace_app_source(switches::kTraceAppSource,
+                         FeatureSwitch::DEFAULT_ENABLED) {
+  }
 
   // Enables extensions to be easily installed from sites other than the web
   // store.
@@ -64,8 +56,8 @@ class CommonSwitches {
   FeatureSwitch extension_action_redesign;
   FeatureSwitch scripts_require_action;
   FeatureSwitch embedded_extension_options;
-  FeatureSwitch app_view;
-  FeatureSwitch mime_handler_view;
+  FeatureSwitch surface_worker;
+  FeatureSwitch trace_app_source;
 };
 
 base::LazyInstance<CommonSwitches> g_common_switches =
@@ -97,11 +89,11 @@ FeatureSwitch* FeatureSwitch::scripts_require_action() {
 FeatureSwitch* FeatureSwitch::embedded_extension_options() {
   return &g_common_switches.Get().embedded_extension_options;
 }
-FeatureSwitch* FeatureSwitch::app_view() {
-  return &g_common_switches.Get().app_view;
+FeatureSwitch* FeatureSwitch::surface_worker() {
+  return &g_common_switches.Get().surface_worker;
 }
-FeatureSwitch* FeatureSwitch::mime_handler_view() {
-  return &g_common_switches.Get().mime_handler_view;
+FeatureSwitch* FeatureSwitch::trace_app_source() {
+  return &g_common_switches.Get().trace_app_source;
 }
 
 FeatureSwitch::ScopedOverride::ScopedOverride(FeatureSwitch* feature,
@@ -118,16 +110,16 @@ FeatureSwitch::ScopedOverride::~ScopedOverride() {
 
 FeatureSwitch::FeatureSwitch(const char* switch_name,
                              DefaultValue default_value) {
-  Init(CommandLine::ForCurrentProcess(), switch_name, default_value);
+  Init(base::CommandLine::ForCurrentProcess(), switch_name, default_value);
 }
 
-FeatureSwitch::FeatureSwitch(const CommandLine* command_line,
+FeatureSwitch::FeatureSwitch(const base::CommandLine* command_line,
                              const char* switch_name,
                              DefaultValue default_value) {
   Init(command_line, switch_name, default_value);
 }
 
-void FeatureSwitch::Init(const CommandLine* command_line,
+void FeatureSwitch::Init(const base::CommandLine* command_line,
                          const char* switch_name,
                          DefaultValue default_value) {
   command_line_ = command_line;

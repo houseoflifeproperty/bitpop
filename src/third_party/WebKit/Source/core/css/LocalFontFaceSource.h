@@ -10,14 +10,14 @@
 
 namespace blink {
 
-class LocalFontFaceSource : public CSSFontFaceSource {
+class LocalFontFaceSource final : public CSSFontFaceSource {
 public:
     LocalFontFaceSource(const String& fontName) : m_fontName(fontName) { }
-    virtual bool isLocal() const { return true; }
-    virtual bool isLocalFontAvailable(const FontDescription&) OVERRIDE;
+    virtual bool isLocal() const override { return true; }
+    virtual bool isLocalFontAvailable(const FontDescription&) override;
 
 private:
-    virtual PassRefPtr<SimpleFontData> createFontData(const FontDescription&) OVERRIDE;
+    virtual PassRefPtr<SimpleFontData> createFontData(const FontDescription&) override;
 
     class LocalFontHistograms {
     public:

@@ -39,8 +39,38 @@
 
 import os
 import os.path
+import re
 import subprocess
+import sys
 
+
+def SystemIncludeDirectoryFlags():
+  """Determines compile flags to include the system include directories.
+
+  Use as a workaround for https://github.com/Valloric/YouCompleteMe/issues/303
+
+  Returns:
+    (List of Strings) Compile flags to append.
+  """
+  try:
+    with open(os.devnull, 'rb') as DEVNULL:
+      output = subprocess.check_output(['clang', '-v', '-E', '-x', 'c++', '-'],
+                                       stdin=DEVNULL, stderr=subprocess.STDOUT)
+  except:
+    return []
+  includes_regex = r'#include <\.\.\.> search starts here:\s*' \
+                   r'(.*?)End of search list\.'
+  includes = re.search(includes_regex, output.decode(), re.DOTALL).group(1)
+  flags = []
+  for path in includes.splitlines():
+    path = path.strip()
+    if os.path.isdir(path):
+      flags.append('-isystem')
+      flags.append(path)
+  return flags
+
+
+_system_include_flags = SystemIncludeDirectoryFlags()
 
 # Flags from YCM's default config.
 flags = [
@@ -67,48 +97,15 @@ def FindChromeSrcFromFilename(filename):
     (String) Path of 'src/', or None if unable to find.
   """
   curdir = os.path.normpath(os.path.dirname(filename))
-  while not (PathExists(curdir, 'src') and PathExists(curdir, 'src', 'DEPS')
-             and (PathExists(curdir, '.gclient')
-                  or PathExists(curdir, 'src', '.git'))):
+  while not (os.path.basename(os.path.realpath(curdir)) == 'src'
+             and PathExists(curdir, 'DEPS')
+             and (PathExists(curdir, '..', '.gclient')
+                  or PathExists(curdir, '.git'))):
     nextdir = os.path.normpath(os.path.join(curdir, '..'))
     if nextdir == curdir:
       return None
     curdir = nextdir
-  return os.path.join(curdir, 'src')
-
-
-# Largely copied from ninja-build.vim (guess_configuration)
-def GetNinjaOutputDirectory(chrome_root):
-  """Returns <chrome_root>/<output_dir>/(Release|Debug).
-
-  The configuration chosen is the one most recently generated/built. Detects
-  a custom output_dir specified by GYP_GENERATOR_FLAGS."""
-
-  output_dir = 'out'
-  generator_flags = os.getenv('GYP_GENERATOR_FLAGS', '').split(' ')
-  for flag in generator_flags:
-    name_value = flag.split('=', 1)
-    if len(name_value) == 2 and name_value[0] == 'output_dir':
-      output_dir = name_value[1]
-
-  root = os.path.join(chrome_root, output_dir)
-  debug_path = os.path.join(root, 'Debug')
-  release_path = os.path.join(root, 'Release')
-
-  def is_release_15s_newer(test_path):
-    try:
-      debug_mtime = os.path.getmtime(os.path.join(debug_path, test_path))
-    except os.error:
-      debug_mtime = 0
-    try:
-      rel_mtime = os.path.getmtime(os.path.join(release_path, test_path))
-    except os.error:
-      rel_mtime = 0
-    return rel_mtime - debug_mtime >= 15
-
-  if is_release_15s_newer('build.ninja') or is_release_15s_newer('protoc'):
-    return release_path
-  return debug_path
+  return curdir
 
 
 def GetClangCommandFromNinjaForFilename(chrome_root, filename):
@@ -166,6 +163,8 @@ def GetClangCommandFromNinjaForFilename(chrome_root, filename):
         # try to use the default flags.
         return chrome_flags
 
+  sys.path.append(os.path.join(chrome_root, 'tools', 'vim'))
+  from ninja_output import GetNinjaOutputDirectory
   out_dir = os.path.realpath(GetNinjaOutputDirectory(chrome_root))
 
   # Ninja needs the path to the source file relative to the output build
@@ -226,7 +225,7 @@ def FlagsForFile(filename):
   chrome_root = FindChromeSrcFromFilename(filename)
   chrome_flags = GetClangCommandFromNinjaForFilename(chrome_root,
                                                      filename)
-  final_flags = flags + chrome_flags
+  final_flags = flags + chrome_flags + _system_include_flags
 
   return {
     'flags': final_flags,

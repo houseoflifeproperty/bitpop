@@ -13,6 +13,8 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/models/tree_node_iterator.h"
 
+using bookmarks::BookmarkNode;
+
 namespace enhanced_bookmarks {
 
 BookmarkServerService::BookmarkServerService(
@@ -48,16 +50,17 @@ void BookmarkServerService::RemoveObserver(
 
 const BookmarkNode* BookmarkServerService::BookmarkForRemoteId(
     const std::string& remote_id) const {
-  std::map<std::string, const BookmarkNode*>::const_iterator it =
-      starsid_to_bookmark_.find(remote_id);
-  if (it == starsid_to_bookmark_.end())
-    return NULL;
-  return it->second;
+  return model_->BookmarkForRemoteId(remote_id);
 }
 
 const std::string BookmarkServerService::RemoteIDForBookmark(
     const BookmarkNode* bookmark) const {
   return model_->GetRemoteId(bookmark);
+}
+
+void BookmarkServerService::Cancel() {
+  url_fetcher_.reset();
+  token_request_.reset();
 }
 
 void BookmarkServerService::Notify() {
@@ -71,8 +74,7 @@ void BookmarkServerService::TriggerTokenRequest(bool cancel_previous) {
   if (token_request_ || url_fetcher_)
     return;  // Fetcher is already running.
 
-  const std::string username(signin_manager_->GetAuthenticatedUsername());
-  if (!username.length()) {
+  if (!signin_manager_->IsAuthenticated()) {
     // User is not signed in.
     CleanAfterFailure();
     Notify();
@@ -81,7 +83,8 @@ void BookmarkServerService::TriggerTokenRequest(bool cancel_previous) {
   // Find a token.
   OAuth2TokenService::ScopeSet scopes;
   scopes.insert(GaiaConstants::kChromeSyncOAuth2Scope);
-  token_request_ = token_service_->StartRequest(username, scopes, this);
+  token_request_ = token_service_->StartRequest(
+      signin_manager_->GetAuthenticatedAccountId(), scopes, this);
 }
 
 //
@@ -91,7 +94,8 @@ void BookmarkServerService::OnGetTokenSuccess(
     const OAuth2TokenService::Request* request,
     const std::string& access_token,
     const base::Time& expiration_time) {
-  url_fetcher_.reset(CreateFetcher());
+  url_fetcher_ = CreateFetcher();
+
   // Free the token request.
   token_request_.reset();
 

@@ -11,6 +11,7 @@
 #include "content/browser/service_worker/service_worker_storage.h"
 #include "content/browser/service_worker/service_worker_version.h"
 #include "content/browser/service_worker/service_worker_write_to_cache_job.h"
+#include "content/public/browser/resource_context.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_request.h"
 
@@ -34,7 +35,8 @@ ServiceWorkerContextRequestHandler::~ServiceWorkerContextRequestHandler() {
 
 net::URLRequestJob* ServiceWorkerContextRequestHandler::MaybeCreateJob(
     net::URLRequest* request,
-    net::NetworkDelegate* network_delegate) {
+    net::NetworkDelegate* network_delegate,
+    ResourceContext* resource_context) {
   if (!provider_host_ || !version_.get() || !context_)
     return NULL;
 
@@ -66,8 +68,10 @@ net::URLRequestJob* ServiceWorkerContextRequestHandler::MaybeCreateJob(
     int extra_load_flags = 0;
     base::TimeDelta time_since_last_check =
         base::Time::Now() - registration->last_update_check();
-    if (time_since_last_check > base::TimeDelta::FromHours(24))
+    if (time_since_last_check > base::TimeDelta::FromHours(24) ||
+        version_->force_bypass_cache_for_scripts()) {
       extra_load_flags = net::LOAD_BYPASS_CACHE;
+    }
 
     return new ServiceWorkerWriteToCacheJob(request,
                                             network_delegate,
@@ -81,7 +85,7 @@ net::URLRequestJob* ServiceWorkerContextRequestHandler::MaybeCreateJob(
   int64 response_id = kInvalidServiceWorkerResponseId;
   if (ShouldReadFromScriptCache(request->url(), &response_id)) {
     return new ServiceWorkerReadFromCacheJob(
-        request, network_delegate, context_, response_id);
+        request, network_delegate, context_, version_, response_id);
   }
 
   // NULL means use the network.
@@ -90,12 +94,17 @@ net::URLRequestJob* ServiceWorkerContextRequestHandler::MaybeCreateJob(
 
 void ServiceWorkerContextRequestHandler::GetExtraResponseInfo(
     bool* was_fetched_via_service_worker,
+    bool* was_fallback_required_by_service_worker,
     GURL* original_url_via_service_worker,
+    blink::WebServiceWorkerResponseType* response_type_via_service_worker,
     base::TimeTicks* fetch_start_time,
     base::TimeTicks* fetch_ready_time,
     base::TimeTicks* fetch_end_time) const {
   *was_fetched_via_service_worker = false;
+  *was_fallback_required_by_service_worker = false;
   *original_url_via_service_worker = GURL();
+  *response_type_via_service_worker =
+      blink::WebServiceWorkerResponseTypeDefault;
 }
 
 bool ServiceWorkerContextRequestHandler::ShouldAddToScriptCache(
@@ -105,8 +114,8 @@ bool ServiceWorkerContextRequestHandler::ShouldAddToScriptCache(
       version_->status() != ServiceWorkerVersion::INSTALLING) {
     return false;
   }
-  return version_->script_cache_map()->Lookup(url) ==
-            kInvalidServiceWorkerResponseId;
+  return version_->script_cache_map()->LookupResourceId(url) ==
+         kInvalidServiceWorkerResponseId;
 }
 
 bool ServiceWorkerContextRequestHandler::ShouldReadFromScriptCache(
@@ -115,7 +124,7 @@ bool ServiceWorkerContextRequestHandler::ShouldReadFromScriptCache(
   if (version_->status() == ServiceWorkerVersion::NEW ||
       version_->status() == ServiceWorkerVersion::INSTALLING)
     return false;
-  *response_id_out = version_->script_cache_map()->Lookup(url);
+  *response_id_out = version_->script_cache_map()->LookupResourceId(url);
   return *response_id_out != kInvalidServiceWorkerResponseId;
 }
 

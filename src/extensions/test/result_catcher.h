@@ -8,6 +8,7 @@
 #include <deque>
 #include <string>
 
+#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -26,7 +27,7 @@ namespace extensions {
 class ResultCatcher : public content::NotificationObserver {
  public:
   ResultCatcher();
-  virtual ~ResultCatcher();
+  ~ResultCatcher() override;
 
   // Pumps the UI loop until a notification is received that an API test
   // succeeded or failed. Returns true if the test succeeded, false otherwise.
@@ -40,9 +41,9 @@ class ResultCatcher : public content::NotificationObserver {
 
  private:
   // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   content::NotificationRegistrar registrar_;
 
@@ -56,9 +57,9 @@ class ResultCatcher : public content::NotificationObserver {
   // If non-NULL, we will listen to events from this BrowserContext only.
   content::BrowserContext* browser_context_restriction_;
 
-  // True if we're in a nested message loop waiting for results from
+  // Only set if we're in a nested message loop waiting for results from
   // the extension.
-  bool waiting_;
+  base::Closure quit_closure_;
 };
 
 }  // namespace extensions

@@ -11,6 +11,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/shell/browser/shell_platform_data_aura.h"
+#include "device/bluetooth/bluetooth_adapter_factory.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
@@ -57,8 +58,7 @@ class ShellViewsDelegateAura : public views::DesktopTestViewsDelegate {
   ShellViewsDelegateAura() : use_transparent_windows_(false) {
   }
 
-  virtual ~ShellViewsDelegateAura() {
-  }
+  ~ShellViewsDelegateAura() override {}
 
   void SetUseTransparentWindows(bool transparent) {
     use_transparent_windows_ = transparent;
@@ -83,16 +83,13 @@ class ContextMenuModel : public ui::SimpleMenuModel,
   }
 
   // ui::SimpleMenuModel::Delegate:
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE {
+  bool IsCommandIdChecked(int command_id) const override { return false; }
+  bool IsCommandIdEnabled(int command_id) const override { return true; }
+  bool GetAcceleratorForCommandId(int command_id,
+                                  ui::Accelerator* accelerator) override {
     return false;
   }
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE {
-    return true;
-  }
-  virtual bool GetAcceleratorForCommandId(
-      int command_id,
-      ui::Accelerator* accelerator) OVERRIDE { return false; }
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {
+  void ExecuteCommand(int command_id, int event_flags) override {
     switch (command_id) {
       case COMMAND_OPEN_DEVTOOLS:
         shell_->ShowDevToolsForElementAt(params_.x, params_.y);
@@ -127,7 +124,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
       toolbar_view_(new View),
       contents_view_(new View) {
   }
-  virtual ~ShellWindowDelegateView() {}
+  ~ShellWindowDelegateView() override {}
 
   // Update the state of UI controls
   void SetAddressBarURL(const GURL& url) {
@@ -195,11 +192,6 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
         views::MenuRunner::MENU_DELETED) {
       return;
     }
-  }
-
-  void OnWebContentsFocused(content::WebContents* web_contents) {
-    if (web_view_->GetWebContents() == web_contents)
-      web_view_->OnWebContentsFocused(web_contents);
   }
 
  private:
@@ -308,11 +300,10 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
     }
   }
   // Overridden from TextfieldController
-  virtual void ContentsChanged(views::Textfield* sender,
-                               const base::string16& new_contents) OVERRIDE {
-  }
-  virtual bool HandleKeyEvent(views::Textfield* sender,
-                              const ui::KeyEvent& key_event) OVERRIDE {
+  void ContentsChanged(views::Textfield* sender,
+                       const base::string16& new_contents) override {}
+  bool HandleKeyEvent(views::Textfield* sender,
+                      const ui::KeyEvent& key_event) override {
    if (sender == url_entry_ && key_event.key_code() == ui::VKEY_RETURN) {
      std::string text = base::UTF16ToUTF8(url_entry_->text());
      GURL url(text);
@@ -327,8 +318,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   }
 
   // Overridden from ButtonListener
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE {
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override {
     if (sender == back_button_)
       shell_->GoBackOrForward(-1);
     else if (sender == forward_button_)
@@ -340,35 +330,33 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   }
 
   // Overridden from WidgetDelegateView
-  virtual bool CanResize() const OVERRIDE { return true; }
-  virtual bool CanMaximize() const OVERRIDE { return true; }
-  virtual bool CanMinimize() const OVERRIDE { return true; }
-  virtual base::string16 GetWindowTitle() const OVERRIDE {
-    return title_;
-  }
-  virtual void WindowClosing() OVERRIDE {
+  bool CanResize() const override { return true; }
+  bool CanMaximize() const override { return true; }
+  bool CanMinimize() const override { return true; }
+  base::string16 GetWindowTitle() const override { return title_; }
+  void WindowClosing() override {
     if (shell_) {
       delete shell_;
       shell_ = NULL;
     }
   }
-  virtual View* GetContentsView() OVERRIDE { return this; }
+  View* GetContentsView() override { return this; }
 
   // Overridden from View
-  virtual gfx::Size GetMinimumSize() const OVERRIDE {
+  gfx::Size GetMinimumSize() const override {
     // We want to be able to make the window smaller than its initial
     // (preferred) size.
     return gfx::Size();
   }
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE {
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override {
     if (details.is_add && details.child == this) {
       InitShellWindow();
     }
   }
 
   // Overridden from AcceleratorTarget:
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE {
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override {
     switch (accelerator.key_code()) {
     case ui::VKEY_F5:
       shell_->Reload();
@@ -448,6 +436,7 @@ void Shell::PlatformExit() {
   delete platform_;
   platform_ = NULL;
 #if defined(OS_CHROMEOS)
+  device::BluetoothAdapterFactory::Shutdown();
   chromeos::DBusThreadManager::Shutdown();
 #endif
   aura::Env::DeleteInstance();
@@ -563,14 +552,6 @@ bool Shell::PlatformHandleContextMenu(
     static_cast<ShellWindowDelegateView*>(window_widget_->widget_delegate());
   delegate_view->ShowWebViewContextMenu(params);
   return true;
-}
-
-void Shell::PlatformWebContentsFocused(WebContents* contents) {
-  if (headless_)
-    return;
-  ShellWindowDelegateView* delegate_view =
-    static_cast<ShellWindowDelegateView*>(window_widget_->widget_delegate());
-  delegate_view->OnWebContentsFocused(contents);
 }
 
 }  // namespace content

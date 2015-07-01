@@ -10,9 +10,9 @@
 
 #include "base/strings/string16.h"
 #include "ppapi/cpp/rect.h"
-#include "third_party/pdfium/fpdfsdk/include/fpdfdoc.h"
-#include "third_party/pdfium/fpdfsdk/include/fpdfformfill.h"
-#include "third_party/pdfium/fpdfsdk/include/fpdftext.h"
+#include "third_party/pdfium/public/fpdf_doc.h"
+#include "third_party/pdfium/public/fpdf_formfill.h"
+#include "third_party/pdfium/public/fpdf_text.h"
 
 namespace base {
 class Value;
@@ -34,9 +34,9 @@ class PDFiumPage {
   void Unload();
   // Gets the FPDF_PAGE for this page, loading and parsing it if necessary.
   FPDF_PAGE GetPage();
-  //Get the FPDF_PAGE for printing.
+  // Get the FPDF_PAGE for printing.
   FPDF_PAGE GetPrintPage();
-  //Close the printing page.
+  // Close the printing page.
   void ClosePrintPage();
 
   // Returns FPDF_TEXTPAGE for the page, loading and parsing it if necessary.
@@ -64,7 +64,7 @@ class PDFiumPage {
   // Target is optional. It will be filled in for WEBLINK_AREA or
   // DOCLINK_AREA only.
   Area GetCharIndex(const pp::Point& point, int rotation, int* char_index,
-                    LinkTarget* target);
+                    int* form_type, LinkTarget* target);
 
   // Gets the character at the given index.
   base::char16 GetCharAtIndex(int index);
@@ -112,6 +112,15 @@ class PDFiumPage {
   base::Value* CreateTextNode(std::string text);
   base::Value* CreateURLNode(std::string text, std::string url);
 
+  class ScopedLoadCounter {
+   public:
+    explicit ScopedLoadCounter(PDFiumPage* page);
+    ~ScopedLoadCounter();
+
+   private:
+    PDFiumPage* const page_;
+  };
+
   struct Link {
     Link();
     ~Link();
@@ -125,6 +134,7 @@ class PDFiumPage {
   FPDF_PAGE page_;
   FPDF_TEXTPAGE text_page_;
   int index_;
+  int loading_count_;
   pp::Rect rect_;
   bool calculated_links_;
   std::vector<Link> links_;

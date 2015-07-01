@@ -8,44 +8,58 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "content/common/content_export.h"
+#include "content/public/common/resource_response.h"
 #include "third_party/WebKit/public/platform/WebURLLoader.h"
+#include "url/gurl.h"
 
-class GURL;
+namespace base {
+
+class SingleThreadTaskRunner;
+
+}  // namespace base
 
 namespace content {
 
 class ResourceDispatcher;
 struct ResourceResponseInfo;
 
+// PlzNavigate: Used to override parameters of the navigation request.
+struct StreamOverrideParameters {
+ public:
+  // TODO(clamy): The browser should be made aware on destruction of this struct
+  // that it can release its associated stream handle.
+  GURL stream_url;
+  ResourceResponseHead response;
+};
+
 class CONTENT_EXPORT WebURLLoaderImpl
     : public NON_EXPORTED_BASE(blink::WebURLLoader) {
  public:
-  explicit WebURLLoaderImpl(ResourceDispatcher* resource_dispatcher);
-  virtual ~WebURLLoaderImpl();
+  explicit WebURLLoaderImpl(
+      ResourceDispatcher* resource_dispatcher,
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner);
+  ~WebURLLoaderImpl() override;
 
-  static blink::WebURLError CreateError(const blink::WebURL& unreachable_url,
-                                        bool stale_copy_in_cache,
-                                        int reason);
   static void PopulateURLResponse(
       const GURL& url,
       const ResourceResponseInfo& info,
       blink::WebURLResponse* response);
 
   // WebURLLoader methods:
-  virtual void loadSynchronously(
+  void loadSynchronously(
       const blink::WebURLRequest& request,
       blink::WebURLResponse& response,
       blink::WebURLError& error,
-      blink::WebData& data) OVERRIDE;
-  virtual void loadAsynchronously(
+      blink::WebData& data) override;
+  void loadAsynchronously(
       const blink::WebURLRequest& request,
-      blink::WebURLLoaderClient* client) OVERRIDE;
-  virtual void cancel() OVERRIDE;
-  virtual void setDefersLoading(bool value) OVERRIDE;
-  virtual void didChangePriority(blink::WebURLRequest::Priority new_priority,
-                                 int intra_priority_value) OVERRIDE;
-  virtual bool attachThreadedDataReceiver(
-      blink::WebThreadedDataReceiver* threaded_data_receiver) OVERRIDE;
+      blink::WebURLLoaderClient* client) override;
+  void cancel() override;
+  void setDefersLoading(bool value) override;
+  void didChangePriority(blink::WebURLRequest::Priority new_priority,
+                         int intra_priority_value) override;
+  bool attachThreadedDataReceiver(
+      blink::WebThreadedDataReceiver* threaded_data_receiver) override;
 
  private:
   class Context;

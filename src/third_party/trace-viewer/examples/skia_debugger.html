@@ -8,9 +8,13 @@ found in the LICENSE file.
 <head>
 <title>Skia Debugger</title>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-<script src="/polymer.js"></script>
-<link rel="import" href="/cc/picture.html">
-<link rel="import" href="/cc/picture_debugger.html">
+
+<script src="/components/webcomponentsjs/webcomponents.js"></script>
+
+<link rel="import" href="/components/polymer/polymer.html">
+<link rel="import" href="/extras/cc/picture.html">
+<link rel="import" href="/extras/cc/picture_debugger.html">
+
 <script src="string_convert.js"></script>
 <style>
   picture-ops-list-view {
@@ -31,10 +35,10 @@ found in the LICENSE file.
   var debuggerEl;
 
   function getPicture(skp64) {
-    if (!cc.PictureSnapshot.CanGetInfo()) {
-      console.error(cc.PictureSnapshot.HowToEnablePictureDebugging());
+    if (!tv.e.cc.PictureSnapshot.CanGetInfo()) {
+      console.error(tv.e.cc.PictureSnapshot.HowToEnablePictureDebugging());
 
-      var infoBar = new tvcm.ui.InfoBar();
+      var infoBar = document.createElement('tv-b-ui-info-bar');
       var view = document.querySelector('.view');
 
       view.removeChild(debuggerEl);
@@ -42,7 +46,7 @@ found in the LICENSE file.
 
       view.appendChild(infoBar);
 
-      infoBar.message = cc.PictureSnapshot.HowToEnablePictureDebugging();
+      infoBar.message = tv.e.cc.PictureSnapshot.HowToEnablePictureDebugging();
       infoBar.visible = true;
       return undefined;
     }
@@ -51,13 +55,13 @@ found in the LICENSE file.
     if (size === undefined)
       throw new Error('Unable to get picture information');
 
-    return new cc.Picture(skp64,
-        tvcm.Rect.fromXYWH(0, 0, size.width, size.height),
-        tvcm.Rect.fromXYWH(0, 0, size.width, size.height));
-  };
+    return new tv.e.cc.Picture(skp64,
+        tv.Rect.fromXYWH(0, 0, size.width, size.height),
+        tv.Rect.fromXYWH(0, 0, size.width, size.height));
+  }
 
-  function utf8_to_b64( str ) {
-    return window.btoa(unescape(encodeURIComponent( str )));
+  function utf8_to_b64(str) {
+    return window.btoa(unescape(encodeURIComponent(str)));
   }
 
   function loadSkp(filename, onSkpLoaded) {
@@ -139,7 +143,7 @@ found in the LICENSE file.
   }
 
   function onLoad() {
-    debuggerEl = new cc.PictureDebugger()
+    debuggerEl = new tv.e.cc.PictureDebugger();
     document.querySelector('.view').appendChild(debuggerEl);
 
     getAsync('/json/examples/skp', function(data) {

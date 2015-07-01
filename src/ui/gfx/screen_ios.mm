@@ -12,27 +12,22 @@
 namespace {
 
 class ScreenIos : public gfx::Screen {
-  virtual bool IsDIPEnabled() OVERRIDE {
-    return true;
-  }
-
-  virtual gfx::Point GetCursorScreenPoint() OVERRIDE {
+  gfx::Point GetCursorScreenPoint() override {
     NOTIMPLEMENTED();
     return gfx::Point(0, 0);
   }
 
-  virtual gfx::NativeWindow GetWindowUnderCursor() OVERRIDE {
+  gfx::NativeWindow GetWindowUnderCursor() override {
     NOTIMPLEMENTED();
     return gfx::NativeWindow();
   }
 
-  virtual gfx::NativeWindow GetWindowAtScreenPoint(const gfx::Point& point)
-      OVERRIDE {
+  gfx::NativeWindow GetWindowAtScreenPoint(const gfx::Point& point) override {
     NOTIMPLEMENTED();
     return gfx::NativeWindow();
   }
 
-  virtual int GetNumDisplays() const OVERRIDE {
+  int GetNumDisplays() const override {
 #if TARGET_IPHONE_SIMULATOR
     // UIScreen does not reliably return correct results on the simulator.
     return 1;
@@ -41,34 +36,31 @@ class ScreenIos : public gfx::Screen {
 #endif
   }
 
-  virtual std::vector<gfx::Display> GetAllDisplays() const OVERRIDE {
+  std::vector<gfx::Display> GetAllDisplays() const override {
     NOTIMPLEMENTED();
     return std::vector<gfx::Display>(1, GetPrimaryDisplay());
   }
 
   // Returns the display nearest the specified window.
-  virtual gfx::Display GetDisplayNearestWindow(
-      gfx::NativeView view) const OVERRIDE {
+  gfx::Display GetDisplayNearestWindow(gfx::NativeView view) const override {
     NOTIMPLEMENTED();
     return gfx::Display();
   }
 
   // Returns the the display nearest the specified point.
-  virtual gfx::Display GetDisplayNearestPoint(
-      const gfx::Point& point) const OVERRIDE {
+  gfx::Display GetDisplayNearestPoint(const gfx::Point& point) const override {
     NOTIMPLEMENTED();
     return gfx::Display();
   }
 
   // Returns the display that most closely intersects the provided bounds.
-  virtual gfx::Display GetDisplayMatching(
-      const gfx::Rect& match_rect) const OVERRIDE {
+  gfx::Display GetDisplayMatching(const gfx::Rect& match_rect) const override {
     NOTIMPLEMENTED();
     return gfx::Display();
   }
 
   // Returns the primary display.
-  virtual gfx::Display GetPrimaryDisplay() const OVERRIDE {
+  gfx::Display GetPrimaryDisplay() const override {
     UIScreen* mainScreen = [UIScreen mainScreen];
     CHECK(mainScreen);
     gfx::Display display(0, gfx::Rect(mainScreen.bounds));
@@ -76,11 +68,11 @@ class ScreenIos : public gfx::Screen {
     return display;
   }
 
-  virtual void AddObserver(gfx::DisplayObserver* observer) OVERRIDE {
+  void AddObserver(gfx::DisplayObserver* observer) override {
     // no display change on iOS.
   }
 
-  virtual void RemoveObserver(gfx::DisplayObserver* observer) OVERRIDE {
+  void RemoveObserver(gfx::DisplayObserver* observer) override {
     // no display change on iOS.
   }
 };

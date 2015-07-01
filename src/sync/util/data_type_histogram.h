@@ -51,6 +51,9 @@
       case ::syncer::AUTOFILL_PROFILE: \
         PER_DATA_TYPE_MACRO("AutofillProfiles"); \
         break; \
+      case ::syncer::AUTOFILL_WALLET_DATA: \
+        PER_DATA_TYPE_MACRO("AutofillWallet"); \
+        break; \
       case ::syncer::THEMES: \
         PER_DATA_TYPE_MACRO("Themes"); \
         break; \
@@ -120,8 +123,14 @@
       case ::syncer::SUPERVISED_USER_SHARED_SETTINGS: \
         PER_DATA_TYPE_MACRO("ManagedUserSharedSetting"); \
         break; \
+      case ::syncer::SUPERVISED_USER_WHITELISTS: \
+        PER_DATA_TYPE_MACRO("ManagedUserWhitelist"); \
+        break; \
       case ::syncer::ARTICLES: \
         PER_DATA_TYPE_MACRO("Article"); \
+        break; \
+      case ::syncer::WIFI_CREDENTIALS:             \
+        PER_DATA_TYPE_MACRO("WifiCredentials"); \
         break; \
       case ::syncer::PROXY_TABS: \
         PER_DATA_TYPE_MACRO("Tabs"); \

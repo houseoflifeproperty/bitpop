@@ -6,6 +6,8 @@
 
 #include "base/compiler_specific.h"
 #include "base/metrics/histogram.h"
+#include "base/strings/string_number_conversions.h"
+#include "components/variations/variations_associated_data.h"
 
 using base::TimeDelta;
 
@@ -32,13 +34,6 @@ const int kUnsentLogsIntervalSeconds = 3;
 const int kUnsentLogsIntervalSeconds = 15;
 #endif
 
-// Standard interval between log uploads, in seconds.
-#if defined(OS_ANDROID) || defined(OS_IOS)
-const int kStandardUploadIntervalSeconds = 5 * 60;  // Five minutes.
-#else
-const int kStandardUploadIntervalSeconds = 30 * 60;  // Thirty minutes.
-#endif
-
 // When uploading metrics to the server fails, we progressively wait longer and
 // longer before sending the next log. This backoff process helps reduce load
 // on a server that is having issues.
@@ -59,16 +54,26 @@ void LogMetricsInitSequence(InitSequence sequence) {
                             INIT_SEQUENCE_ENUM_SIZE);
 }
 
+void LogActualUploadInterval(TimeDelta interval) {
+  UMA_HISTOGRAM_CUSTOM_COUNTS("UMA.ActualLogUploadInterval",
+                             interval.InMinutes(),
+                             1,
+                             base::TimeDelta::FromHours(12).InMinutes(),
+                             50);
+}
+
 }  // anonymous namespace
 
 MetricsReportingScheduler::MetricsReportingScheduler(
-    const base::Closure& upload_callback)
+    const base::Closure& upload_callback,
+    const base::Callback<base::TimeDelta(void)>& upload_interval_callback)
     : upload_callback_(upload_callback),
       upload_interval_(TimeDelta::FromSeconds(kInitialUploadIntervalSeconds)),
       running_(false),
       callback_pending_(false),
       init_task_complete_(false),
-      waiting_for_init_task_complete_(false) {
+      waiting_for_init_task_complete_(false),
+      upload_interval_callback_(upload_interval_callback) {
 }
 
 MetricsReportingScheduler::~MetricsReportingScheduler() {}
@@ -108,7 +113,8 @@ void MetricsReportingScheduler::UploadFinished(bool server_is_healthy,
   } else if (more_logs_remaining) {
     upload_interval_ = TimeDelta::FromSeconds(kUnsentLogsIntervalSeconds);
   } else {
-    upload_interval_ = TimeDelta::FromSeconds(kStandardUploadIntervalSeconds);
+    upload_interval_ = GetStandardUploadInterval();
+    last_upload_finish_time_ = base::TimeTicks::Now();
   }
 
   if (running_)
@@ -135,6 +141,12 @@ void MetricsReportingScheduler::TriggerUpload() {
     waiting_for_init_task_complete_ = true;
     return;
   }
+
+  if (!last_upload_finish_time_.is_null()) {
+    LogActualUploadInterval(base::TimeTicks::Now() - last_upload_finish_time_);
+    last_upload_finish_time_ = base::TimeTicks();
+  }
+
   callback_pending_ = true;
   upload_callback_.Run();
 }
@@ -154,11 +166,14 @@ void MetricsReportingScheduler::BackOffUploadInterval() {
       static_cast<int64>(kBackoffMultiplier *
                          upload_interval_.InMicroseconds()));
 
-  TimeDelta max_interval = kMaxBackoffMultiplier *
-      TimeDelta::FromSeconds(kStandardUploadIntervalSeconds);
+  TimeDelta max_interval = kMaxBackoffMultiplier * GetStandardUploadInterval();
   if (upload_interval_ > max_interval || upload_interval_.InSeconds() < 0) {
     upload_interval_ = max_interval;
   }
+}
+
+base::TimeDelta MetricsReportingScheduler::GetStandardUploadInterval() {
+  return upload_interval_callback_.Run();
 }
 
 }  // namespace metrics

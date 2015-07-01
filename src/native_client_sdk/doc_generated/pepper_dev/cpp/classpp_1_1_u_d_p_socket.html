@@ -15,7 +15,7 @@ Inheritance diagram for pp::UDPSocket:</div>
 <div class="dyncontent">
 <div class="center"><img src="classpp_1_1_u_d_p_socket__inherit__graph.png" border="0" usemap="#pp_1_1_u_d_p_socket_inherit__map" alt="Inheritance graph" /></div>
 <map name="pp_1_1_u_d_p_socket_inherit__map" id="pp_1_1_u_d_p_socket_inherit__map">
-<area shape="rect" id="node2" href="classpp_1_1_resource.html" title="A reference counted module resource." alt="" coords="12,5,116,35"></area></map>
+<area shape="rect" id="node2" href="classpp_1_1_resource.html" title="A reference counted module resource." alt="" coords="12,5,116,32"></area></map>
 <center><span class="legend">[<a href="graph_legend.html">legend</a>]</span></center></div>
 <p><a href="classpp_1_1_u_d_p_socket-members.html">List of all members.</a></p>
 <h2>
@@ -356,7 +356,7 @@ Static Public Member Functions</h2><table class="memberdecls">
 </table>
 </dd>
 </dl>
-<dl class="return"><dt><b>Returns:</b></dt><dd>A non-negative number on success to indicate how many bytes have been sent; otherwise, an error code from <code>pp_errors.h</code>. <code>PP_ERROR_NOACCESS</code> will be returned if the caller doesn't have required permissions. </dd></dl>
+<dl class="return"><dt><b>Returns:</b></dt><dd>A non-negative number on success to indicate how many bytes have been sent; otherwise, an error code from <code>pp_errors.h</code>. <code>PP_ERROR_NOACCESS</code> will be returned if the caller doesn't have required permissions. <code>PP_ERROR_INPROGRESS</code> will be returned if the socket is busy sending. The caller should wait until a pending send completes before retrying. </dd></dl>
 </div>
 </div>
 <a class="anchor" id="a5ff91fd2342e534b57980c0c2e414251"></a><!-- doxytag: member="pp::UDPSocket::SetOption" ref="a5ff91fd2342e534b57980c0c2e414251" args="(PP_UDPSocket_Option name, const Var &amp;value, const CompletionCallback &amp;callback)" -->

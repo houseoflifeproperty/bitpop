@@ -8,11 +8,11 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/ui/website_settings/website_settings_ui.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/infobars/core/infobar.h"
@@ -73,10 +73,9 @@ class WebsiteSettingsTest : public ChromeRenderViewHostTestHarness {
  public:
   WebsiteSettingsTest() : cert_id_(0), url_("http://www.example.com") {}
 
-  virtual ~WebsiteSettingsTest() {
-  }
+  ~WebsiteSettingsTest() override {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     ChromeRenderViewHostTestHarness::SetUp();
     // Setup stub SSLStatus.
     ssl_.security_style = content::SECURITY_STYLE_UNAUTHENTICATED;
@@ -103,7 +102,7 @@ class WebsiteSettingsTest : public ChromeRenderViewHostTestHarness {
     mock_ui_.reset(new MockWebsiteSettingsUI());
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     ASSERT_TRUE(website_settings_.get())
         << "No WebsiteSettings instance created.";
     RenderViewHostTestHarness::TearDown();
@@ -117,6 +116,8 @@ class WebsiteSettingsTest : public ChromeRenderViewHostTestHarness {
     EXPECT_CALL(*mock_ui, SetCookieInfo(_));
     EXPECT_CALL(*mock_ui, SetFirstVisit(base::string16()));
   }
+
+  void SetURL(std::string url) { url_ = GURL(url); }
 
   const GURL& url() const { return url_; }
   MockCertStore* cert_store() { return &cert_store_; }
@@ -183,7 +184,7 @@ TEST_F(WebsiteSettingsTest, OnPermissionsChanged) {
   // OnSitePermissionChanged() is called.
 // TODO(markusheintz): This is a temporary hack to fix issue: http://crbug.com/144203.
 #if defined(OS_MACOSX)
-  EXPECT_CALL(*mock_ui(), SetPermissionInfo(_)).Times(6);
+  EXPECT_CALL(*mock_ui(), SetPermissionInfo(_)).Times(7);
 #else
   EXPECT_CALL(*mock_ui(), SetPermissionInfo(_)).Times(1);
 #endif
@@ -200,7 +201,9 @@ TEST_F(WebsiteSettingsTest, OnPermissionsChanged) {
   website_settings()->OnSitePermissionChanged(
       CONTENT_SETTINGS_TYPE_NOTIFICATIONS, CONTENT_SETTING_ALLOW);
   website_settings()->OnSitePermissionChanged(
-        CONTENT_SETTINGS_TYPE_MEDIASTREAM, CONTENT_SETTING_ALLOW);
+      CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC, CONTENT_SETTING_ALLOW);
+  website_settings()->OnSitePermissionChanged(
+      CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA, CONTENT_SETTING_ALLOW);
 
   // Verify that the site permissions were changed correctly.
   setting = content_settings->GetContentSetting(
@@ -221,6 +224,55 @@ TEST_F(WebsiteSettingsTest, OnPermissionsChanged) {
   setting = content_settings->GetContentSetting(
       url(), url(), CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ALLOW);
+}
+
+TEST_F(WebsiteSettingsTest, OnPermissionsChanged_Fullscreen) {
+  // Setup site permissions.
+  HostContentSettingsMap* content_settings =
+      profile()->GetHostContentSettingsMap();
+  ContentSetting setting = content_settings->GetContentSetting(
+      url(), url(), CONTENT_SETTINGS_TYPE_FULLSCREEN, std::string());
+  EXPECT_EQ(setting, CONTENT_SETTING_ASK);
+
+  EXPECT_CALL(*mock_ui(), SetIdentityInfo(_));
+  EXPECT_CALL(*mock_ui(), SetCookieInfo(_));
+  EXPECT_CALL(*mock_ui(), SetFirstVisit(base::string16()));
+  EXPECT_CALL(*mock_ui(), SetSelectedTab(
+      WebsiteSettingsUI::TAB_ID_PERMISSIONS));
+
+  // SetPermissionInfo() is called once initially, and then again every time
+  // OnSitePermissionChanged() is called.
+  // TODO(markusheintz): This is a temporary hack to fix issue:
+  // http://crbug.com/144203.
+#if defined(OS_MACOSX)
+  EXPECT_CALL(*mock_ui(), SetPermissionInfo(_)).Times(3);
+#else
+  EXPECT_CALL(*mock_ui(), SetPermissionInfo(_)).Times(1);
+#endif
+
+  // Execute code under tests.
+  website_settings()->OnSitePermissionChanged(CONTENT_SETTINGS_TYPE_FULLSCREEN,
+                                              CONTENT_SETTING_ALLOW);
+
+  // Verify that the site permissions were changed correctly.
+  setting = content_settings->GetContentSetting(
+      url(), url(), CONTENT_SETTINGS_TYPE_FULLSCREEN, std::string());
+  EXPECT_EQ(setting, CONTENT_SETTING_ALLOW);
+
+  // ... and that the primary pattern must match the secondary one.
+  setting = content_settings->GetContentSetting(
+      url(), GURL("https://test.com"),
+      CONTENT_SETTINGS_TYPE_FULLSCREEN, std::string());
+  EXPECT_EQ(setting, CONTENT_SETTING_ASK);
+
+
+  // Resetting the setting should move the permission back to ASK.
+  website_settings()->OnSitePermissionChanged(CONTENT_SETTINGS_TYPE_FULLSCREEN,
+                                              CONTENT_SETTING_ASK);
+
+  setting = content_settings->GetContentSetting(
+      url(), url(), CONTENT_SETTINGS_TYPE_FULLSCREEN, std::string());
+  EXPECT_EQ(setting, CONTENT_SETTING_ASK);
 }
 
 TEST_F(WebsiteSettingsTest, OnSiteDataAccessed) {
@@ -341,7 +393,7 @@ TEST_F(WebsiteSettingsTest, HTTPSConnectionError) {
   ssl_.security_style = content::SECURITY_STYLE_AUTHENTICATED;
   ssl_.cert_id = cert_id();
   ssl_.cert_status = 0;
-  ssl_.security_bits = 1;
+  ssl_.security_bits = -1;
   int status = 0;
   status = SetSSLVersion(status, net::SSL_CONNECTION_VERSION_TLS1);
   status = SetSSLCipherSuite(status, CR_TLS_RSA_WITH_AES_256_CBC_SHA256);
@@ -390,4 +442,24 @@ TEST_F(WebsiteSettingsTest, ShowInfoBar) {
   ASSERT_EQ(1u, infobar_service()->infobar_count());
 
   infobar_service()->RemoveInfoBar(infobar_service()->infobar_at(0));
+}
+
+TEST_F(WebsiteSettingsTest, AboutBlankPage) {
+  SetURL("about:blank");
+  SetDefaultUIExpectations(mock_ui());
+  EXPECT_EQ(WebsiteSettings::SITE_CONNECTION_STATUS_INTERNAL_PAGE,
+            website_settings()->site_connection_status());
+  EXPECT_EQ(WebsiteSettings::SITE_IDENTITY_STATUS_INTERNAL_PAGE,
+            website_settings()->site_identity_status());
+  EXPECT_EQ(base::string16(), website_settings()->organization_name());
+}
+
+TEST_F(WebsiteSettingsTest, InternalPage) {
+  SetURL("chrome://bookmarks");
+  SetDefaultUIExpectations(mock_ui());
+  EXPECT_EQ(WebsiteSettings::SITE_CONNECTION_STATUS_INTERNAL_PAGE,
+            website_settings()->site_connection_status());
+  EXPECT_EQ(WebsiteSettings::SITE_IDENTITY_STATUS_INTERNAL_PAGE,
+            website_settings()->site_identity_status());
+  EXPECT_EQ(base::string16(), website_settings()->organization_name());
 }

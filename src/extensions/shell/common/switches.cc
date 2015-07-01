@@ -7,14 +7,23 @@
 namespace extensions {
 namespace switches {
 
-// Path to an app to load at startup.
-const char kAppShellAppPath[] = "app-shell-app-path";
+// Allow roaming in the cellular network.
+const char kAppShellAllowRoaming[] = "app-shell-allow-roaming";
 
-// Bounds for the host window to create (i.e. "800x600").
-const char kAppShellHostWindowBounds[] = "app-shell-host-window-bounds";
+// Size for the host window to create (i.e. "800x600").
+const char kAppShellHostWindowSize[] = "app-shell-host-window-size";
+
+// ID of an extension CRX to be downloaded from the web store.
+const char kAppShellInstallCrx[] = "app-shell-install-crx";
 
 // SSID of the preferred WiFi network.
 const char kAppShellPreferredNetwork[] = "app-shell-preferred-network";
+
+// Refresh token for identity API calls for the current user. Used for testing.
+const char kAppShellRefreshToken[] = "app-shell-refresh-token";
+
+// User email address of the current user.
+const char kAppShellUser[] = "app-shell-user";
 
 }  // namespace switches
 }  // namespace extensions

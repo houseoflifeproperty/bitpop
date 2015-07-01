@@ -30,15 +30,16 @@
   size_t offset = base::string16::npos;
   base::string16 message = delegate->GetMessageTextWithOffset(&offset);
   base::string16 link = delegate->GetLinkText();
+  message.insert(offset, link);
   NSFont* font = [NSFont labelFontOfSize:
                   [NSFont systemFontSizeForControlSize:NSRegularControlSize]];
   HyperlinkTextView* view = (HyperlinkTextView*)label_.get();
-  [view setMessageAndLink:base::SysUTF16ToNSString(message)
-                 withLink:base::SysUTF16ToNSString(link)
-                 atOffset:offset
-                     font:font
-             messageColor:[NSColor blackColor]
-                linkColor:[NSColor blueColor]];
+  [view setMessage:base::SysUTF16ToNSString(message)
+          withFont:font
+      messageColor:[NSColor blackColor]];
+  [view addLinkRange:NSMakeRange(offset, link.length())
+            withName:@""
+           linkColor:[NSColor blueColor]];
 }
 
 // Called when someone clicks on the link in the infobar.  This method
@@ -60,10 +61,9 @@
 // static
 scoped_ptr<infobars::InfoBar> AlternateNavInfoBarDelegate::CreateInfoBar(
     scoped_ptr<AlternateNavInfoBarDelegate> delegate) {
-  scoped_ptr<InfoBarCocoa> infobar(
-      new InfoBarCocoa(delegate.PassAs<infobars::InfoBarDelegate>()));
+  scoped_ptr<InfoBarCocoa> infobar(new InfoBarCocoa(delegate.Pass()));
   base::scoped_nsobject<AlternateNavInfoBarController> controller(
       [[AlternateNavInfoBarController alloc] initWithInfoBar:infobar.get()]);
   infobar->set_controller(controller);
-  return infobar.PassAs<infobars::InfoBar>();
+  return infobar.Pass();
 }

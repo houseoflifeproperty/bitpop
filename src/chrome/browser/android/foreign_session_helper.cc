@@ -20,6 +20,8 @@
 #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "jni/ForeignSessionHelper_jni.h"
@@ -40,13 +42,13 @@ OpenTabsUIDelegate* GetOpenTabsUIDelegate(Profile* profile) {
       GetForProfile(profile);
 
   // Only return the delegate if it exists and it is done syncing sessions.
-  if (!service || !service->ShouldPushChanges())
+  if (!service || !service->SyncActive())
     return NULL;
 
   return service->GetOpenTabsUIDelegate();
 }
 
-bool ShouldSkipTab(const SessionTab& session_tab) {
+bool ShouldSkipTab(const sessions::SessionTab& session_tab) {
     if (session_tab.navigations.empty())
       return true;
 
@@ -60,10 +62,10 @@ bool ShouldSkipTab(const SessionTab& session_tab) {
     return false;
 }
 
-bool ShouldSkipWindow(const SessionWindow& window) {
-  for (std::vector<SessionTab*>::const_iterator tab_it = window.tabs.begin();
-      tab_it != window.tabs.end(); ++tab_it) {
-    const SessionTab &session_tab = **tab_it;
+bool ShouldSkipWindow(const sessions::SessionWindow& window) {
+  for (std::vector<sessions::SessionTab*>::const_iterator tab_it =
+           window.tabs.begin(); tab_it != window.tabs.end(); ++tab_it) {
+    const sessions::SessionTab &session_tab = **tab_it;
     if (!ShouldSkipTab(session_tab))
       return false;
   }
@@ -73,7 +75,7 @@ bool ShouldSkipWindow(const SessionWindow& window) {
 bool ShouldSkipSession(const browser_sync::SyncedSession& session) {
   for (SyncedSession::SyncedWindowMap::const_iterator it =
       session.windows.begin(); it != session.windows.end(); ++it) {
-    const SessionWindow  &window = *(it->second);
+    const sessions::SessionWindow  &window = *(it->second);
     if (!ShouldSkipWindow(window))
       return false;
   }
@@ -82,11 +84,11 @@ bool ShouldSkipSession(const browser_sync::SyncedSession& session) {
 
 void CopyTabsToJava(
     JNIEnv* env,
-    const SessionWindow& window,
+    const sessions::SessionWindow& window,
     ScopedJavaLocalRef<jobject>& j_window) {
-  for (std::vector<SessionTab*>::const_iterator tab_it = window.tabs.begin();
-      tab_it != window.tabs.end(); ++tab_it) {
-    const SessionTab &session_tab = **tab_it;
+  for (std::vector<sessions::SessionTab*>::const_iterator tab_it =
+           window.tabs.begin(); tab_it != window.tabs.end(); ++tab_it) {
+    const sessions::SessionTab &session_tab = **tab_it;
 
     if (ShouldSkipTab(session_tab))
       continue;
@@ -115,7 +117,7 @@ void CopyWindowsToJava(
     ScopedJavaLocalRef<jobject>& j_session) {
   for (SyncedSession::SyncedWindowMap::const_iterator it =
       session.windows.begin(); it != session.windows.end(); ++it) {
-    const SessionWindow &window = *(it->second);
+    const sessions::SessionWindow &window = *(it->second);
 
     if (ShouldSkipWindow(window))
       continue;
@@ -162,6 +164,14 @@ jboolean ForeignSessionHelper::IsTabSyncEnabled(JNIEnv* env, jobject obj) {
   ProfileSyncService* service = ProfileSyncServiceFactory::GetInstance()->
       GetForProfile(profile_);
   return service && service->GetActiveDataTypes().Has(syncer::PROXY_TABS);
+}
+
+void ForeignSessionHelper::TriggerSessionSync(JNIEnv* env, jobject obj) {
+  const syncer::ModelTypeSet types(syncer::SESSIONS);
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_SYNC_REFRESH_LOCAL,
+      content::Source<Profile>(profile_),
+      content::Details<const syncer::ModelTypeSet>(&types));
 }
 
 void ForeignSessionHelper::SetOnForeignSessionCallback(JNIEnv* env,
@@ -255,7 +265,7 @@ jboolean ForeignSessionHelper::OpenForeignSessionTab(JNIEnv* env,
     return false;
   }
 
-  const SessionTab* session_tab;
+  const sessions::SessionTab* session_tab;
 
   if (!open_tabs->GetForeignTab(ConvertJavaStringToUTF8(env, session_tag),
                                 session_tab_id,

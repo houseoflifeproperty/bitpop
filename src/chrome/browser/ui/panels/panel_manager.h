@@ -14,7 +14,7 @@
 #include "chrome/browser/ui/panels/panel.h"
 #include "chrome/browser/ui/panels/panel_collection.h"
 #include "chrome/browser/ui/panels/panel_constants.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 class DetachedPanelCollection;
 class DockedPanelCollection;
@@ -196,10 +196,10 @@ class PanelManager : public DisplaySettingsProvider::DisplayObserver,
   void Initialize(DisplaySettingsProvider* provider);
 
   // Overridden from DisplaySettingsProvider::DisplayObserver:
-  virtual void OnDisplayChanged() OVERRIDE;
+  void OnDisplayChanged() override;
 
   // Overridden from DisplaySettingsProvider::FullScreenObserver:
-  virtual void OnFullScreenModeChanged(bool is_full_screen) OVERRIDE;
+  void OnFullScreenModeChanged(bool is_full_screen) override;
 
   // Returns the collection to which a new panel should add. The new panel
   // is expected to be created with |bounds| and |mode|. The size of |bounds|

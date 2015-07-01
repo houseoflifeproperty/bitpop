@@ -8,8 +8,8 @@
 
 #include "base/command_line.h"
 #include "base/debug/alias.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/defaults.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
@@ -26,7 +26,6 @@
 #include "grit/theme_resources.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/accessibility/ax_view_state.h"
-#include "ui/aura/env.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/list_selection_model.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -37,9 +36,10 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_analysis.h"
 #include "ui/gfx/favicon_size.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/image/image_skia_operations.h"
+#include "ui/gfx/paint_throbber.h"
 #include "ui/gfx/path.h"
-#include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/resources/grit/ui_resources.h"
 #include "ui/views/border.h"
@@ -50,6 +50,10 @@
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/non_client_view.h"
+
+#if defined(USE_AURA)
+#include "ui/aura/env.h"
+#endif
 
 using base::UserMetricsAction;
 
@@ -75,12 +79,14 @@ static const int kFaviconTitleSpacing = 4;
 static const int kViewSpacing = 3;
 static const int kStandardTitleWidth = 175;
 
+// Width of mini-tabs.
+const int kMiniTabWidth = 64;
+
 // When a non-mini-tab becomes a mini-tab the width of the tab animates. If
 // the width of a mini-tab is >= kMiniTabRendererAsNormalTabWidth then the tab
 // is rendered as a normal tab. This is done to avoid having the title
 // immediately disappear when transitioning a tab from normal to mini-tab.
-static const int kMiniTabRendererAsNormalTabWidth =
-    browser_defaults::kMiniTabWidth + 30;
+static const int kMiniTabRendererAsNormalTabWidth = kMiniTabWidth + 30;
 
 // How opaque to make the hover state (out of 1).
 static const double kHoverOpacity = 0.33;
@@ -199,10 +205,10 @@ class Tab::FaviconCrashAnimation : public gfx::LinearAnimation,
       : gfx::LinearAnimation(1000, 25, this),
         target_(target) {
   }
-  virtual ~FaviconCrashAnimation() {}
+  ~FaviconCrashAnimation() override {}
 
   // gfx::Animation overrides:
-  virtual void AnimateToState(double state) OVERRIDE {
+  void AnimateToState(double state) override {
     const double kHidingOffset = 27;
 
     if (state < .5) {
@@ -217,7 +223,7 @@ class Tab::FaviconCrashAnimation : public gfx::LinearAnimation,
   }
 
   // gfx::AnimationDelegate overrides:
-  virtual void AnimationCanceled(const gfx::Animation* animation) OVERRIDE {
+  void AnimationCanceled(const gfx::Animation* animation) override {
     target_->SetFaviconHidingOffset(0);
   }
 
@@ -242,10 +248,10 @@ class Tab::TabCloseButton : public views::ImageButton,
         scoped_ptr<views::ViewTargeter>(new views::ViewTargeter(this)));
   }
 
-  virtual ~TabCloseButton() {}
+  ~TabCloseButton() override {}
 
   // views::View:
-  virtual View* GetTooltipHandlerForPoint(const gfx::Point& point) OVERRIDE {
+  View* GetTooltipHandlerForPoint(const gfx::Point& point) override {
     // Tab close button has no children, so tooltip handler should be the same
     // as the event handler.
     // In addition, a hit test has to be performed for the point (as
@@ -255,35 +261,33 @@ class Tab::TabCloseButton : public views::ImageButton,
     return GetEventHandlerForPoint(point);
   }
 
-  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE {
+  bool OnMousePressed(const ui::MouseEvent& event) override {
     tab_->controller_->OnMouseEventInTab(this, event);
 
     bool handled = ImageButton::OnMousePressed(event);
     // Explicitly mark midle-mouse clicks as non-handled to ensure the tab
     // sees them.
-    return event.IsOnlyMiddleMouseButton() ? false : handled;
+    return !event.IsMiddleMouseButton() && handled;
   }
 
-  virtual void OnMouseMoved(const ui::MouseEvent& event) OVERRIDE {
+  void OnMouseMoved(const ui::MouseEvent& event) override {
     tab_->controller_->OnMouseEventInTab(this, event);
     CustomButton::OnMouseMoved(event);
   }
 
-  virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE {
+  void OnMouseReleased(const ui::MouseEvent& event) override {
     tab_->controller_->OnMouseEventInTab(this, event);
     CustomButton::OnMouseReleased(event);
   }
 
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
+  void OnGestureEvent(ui::GestureEvent* event) override {
     // Consume all gesture events here so that the parent (Tab) does not
     // start consuming gestures.
     ImageButton::OnGestureEvent(event);
     event->SetHandled();
   }
 
-  virtual const char* GetClassName() const OVERRIDE {
-    return kTabCloseButtonName;
-  }
+  const char* GetClassName() const override { return kTabCloseButtonName; }
 
  private:
   // Returns the rectangular bounds of parent tab's visible region in the
@@ -316,7 +320,7 @@ class Tab::TabCloseButton : public views::ImageButton,
   }
 
   // views::ViewTargeterDelegate:
-  virtual View* TargetForRect(View* root, const gfx::Rect& rect) OVERRIDE {
+  View* TargetForRect(View* root, const gfx::Rect& rect) override {
     CHECK_EQ(root, this);
 
     if (!views::UsePointBasedTargeting(rect))
@@ -326,15 +330,17 @@ class Tab::TabCloseButton : public views::ImageButton,
     gfx::Rect contents_bounds = GetContentsBounds();
     contents_bounds.set_x(GetMirroredXForRect(contents_bounds));
 
+#if defined(USE_AURA)
     // Include the padding in hit-test for touch events.
     if (aura::Env::GetInstance()->is_touch_down())
       contents_bounds = GetLocalBounds();
+#endif
 
     return contents_bounds.Intersects(rect) ? this : parent();
   }
 
   // views:MaskedTargeterDelegate:
-  virtual bool GetHitTestMask(gfx::Path* mask) const OVERRIDE {
+  bool GetHitTestMask(gfx::Path* mask) const override {
     DCHECK(mask);
     mask->reset();
 
@@ -355,8 +361,8 @@ class Tab::TabCloseButton : public views::ImageButton,
     return false;
   }
 
-  virtual bool DoesIntersectRect(const View* target,
-                                 const gfx::Rect& rect) const OVERRIDE {
+  bool DoesIntersectRect(const View* target,
+                         const gfx::Rect& rect) const override {
     CHECK_EQ(target, this);
 
     // If the request is not made in response to a gesture, use the
@@ -433,6 +439,7 @@ Tab::Tab(TabController* controller)
 
   title_->SetHorizontalAlignment(gfx::ALIGN_TO_HEAD);
   title_->SetElideBehavior(gfx::FADE_TAIL);
+  title_->SetHandlesTooltips(false);
   title_->SetAutoColorReadabilityEnabled(false);
   title_->SetText(CoreTabHelper::GetDefaultTitle());
   AddChildView(title_);
@@ -517,8 +524,7 @@ void Tab::SetData(const TabRendererData& data) {
     GetMediaIndicatorButton()->TransitionToMediaState(data_.media_state);
 
   if (old.mini != data_.mini) {
-    StopAndDeleteAnimation(
-        mini_title_change_animation_.PassAs<gfx::Animation>());
+    StopAndDeleteAnimation(mini_title_change_animation_.Pass());
   }
 
   DataChanged(old);
@@ -549,7 +555,7 @@ void Tab::StartPulse() {
 }
 
 void Tab::StopPulse() {
-  StopAndDeleteAnimation(pulse_animation_.PassAs<gfx::Animation>());
+  StopAndDeleteAnimation(pulse_animation_.Pass());
 }
 
 void Tab::StartMiniTabTitleAnimation() {
@@ -581,7 +587,7 @@ void Tab::StartMiniTabTitleAnimation() {
 }
 
 void Tab::StopMiniTabTitleAnimation() {
-  StopAndDeleteAnimation(mini_title_change_animation_.PassAs<gfx::Animation>());
+  StopAndDeleteAnimation(mini_title_change_animation_.Pass());
 }
 
 // static
@@ -623,7 +629,7 @@ int Tab::GetTouchWidth() {
 
 // static
 int Tab::GetMiniWidth() {
-  return browser_defaults::kMiniTabWidth;
+  return kMiniTabWidth;
 }
 
 // static
@@ -706,11 +712,11 @@ bool Tab::GetHitTestMask(gfx::Path* mask) const {
   controller_->ShouldPaintTab(this, &clip);
   if (clip.size().GetArea()) {
     SkRect intersection(mask->getBounds());
-    intersection.intersect(RectToSkRect(clip));
     mask->reset();
+    if (!intersection.intersect(RectToSkRect(clip)))
+       return false;
     mask->addRect(intersection);
   }
-
   return true;
 }
 
@@ -835,7 +841,7 @@ bool Tab::GetTooltipText(const gfx::Point& p, base::string16* tooltip) const {
 
 bool Tab::GetTooltipTextOrigin(const gfx::Point& p, gfx::Point* origin) const {
   origin->set_x(title_->x() + 10);
-  origin->set_y(-views::TooltipManager::GetTooltipHeight() - 4);
+  origin->set_y(-4);
   return true;
 }
 
@@ -865,9 +871,11 @@ bool Tab::OnMousePressed(const ui::MouseEvent& event) {
         }
       } else if (!IsSelected()) {
         controller_->SelectTab(this);
+        content::RecordAction(UserMetricsAction("SwitchTab_Click"));
       }
     } else if (!IsSelected()) {
       controller_->SelectTab(this);
+      content::RecordAction(UserMetricsAction("SwitchTab_Click"));
     }
     ui::MouseEvent cloned_event(event_in_parent, parent(),
                                 static_cast<View*>(this));
@@ -1325,15 +1333,16 @@ void Tab::PaintIcon(gfx::Canvas* canvas) {
   if (data().network_state != TabRendererData::NETWORK_STATE_NONE) {
     // Paint network activity (aka throbber) animation frame.
     ui::ThemeProvider* tp = GetThemeProvider();
-    gfx::ImageSkia frames(*tp->GetImageSkiaNamed(
-        (data().network_state == TabRendererData::NETWORK_STATE_WAITING) ?
-        IDR_THROBBER_WAITING : IDR_THROBBER));
-
-    int icon_size = frames.height();
-    int image_offset = loading_animation_frame_ * icon_size;
-    DrawIconCenter(canvas, frames, image_offset,
-                   icon_size, icon_size,
-                   bounds, false, SkPaint());
+    if (data().network_state == TabRendererData::NETWORK_STATE_WAITING) {
+      gfx::PaintThrobberWaitingForFrame(
+          canvas, bounds, tp->GetColor(ThemeProperties::COLOR_THROBBER_WAITING),
+          loading_animation_frame_);
+    } else {
+      gfx::PaintThrobberSpinningForFrame(
+          canvas, bounds,
+          tp->GetColor(ThemeProperties::COLOR_THROBBER_SPINNING),
+          loading_animation_frame_);
+    }
   } else if (should_display_crashed_favicon_) {
     // Paint crash favicon.
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
@@ -1354,61 +1363,25 @@ void Tab::PaintIcon(gfx::Canvas* canvas) {
 
 void Tab::AdvanceLoadingAnimation(TabRendererData::NetworkState old_state,
                                   TabRendererData::NetworkState state) {
-  static bool initialized = false;
-  static int loading_animation_frame_count = 0;
-  static int waiting_animation_frame_count = 0;
-  static int waiting_to_loading_frame_count_ratio = 0;
-  if (!initialized) {
-    initialized = true;
-    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-    gfx::ImageSkia loading_animation(*rb.GetImageSkiaNamed(IDR_THROBBER));
-    loading_animation_frame_count =
-        loading_animation.width() / loading_animation.height();
-    gfx::ImageSkia waiting_animation(*rb.GetImageSkiaNamed(
-        IDR_THROBBER_WAITING));
-    waiting_animation_frame_count =
-        waiting_animation.width() / waiting_animation.height();
-    waiting_to_loading_frame_count_ratio =
-        waiting_animation_frame_count / loading_animation_frame_count;
-
-    base::debug::Alias(&loading_animation_frame_count);
-    base::debug::Alias(&waiting_animation_frame_count);
-    CHECK_NE(0, waiting_to_loading_frame_count_ratio) <<
-        "Number of frames in IDR_THROBBER must be equal to or greater " <<
-        "than the number of frames in IDR_THROBBER_WAITING. Please " <<
-        "investigate how this happened and update http://crbug.com/132590, " <<
-        "this is causing crashes in the wild.";
-  }
-
-  // The waiting animation is the reverse of the loading animation, but at a
-  // different rate - the following reverses and scales the animation_frame_
-  // so that the frame is at an equivalent position when going from one
-  // animation to the other.
-  if (state != old_state) {
-    loading_animation_frame_ = loading_animation_frame_count -
-        (loading_animation_frame_ / waiting_to_loading_frame_count_ratio);
-  }
-
   if (state == TabRendererData::NETWORK_STATE_WAITING) {
-    loading_animation_frame_ = (loading_animation_frame_ + 1) %
-        waiting_animation_frame_count;
+    ++loading_animation_frame_;
     // Waiting steps backwards.
     immersive_loading_step_ =
         (immersive_loading_step_ - 1 + kImmersiveLoadingStepCount) %
             kImmersiveLoadingStepCount;
   } else if (state == TabRendererData::NETWORK_STATE_LOADING) {
-    loading_animation_frame_ = (loading_animation_frame_ + 1) %
-        loading_animation_frame_count;
+    ++loading_animation_frame_;
     immersive_loading_step_ = (immersive_loading_step_ + 1) %
         kImmersiveLoadingStepCount;
   } else {
     loading_animation_frame_ = 0;
     immersive_loading_step_ = 0;
   }
-  if (controller_->IsImmersiveStyle())
+  if (controller_->IsImmersiveStyle()) {
     SchedulePaintInRect(GetImmersiveBarRect());
-  else
+  } else {
     ScheduleIconPaint();
+  }
 }
 
 int Tab::IconCapacity() const {
@@ -1440,6 +1413,9 @@ bool Tab::ShouldShowMediaIndicator() const {
 }
 
 bool Tab::ShouldShowCloseBox() const {
+  if (!IsActive() && controller_->ShouldHideCloseButtonForInactiveTabs())
+    return false;
+
   return chrome::ShouldTabShowCloseButton(
       IconCapacity(), data().mini, IsActive());
 }

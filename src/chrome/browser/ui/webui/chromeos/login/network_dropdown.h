@@ -33,25 +33,24 @@ class NetworkDropdown : public NetworkMenu::Delegate,
   };
 
   NetworkDropdown(Actor* actor, content::WebUI* web_ui, bool oobe);
-  virtual ~NetworkDropdown();
+  ~NetworkDropdown() override;
 
   // This method should be called, when item with the given id is chosen.
   void OnItemChosen(int id);
 
   // NetworkMenu::Delegate
-  virtual gfx::NativeWindow GetNativeWindow() const OVERRIDE;
-  virtual void OpenButtonOptions() OVERRIDE;
-  virtual bool ShouldOpenButtonOptions() const OVERRIDE;
-  virtual void OnConnectToNetworkRequested() OVERRIDE;
+  gfx::NativeWindow GetNativeWindow() const override;
+  void OpenButtonOptions() override;
+  bool ShouldOpenButtonOptions() const override;
+  void OnConnectToNetworkRequested() override;
 
   // NetworkStateHandlerObserver
-  virtual void DefaultNetworkChanged(const NetworkState* network) OVERRIDE;
-  virtual void NetworkConnectionStateChanged(
-      const NetworkState* network) OVERRIDE;
-  virtual void NetworkListChanged() OVERRIDE;
+  void DefaultNetworkChanged(const NetworkState* network) override;
+  void NetworkConnectionStateChanged(const NetworkState* network) override;
+  void NetworkListChanged() override;
 
   // network_icon::AnimationObserver
-  virtual void NetworkIconChanged() OVERRIDE;
+  void NetworkIconChanged() override;
 
   // Refreshes control state. Usually there's no need to do it manually
   // as control refreshes itself on network state change.

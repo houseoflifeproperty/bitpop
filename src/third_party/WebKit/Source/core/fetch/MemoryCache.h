@@ -25,6 +25,7 @@
 #ifndef MemoryCache_h
 #define MemoryCache_h
 
+#include "core/CoreExport.h"
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourcePtr.h"
 #include "public/platform/WebThread.h"
@@ -36,13 +37,9 @@
 
 namespace blink  {
 
-class CSSStyleSheetResource;
 class Resource;
-class ResourceFetcher;
 class KURL;
 class ExecutionContext;
-class SecurityOrigin;
-struct SecurityOriginHash;
 
 // This cache holds subresources used by Web pages: images, scripts, stylesheets, etc.
 
@@ -76,10 +73,16 @@ enum UpdateReason {
 // MemoryCacheEntry class is used only in MemoryCache class, but we don't make
 // MemoryCacheEntry class an inner class of MemoryCache because of dependency
 // from MemoryCacheLRUList.
-class MemoryCacheEntry FINAL : public NoBaseWillBeGarbageCollectedFinalized<MemoryCacheEntry> {
+class MemoryCacheEntry final : public NoBaseWillBeGarbageCollectedFinalized<MemoryCacheEntry> {
 public:
-    static PassOwnPtrWillBeRawPtr<MemoryCacheEntry> create(Resource* resource) { return adoptPtrWillBeNoop(new MemoryCacheEntry(resource)); }
-    void trace(Visitor*);
+    static PassOwnPtrWillBeRawPtr<MemoryCacheEntry> create(Resource* resource)
+    {
+        return adoptPtrWillBeNoop(new MemoryCacheEntry(resource));
+    }
+    DECLARE_TRACE();
+#if ENABLE(OILPAN)
+    void dispose();
+#endif
 
     ResourcePtr<Resource> m_resource;
     bool m_inLiveDecodedResourcesList;
@@ -107,17 +110,19 @@ private:
     }
 };
 
+WILL_NOT_BE_EAGERLY_TRACED_CLASS(MemoryCacheEntry);
+
 // MemoryCacheLRUList is used only in MemoryCache class, but we don't make
 // MemoryCacheLRUList an inner struct of MemoryCache because we can't define
 // VectorTraits for inner structs.
-struct MemoryCacheLRUList FINAL {
+struct MemoryCacheLRUList final {
     ALLOW_ONLY_INLINE_ALLOCATION();
 public:
     RawPtrWillBeMember<MemoryCacheEntry> m_head;
     RawPtrWillBeMember<MemoryCacheEntry> m_tail;
 
     MemoryCacheLRUList() : m_head(nullptr), m_tail(nullptr) { }
-    void trace(Visitor*);
+    DECLARE_TRACE();
 };
 
 }
@@ -126,12 +131,12 @@ WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(blink::MemoryCacheLRUList);
 
 namespace blink {
 
-class MemoryCache FINAL : public NoBaseWillBeGarbageCollectedFinalized<MemoryCache>, public WebThread::TaskObserver {
-    WTF_MAKE_NONCOPYABLE(MemoryCache); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+class CORE_EXPORT MemoryCache final : public NoBaseWillBeGarbageCollectedFinalized<MemoryCache>, public WebThread::TaskObserver {
+    WTF_MAKE_NONCOPYABLE(MemoryCache); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(MemoryCache);
 public:
     static PassOwnPtrWillBeRawPtr<MemoryCache> create();
     ~MemoryCache();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     struct TypeStatistic {
         int count;
@@ -168,6 +173,8 @@ public:
     };
 
     Resource* resourceForURL(const KURL&);
+    Resource* resourceForURL(const KURL&, const String& cacheIdentifier);
+    WillBeHeapVector<RawPtrWillBeMember<Resource>> resourcesForURL(const KURL&);
 
     void add(Resource*);
     void replace(Resource* newResource, Resource* oldResource);
@@ -175,6 +182,8 @@ public:
     bool contains(const Resource*) const;
 
     static KURL removeFragmentIdentifierIfNeeded(const KURL& originalURL);
+
+    static String defaultCacheIdentifier();
 
     // Sets the cache's memory capacities, in bytes. These will hold only approximately,
     // since the decoded cost of resources like scripts and stylesheets is not known.
@@ -202,7 +211,7 @@ public:
     // This should be called when a Resource object becomes unnecesarry.
     void unregisterLiveResource(Resource&);
 
-    static void removeURLFromCache(ExecutionContext*, const KURL&);
+    void removeURLFromCache(const KURL&);
 
     Statistics getStatistics();
 
@@ -216,10 +225,21 @@ public:
     MemoryCacheLiveResourcePriority priority(Resource*) const;
 
     // TaskObserver implementation
-    virtual void willProcessTask() OVERRIDE;
-    virtual void didProcessTask() OVERRIDE;
+    virtual void willProcessTask() override;
+    virtual void didProcessTask() override;
+
+    void pruneAll();
+
+    void updateFramePaintTimestamp();
 
 private:
+    enum PruneStrategy {
+        // Automatically decide how much to prune.
+        AutomaticPrune,
+        // Maximally prune resources.
+        MaximalPrune
+    };
+
     MemoryCache();
 
     MemoryCacheLRUList* lruListFor(unsigned accessCount, size_t);
@@ -232,21 +252,25 @@ private:
     // Calls to put the cached resource into and out of LRU lists.
     void insertInLRUList(MemoryCacheEntry*, MemoryCacheLRUList*);
     void removeFromLRUList(MemoryCacheEntry*, MemoryCacheLRUList*);
+    bool containedInLRUList(MemoryCacheEntry*, MemoryCacheLRUList*);
 
     // Track decoded resources that are in the cache and referenced by a Web page.
     void insertInLiveDecodedResourcesList(MemoryCacheEntry*);
     void removeFromLiveDecodedResourcesList(MemoryCacheEntry*);
+    bool containedInLiveDecodedResourcesList(MemoryCacheEntry*);
 
     size_t liveCapacity() const;
     size_t deadCapacity() const;
 
     // pruneDeadResources() - Flush decoded and encoded data from resources not referenced by Web pages.
     // pruneLiveResources() - Flush decoded data from resources still referenced by Web pages.
-    void pruneDeadResources(); // Automatically decide how much to prune.
-    void pruneLiveResources();
-    void pruneNow(double currentTime);
+    void pruneDeadResources(PruneStrategy);
+    void pruneLiveResources(PruneStrategy);
+    void pruneNow(double currentTime, PruneStrategy);
 
     bool evict(MemoryCacheEntry*);
+
+    MemoryCacheEntry* getEntryForResource(const Resource*) const;
 
     static void removeURLFromCacheInternal(ExecutionContext*, const KURL&);
 
@@ -255,6 +279,7 @@ private:
     double m_maxPruneDeferralDelay;
     double m_pruneTimeStamp;
     double m_pruneFrameTimeStamp;
+    double m_lastFramePaintTimeStamp; // used for detecting decoded resource thrash in the cache
 
     size_t m_capacity;
     size_t m_minDeadCapacity;
@@ -276,16 +301,18 @@ private:
 
     // A URL-based map of all resources that are in the cache (including the freshest version of objects that are currently being
     // referenced by a Web page).
-    typedef WillBeHeapHashMap<String, OwnPtrWillBeMember<MemoryCacheEntry> > ResourceMap;
-    ResourceMap m_resources;
+    using ResourceMap = WillBeHeapHashMap<String, OwnPtrWillBeMember<MemoryCacheEntry>>;
+    using ResourceMapIndex = WillBeHeapHashMap<String, OwnPtrWillBeMember<ResourceMap>>;
+    ResourceMap* ensureResourceMap(const String& cacheIdentifier);
+    ResourceMapIndex m_resourceMaps;
 
 #if ENABLE(OILPAN)
     // Unlike m_allResources, m_liveResources is a set of Resource objects which
     // should not be deleted. m_allResources only contains on-cache Resource
     // objects.
     // FIXME: Can we remove manual lifetime management of Resource and this?
-    HeapHashSet<Member<Resource> > m_liveResources;
-    friend RawPtr<MemoryCache> replaceMemoryCacheForTesting(RawPtr<MemoryCache>);
+    HeapHashSet<Member<Resource>> m_liveResources;
+    friend CORE_EXPORT RawPtr<MemoryCache> replaceMemoryCacheForTesting(RawPtr<MemoryCache>);
 #endif
 
     friend class MemoryCacheTest;
@@ -295,11 +322,11 @@ private:
 };
 
 // Returns the global cache.
-MemoryCache* memoryCache();
+CORE_EXPORT MemoryCache* memoryCache();
 
 // Sets the global cache, used to swap in a test instance. Returns the old
 // MemoryCache object.
-PassOwnPtrWillBeRawPtr<MemoryCache> replaceMemoryCacheForTesting(PassOwnPtrWillBeRawPtr<MemoryCache>);
+CORE_EXPORT PassOwnPtrWillBeRawPtr<MemoryCache> replaceMemoryCacheForTesting(PassOwnPtrWillBeRawPtr<MemoryCache>);
 
 }
 

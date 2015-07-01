@@ -20,6 +20,7 @@
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/skbitmap_operations.h"
@@ -77,8 +78,7 @@ class ShelfButtonAnimation : public gfx::AnimationDelegate {
     animation_.SetTweenType(gfx::Tween::SMOOTH_IN_OUT);
   }
 
-  virtual ~ShelfButtonAnimation() {
-  }
+  ~ShelfButtonAnimation() override {}
 
   gfx::ThrobAnimation& GetThrobAnimation() {
     if (!animation_.is_animating()) {
@@ -89,7 +89,7 @@ class ShelfButtonAnimation : public gfx::AnimationDelegate {
   }
 
   // gfx::AnimationDelegate
-  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE {
+  void AnimationProgressed(const gfx::Animation* animation) override {
     if (animation != &animation_)
       return;
     if (!animation_.is_animating())
@@ -120,13 +120,13 @@ class ShelfButton::BarView : public views::ImageView,
     set_interactive(false);
   }
 
-  virtual ~BarView() {
+  ~BarView() override {
     if (show_attention_)
       ShelfButtonAnimation::GetInstance()->RemoveObserver(this);
   }
 
   // views::View:
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
+  void OnPaint(gfx::Canvas* canvas) override {
     if (show_attention_) {
       int alpha = ShelfButtonAnimation::GetInstance()->GetAlpha();
       canvas->SaveLayerAlpha(alpha);
@@ -138,7 +138,7 @@ class ShelfButton::BarView : public views::ImageView,
   }
 
   // ShelfButtonAnimation::Observer
-  virtual void AnimationProgressed() OVERRIDE {
+  void AnimationProgressed() override {
     UpdateBounds();
     SchedulePaint();
   }
@@ -204,6 +204,9 @@ ShelfButton::IconView::~IconView() {
 ////////////////////////////////////////////////////////////////////////////////
 // ShelfButton
 
+// static
+const char ShelfButton::kViewClassName[] = "ash/ShelfButton";
+
 ShelfButton* ShelfButton::Create(views::ButtonListener* listener,
                                  ShelfButtonHost* host,
                                  ShelfLayoutManager* shelf_layout_manager) {
@@ -225,9 +228,9 @@ ShelfButton::ShelfButton(views::ButtonListener* listener,
   SetAccessibilityFocusable(true);
 
   const gfx::ShadowValue kShadows[] = {
-    gfx::ShadowValue(gfx::Point(0, 2), 0, SkColorSetARGB(0x1A, 0, 0, 0)),
-    gfx::ShadowValue(gfx::Point(0, 3), 1, SkColorSetARGB(0x1A, 0, 0, 0)),
-    gfx::ShadowValue(gfx::Point(0, 0), 1, SkColorSetARGB(0x54, 0, 0, 0)),
+      gfx::ShadowValue(gfx::Vector2d(0, 2), 0, SkColorSetARGB(0x1A, 0, 0, 0)),
+      gfx::ShadowValue(gfx::Vector2d(0, 3), 1, SkColorSetARGB(0x1A, 0, 0, 0)),
+      gfx::ShadowValue(gfx::Vector2d(0, 0), 1, SkColorSetARGB(0x54, 0, 0, 0)),
   };
   icon_shadows_.assign(kShadows, kShadows + arraysize(kShadows));
 
@@ -321,6 +324,10 @@ void ShelfButton::ShowContextMenu(const gfx::Point& p,
   }
 }
 
+const char* ShelfButton::GetClassName() const {
+  return kViewClassName;
+}
+
 bool ShelfButton::OnMousePressed(const ui::MouseEvent& event) {
   CustomButton::OnMousePressed(event);
   host_->PointerPressedOnButton(this, ShelfButtonHost::MOUSE, event);
@@ -399,11 +406,16 @@ void ShelfButton::Layout() {
       icon_width = button_bounds.width() - (x_offset + kBarSize);
   }
 
-  icon_view_->SetBoundsRect(gfx::Rect(
-      button_bounds.x() + x_offset,
-      button_bounds.y() + y_offset,
-      icon_width,
-      icon_height));
+  // Expand bounds to include shadows.
+  gfx::Insets insets_shadows = gfx::ShadowValue::GetMargin(icon_shadows_);
+  // Adjust offsets to center icon, not icon + shadow.
+  x_offset += (insets_shadows.left() - insets_shadows.right()) / 2;
+  y_offset += (insets_shadows.top() - insets_shadows.bottom()) / 2;
+  gfx::Rect icon_view_bounds =
+      gfx::Rect(button_bounds.x() + x_offset, button_bounds.y() + y_offset,
+                icon_width, icon_height);
+  icon_view_bounds.Inset(insets_shadows);
+  icon_view_->SetBoundsRect(icon_view_bounds);
 
   // Icon size has been incorrect when running
   // PanelLayoutManagerTest.PanelAlignmentSecondDisplay on valgrind bot, see

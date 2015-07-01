@@ -8,6 +8,7 @@
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/child/child_process.h"
+#include "content/public/test/mock_render_thread.h"
 #include "content/renderer/media/media_stream.h"
 #include "content/renderer/media/media_stream_video_track.h"
 #include "content/renderer/media/mock_media_stream_registry.h"
@@ -37,11 +38,12 @@ class VideoDestinationHandlerTest : public PpapiUnittest {
  public:
   VideoDestinationHandlerTest()
      : child_process_(new ChildProcess()),
+       render_thread_(new MockRenderThread),
        registry_(new MockMediaStreamRegistry()) {
     registry_->Init(kTestStreamUrl);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     registry_.reset();
     blink::WebHeap::collectAllGarbageForTesting();
     PpapiUnittest::TearDown();
@@ -53,6 +55,7 @@ class VideoDestinationHandlerTest : public PpapiUnittest {
 
  protected:
   scoped_ptr<ChildProcess> child_process_;
+  scoped_ptr<MockRenderThread> render_thread_;
   scoped_ptr<MockMediaStreamRegistry> registry_;
 };
 
@@ -98,9 +101,14 @@ TEST_F(VideoDestinationHandlerTest, PutFrame) {
         RunClosure(quit_closure));
     frame_writer->PutFrame(image.get(), 10);
     run_loop.Run();
+    // Run all pending tasks to let the the test clean up before the test ends.
+    // This is due to that
+    // FrameWriterDelegate::FrameWriterDelegate::DeliverFrame use
+    // PostTaskAndReply to the IO thread and expects the reply to process
+    // on the main render thread to clean up its resources. However, the
+    // QuitClosure above ends before that.
+    base::MessageLoop::current()->RunUntilIdle();
   }
-  // TODO(perkj): Verify that the track output I420 when
-  // https://codereview.chromium.org/213423006/ is landed.
   EXPECT_EQ(1, sink.number_of_frames());
   native_track->RemoveSink(&sink);
 

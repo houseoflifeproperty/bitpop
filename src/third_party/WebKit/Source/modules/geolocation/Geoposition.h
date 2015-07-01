@@ -33,7 +33,7 @@
 
 namespace blink {
 
-class Geoposition FINAL : public GarbageCollected<Geoposition>, public ScriptWrappable {
+class Geoposition final : public GarbageCollected<Geoposition>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static Geoposition* create(Coordinates* coordinates, DOMTimeStamp timestamp)
@@ -41,7 +41,7 @@ public:
         return new Geoposition(coordinates, timestamp);
     }
 
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(m_coordinates);
     }

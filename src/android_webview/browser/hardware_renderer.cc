@@ -5,18 +5,22 @@
 #include "android_webview/browser/hardware_renderer.h"
 
 #include "android_webview/browser/aw_gl_surface.h"
+#include "android_webview/browser/aw_render_thread_context_provider.h"
+#include "android_webview/browser/child_frame.h"
 #include "android_webview/browser/deferred_gpu_command_service.h"
+#include "android_webview/browser/parent_compositor_draw_constraints.h"
 #include "android_webview/browser/parent_output_surface.h"
 #include "android_webview/browser/shared_renderer_state.h"
 #include "android_webview/public/browser/draw_gl.h"
 #include "base/auto_reset.h"
-#include "base/debug/trace_event.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/layers/delegated_frame_provider.h"
 #include "cc/layers/delegated_renderer_layer.h"
 #include "cc/layers/layer.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/output_surface.h"
+#include "cc/scheduler/begin_frame_source.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_settings.h"
 #include "gpu/command_buffer/client/gl_in_process_context.h"
@@ -26,58 +30,12 @@
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/transform.h"
 #include "ui/gl/gl_bindings.h"
-#include "webkit/common/gpu/context_provider_in_process.h"
-#include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
 namespace android_webview {
-
-namespace {
-
-using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
-using webkit::gpu::WebGraphicsContext3DImpl;
-
-scoped_refptr<cc::ContextProvider> CreateContext(
-    scoped_refptr<gfx::GLSurface> surface,
-    scoped_refptr<gpu::InProcessCommandBuffer::Service> service) {
-  const gfx::GpuPreference gpu_preference = gfx::PreferDiscreteGpu;
-
-  blink::WebGraphicsContext3D::Attributes attributes;
-  attributes.antialias = false;
-  attributes.depth = false;
-  attributes.stencil = false;
-  attributes.shareResources = true;
-  attributes.noAutomaticFlushes = true;
-  gpu::gles2::ContextCreationAttribHelper attribs_for_gles2;
-  WebGraphicsContext3DImpl::ConvertAttributes(
-      attributes, &attribs_for_gles2);
-  attribs_for_gles2.lose_context_when_out_of_memory = true;
-
-  scoped_ptr<gpu::GLInProcessContext> context(gpu::GLInProcessContext::Create(
-      service,
-      surface,
-      surface->IsOffscreen(),
-      gfx::kNullAcceleratedWidget,
-      surface->GetSize(),
-      NULL /* share_context */,
-      false /* share_resources */,
-      attribs_for_gles2,
-      gpu_preference,
-      gpu::GLInProcessContextSharedMemoryLimits()));
-  DCHECK(context.get());
-
-  return webkit::gpu::ContextProviderInProcess::Create(
-      WebGraphicsContext3DInProcessCommandBufferImpl::WrapContext(
-          context.Pass(), attributes),
-      "Parent-Compositor");
-}
-
-}  // namespace
 
 HardwareRenderer::HardwareRenderer(SharedRendererState* state)
     : shared_renderer_state_(state),
       last_egl_context_(eglGetCurrentContext()),
-      width_(0),
-      height_(0),
       stencil_enabled_(false),
       viewport_clip_valid_for_dcheck_(false),
       gl_surface_(new AwGLSurface),
@@ -91,43 +49,43 @@ HardwareRenderer::HardwareRenderer(SharedRendererState* state)
   cc::LayerTreeSettings settings;
 
   // Should be kept in sync with compositor_impl_android.cc.
-  settings.allow_antialiasing = false;
-  settings.highp_threshold_min = 2048;
+  settings.renderer_settings.allow_antialiasing = false;
+  settings.renderer_settings.highp_threshold_min = 2048;
 
   // Webview does not own the surface so should not clear it.
-  settings.should_clear_root_render_pass = false;
+  settings.renderer_settings.should_clear_root_render_pass = false;
 
   // TODO(enne): Update this this compositor to use a synchronous scheduler.
   settings.single_thread_proxy_scheduler = false;
 
-  layer_tree_host_ =
-      cc::LayerTreeHost::CreateSingleThreaded(this, this, NULL, settings, NULL);
+  cc::LayerTreeHost::InitParams params;
+  params.client = this;
+  params.settings = &settings;
+  layer_tree_host_ = cc::LayerTreeHost::CreateSingleThreaded(this, &params);
   layer_tree_host_->SetRootLayer(root_layer_);
   layer_tree_host_->SetLayerTreeHostClientReady();
   layer_tree_host_->set_has_transparent_background(true);
 }
 
 HardwareRenderer::~HardwareRenderer() {
-  SetFrameData();
-
   // Must reset everything before |resource_collection_| to ensure all
   // resources are returned before resetting |resource_collection_| client.
   layer_tree_host_.reset();
   root_layer_ = NULL;
   delegated_layer_ = NULL;
   frame_provider_ = NULL;
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   // Check collection is empty.
   cc::ReturnedResourceArray returned_resources;
   resource_collection_->TakeUnusedResourcesForChildCompositor(
       &returned_resources);
   DCHECK_EQ(0u, returned_resources.size());
-#endif  // DCHECK_IS_ON
+#endif  // DCHECK_IS_ON()
 
   resource_collection_->SetClient(NULL);
 
   // Reset draw constraints.
-  shared_renderer_state_->UpdateDrawConstraints(
+  shared_renderer_state_->PostExternalDrawConstraintsToChildCompositorOnRT(
       ParentCompositorDrawConstraints());
 }
 
@@ -141,43 +99,35 @@ void HardwareRenderer::DidBeginMainFrame() {
 }
 
 void HardwareRenderer::CommitFrame() {
-  scroll_offset_ = shared_renderer_state_->GetScrollOffset();
-  if (committed_frame_.get()) {
-    TRACE_EVENT_INSTANT0("android_webview",
-                         "EarlyOut_PreviousFrameUnconsumed",
-                         TRACE_EVENT_SCOPE_THREAD);
-    shared_renderer_state_->DidSkipCommitFrame();
-    return;
+  TRACE_EVENT0("android_webview", "CommitFrame");
+  scroll_offset_ = shared_renderer_state_->GetScrollOffsetOnRT();
+  {
+    scoped_ptr<ChildFrame> child_frame =
+        shared_renderer_state_->PassCompositorFrameOnRT();
+    if (!child_frame.get())
+      return;
+    child_frame_ = child_frame.Pass();
   }
 
-  committed_frame_ = shared_renderer_state_->PassCompositorFrame();
-  // Happens with empty global visible rect.
-  if (!committed_frame_.get())
-    return;
-
-  DCHECK(!committed_frame_->gl_frame_data);
-  DCHECK(!committed_frame_->software_frame_data);
+  scoped_ptr<cc::CompositorFrame> frame = child_frame_->frame.Pass();
+  DCHECK(frame.get());
+  DCHECK(!frame->gl_frame_data);
+  DCHECK(!frame->software_frame_data);
 
   // DelegatedRendererLayerImpl applies the inverse device_scale_factor of the
   // renderer frame, assuming that the browser compositor will scale
   // it back up to device scale.  But on Android we put our browser layers in
   // physical pixels and set our browser CC device_scale_factor to 1, so this
   // suppresses the transform.
-  committed_frame_->delegated_frame_data->device_scale_factor = 1.0f;
-}
+  frame->delegated_frame_data->device_scale_factor = 1.0f;
 
-void HardwareRenderer::SetFrameData() {
-  if (!committed_frame_.get())
-    return;
-
-  scoped_ptr<cc::CompositorFrame> frame = committed_frame_.Pass();
   gfx::Size frame_size =
       frame->delegated_frame_data->render_pass_list.back()->output_rect.size();
   bool size_changed = frame_size != frame_size_;
   frame_size_ = frame_size;
 
-  if (!frame_provider_ || size_changed) {
-    if (delegated_layer_) {
+  if (!frame_provider_.get() || size_changed) {
+    if (delegated_layer_.get()) {
       delegated_layer_->RemoveFromParent();
     }
 
@@ -208,30 +158,24 @@ void HardwareRenderer::DrawGL(bool stencil_enabled,
   if (last_egl_context_ != current_context)
     DLOG(WARNING) << "EGLContextChanged";
 
-  SetFrameData();
-  if (shared_renderer_state_->ForceCommit()) {
-    CommitFrame();
-    SetFrameData();
-  }
-
   gfx::Transform transform(gfx::Transform::kSkipInitialization);
   transform.matrix().setColMajorf(draw_info->transform);
   transform.Translate(scroll_offset_.x(), scroll_offset_.y());
 
+  viewport_.SetSize(draw_info->width, draw_info->height);
   // Need to post the new transform matrix back to child compositor
   // because there is no onDraw during a Render Thread animation, and child
   // compositor might not have the tiles rasterized as the animation goes on.
   ParentCompositorDrawConstraints draw_constraints(
       draw_info->is_layer, transform, gfx::Rect(viewport_));
-
-  draw_constraints_ = draw_constraints;
-  shared_renderer_state_->PostExternalDrawConstraintsToChildCompositor(
-      draw_constraints);
+  if (!child_frame_.get() || draw_constraints.NeedUpdate(*child_frame_)) {
+    shared_renderer_state_->PostExternalDrawConstraintsToChildCompositorOnRT(
+        draw_constraints);
+  }
 
   if (!delegated_layer_.get())
     return;
 
-  viewport_.SetSize(draw_info->width, draw_info->height);
   layer_tree_host_->SetViewportSize(viewport_);
   clip_.SetRect(draw_info->clip_left,
                 draw_info->clip_top,
@@ -251,24 +195,25 @@ void HardwareRenderer::DrawGL(bool stencil_enabled,
   gl_surface_->ResetBackingFrameBufferObject();
 }
 
-void HardwareRenderer::RequestNewOutputSurface(bool fallback) {
-  // Android webview does not support losing output surface.
-  DCHECK(!fallback);
+void HardwareRenderer::RequestNewOutputSurface() {
   scoped_refptr<cc::ContextProvider> context_provider =
-      CreateContext(gl_surface_,
-                    DeferredGpuCommandService::GetInstance());
+      AwRenderThreadContextProvider::Create(
+          gl_surface_, DeferredGpuCommandService::GetInstance());
   scoped_ptr<ParentOutputSurface> output_surface_holder(
       new ParentOutputSurface(context_provider));
   output_surface_ = output_surface_holder.get();
-  layer_tree_host_->SetOutputSurface(
-      output_surface_holder.PassAs<cc::OutputSurface>());
+  layer_tree_host_->SetOutputSurface(output_surface_holder.Pass());
+}
+
+void HardwareRenderer::DidFailToInitializeOutputSurface() {
+  RequestNewOutputSurface();
 }
 
 void HardwareRenderer::UnusedResourcesAreAvailable() {
   cc::ReturnedResourceArray returned_resources;
   resource_collection_->TakeUnusedResourcesForChildCompositor(
       &returned_resources);
-  shared_renderer_state_->InsertReturnedResources(returned_resources);
+  shared_renderer_state_->InsertReturnedResourcesOnRT(returned_resources);
 }
 
 }  // namespace android_webview

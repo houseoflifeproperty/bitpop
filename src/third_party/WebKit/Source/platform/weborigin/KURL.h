@@ -46,14 +46,13 @@ enum ParsedURLStringTag { ParsedURLString };
 
 class PLATFORM_EXPORT KURL {
 public:
+    // This must be called during initialization (before we create
+    // other threads).
+    static void initialize();
+
     KURL();
     KURL(const KURL&);
     KURL& operator=(const KURL&);
-
-#if COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
-    KURL(KURL&&);
-    KURL& operator=(KURL&&);
-#endif
 
     // The argument is an absolute URL string. The string is assumed to be
     // output of KURL::string() called on a valid KURL object, or indiscernible
@@ -82,7 +81,10 @@ public:
     // done with the same input.
     KURL(const AtomicString& canonicalString, const url::Parsed&, bool isValid);
 
+    ~KURL();
+
     String strippedForUseAsReferrer() const;
+    String strippedForUseAsHref() const;
 
     // FIXME: The above functions should be harmonized so that passing a
     // base of null or the empty string gives the same result as the
@@ -176,10 +178,6 @@ public:
     const url::Parsed& parsed() const { return m_parsed; }
 
     const KURL* innerURL() const { return m_innerURL.get(); }
-
-#ifndef NDEBUG
-    void print() const;
-#endif
 
     bool isSafeToSendToAnotherThread() const;
 

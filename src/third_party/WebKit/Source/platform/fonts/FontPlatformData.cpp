@@ -21,8 +21,10 @@
 #include "config.h"
 #include "platform/fonts/FontPlatformData.h"
 
+#include "SkEndian.h"
 #include "SkTypeface.h"
-#include "platform/fonts/harfbuzz/HarfBuzzFace.h"
+#include "platform/fonts/FontCache.h"
+#include "platform/fonts/shaping/HarfBuzzFace.h"
 #include "wtf/HashMap.h"
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
@@ -43,15 +45,8 @@ FontPlatformData::FontPlatformData(WTF::HashTableDeletedValueType)
     , m_textSize(0)
     , m_syntheticBold(false)
     , m_syntheticItalic(false)
-    , m_orientation(Horizontal)
-#if OS(MACOSX)
-    , m_isColorBitmapFont(false)
-    , m_isCompositeFontReference(false)
-#endif
-    , m_widthVariant(RegularWidth)
-#if OS(MACOSX)
-    , m_font(nullptr)
-#else
+    , m_orientation(FontOrientation::Horizontal)
+#if !OS(MACOSX)
     , m_style(FontRenderStyle())
 #endif
     , m_isHashTableDeletedValue(true)
@@ -72,15 +67,8 @@ FontPlatformData::FontPlatformData()
     , m_textSize(0)
     , m_syntheticBold(false)
     , m_syntheticItalic(false)
-    , m_orientation(Horizontal)
-#if OS(MACOSX)
-    , m_isColorBitmapFont(false)
-    , m_isCompositeFontReference(false)
-#endif
-    , m_widthVariant(RegularWidth)
-#if OS(MACOSX)
-    , m_font(nullptr)
-#else
+    , m_orientation(FontOrientation::Horizontal)
+#if !OS(MACOSX)
     , m_style(FontRenderStyle())
 #endif
     , m_isHashTableDeletedValue(false)
@@ -93,7 +81,7 @@ FontPlatformData::FontPlatformData()
 {
 }
 
-FontPlatformData::FontPlatformData(float size, bool syntheticBold, bool syntheticItalic, FontOrientation orientation, FontWidthVariant widthVariant)
+FontPlatformData::FontPlatformData(float size, bool syntheticBold, bool syntheticItalic, FontOrientation orientation)
     : m_typeface(nullptr)
 #if !OS(WIN)
     , m_family(CString())
@@ -102,14 +90,7 @@ FontPlatformData::FontPlatformData(float size, bool syntheticBold, bool syntheti
     , m_syntheticBold(syntheticBold)
     , m_syntheticItalic(syntheticItalic)
     , m_orientation(orientation)
-#if OS(MACOSX)
-    , m_isColorBitmapFont(false)
-    , m_isCompositeFontReference(false)
-#endif
-    , m_widthVariant(widthVariant)
-#if OS(MACOSX)
-    , m_font(nullptr)
-#else
+#if !OS(MACOSX)
     , m_style(FontRenderStyle())
 #endif
     , m_isHashTableDeletedValue(false)
@@ -131,11 +112,6 @@ FontPlatformData::FontPlatformData(const FontPlatformData& source)
     , m_syntheticBold(source.m_syntheticBold)
     , m_syntheticItalic(source.m_syntheticItalic)
     , m_orientation(source.m_orientation)
-#if OS(MACOSX)
-    , m_isColorBitmapFont(source.m_isColorBitmapFont)
-    , m_isCompositeFontReference(source.m_isCompositeFontReference)
-#endif
-    , m_widthVariant(source.m_widthVariant)
 #if !OS(MACOSX)
     , m_style(source.m_style)
 #endif
@@ -148,52 +124,7 @@ FontPlatformData::FontPlatformData(const FontPlatformData& source)
     , m_minSizeForSubpixel(source.m_minSizeForSubpixel)
 #endif
 {
-#if OS(MACOSX)
-    platformDataInit(source);
-#endif
 }
-
-
-#if OS(MACOSX)
-FontPlatformData::FontPlatformData(CGFontRef cgFont, float size, bool syntheticBold, bool syntheticItalic, FontOrientation orientation, FontWidthVariant widthVariant)
-    : m_typeface(nullptr)
-    , m_family(CString())
-    , m_textSize(size)
-    , m_syntheticBold(syntheticBold)
-    , m_syntheticItalic(syntheticItalic)
-    , m_orientation(orientation)
-    , m_isColorBitmapFont(false)
-    , m_isCompositeFontReference(false)
-    , m_widthVariant(widthVariant)
-    , m_font(nullptr)
-    , m_cgFont(cgFont)
-    , m_isHashTableDeletedValue(false)
-{
-}
-
-#else
-
-FontPlatformData::FontPlatformData(PassRefPtr<SkTypeface> tf, const char* family, float textSize, bool syntheticBold, bool syntheticItalic, FontOrientation orientation, bool subpixelTextPosition)
-    : m_typeface(tf)
-#if !OS(WIN)
-    , m_family(family)
-#endif
-    , m_textSize(textSize)
-    , m_syntheticBold(syntheticBold)
-    , m_syntheticItalic(syntheticItalic)
-    , m_orientation(orientation)
-    , m_widthVariant(RegularWidth)
-    , m_isHashTableDeletedValue(false)
-#if OS(WIN)
-    , m_paintTextFlags(0)
-    , m_useSubpixelPositioning(subpixelTextPosition)
-    , m_minSizeForAntiAlias(0)
-    , m_minSizeForSubpixel(0)
-#endif
-{
-    querySystemForRenderStyle(subpixelTextPosition);
-}
-
 
 FontPlatformData::FontPlatformData(const FontPlatformData& src, float textSize)
     : m_typeface(src.m_typeface)
@@ -204,7 +135,9 @@ FontPlatformData::FontPlatformData(const FontPlatformData& src, float textSize)
     , m_syntheticBold(src.m_syntheticBold)
     , m_syntheticItalic(src.m_syntheticItalic)
     , m_orientation(src.m_orientation)
-    , m_widthVariant(RegularWidth)
+#if !OS(MACOSX)
+    , m_style(src.m_style)
+#endif
     , m_harfBuzzFace(nullptr)
     , m_isHashTableDeletedValue(false)
 #if OS(WIN)
@@ -214,17 +147,48 @@ FontPlatformData::FontPlatformData(const FontPlatformData& src, float textSize)
     , m_minSizeForSubpixel(src.m_minSizeForSubpixel)
 #endif
 {
+#if !OS(MACOSX)
     querySystemForRenderStyle(FontDescription::subpixelPositioning());
-}
 #endif
+}
+
+FontPlatformData::FontPlatformData(PassRefPtr<SkTypeface> tf, const char* family, float textSize, bool syntheticBold, bool syntheticItalic, FontOrientation orientation, bool subpixelTextPosition)
+    : m_typeface(tf)
+#if !OS(WIN)
+    , m_family(family)
+#endif
+    , m_textSize(textSize)
+    , m_syntheticBold(syntheticBold)
+    , m_syntheticItalic(syntheticItalic)
+    , m_orientation(orientation)
+    , m_isHashTableDeletedValue(false)
+#if OS(WIN)
+    , m_paintTextFlags(0)
+    , m_useSubpixelPositioning(subpixelTextPosition)
+    , m_minSizeForAntiAlias(0)
+    , m_minSizeForSubpixel(0)
+#endif
+{
+#if !OS(MACOSX)
+    querySystemForRenderStyle(subpixelTextPosition);
+#endif
+}
 
 FontPlatformData::~FontPlatformData()
 {
-#if OS(MACOSX)
-    if (m_font)
-        CFRelease(m_font);
-#endif
 }
+
+#if OS(MACOSX)
+CTFontRef FontPlatformData::ctFont() const
+{
+    return SkTypeface_GetCTFontRef(m_typeface.get());
+};
+
+CGFontRef FontPlatformData::cgFont() const
+{
+    return CTFontCopyGraphicsFont(ctFont(), 0);
+}
+#endif
 
 const FontPlatformData& FontPlatformData::operator=(const FontPlatformData& other)
 {
@@ -241,14 +205,9 @@ const FontPlatformData& FontPlatformData::operator=(const FontPlatformData& othe
     m_syntheticItalic = other.m_syntheticItalic;
     m_harfBuzzFace = nullptr;
     m_orientation = other.m_orientation;
-    m_widthVariant = other.m_widthVariant;
-#if OS(MACOSX)
-    m_isColorBitmapFont = other.m_isColorBitmapFont;
-    m_isCompositeFontReference = other.m_isCompositeFontReference;
-#else
+#if !OS(MACOSX)
     m_style = other.m_style;
 #endif
-    m_widthVariant = other.m_widthVariant;
 
 #if OS(WIN)
     m_paintTextFlags = 0;
@@ -257,11 +216,7 @@ const FontPlatformData& FontPlatformData::operator=(const FontPlatformData& othe
     m_useSubpixelPositioning = other.m_useSubpixelPositioning;
 #endif
 
-#if OS(MACOSX)
-    return platformDataAssign(other);
-#else
     return *this;
-#endif
 }
 
 bool FontPlatformData::operator==(const FontPlatformData& a) const
@@ -269,31 +224,20 @@ bool FontPlatformData::operator==(const FontPlatformData& a) const
     // If either of the typeface pointers are null then we test for pointer
     // equality. Otherwise, we call SkTypeface::Equal on the valid pointers.
     bool typefacesEqual = false;
-#if !OS(MACOSX)
-    if (!m_typeface || !a.m_typeface)
-        typefacesEqual = m_typeface == a.m_typeface;
+    if (!typeface() || !a.typeface())
+        typefacesEqual = typeface() == a.typeface();
     else
-        typefacesEqual = SkTypeface::Equal(m_typeface.get(), a.m_typeface.get());
-#else
-    if (m_font || a.m_font)
-        typefacesEqual = m_font == a.m_font;
-    else
-        typefacesEqual = m_cgFont == a.m_cgFont;
-#endif
+        typefacesEqual = SkTypeface::Equal(typeface(), a.typeface());
 
     return typefacesEqual
         && m_textSize == a.m_textSize
         && m_isHashTableDeletedValue == a.m_isHashTableDeletedValue
         && m_syntheticBold == a.m_syntheticBold
         && m_syntheticItalic == a.m_syntheticItalic
-        && m_orientation == a.m_orientation
 #if !OS(MACOSX)
         && m_style == a.m_style
-#else
-        && m_isColorBitmapFont == a.m_isColorBitmapFont
-        && m_isCompositeFontReference == a.m_isCompositeFontReference
 #endif
-        && m_widthVariant == a.m_widthVariant;
+        && m_orientation == a.m_orientation;
 }
 
 SkFontID FontPlatformData::uniqueID() const
@@ -303,9 +247,7 @@ SkFontID FontPlatformData::uniqueID() const
 
 String FontPlatformData::fontFamilyName() const
 {
-    // FIXME(crbug.com/326582): come up with a proper way of handling SVG.
-    if (!this->typeface())
-        return "";
+    ASSERT(this->typeface());
     SkTypeface::LocalizedStrings* fontFamilyIterator = this->typeface()->createFamilyNameIterator();
     SkTypeface::LocalizedString localizedString;
     while (fontFamilyIterator->next(&localizedString) && !localizedString.fString.size()) { }
@@ -313,33 +255,65 @@ String FontPlatformData::fontFamilyName() const
     return String(localizedString.fString.c_str());
 }
 
-bool FontPlatformData::isFixedPitch() const
-{
-    return typeface() && typeface()->isFixedPitch();
-}
-
 SkTypeface* FontPlatformData::typeface() const
 {
-#if OS(MACOSX)
-    if (!m_typeface)
-        m_typeface = adoptRef(SkCreateTypefaceFromCTFont(ctFont()));
-#endif
     return m_typeface.get();
 }
 
 HarfBuzzFace* FontPlatformData::harfBuzzFace() const
 {
-#if OS(MACOSX)
-    CTFontRef font = ctFont();
-    // Keeping the decision not to pass AAT font to HarfBuzz for now,
-    // until we switch to HarfBuzz as a shaper for all cases.
-    if (isAATFont(font))
-        return 0;
-#endif
     if (!m_harfBuzzFace)
         m_harfBuzzFace = HarfBuzzFace::create(const_cast<FontPlatformData*>(this), uniqueID());
 
     return m_harfBuzzFace.get();
+}
+
+unsigned FontPlatformData::hash() const
+{
+    unsigned h = SkTypeface::UniqueID(typeface());
+    h ^= 0x01010101 * ((static_cast<int>(m_isHashTableDeletedValue) << 3) | (static_cast<int>(m_orientation) << 2) | (static_cast<int>(m_syntheticBold) << 1) | static_cast<int>(m_syntheticItalic));
+
+    // This memcpy is to avoid a reinterpret_cast that breaks strict-aliasing
+    // rules. Memcpy is generally optimized enough so that performance doesn't
+    // matter here.
+    uint32_t textSizeBytes;
+    memcpy(&textSizeBytes, &m_textSize, sizeof(uint32_t));
+    h ^= textSizeBytes;
+
+    return h;
+}
+
+#if !OS(MACOSX)
+bool FontPlatformData::fontContainsCharacter(UChar32 character)
+{
+    SkPaint paint;
+    setupPaint(&paint);
+    paint.setTextEncoding(SkPaint::kUTF32_TextEncoding);
+
+    uint16_t glyph;
+    paint.textToGlyphs(&character, sizeof(character), &glyph);
+    return glyph;
+}
+
+#endif
+
+PassRefPtr<OpenTypeVerticalData> FontPlatformData::verticalData() const
+{
+    return FontCache::fontCache()->getVerticalData(typeface()->uniqueID(), *this);
+}
+
+PassRefPtr<SharedBuffer> FontPlatformData::openTypeTable(uint32_t table) const
+{
+    RefPtr<SharedBuffer> buffer;
+
+    SkFontTableTag tag = SkEndianSwap32(table);
+    const size_t tableSize = m_typeface->getTableSize(tag);
+    if (tableSize) {
+        Vector<char> tableBuffer(tableSize);
+        m_typeface->getTableData(tag, 0, tableSize, &tableBuffer[0]);
+        buffer = SharedBuffer::adoptVector(tableBuffer);
+    }
+    return buffer.release();
 }
 
 } // namespace blink

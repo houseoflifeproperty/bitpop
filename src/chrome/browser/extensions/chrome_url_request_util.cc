@@ -14,7 +14,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/task_runner_util.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/manifest_url_handler.h"
+#include "chrome/common/extensions/chrome_manifest_url_handlers.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/resource_request_info.h"
 #include "extensions/browser/component_extension_resource_manager.h"
@@ -58,48 +58,42 @@ class URLRequestResourceBundleJob : public net::URLRequestSimpleJob {
   }
 
   // Overridden from URLRequestSimpleJob:
-  virtual int GetData(std::string* mime_type,
-                      std::string* charset,
-                      std::string* data,
-                      const net::CompletionCallback& callback) const OVERRIDE {
+  int GetRefCountedData(
+      std::string* mime_type,
+      std::string* charset,
+      scoped_refptr<base::RefCountedMemory>* data,
+      const net::CompletionCallback& callback) const override {
     const ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-    *data = rb.GetRawDataResource(resource_id_).as_string();
+    *data = rb.LoadDataResourceBytes(resource_id_);
 
     // Add the Content-Length header now that we know the resource length.
     response_info_.headers->AddHeader(
-        base::StringPrintf("%s: %s",
-                           net::HttpRequestHeaders::kContentLength,
-                           base::UintToString(data->size()).c_str()));
+        base::StringPrintf("%s: %s", net::HttpRequestHeaders::kContentLength,
+                           base::UintToString((*data)->size()).c_str()));
 
     std::string* read_mime_type = new std::string;
     bool posted = base::PostTaskAndReplyWithResult(
-        BrowserThread::GetBlockingPool(),
-        FROM_HERE,
-        base::Bind(&net::GetMimeTypeFromFile,
-                   filename_,
+        BrowserThread::GetBlockingPool(), FROM_HERE,
+        base::Bind(&net::GetMimeTypeFromFile, filename_,
                    base::Unretained(read_mime_type)),
         base::Bind(&URLRequestResourceBundleJob::OnMimeTypeRead,
-                   weak_factory_.GetWeakPtr(),
-                   mime_type,
-                   charset,
-                   data,
-                   base::Owned(read_mime_type),
-                   callback));
+                   weak_factory_.GetWeakPtr(), mime_type, charset, *data,
+                   base::Owned(read_mime_type), callback));
     DCHECK(posted);
 
     return net::ERR_IO_PENDING;
   }
 
-  virtual void GetResponseInfo(net::HttpResponseInfo* info) OVERRIDE {
+  void GetResponseInfo(net::HttpResponseInfo* info) override {
     *info = response_info_;
   }
 
  private:
-  virtual ~URLRequestResourceBundleJob() {}
+  ~URLRequestResourceBundleJob() override {}
 
   void OnMimeTypeRead(std::string* out_mime_type,
                       std::string* charset,
-                      std::string* data,
+                      scoped_refptr<base::RefCountedMemory> data,
                       std::string* read_mime_type,
                       const net::CompletionCallback& callback,
                       bool read_result) {
@@ -107,7 +101,8 @@ class URLRequestResourceBundleJob : public net::URLRequestSimpleJob {
     if (StartsWithASCII(*read_mime_type, "text/", false)) {
       // All of our HTML files should be UTF-8 and for other resource types
       // (like images), charset doesn't matter.
-      DCHECK(base::IsStringUTF8(*data));
+      DCHECK(base::IsStringUTF8(base::StringPiece(
+          reinterpret_cast<const char*>(data->front()), data->size())));
       *charset = "utf-8";
     }
     int result = read_result ? net::OK : net::ERR_INVALID_URL;
@@ -143,7 +138,7 @@ bool AllowCrossRendererResourceLoad(net::URLRequest* request,
   // If there aren't any explicitly marked web accessible resources, the
   // load should be allowed only if it is by DevTools. A close approximation is
   // checking if the extension contains a DevTools page.
-  if (!ManifestURL::GetDevToolsPage(extension).is_empty()) {
+  if (!chrome_manifest_urls::GetDevToolsPage(extension).is_empty()) {
     *allowed = true;
     return true;
   }

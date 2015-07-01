@@ -149,6 +149,7 @@ BaseHistoryWebUITest.prototype = {
   /** @override */
   accessibilityIssuesAreErrors: true,
 
+  /** @override */
   isAsync: true,
 };
 
@@ -365,7 +366,8 @@ function ensureTimeWidthsEqual() {
   }
 }
 
-TEST_F('HistoryWebUIFakeBackendTest', 'emptyHistory', function() {
+// Times out on Mac: http://crbug.com/336845
+TEST_F('HistoryWebUIFakeBackendTest', 'DISABLED_emptyHistory', function() {
   expectTrue($('newest-button').hidden);
   expectTrue($('newer-button').hidden);
   expectTrue($('older-button').hidden);
@@ -417,7 +419,7 @@ TEST_F('HistoryWebUITest', 'DISABLED_basicTest', function() {
 
   // Check that there are 3 page navigation links and that only the "Older"
   // link is visible.
-  expectEquals(3, document.querySelectorAll('.link-button').length);
+  expectEquals(3, document.querySelectorAll('[is="action-link"]').length);
   expectTrue($('newest-button').hidden);
   expectTrue($('newer-button').hidden);
   expectFalse($('older-button').hidden);
@@ -442,7 +444,7 @@ TEST_F('HistoryWebUITest', 'DISABLED_basicTest', function() {
 
     // Check that the "Newest" and "Newer" links are now visible, but the
     // "Older" link is hidden.
-    expectEquals(3, document.querySelectorAll('.link-button').length);
+    expectEquals(3, document.querySelectorAll('[is="action-link"]').length);
     expectFalse($('newest-button').hidden);
     expectFalse($('newer-button').hidden);
     expectTrue($('older-button').hidden);
@@ -671,7 +673,7 @@ RangeHistoryWebUITest.prototype = {
  */
 TEST_F('RangeHistoryWebUITest', 'DISABLED_allView', function() {
   // Check that we start off in the all time view.
-  expectTrue($('timeframe-filter-all').checked);
+  expectTrue($('timeframe-controls').querySelector('input').checked);
   // See if the correct number of days is shown.
   var dayHeaders = document.querySelectorAll('.day');
   assertEquals(Math.ceil(RESULTS_PER_PAGE / 4), dayHeaders.length);
@@ -702,7 +704,8 @@ function checkGroupedVisits(element) {
   }
 }
 
-TEST_F('RangeHistoryWebUITest', 'weekViewGrouped', function() {
+// Times out on Mac and Win: http://crbug.com/336845
+TEST_F('RangeHistoryWebUITest', 'DISABLED_weekViewGrouped', function() {
   // Change to weekly view.
   setPageState('', 0, HistoryModel.Range.WEEK, 0);
   waitForCallback('historyResult', function() {
@@ -720,7 +723,8 @@ TEST_F('RangeHistoryWebUITest', 'weekViewGrouped', function() {
   });
 });
 
-TEST_F('RangeHistoryWebUITest', 'monthViewGrouped', function() {
+// Times out on Mac and Win: http://crbug.com/336845
+TEST_F('RangeHistoryWebUITest', 'DISABLED_monthViewGrouped', function() {
   // Change to monthly view.
   setPageState('', 0, HistoryModel.Range.MONTH, 0);
   waitForCallback('historyResult', function() {
@@ -735,7 +739,8 @@ TEST_F('RangeHistoryWebUITest', 'monthViewGrouped', function() {
   });
 });
 
-TEST_F('RangeHistoryWebUITest', 'monthViewEmptyMonth', function() {
+// Times out on Mac: http://crbug.com/336845
+TEST_F('RangeHistoryWebUITest', 'DISABLED_monthViewEmptyMonth', function() {
   // Change to monthly view.
   setPageState('', 0, HistoryModel.Range.MONTH, 2);
 
@@ -743,7 +748,8 @@ TEST_F('RangeHistoryWebUITest', 'monthViewEmptyMonth', function() {
     // See if the correct number of days is shown.
     var resultsDisplay = $('results-display');
     assertEquals(0, resultsDisplay.querySelectorAll('.months-results').length);
-    assertEquals(1, resultsDisplay.querySelectorAll('div').length);
+    var noResults = loadTimeData.getString('noResults');
+    assertNotEquals(-1, $('results-header').textContent.indexOf(noResults));
 
     testDone();
   });
@@ -775,7 +781,8 @@ HistoryWebUIRealBackendTest.prototype = {
  * Simple test that verifies that the correct entries are retrieved from the
  * history database and displayed in the UI.
  */
-TEST_F('HistoryWebUIRealBackendTest', 'basic', function() {
+// Times out on Mac and Win: http://crbug.com/336845
+TEST_F('HistoryWebUIRealBackendTest', 'DISABLED_basic', function() {
   // Check that there are two days of entries, and three entries in total.
   assertEquals(2, document.querySelectorAll('.day').length);
   assertEquals(3, document.querySelectorAll('.entry').length);
@@ -783,12 +790,17 @@ TEST_F('HistoryWebUIRealBackendTest', 'basic', function() {
   testDone();
 });
 
-TEST_F('HistoryWebUIRealBackendTest', 'atLeastOneFocusable', function() {
-  expectEquals(1, document.querySelectorAll('[tabindex="0"]').length);
+// Times out on Mac: http://crbug.com/336845
+TEST_F('HistoryWebUIRealBackendTest',
+    'DISABLED_atLeastOneFocusable', function() {
+  var results = document.querySelectorAll('#results-display [tabindex="0"]');
+  expectGE(results.length, 1);
   testDone();
 });
 
-TEST_F('HistoryWebUIRealBackendTest', 'deleteRemovesEntry', function() {
+// Times out on Mac: http://crbug.com/336845
+TEST_F('HistoryWebUIRealBackendTest',
+    'DISABLED_deleteRemovesEntry', function() {
   assertTrue(historyModel.deletingHistoryAllowed);
 
   var visit = document.querySelector('.entry').visit;
@@ -823,7 +835,10 @@ TEST_F('HistoryWebUIRealBackendTest', 'singleDeletion', function() {
     waitForCallback('onEntryRemoved', callback);
 
     cr.dispatchSimpleEvent(dropDownButton, 'mousedown');
-    cr.dispatchSimpleEvent(removeMenuItem, 'activate');
+
+    var e = new Event('command', {bubbles: true});
+    e.command = removeMenuItem.command;
+    removeMenuItem.dispatchEvent(e);
   };
 
   var secondTitle = document.querySelectorAll('.entry a')[1].textContent;
@@ -887,7 +902,7 @@ TEST_F('HistoryWebUIRealBackendTest', 'showConfirmDialogAndCancel', function() {
   var esc = document.createEvent('KeyboardEvent');
   esc.initKeyboardEvent('keydown', true, true, window, 'U+001B');
 
-  document.dispatchEvent(esc);
+  document.documentElement.dispatchEvent(esc);
   assertFalse($('alertOverlay').classList.contains('showing'));
 
   testDone();
@@ -904,8 +919,63 @@ TEST_F('HistoryWebUIRealBackendTest', 'showConfirmDialogAndRemove', function() {
 
   var enter = document.createEvent('KeyboardEvent');
   enter.initKeyboardEvent('keydown', true, true, window, 'Enter');
-  document.dispatchEvent(enter);
+  document.documentElement.dispatchEvent(enter);
   assertFalse($('alertOverlay').classList.contains('showing'));
+});
+
+// Times out on Mac: http://crbug.com/336845
+TEST_F('HistoryWebUIRealBackendTest',
+    'DISABLED_menuButtonActivatesOneRow', function() {
+  var entries = document.querySelectorAll('.entry');
+  assertEquals(3, entries.length);
+  assertTrue(entries[0].classList.contains('active'));
+  assertTrue($('action-menu').hidden);
+
+  // Show the menu via mousedown on the menu button.
+  var menuButton = entries[2].querySelector('.menu-button');
+  menuButton.dispatchEvent(new MouseEvent('mousedown'));
+  expectFalse($('action-menu').hidden);
+
+  // Check that the 'active' item has changed.
+  expectTrue(entries[2].classList.contains('active'));
+  expectFalse(entries[0].classList.contains('active'));
+
+  testDone();
+});
+
+TEST_F('HistoryWebUIRealBackendTest', 'shiftClickActivatesOneRow', function() {
+  var entries = document.querySelectorAll('.entry');
+  assertEquals(3, entries.length);
+  assertTrue(entries[0].classList.contains('active'));
+
+  entries[0].visit.checkBox.focus();
+  assertEquals(entries[0].visit.checkBox, document.activeElement);
+
+  entries[0].visit.checkBox.click();
+  assertTrue(entries[0].visit.checkBox.checked);
+
+  var entryBox = entries[2].querySelector('.entry-box');
+  entryBox.dispatchEvent(new MouseEvent('click', {shiftKey: true}));
+  assertTrue(entries[1].visit.checkBox.checked);
+
+  // Focus shouldn't have changed, but the checkbox should toggle.
+  expectEquals(entries[0].visit.checkBox, document.activeElement);
+
+  expectTrue(entries[0].classList.contains('active'));
+  expectFalse(entries[2].classList.contains('active'));
+
+  var shiftDown = new MouseEvent('mousedown', {shiftKey: true, bubbles: true});
+  entries[2].visit.checkBox.dispatchEvent(shiftDown);
+  expectEquals(entries[2].visit.checkBox, document.activeElement);
+
+  // 'focusin' events aren't dispatched while tests are run in batch (e.g.
+  // --test-launcher-jobs=2). Simulate this. TODO(dbeam): fix instead.
+  cr.dispatchSimpleEvent(document.activeElement, 'focusin', true, true);
+
+  expectFalse(entries[0].classList.contains('active'));
+  expectTrue(entries[2].classList.contains('active'));
+
+  testDone();
 });
 
 /**
@@ -926,7 +996,9 @@ HistoryWebUIDeleteProhibitedTest.prototype = {
 };
 
 // Test UI when removing entries is prohibited.
-TEST_F('HistoryWebUIDeleteProhibitedTest', 'deleteProhibited', function() {
+// Times out on Mac: http://crbug.com/336845
+TEST_F('HistoryWebUIDeleteProhibitedTest',
+    'DISABLED_deleteProhibited', function() {
   // No checkboxes should be created.
   var checkboxes = document.querySelectorAll(
       '#results-display input[type=checkbox]');
@@ -944,7 +1016,8 @@ TEST_F('HistoryWebUIDeleteProhibitedTest', 'deleteProhibited', function() {
 });
 
 TEST_F('HistoryWebUIDeleteProhibitedTest', 'atLeastOneFocusable', function() {
-  expectEquals(1, document.querySelectorAll('[tabindex="0"]').length);
+  var results = document.querySelectorAll('#results-display [tabindex="0"]');
+  expectGE(results.length, 1);
   testDone();
 });
 
@@ -1013,7 +1086,8 @@ HistoryWebUIIDNTest.prototype = {
  * Simple test that verifies that the correct entries are retrieved from the
  * history database and displayed in the UI.
  */
-TEST_F('HistoryWebUIIDNTest', 'basic', function() {
+// Times out on Mac: http://crbug.com/336845
+TEST_F('HistoryWebUIIDNTest', 'DISABLED_basic', function() {
   // Check that there is only one entry and domain is in unicode.
   assertEquals(1, document.querySelectorAll('.domain').length);
   assertEquals("\u043f\u0440\u0435\u0437\u0438\u0434\u0435\u043d\u0442." +
@@ -1052,7 +1126,7 @@ HistoryWebUIWithSchemesTest.prototype = {
 
 TEST_F('HistoryWebUIWithSchemesTest', 'groupingWithSchemes', function() {
   // Switch to the week view.
-  $('timeframe-filter-week').click();
+  $('timeframe-controls').querySelectorAll('input')[1].click();
   waitForCallback('historyResult', function() {
     // Each URL should be organized under a different "domain".
     expectEquals(document.querySelectorAll('.entry').length, 4);

@@ -5,7 +5,6 @@
 #include "storage/browser/fileapi/sandbox_prioritized_origin_database.h"
 
 #include "base/files/file.h"
-#include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/pickle.h"
@@ -14,12 +13,15 @@
 
 namespace storage {
 
-namespace {
-
-const base::FilePath::CharType kPrimaryDirectory[] =
+const base::FilePath::CharType*
+SandboxPrioritizedOriginDatabase::kPrimaryDirectory =
     FILE_PATH_LITERAL("primary");
-const base::FilePath::CharType kPrimaryOriginFile[] =
+
+const base::FilePath::CharType*
+SandboxPrioritizedOriginDatabase::kPrimaryOriginFile =
     FILE_PATH_LITERAL("primary.origin");
+
+namespace {
 
 bool WritePrimaryOriginFile(const base::FilePath& path,
                             const std::string& origin) {
@@ -42,7 +44,7 @@ bool ReadPrimaryOriginFile(const base::FilePath& path,
     return false;
   Pickle pickle(buffer.data(), buffer.size());
   PickleIterator iter(pickle);
-  return pickle.ReadString(&iter, origin) && !origin->empty();
+  return iter.ReadString(origin) && !origin->empty();
 }
 
 }  // namespace

@@ -8,24 +8,27 @@ namespace webview {
 
 // Attributes.
 const char kAttributeAllowTransparency[] = "allowtransparency";
-const char kAttributeAutoSize[] = "autosize";
-const char kAttributeMaxHeight[] = "maxheight";
-const char kAttributeMaxWidth[] = "maxwidth";
-const char kAttributeMinHeight[] = "minheight";
-const char kAttributeMinWidth[] = "minwidth";
+const char kAttributeAllowScaling[] = "allowscaling";
 const char kAttributeName[] = "name";
 const char kAttributeSrc[] = "src";
 
 // API namespace.
 const char kAPINamespace[] = "webViewInternal";
 
+// API error messages.
+const char kAPILoadDataInvalidDataURL[] = "Invalid data URL \"%s\".";
+const char kAPILoadDataInvalidBaseURL[] = "Invalid base URL \"%s\".";
+const char kAPILoadDataInvalidVirtualURL[] = "Invalid virtual URL \"%s\".";
+
 // Events.
 const char kEventClose[] = "webViewInternal.onClose";
 const char kEventConsoleMessage[] = "webViewInternal.onConsoleMessage";
 const char kEventContentLoad[] = "webViewInternal.onContentLoad";
-const char kEventContextMenu[] = "chromeWebViewInternal.contextmenu";
+const char kEventContextMenuShow[] = "chromeWebViewInternal.onContextMenuShow";
 const char kEventDialog[] = "webViewInternal.onDialog";
+const char kEventDropLink[] = "webViewInternal.onDropLink";
 const char kEventExit[] = "webViewInternal.onExit";
+const char kEventExitFullscreen[] = "webViewInternal.onExitFullscreen";
 const char kEventFindReply[] = "webViewInternal.onFindReply";
 const char kEventFrameNameChanged[] = "webViewInternal.onFrameNameChanged";
 const char kEventLoadAbort[] = "webViewInternal.onLoadAbort";
@@ -37,7 +40,6 @@ const char kEventLoadStop[] = "webViewInternal.onLoadStop";
 const char kEventMessage[] = "webViewInternal.onMessage";
 const char kEventNewWindow[] = "webViewInternal.onNewWindow";
 const char kEventPermissionRequest[] = "webViewInternal.onPermissionRequest";
-const char kEventPluginDestroyed[] = "webViewInternal.onPluginDestroyed";
 const char kEventResponsive[] = "webViewInternal.onResponsive";
 const char kEventSizeChanged[] = "webViewInternal.onSizeChanged";
 const char kEventUnresponsive[] = "webViewInternal.onUnresponsive";
@@ -65,10 +67,12 @@ const char kNewURL[] = "newUrl";
 const char kNewWidth[] = "newWidth";
 const char kOldHeight[] = "oldHeight";
 const char kOldURL[] = "oldUrl";
+const char kOrigin[] = "origin";
 const char kPermission[] = "permission";
 const char kPermissionTypeDialog[] = "dialog";
 const char kPermissionTypeDownload[] = "download";
 const char kPermissionTypeFileSystem[] = "filesystem";
+const char kPermissionTypeFullscreen[] = "fullscreen";
 const char kPermissionTypeGeolocation[] = "geolocation";
 const char kPermissionTypeLoadPlugin[] = "loadplugin";
 const char kPermissionTypeMedia[] = "media";
@@ -103,14 +107,27 @@ const char kFindRectHeight[] = "height";
 const char kFindCanceled[] = "canceled";
 
 // Initialization parameters.
+const char kInitialZoomFactor[] = "initialZoomFactor";
 const char kParameterUserAgentOverride[] = "userAgentOverride";
 
 // Miscellaneous.
 const char kMenuItemCommandId[] = "commandId";
 const char kMenuItemLabel[] = "label";
 const char kPersistPrefix[] = "persist:";
-const char kStoragePartitionId[] = "storagePartitionId";
+const char kStoragePartitionId[] = "partition";
 const unsigned int kMaxOutstandingPermissionRequests = 1024;
 const int kInvalidPermissionRequestID = 0;
 
+// ClearData API constants.
+const uint32 WEB_VIEW_REMOVE_DATA_MASK_APPCACHE = 1 << 0;
+const uint32 WEB_VIEW_REMOVE_DATA_MASK_CACHE = 1 << 1;
+const uint32 WEB_VIEW_REMOVE_DATA_MASK_COOKIES = 1 << 2;
+const uint32 WEB_VIEW_REMOVE_DATA_MASK_FILE_SYSTEMS = 1 << 3;
+const uint32 WEB_VIEW_REMOVE_DATA_MASK_INDEXEDDB = 1 << 4;
+const uint32 WEB_VIEW_REMOVE_DATA_MASK_LOCAL_STORAGE = 1 << 5;
+const uint32 WEB_VIEW_REMOVE_DATA_MASK_WEBSQL = 1 << 6;
+
+// Other.
+const char kWebViewContentScriptManagerKeyName[] =
+    "web_view_content_script_manager";
 }  // namespace webview

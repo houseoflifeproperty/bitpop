@@ -32,13 +32,13 @@ class CC_EXPORT CubicBezierTimingFunction : public TimingFunction {
  public:
   static scoped_ptr<CubicBezierTimingFunction> Create(double x1, double y1,
                                                       double x2, double y2);
-  virtual ~CubicBezierTimingFunction();
+  ~CubicBezierTimingFunction() override;
 
   // TimingFunction implementation.
-  virtual float GetValue(double time) const OVERRIDE;
-  virtual float Velocity(double time) const OVERRIDE;
-  virtual void Range(float* min, float* max) const OVERRIDE;
-  virtual scoped_ptr<TimingFunction> Clone() const OVERRIDE;
+  float GetValue(double time) const override;
+  float Velocity(double time) const override;
+  void Range(float* min, float* max) const override;
+  scoped_ptr<TimingFunction> Clone() const override;
 
  protected:
   CubicBezierTimingFunction(double x1, double y1, double x2, double y2);
@@ -79,6 +79,28 @@ class CC_EXPORT EaseInOutTimingFunction {
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(EaseInOutTimingFunction);
+};
+
+class CC_EXPORT StepsTimingFunction : public TimingFunction {
+ public:
+  static scoped_ptr<StepsTimingFunction> Create(int steps,
+                                                float steps_start_offset);
+  ~StepsTimingFunction() override;
+
+  float GetValue(double t) const override;
+  scoped_ptr<TimingFunction> Clone() const override;
+
+  void Range(float* min, float* max) const override;
+  float Velocity(double time) const override;
+
+ protected:
+  StepsTimingFunction(int steps, float steps_start_offset);
+
+ private:
+  int steps_;
+  float steps_start_offset_;
+
+  DISALLOW_ASSIGN(StepsTimingFunction);
 };
 
 }  // namespace cc

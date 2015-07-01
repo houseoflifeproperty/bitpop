@@ -13,6 +13,7 @@
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/gfx/display.h"
 #include "ui/wm/public/window_types.h"
 
 #if defined(OS_WIN)
@@ -50,11 +51,11 @@ class TestMetroViewerProcessHost;
 class AshTestBase : public testing::Test {
  public:
   AshTestBase();
-  virtual ~AshTestBase();
+  ~AshTestBase() override;
 
   // testing::Test:
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   // Update the display configuration as given in |display_specs|.
   // See ash::test::DisplayManagerTestApi::UpdateDisplay for more details.
@@ -99,6 +100,12 @@ class AshTestBase : public testing::Test {
     NUMBER_OF_BLOCK_REASONS
   };
 
+  // Returns the rotation currentl active for the display |id|.
+  static gfx::Display::Rotation GetActiveDisplayRotation(int64 id);
+
+  // Returns the rotation currently active for the internal display.
+  static gfx::Display::Rotation GetCurrentInternalDisplayRotation();
+
   // Proxy to AshTestHelper::SupportsMultipleDisplays().
   static bool SupportsMultipleDisplays();
 
@@ -117,6 +124,10 @@ class AshTestBase : public testing::Test {
   // Utility methods to emulate user logged in or not, session started or not
   // and user able to lock screen or not cases.
   void SetSessionStarted(bool session_started);
+  // Sets the SessionState to active, marking the begining of transitioning to
+  // a user session. The session is considered blocked until SetSessionStarted
+  // is called.
+  void SetSessionStarting();
   void SetUserLoggedIn(bool user_logged_in);
   void SetCanLockScreen(bool can_lock_screen);
   void SetShouldLockScreenBeforeSuspending(bool should_lock);
@@ -151,7 +162,7 @@ class NoSessionAshTestBase : public AshTestBase {
   NoSessionAshTestBase() {
     set_start_session(false);
   }
-  virtual ~NoSessionAshTestBase() {}
+  ~NoSessionAshTestBase() override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NoSessionAshTestBase);

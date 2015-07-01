@@ -151,10 +151,6 @@ def write_ninja(path, options):
       'base/debug/alias.cc',
       'base/debug/stack_trace.cc',
       'base/debug/task_annotator.cc',
-      'base/debug/trace_event_impl.cc',
-      'base/debug/trace_event_impl_constants.cc',
-      'base/debug/trace_event_memory.cc',
-      'base/debug/trace_event_synthetic_delay.cc',
       'base/environment.cc',
       'base/files/file.cc',
       'base/files/file_enumerator.cc',
@@ -226,9 +222,14 @@ def write_ninja(path, options):
       'base/threading/thread_id_name_manager.cc',
       'base/threading/thread_local_storage.cc',
       'base/threading/thread_restrictions.cc',
+      'base/threading/worker_pool.cc',
       'base/time/time.cc',
       'base/timer/elapsed_timer.cc',
       'base/timer/timer.cc',
+      'base/trace_event/trace_event_impl.cc',
+      'base/trace_event/trace_event_impl_constants.cc',
+      'base/trace_event/trace_event_memory.cc',
+      'base/trace_event/trace_event_synthetic_delay.cc',
       'base/tracked_objects.cc',
       'base/tracking_info.cc',
       'base/values.cc',
@@ -254,9 +255,11 @@ def write_ninja(path, options):
         'base/synchronization/lock_impl_posix.cc',
         'base/synchronization/waitable_event_posix.cc',
         'base/sys_info_posix.cc',
+        'base/threading/platform_thread_internal_posix.cc',
         'base/threading/platform_thread_posix.cc',
         'base/threading/thread_local_posix.cc',
         'base/threading/thread_local_storage_posix.cc',
+        'base/threading/worker_pool_posix.cc',
         'base/time/time_posix.cc',
     ])
     static_libraries['libevent'] = {
@@ -405,7 +408,7 @@ def build_gn_with_gn(temp_gn, build_dir, options):
   cmd.append('gn')
   check_call(cmd)
 
-  if not debug:
+  if not options.debug:
     check_call(['strip', os.path.join(build_dir, 'gn')])
 
 

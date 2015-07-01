@@ -13,6 +13,7 @@
 #include "third_party/WebKit/public/platform/WebExternalTextureLayer.h"
 
 namespace blink {
+class WebExternalTextureLayerClient;
 struct WebFloatRect;
 struct WebExternalTextureMailbox;
 }
@@ -43,12 +44,13 @@ class WebExternalTextureLayerImpl
   virtual void setPremultipliedAlpha(bool premultiplied);
   virtual void setBlendBackgroundColor(bool blend);
   virtual void setRateLimitContext(bool rate_limit);
+  virtual void setNearestNeighbor(bool nearest_neighbor);
 
   // TextureLayerClient implementation.
-  virtual bool PrepareTextureMailbox(
+  bool PrepareTextureMailbox(
       cc::TextureMailbox* mailbox,
       scoped_ptr<cc::SingleReleaseCallback>* release_callback,
-      bool use_shared_memory) OVERRIDE;
+      bool use_shared_memory) override;
 
  private:
   static void DidReleaseMailbox(

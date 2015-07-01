@@ -44,11 +44,11 @@ class KioskDiagnosisRunner::Factory : public BrowserContextKeyedServiceFactory {
     DependsOn(extensions::FeedbackPrivateAPI::GetFactoryInstance());
   }
 
-  virtual ~Factory() {}
+  ~Factory() override {}
 
   // BrowserContextKeyedServiceFactory overrides:
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* context) const OVERRIDE {
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* context) const override {
     Profile* profile = static_cast<Profile*>(context);
     return new KioskDiagnosisRunner(profile);
   }

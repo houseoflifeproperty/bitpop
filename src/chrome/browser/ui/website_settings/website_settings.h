@@ -10,9 +10,9 @@
 #include "base/task/cancelable_task_tracker.h"
 #include "base/time/time.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
-#include "chrome/browser/history/history_service.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
+#include "components/history/core/browser/history_service.h"
 #include "content/public/common/signed_certificate_timestamp_id_and_status.h"
 #include "ui/gfx/native_widget_types.h"
 #include "url/gurl.h"
@@ -35,6 +35,9 @@ class WebsiteSettingsUI;
 // closed.
 class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
  public:
+  // TODO(palmer): Figure out if it is possible to unify SiteConnectionStatus
+  // and SiteIdentityStatus.
+  //
   // Status of a connection to a website.
   enum SiteConnectionStatus {
     SITE_CONNECTION_STATUS_UNKNOWN = 0,      // No status available.
@@ -71,6 +74,22 @@ class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
     SITE_IDENTITY_STATUS_DEPRECATED_SIGNATURE_ALGORITHM,
   };
 
+  // UMA statistics for WebsiteSettings. Do not reorder or remove existing
+  // fields.
+  enum WebsiteSettingsAction {
+    WEBSITE_SETTINGS_OPENED = 0,
+    WEBSITE_SETTINGS_PERMISSIONS_TAB_SELECTED,
+    WEBSITE_SETTINGS_CONNECTION_TAB_SELECTED,
+    WEBSITE_SETTINGS_CONNECTION_TAB_SHOWN_IMMEDIATELY,
+    WEBSITE_SETTINGS_COOKIES_DIALOG_OPENED,
+    WEBSITE_SETTINGS_CHANGED_PERMISSION,
+    WEBSITE_SETTINGS_CERTIFICATE_DIALOG_OPENED,
+    WEBSITE_SETTINGS_TRANSPARENCY_VIEWER_OPENED,
+    WEBSITE_SETTINGS_CONNECTION_HELP_OPENED,
+    WEBSITE_SETTINGS_SITE_SETTINGS_OPENED,
+    WEBSITE_SETTINGS_COUNT
+  };
+
   // Creates a WebsiteSettings for the passed |url| using the given |ssl| status
   // object to determine the status of the site's connection. The
   // |WebsiteSettings| takes ownership of the |ui|.
@@ -81,7 +100,9 @@ class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
                   const GURL& url,
                   const content::SSLStatus& ssl,
                   content::CertStore* cert_store);
-  virtual ~WebsiteSettings();
+  ~WebsiteSettings() override;
+
+  void RecordWebsiteSettingsAction(WebsiteSettingsAction action);
 
   // This method is called when ever a permission setting is changed.
   void OnSitePermissionChanged(ContentSettingsType type,
@@ -123,7 +144,7 @@ class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
   }
 
   // SiteDataObserver implementation.
-  virtual void OnSiteDataAccessed() OVERRIDE;
+  void OnSiteDataAccessed() override;
 
  private:
   // Initializes the |WebsiteSettings|.

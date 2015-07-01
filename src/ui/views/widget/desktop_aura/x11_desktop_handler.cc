@@ -58,8 +58,14 @@ X11DesktopHandler::X11DesktopHandler()
                attr.your_event_mask | PropertyChangeMask |
                StructureNotifyMask | SubstructureNotifyMask);
 
-  wm_supports_active_window_ =
-      ui::WmSupportsHint(atom_cache_.GetAtom("_NET_ACTIVE_WINDOW"));
+  if (ui::GuessWindowManager() == ui::WM_WMII) {
+    // wmii says that it supports _NET_ACTIVE_WINDOW but does not.
+    // https://code.google.com/p/wmii/issues/detail?id=266
+    wm_supports_active_window_ = false;
+  } else {
+    wm_supports_active_window_ =
+        ui::WmSupportsHint(atom_cache_.GetAtom("_NET_ACTIVE_WINDOW"));
+  }
 }
 
 X11DesktopHandler::~X11DesktopHandler() {
@@ -69,7 +75,7 @@ X11DesktopHandler::~X11DesktopHandler() {
 }
 
 void X11DesktopHandler::ActivateWindow(::Window window) {
-  if (current_window_ == window &&
+  if ((current_window_ == None || current_window_ == window) &&
       current_window_active_state_ == NOT_ACTIVE) {
     // |window| is most likely still active wrt to the X server. Undo the
     // changes made in DeactivateWindow().
@@ -130,6 +136,12 @@ bool X11DesktopHandler::IsActiveWindow(::Window window) const {
 }
 
 void X11DesktopHandler::ProcessXEvent(XEvent* event) {
+  // Ignore focus events in modes other than NotifyNormal (i.e. NotifyGrab), as
+  // they are always sent when the pointer is over our window, even if the
+  // input focus is in a different window.
+  if (event->xfocus.mode != NotifyNormal)
+    return;
+
   switch (event->type) {
     case FocusIn:
       if (current_window_ != event->xfocus.window)

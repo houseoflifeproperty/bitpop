@@ -7,6 +7,8 @@
 
 #include <string>
 
+namespace bookmarks {
+
 class BookmarkModel;
 class BookmarkNode;
 
@@ -40,6 +42,8 @@ std::string ModelStringFromNode(const BookmarkNode* node);
 void AddNodesFromModelString(BookmarkModel* model,
                              const BookmarkNode* node,
                              const std::string& model_string);
+
 }  // namespace test
+}  // namespace bookmarks
 
 #endif  // COMPONENTS_BOOKMARKS_TEST_BOOKMARK_TEST_HELPERS_H_

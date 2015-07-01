@@ -115,7 +115,20 @@ static Mutex& encodingRegistryMutex()
 
 static TextEncodingNameMap* textEncodingNameMap;
 static TextCodecMap* textCodecMap;
-static bool didExtendTextCodecMaps;
+
+namespace {
+static unsigned didExtendTextCodecMaps = 0;
+
+ALWAYS_INLINE unsigned atomicDidExtendTextCodecMaps()
+{
+    return acquireLoad(&didExtendTextCodecMaps);
+}
+
+ALWAYS_INLINE void atomicSetDidExtendTextCodemMaps()
+{
+    releaseStore(&didExtendTextCodecMaps, 1);
+}
+} // namespace
 
 static const char textEncodingNameBlacklist[][6] = { "UTF-7" };
 
@@ -244,6 +257,7 @@ PassOwnPtr<TextCodec> newTextCodec(const TextEncoding& encoding)
 {
     MutexLocker lock(encodingRegistryMutex());
 
+
     ASSERT(textCodecMap);
     TextCodecFactory factory = textCodecMap->get(encoding.name());
     ASSERT(factory.function);
@@ -261,10 +275,10 @@ const char* atomicCanonicalTextEncodingName(const char* name)
 
     if (const char* atomicName = textEncodingNameMap->get(name))
         return atomicName;
-    if (didExtendTextCodecMaps)
+    if (atomicDidExtendTextCodecMaps())
         return 0;
     extendTextCodecMaps();
-    didExtendTextCodecMaps = true;
+    atomicSetDidExtendTextCodemMaps();
     return textEncodingNameMap->get(name);
 }
 
@@ -274,8 +288,8 @@ const char* atomicCanonicalTextEncodingName(const CharacterType* characters, siz
     char buffer[maxEncodingNameLength + 1];
     size_t j = 0;
     for (size_t i = 0; i < length; ++i) {
-        CharacterType c = characters[i];
-        if (j == maxEncodingNameLength)
+        char c = static_cast<char>(characters[i]);
+        if (j == maxEncodingNameLength || c != characters[i])
             return 0;
         buffer[j++] = c;
     }
@@ -296,8 +310,7 @@ const char* atomicCanonicalTextEncodingName(const String& alias)
 
 bool noExtendedTextEncodingNameUsed()
 {
-    // If the calling thread did not use extended encoding names, it is fine for it to use a stale false value.
-    return !didExtendTextCodecMaps;
+    return !atomicDidExtendTextCodecMaps();
 }
 
 #ifndef NDEBUG

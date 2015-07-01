@@ -23,7 +23,7 @@ class DidStartSessionTask : public WebMethodTask<MockWebMIDIAccessor> {
         client_(client),
         result_(result) {}
 
-  virtual void RunIfValid() OVERRIDE {
+  void RunIfValid() override {
     client_->didStartSession(result_, "InvalidStateError", "");
   }
 
@@ -46,14 +46,18 @@ MockWebMIDIAccessor::~MockWebMIDIAccessor() {
 
 void MockWebMIDIAccessor::startSession() {
   // Add a mock input and output port.
+  blink::WebMIDIAccessorClient::MIDIPortState state =
+      blink::WebMIDIAccessorClient::MIDIPortStateConnected;
   client_->didAddInputPort("MockInputID",
                            "MockInputManufacturer",
                            "MockInputName",
-                           "MockInputVersion");
+                           "MockInputVersion",
+                           state);
   client_->didAddOutputPort("MockOutputID",
                             "MockOutputManufacturer",
                             "MockOutputName",
-                            "MockOutputVersion");
+                            "MockOutputVersion",
+                            state);
   interfaces_->GetDelegate()->PostTask(new DidStartSessionTask(
       this, client_, interfaces_->GetTestRunner()->midiAccessorResult()));
 }

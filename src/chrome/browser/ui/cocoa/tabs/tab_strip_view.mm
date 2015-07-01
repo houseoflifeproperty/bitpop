@@ -7,7 +7,6 @@
 #include <cmath>  // floor
 
 #include "base/logging.h"
-#include "base/mac/mac_util.h"
 #include "chrome/browser/themes/theme_service.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/new_tab_button.h"
@@ -16,6 +15,7 @@
 #import "chrome/browser/ui/cocoa/view_id_util.h"
 #include "chrome/grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#import "ui/base/cocoa/appkit_utils.h"
 #import "ui/base/cocoa/nsgraphics_context_additions.h"
 #import "ui/base/cocoa/nsview_additions.h"
 #include "ui/base/l10n/l10n_util_mac.h"
@@ -40,6 +40,8 @@
     // Register to be an URL drop target.
     dropHandler_.reset([[URLDropTargetHandler alloc] initWithView:self]);
 
+    [self setShowsDivider:NO];
+
     [self setWantsLayer:YES];
   }
   return self;
@@ -48,50 +50,32 @@
 // Draw bottom border bitmap. Each tab is responsible for mimicking this bottom
 // border, unless it's the selected tab.
 - (void)drawBorder:(NSRect)dirtyRect {
-  ThemeService* themeProvider =
-      static_cast<ThemeService*>([[self window] themeProvider]);
+  NSWindow* window = [self window];
+  ui::ThemeProvider* themeProvider = [window themeProvider];
   if (!themeProvider)
     return;
 
   // First draw the toolbar bitmap, so that theme colors can shine through.
-  CGFloat backgroundHeight = 2 * [self cr_lineWidth];
-  if (NSMinY(dirtyRect) < backgroundHeight) {
-    gfx::ScopedNSGraphicsContextSaveGState scopedGState;
-    NSGraphicsContext *context = [NSGraphicsContext currentContext];
-    NSPoint position = [[self window] themeImagePositionForAlignment:
-        THEME_IMAGE_ALIGN_WITH_TAB_STRIP];
-    [context cr_setPatternPhase:position forView:self];
-
-    // Themes don't have an inactive image so only look for one if there's no
-    // theme.
-    bool active = [[self window] isKeyWindow] || [[self window] isMainWindow] ||
-                  !themeProvider->UsingDefaultTheme();
-    int resource_id = active ? IDR_THEME_TOOLBAR : IDR_THEME_TOOLBAR_INACTIVE;
-    [themeProvider->GetNSImageColorNamed(resource_id) set];
-    NSRectFill(
-        NSMakeRect(NSMinX(dirtyRect), 0, NSWidth(dirtyRect), backgroundHeight));
-  }
+  NSRect backgroundRect = [self bounds];
+  backgroundRect.size.height = 2 * [self cr_lineWidth];
+  if (NSIntersectsRect(backgroundRect, dirtyRect))
+    [self drawBackground:backgroundRect];
 
   // Draw the border bitmap, which is partially transparent.
   NSImage* image = themeProvider->GetNSImageNamed(IDR_TOOLBAR_SHADE_TOP);
-  if (NSMinY(dirtyRect) >= [image size].height)
-    return;
-
-  NSRect borderRect = dirtyRect;
+  NSRect borderRect = backgroundRect;
   borderRect.size.height = [image size].height;
-  borderRect.origin.y = 0;
-
-  BOOL focused = [[self window] isKeyWindow] || [[self window] isMainWindow];
-  NSDrawThreePartImage(borderRect, nil, image, nil, /*vertical=*/ NO,
-                       NSCompositeSourceOver,
-                       focused ?  1.0 : tabs::kImageNoFocusAlpha,
-                       /*flipped=*/ NO);
+  if (NSIntersectsRect(borderRect, dirtyRect)) {
+    BOOL focused = [window isMainWindow];
+    NSDrawThreePartImage(borderRect, nil, image, nil, /*vertical=*/ NO,
+                         NSCompositeSourceOver,
+                         focused ?  1.0 : tabs::kImageNoFocusAlpha,
+                         /*flipped=*/ NO);
+  }
 }
 
-- (void)drawRect:(NSRect)rect {
-  NSRect boundsRect = [self bounds];
-
-  [self drawBorder:boundsRect];
+- (void)drawRect:(NSRect)dirtyRect {
+  [self drawBorder:dirtyRect];
 
   // Draw drop-indicator arrow (if appropriate).
   // TODO(viettrungluu): this is all a stop-gap measure.
@@ -120,7 +104,7 @@
 
     // Height we have to work with (insetting on the top).
     CGFloat availableHeight =
-        NSMaxY(boundsRect) - arrowTipPos.y - kArrowTopInset;
+        NSMaxY([self bounds]) - arrowTipPos.y - kArrowTopInset;
     DCHECK(availableHeight >= 5);
 
     // Based on the knobs above, calculate actual dimensions which we'll need
@@ -188,8 +172,7 @@
   // "short" as 0.8 seconds. (Measuring up-to-up isn't enough to properly
   // detect double-clicks, but we're actually using Cocoa for that.)
   if (clickCount == 2 && (timestamp - lastMouseUp_) < 0.8) {
-    if (base::mac::ShouldWindowsMiniaturizeOnDoubleClick())
-      [[self window] performMiniaturize:self];
+    ui::WindowTitlebarReceivedDoubleClick([self window], self);
   } else {
     [super mouseUp:event];
   }
@@ -228,7 +211,7 @@
 }
 
 // Returns AX children (tabs and new tab button), sorted from left to right.
-- (NSArray*)accessibilityChildren {
+- (NSArray*)tabStripViewAccessibilityChildren {
   NSArray* children =
       [super accessibilityAttributeValue:NSAccessibilityChildrenAttribute];
   return [children sortedArrayUsingComparator:
@@ -252,9 +235,9 @@
   if ([attribute isEqual:NSAccessibilityRoleAttribute]) {
     return NSAccessibilityTabGroupRole;
   } else if ([attribute isEqual:NSAccessibilityChildrenAttribute]) {
-    return [self accessibilityChildren];
+    return [self tabStripViewAccessibilityChildren];
   } else if ([attribute isEqual:NSAccessibilityTabsAttribute]) {
-    NSArray* children = [self accessibilityChildren];
+    NSArray* children = [self tabStripViewAccessibilityChildren];
     NSIndexSet* indexes = [children indexesOfObjectsPassingTest:
         ^BOOL(id child, NSUInteger idx, BOOL* stop) {
             NSString* role = [child
@@ -263,7 +246,7 @@
         }];
     return [children objectsAtIndexes:indexes];
   } else if ([attribute isEqual:NSAccessibilityContentsAttribute]) {
-    return [self accessibilityChildren];
+    return [self tabStripViewAccessibilityChildren];
   } else if ([attribute isEqual:NSAccessibilityValueAttribute]) {
     return [controller_ activeTabView];
   }
@@ -295,6 +278,16 @@
 
 - (void)setController:(TabStripController*)controller {
   controller_ = controller;
+}
+
+// ThemedWindowDrawing implementation.
+
+- (void)windowDidChangeTheme {
+  [self setNeedsDisplay:YES];
+}
+
+- (void)windowDidChangeActive {
+  [self setNeedsDisplay:YES];
 }
 
 @end

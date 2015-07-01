@@ -9,14 +9,107 @@
 #include "tools/gn/operators.h"
 #include "tools/gn/token.h"
 
-// grammar:
-//
-// file       := (statement)*
-// statement  := block | if | assignment
-// block      := '{' statement* '}'
-// if         := 'if' '(' expr ')' statement [ else ]
-// else       := 'else' (if | statement)*
-// assignment := ident {'=' | '+=' | '-='} expr
+const char kGrammar_Help[] =
+    "GN build language grammar\n"
+    "\n"
+    "Tokens\n"
+    "\n"
+    "  GN build files are read as sequences of tokens.  While splitting the\n"
+    "  file into tokens, the next token is the longest sequence of characters\n"
+    "  that form a valid token.\n"
+    "\n"
+    "White space and comments\n"
+    "\n"
+    "  White space is comprised of spaces (U+0020), horizontal tabs (U+0009),\n"
+    "  carriage returns (U+000D), and newlines (U+000A).\n"
+    "\n"
+    "  Comments start at the character \"#\" and stop at the next newline.\n"
+    "\n"
+    "  White space and comments are ignored except that they may separate\n"
+    "  tokens that would otherwise combine into a single token.\n"
+    "\n"
+    "Identifiers\n"
+    "\n"
+    "  Identifiers name variables and functions.\n"
+    "\n"
+    "      identifier = letter { letter | digit } .\n"
+    "      letter     = \"A\" ... \"Z\" | \"a\" ... \"z\" | \"_\" .\n"
+    "      digit      = \"0\" ... \"9\" .\n"
+    "\n"
+    "Keywords\n"
+    "\n"
+    "  The following keywords are reserved and may not be used as\n"
+    "  identifiers:\n"
+    "\n"
+    "          else    false   if      true\n"
+    "\n"
+    "Integer literals\n"
+    "\n"
+    "  An integer literal represents a decimal integer value.\n"
+    "\n"
+    "      integer = [ \"-\" ] digit { digit } .\n"
+    "\n"
+    "  Leading zeros and negative zero are disallowed.\n"
+    "\n"
+    "String literals\n"
+    "\n"
+    "  A string literal represents a string value consisting of the quoted\n"
+    "  characters with possible escape sequences and variable expansions.\n"
+    "\n"
+    "      string    = `\"` { char | escape | expansion } `\"` .\n"
+    "      escape    = `\\` ( \"$\" | `\"` | char ) .\n"
+    "      expansion = \"$\" ( identifier | \"{\" identifier \"}\" ) .\n"
+    "      char      = /* any character except \"$\", `\"`, or newline */ .\n"
+    "\n"
+    "  After a backslash, certain sequences represent special characters:\n"
+    "\n"
+    "          \\\"    U+0022    quotation mark\n"
+    "          \\$    U+0024    dollar sign\n"
+    "          \\\\    U+005C    backslash\n"
+    "\n"
+    "  All other backslashes represent themselves.\n"
+    "\n"
+    "Punctuation\n"
+    "\n"
+    "  The following character sequences represent punctuation:\n"
+    "\n"
+    "          +       +=      ==      !=      (       )\n"
+    "          -       -=      <       <=      [       ]\n"
+    "          !       =       >       >=      {       }\n"
+    "                          &&      ||      .       ,\n"
+    "\n"
+    "Grammar\n"
+    "\n"
+    "  The input tokens form a syntax tree following a context-free grammar:\n"
+    "\n"
+    "      File = StatementList .\n"
+    "\n"
+    "      Statement     = Assignment | Call | Condition .\n"
+    "      Assignment    = identifier AssignOp Expr .\n"
+    "      Call          = identifier \"(\" [ ExprList ] \")\" [ Block ] .\n"
+    "      Condition     = \"if\" \"(\" Expr \")\" Block\n"
+    "                      [ \"else\" ( Condition | Block ) ] .\n"
+    "      Block         = \"{\" StatementList \"}\" .\n"
+    "      StatementList = { Statement } .\n"
+    "\n"
+    "      Expr        = UnaryExpr | Expr BinaryOp Expr .\n"
+    "      UnaryExpr   = PrimaryExpr | UnaryOp UnaryExpr .\n"
+    "      PrimaryExpr = identifier | integer | string | Call\n"
+    "                  | identifier \"[\" Expr \"]\"\n"
+    "                  | identifier \".\" identifier\n"
+    "                  | \"(\" Expr \")\"\n"
+    "                  | \"[\" [ ExprList [ \",\" ] ] \"]\" .\n"
+    "      ExprList    = Expr { \",\" Expr } .\n"
+    "\n"
+    "      AssignOp = \"=\" | \"+=\" | \"-=\" .\n"
+    "      UnaryOp  = \"!\" .\n"
+    "      BinaryOp = \"+\" | \"-\"                  // highest priority\n"
+    "               | \"<\" | \"<=\" | \">\" | \">=\"\n"
+    "               | \"==\" | \"!=\"\n"
+    "               | \"&&\"\n"
+    "               | \"||\" .                     // lowest priority\n"
+    "\n"
+    "  All binary operators are left-associative.\n";
 
 enum Precedence {
   PRECEDENCE_ASSIGNMENT = 1,  // Lowest precedence.
@@ -44,57 +137,56 @@ enum Precedence {
 
 // Indexed by Token::Type.
 ParserHelper Parser::expressions_[] = {
-  {NULL, NULL, -1},                                             // INVALID
-  {&Parser::Literal, NULL, -1},                                 // INTEGER
-  {&Parser::Literal, NULL, -1},                                 // STRING
-  {&Parser::Literal, NULL, -1},                                 // TRUE_TOKEN
-  {&Parser::Literal, NULL, -1},                                 // FALSE_TOKEN
-  {NULL, &Parser::Assignment, PRECEDENCE_ASSIGNMENT},           // EQUAL
-  {NULL, &Parser::BinaryOperator, PRECEDENCE_SUM},              // PLUS
-  {NULL, &Parser::BinaryOperator, PRECEDENCE_SUM},              // MINUS
-  {NULL, &Parser::Assignment, PRECEDENCE_ASSIGNMENT},           // PLUS_EQUALS
-  {NULL, &Parser::Assignment, PRECEDENCE_ASSIGNMENT},           // MINUS_EQUALS
-  {NULL, &Parser::BinaryOperator, PRECEDENCE_EQUALITY},         // EQUAL_EQUAL
-  {NULL, &Parser::BinaryOperator, PRECEDENCE_EQUALITY},         // NOT_EQUAL
-  {NULL, &Parser::BinaryOperator, PRECEDENCE_RELATION},         // LESS_EQUAL
-  {NULL, &Parser::BinaryOperator, PRECEDENCE_RELATION},         // GREATER_EQUAL
-  {NULL, &Parser::BinaryOperator, PRECEDENCE_RELATION},         // LESS_THAN
-  {NULL, &Parser::BinaryOperator, PRECEDENCE_RELATION},         // GREATER_THAN
-  {NULL, &Parser::BinaryOperator, PRECEDENCE_AND},              // BOOLEAN_AND
-  {NULL, &Parser::BinaryOperator, PRECEDENCE_OR},               // BOOLEAN_OR
-  {&Parser::Not, NULL, -1},                                     // BANG
-  {NULL, &Parser::DotOperator, PRECEDENCE_DOT},                 // DOT
-  {&Parser::Group, NULL, -1},                                   // LEFT_PAREN
-  {NULL, NULL, -1},                                             // RIGHT_PAREN
-  {&Parser::List, &Parser::Subscript, PRECEDENCE_CALL},         // LEFT_BRACKET
-  {NULL, NULL, -1},                                             // RIGHT_BRACKET
-  {NULL, NULL, -1},                                             // LEFT_BRACE
-  {NULL, NULL, -1},                                             // RIGHT_BRACE
-  {NULL, NULL, -1},                                             // IF
-  {NULL, NULL, -1},                                             // ELSE
-  {&Parser::Name, &Parser::IdentifierOrCall, PRECEDENCE_CALL},  // IDENTIFIER
-  {NULL, NULL, -1},                                             // COMMA
-  {NULL, NULL, -1},                   // UNCLASSIFIED_COMMENT
-  {NULL, NULL, -1},                   // LINE_COMMENT
-  {NULL, NULL, -1},                   // SUFFIX_COMMENT
-  {&Parser::BlockComment, NULL, -1},  // BLOCK_COMMENT
+    {nullptr, nullptr, -1},                                   // INVALID
+    {&Parser::Literal, nullptr, -1},                          // INTEGER
+    {&Parser::Literal, nullptr, -1},                          // STRING
+    {&Parser::Literal, nullptr, -1},                          // TRUE_TOKEN
+    {&Parser::Literal, nullptr, -1},                          // FALSE_TOKEN
+    {nullptr, &Parser::Assignment, PRECEDENCE_ASSIGNMENT},    // EQUAL
+    {nullptr, &Parser::BinaryOperator, PRECEDENCE_SUM},       // PLUS
+    {nullptr, &Parser::BinaryOperator, PRECEDENCE_SUM},       // MINUS
+    {nullptr, &Parser::Assignment, PRECEDENCE_ASSIGNMENT},    // PLUS_EQUALS
+    {nullptr, &Parser::Assignment, PRECEDENCE_ASSIGNMENT},    // MINUS_EQUALS
+    {nullptr, &Parser::BinaryOperator, PRECEDENCE_EQUALITY},  // EQUAL_EQUAL
+    {nullptr, &Parser::BinaryOperator, PRECEDENCE_EQUALITY},  // NOT_EQUAL
+    {nullptr, &Parser::BinaryOperator, PRECEDENCE_RELATION},  // LESS_EQUAL
+    {nullptr, &Parser::BinaryOperator, PRECEDENCE_RELATION},  // GREATER_EQUAL
+    {nullptr, &Parser::BinaryOperator, PRECEDENCE_RELATION},  // LESS_THAN
+    {nullptr, &Parser::BinaryOperator, PRECEDENCE_RELATION},  // GREATER_THAN
+    {nullptr, &Parser::BinaryOperator, PRECEDENCE_AND},       // BOOLEAN_AND
+    {nullptr, &Parser::BinaryOperator, PRECEDENCE_OR},        // BOOLEAN_OR
+    {&Parser::Not, nullptr, -1},                              // BANG
+    {nullptr, &Parser::DotOperator, PRECEDENCE_DOT},          // DOT
+    {&Parser::Group, nullptr, -1},                            // LEFT_PAREN
+    {nullptr, nullptr, -1},                                   // RIGHT_PAREN
+    {&Parser::List, &Parser::Subscript, PRECEDENCE_CALL},     // LEFT_BRACKET
+    {nullptr, nullptr, -1},                                   // RIGHT_BRACKET
+    {nullptr, nullptr, -1},                                   // LEFT_BRACE
+    {nullptr, nullptr, -1},                                   // RIGHT_BRACE
+    {nullptr, nullptr, -1},                                   // IF
+    {nullptr, nullptr, -1},                                   // ELSE
+    {&Parser::Name, &Parser::IdentifierOrCall, PRECEDENCE_CALL},  // IDENTIFIER
+    {nullptr, nullptr, -1},                                       // COMMA
+    {nullptr, nullptr, -1},                // UNCLASSIFIED_COMMENT
+    {nullptr, nullptr, -1},                // LINE_COMMENT
+    {nullptr, nullptr, -1},                // SUFFIX_COMMENT
+    {&Parser::BlockComment, nullptr, -1},  // BLOCK_COMMENT
 };
 
 Parser::Parser(const std::vector<Token>& tokens, Err* err)
     : err_(err), cur_(0) {
-  for (std::vector<Token>::const_iterator i(tokens.begin()); i != tokens.end();
-       ++i) {
-    switch(i->type()) {
+  for (const auto& token : tokens) {
+    switch (token.type()) {
       case Token::LINE_COMMENT:
-        line_comment_tokens_.push_back(*i);
+        line_comment_tokens_.push_back(token);
         break;
       case Token::SUFFIX_COMMENT:
-        suffix_comment_tokens_.push_back(*i);
+        suffix_comment_tokens_.push_back(token);
         break;
       default:
         // Note that BLOCK_COMMENTs (top-level standalone comments) are passed
         // through the real parser.
-        tokens_.push_back(*i);
+        tokens_.push_back(token);
         break;
     }
   }
@@ -107,14 +199,41 @@ Parser::~Parser() {
 scoped_ptr<ParseNode> Parser::Parse(const std::vector<Token>& tokens,
                                     Err* err) {
   Parser p(tokens, err);
-  return p.ParseFile().PassAs<ParseNode>();
+  return p.ParseFile();
 }
 
 // static
 scoped_ptr<ParseNode> Parser::ParseExpression(const std::vector<Token>& tokens,
                                               Err* err) {
   Parser p(tokens, err);
-  return p.ParseExpression().Pass();
+  scoped_ptr<ParseNode> expr = p.ParseExpression();
+  if (!p.at_end() && !err->has_error()) {
+    *err = Err(p.cur_token(), "Trailing garbage");
+    return nullptr;
+  }
+  return expr.Pass();
+}
+
+// static
+scoped_ptr<ParseNode> Parser::ParseValue(const std::vector<Token>& tokens,
+                                         Err* err) {
+  for (const Token& token : tokens) {
+    switch (token.type()) {
+      case Token::INTEGER:
+      case Token::STRING:
+      case Token::TRUE_TOKEN:
+      case Token::FALSE_TOKEN:
+      case Token::LEFT_BRACKET:
+      case Token::RIGHT_BRACKET:
+      case Token::COMMA:
+        continue;
+      default:
+        *err = Err(token, "Invalid token in literal value");
+        return nullptr;
+    }
+  }
+
+  return ParseExpression(tokens, err);
 }
 
 bool Parser::IsAssignment(const ParseNode* node) const {
@@ -175,7 +294,7 @@ Token Parser::Consume(Token::Type* types,
 
   for (size_t i = 0; i < num_types; ++i) {
     if (cur_token().type() == types[i])
-      return tokens_[cur_++];
+      return Consume();
   }
   *err_ = Err(cur_token(), error_message);
   return Token(Location(), Token::INVALID, base::StringPiece());
@@ -196,7 +315,7 @@ scoped_ptr<ParseNode> Parser::ParseExpression(int precedence) {
   Token token = Consume();
   PrefixFunc prefix = expressions_[token.type()].prefix;
 
-  if (prefix == NULL) {
+  if (prefix == nullptr) {
     *err_ = Err(token,
                 std::string("Unexpected token '") + token.value().as_string() +
                     std::string("'"));
@@ -211,7 +330,7 @@ scoped_ptr<ParseNode> Parser::ParseExpression(int precedence) {
          precedence <= expressions_[cur_token().type()].precedence) {
     token = Consume();
     InfixFunc infix = expressions_[token.type()].infix;
-    if (infix == NULL) {
+    if (infix == nullptr) {
       *err_ = Err(token,
                   std::string("Unexpected token '") +
                       token.value().as_string() + std::string("'"));
@@ -226,7 +345,7 @@ scoped_ptr<ParseNode> Parser::ParseExpression(int precedence) {
 }
 
 scoped_ptr<ParseNode> Parser::Literal(Token token) {
-  return scoped_ptr<ParseNode>(new LiteralNode(token)).Pass();
+  return make_scoped_ptr(new LiteralNode(token));
 }
 
 scoped_ptr<ParseNode> Parser::Name(Token token) {
@@ -236,7 +355,7 @@ scoped_ptr<ParseNode> Parser::Name(Token token) {
 scoped_ptr<ParseNode> Parser::BlockComment(Token token) {
   scoped_ptr<BlockCommentNode> comment(new BlockCommentNode());
   comment->set_comment(token);
-  return comment.PassAs<ParseNode>();
+  return comment.Pass();
 }
 
 scoped_ptr<ParseNode> Parser::Group(Token token) {
@@ -254,7 +373,7 @@ scoped_ptr<ParseNode> Parser::Not(Token token) {
   scoped_ptr<UnaryOpNode> unary_op(new UnaryOpNode);
   unary_op->set_op(token);
   unary_op->set_operand(expr.Pass());
-  return unary_op.PassAs<ParseNode>();
+  return unary_op.Pass();
 }
 
 scoped_ptr<ParseNode> Parser::List(Token node) {
@@ -269,23 +388,24 @@ scoped_ptr<ParseNode> Parser::BinaryOperator(scoped_ptr<ParseNode> left,
   scoped_ptr<ParseNode> right =
       ParseExpression(expressions_[token.type()].precedence + 1);
   if (!right) {
-    *err_ =
-        Err(token,
-            "Expected right hand side for '" + token.value().as_string() + "'");
+    if (!has_error()) {
+      *err_ = Err(token, "Expected right hand side for '" +
+                             token.value().as_string() + "'");
+    }
     return scoped_ptr<ParseNode>();
   }
   scoped_ptr<BinaryOpNode> binary_op(new BinaryOpNode);
   binary_op->set_op(token);
   binary_op->set_left(left.Pass());
   binary_op->set_right(right.Pass());
-  return binary_op.PassAs<ParseNode>();
+  return binary_op.Pass();
 }
 
 scoped_ptr<ParseNode> Parser::IdentifierOrCall(scoped_ptr<ParseNode> left,
                                                Token token) {
   scoped_ptr<ListNode> list(new ListNode);
   list->set_begin_token(token);
-  list->set_end_token(token);
+  list->set_end(make_scoped_ptr(new EndNode(token)));
   scoped_ptr<BlockNode> block;
   bool has_arg = false;
   if (LookAhead(Token::LEFT_PAREN)) {
@@ -317,12 +437,12 @@ scoped_ptr<ParseNode> Parser::IdentifierOrCall(scoped_ptr<ParseNode> left,
   func_call->set_args(list.Pass());
   if (block)
     func_call->set_block(block.Pass());
-  return func_call.PassAs<ParseNode>();
+  return func_call.Pass();
 }
 
 scoped_ptr<ParseNode> Parser::Assignment(scoped_ptr<ParseNode> left,
                                          Token token) {
-  if (left->AsIdentifier() == NULL) {
+  if (left->AsIdentifier() == nullptr) {
     *err_ = Err(left.get(), "Left-hand side of assignment must be identifier.");
     return scoped_ptr<ParseNode>();
   }
@@ -331,14 +451,14 @@ scoped_ptr<ParseNode> Parser::Assignment(scoped_ptr<ParseNode> left,
   assign->set_op(token);
   assign->set_left(left.Pass());
   assign->set_right(value.Pass());
-  return assign.PassAs<ParseNode>();
+  return assign.Pass();
 }
 
 scoped_ptr<ParseNode> Parser::Subscript(scoped_ptr<ParseNode> left,
                                         Token token) {
   // TODO: Maybe support more complex expressions like a[0][0]. This would
   // require work on the evaluator too.
-  if (left->AsIdentifier() == NULL) {
+  if (left->AsIdentifier() == nullptr) {
     *err_ = Err(left.get(), "May only subscript identifiers.",
         "The thing on the left hand side of the [] must be an identifier\n"
         "and not an expression. If you need this, you'll have to assign the\n"
@@ -350,12 +470,12 @@ scoped_ptr<ParseNode> Parser::Subscript(scoped_ptr<ParseNode> left,
   scoped_ptr<AccessorNode> accessor(new AccessorNode);
   accessor->set_base(left->AsIdentifier()->value());
   accessor->set_index(value.Pass());
-  return accessor.PassAs<ParseNode>();
+  return accessor.Pass();
 }
 
 scoped_ptr<ParseNode> Parser::DotOperator(scoped_ptr<ParseNode> left,
                                           Token token) {
-  if (left->AsIdentifier() == NULL) {
+  if (left->AsIdentifier() == nullptr) {
     *err_ = Err(left.get(), "May only use \".\" for identifiers.",
         "The thing on the left hand side of the dot must be an identifier\n"
         "and not an expression. If you need this, you'll have to assign the\n"
@@ -374,7 +494,7 @@ scoped_ptr<ParseNode> Parser::DotOperator(scoped_ptr<ParseNode> left,
   accessor->set_base(left->AsIdentifier()->value());
   accessor->set_member(scoped_ptr<IdentifierNode>(
       static_cast<IdentifierNode*>(right.release())));
-  return accessor.PassAs<ParseNode>();
+  return accessor.Pass();
 }
 
 // Does not Consume the start or end token.
@@ -418,12 +538,12 @@ scoped_ptr<ListNode> Parser::ParseList(Token start_token,
     *err_ = Err(cur_token(), "Trailing comma");
     return scoped_ptr<ListNode>();
   }
-  list->set_end_token(cur_token());
+  list->set_end(make_scoped_ptr(new EndNode(cur_token())));
   return list.Pass();
 }
 
 scoped_ptr<ParseNode> Parser::ParseFile() {
-  scoped_ptr<BlockNode> file(new BlockNode(false));
+  scoped_ptr<BlockNode> file(new BlockNode);
   for (;;) {
     if (at_end())
       break;
@@ -443,13 +563,11 @@ scoped_ptr<ParseNode> Parser::ParseFile() {
   // ignorant of them.
   AssignComments(file.get());
 
-  return file.PassAs<ParseNode>();
+  return file.Pass();
 }
 
 scoped_ptr<ParseNode> Parser::ParseStatement() {
-  if (LookAhead(Token::LEFT_BRACE)) {
-    return ParseBlock().PassAs<ParseNode>();
-  } else if (LookAhead(Token::IF)) {
+  if (LookAhead(Token::IF)) {
     return ParseCondition();
   } else if (LookAhead(Token::BLOCK_COMMENT)) {
     return BlockComment(Consume());
@@ -474,12 +592,12 @@ scoped_ptr<BlockNode> Parser::ParseBlock() {
       Consume(Token::LEFT_BRACE, "Expected '{' to start a block.");
   if (has_error())
     return scoped_ptr<BlockNode>();
-  scoped_ptr<BlockNode> block(new BlockNode(true));
+  scoped_ptr<BlockNode> block(new BlockNode);
   block->set_begin_token(begin_token);
 
   for (;;) {
     if (LookAhead(Token::RIGHT_BRACE)) {
-      block->set_end_token(Consume());
+      block->set_end(make_scoped_ptr(new EndNode(Consume())));
       break;
     }
 
@@ -500,11 +618,19 @@ scoped_ptr<ParseNode> Parser::ParseCondition() {
     *err_ = Err(condition->condition(), "Assignment not allowed in 'if'.");
   Consume(Token::RIGHT_PAREN, "Expected ')' after condition of 'if'.");
   condition->set_if_true(ParseBlock().Pass());
-  if (Match(Token::ELSE))
-    condition->set_if_false(ParseStatement().Pass());
+  if (Match(Token::ELSE)) {
+    if (LookAhead(Token::LEFT_BRACE)) {
+      condition->set_if_false(ParseBlock().Pass());
+    } else if (LookAhead(Token::IF)) {
+      condition->set_if_false(ParseStatement().Pass());
+    } else {
+      *err_ = Err(cur_token(), "Expected '{' or 'if' after 'else'.");
+      return scoped_ptr<ParseNode>();
+    }
+  }
   if (has_error())
     return scoped_ptr<ParseNode>();
-  return condition.PassAs<ParseNode>();
+  return condition.Pass();
 }
 
 void Parser::TraverseOrder(const ParseNode* root,
@@ -520,12 +646,9 @@ void Parser::TraverseOrder(const ParseNode* root,
       TraverseOrder(binop->left(), pre, post);
       TraverseOrder(binop->right(), pre, post);
     } else if (const BlockNode* block = root->AsBlock()) {
-      const std::vector<ParseNode*>& statements = block->statements();
-      for (std::vector<ParseNode*>::const_iterator i(statements.begin());
-          i != statements.end();
-          ++i) {
-        TraverseOrder(*i, pre, post);
-      }
+      for (const auto& statement : block->statements())
+        TraverseOrder(statement, pre, post);
+      TraverseOrder(block->End(), pre, post);
     } else if (const ConditionNode* condition = root->AsConditionNode()) {
       TraverseOrder(condition->condition(), pre, post);
       TraverseOrder(condition->if_true(), pre, post);
@@ -536,17 +659,16 @@ void Parser::TraverseOrder(const ParseNode* root,
     } else if (root->AsIdentifier()) {
       // Nothing.
     } else if (const ListNode* list = root->AsList()) {
-      const std::vector<const ParseNode*>& contents = list->contents();
-      for (std::vector<const ParseNode*>::const_iterator i(contents.begin());
-          i != contents.end();
-          ++i) {
-        TraverseOrder(*i, pre, post);
-      }
+      for (const auto& node : list->contents())
+        TraverseOrder(node, pre, post);
+      TraverseOrder(list->End(), pre, post);
     } else if (root->AsLiteral()) {
       // Nothing.
     } else if (const UnaryOpNode* unaryop = root->AsUnaryOp()) {
       TraverseOrder(unaryop->operand(), pre, post);
     } else if (root->AsBlockComment()) {
+      // Nothing.
+    } else if (root->AsEnd()) {
       // Nothing.
     } else {
       CHECK(false) << "Unhandled case in TraverseOrder.";
@@ -565,13 +687,11 @@ void Parser::AssignComments(ParseNode* file) {
 
   // Assign line comments to syntax immediately following.
   int cur_comment = 0;
-  for (std::vector<const ParseNode*>::const_iterator i = pre.begin();
-       i != pre.end();
-       ++i) {
-    const Location& start = (*i)->GetRange().begin();
+  for (const auto& node : pre) {
+    const Location& start = node->GetRange().begin();
     while (cur_comment < static_cast<int>(line_comment_tokens_.size())) {
       if (start.byte() >= line_comment_tokens_[cur_comment].location().byte()) {
-        const_cast<ParseNode*>(*i)->comments_mutable()->append_before(
+        const_cast<ParseNode*>(node)->comments_mutable()->append_before(
             line_comment_tokens_[cur_comment]);
         ++cur_comment;
       } else {
@@ -590,9 +710,9 @@ void Parser::AssignComments(ParseNode* file) {
   for (std::vector<const ParseNode*>::const_reverse_iterator i = post.rbegin();
        i != post.rend();
        ++i) {
-    // Don't assign suffix comments to the function call or list, but instead
+    // Don't assign suffix comments to the function, list, or block, but instead
     // to the last thing inside.
-    if ((*i)->AsFunctionCall() || (*i)->AsList())
+    if ((*i)->AsFunctionCall() || (*i)->AsList() || (*i)->AsBlock())
       continue;
 
     const Location& start = (*i)->GetRange().begin();
@@ -620,6 +740,7 @@ void Parser::AssignComments(ParseNode* file) {
 
     // Suffix comments were assigned in reverse, so if there were multiple on
     // the same node, they need to be reversed.
-    const_cast<ParseNode*>(*i)->comments_mutable()->ReverseSuffix();
+    if ((*i)->comments() && !(*i)->comments()->suffix().empty())
+      const_cast<ParseNode*>(*i)->comments_mutable()->ReverseSuffix();
   }
 }

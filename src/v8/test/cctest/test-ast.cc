@@ -38,10 +38,9 @@ TEST(List) {
   List<AstNode*>* list = new List<AstNode*>(0);
   CHECK_EQ(0, list->length());
 
-  Isolate* isolate = CcTest::i_isolate();
-  Zone zone(isolate);
-  AstNode::IdGen id_gen;
-  AstNodeFactory<AstNullVisitor> factory(&zone, NULL, &id_gen);
+  Zone zone;
+  AstValueFactory value_factory(&zone, 0);
+  AstNodeFactory factory(&value_factory);
   AstNode* node = factory.NewEmptyStatement(RelocInfo::kNoPosition);
   list->Add(node);
   CHECK_EQ(1, list->length());

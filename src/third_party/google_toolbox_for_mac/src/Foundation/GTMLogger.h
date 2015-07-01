@@ -442,9 +442,9 @@ typedef enum {
 //   Log Filters
 //
 
-// Protocol to be imlemented by a GTMLogFilter instance.
+// Protocol to be implemented by a GTMLogFilter instance.
 @protocol GTMLogFilter <NSObject>
-// Returns YES if |msg| at |level| should be filtered out; NO otherwise.
+// Returns YES if |msg| at |level| should be logged; NO otherwise.
 - (BOOL)filterAllowsMessage:(NSString *)msg level:(GTMLoggerLevel)level;
 @end  // GTMLogFilter
 
@@ -454,7 +454,10 @@ typedef enum {
 // out of non-debug builds unless GTMVerboseLogging is set in the environment or
 // the processes's defaults. Messages at the kGTMLoggerLevelError level are
 // never filtered.
-@interface GTMLogLevelFilter : NSObject <GTMLogFilter>
+@interface GTMLogLevelFilter : NSObject <GTMLogFilter> {
+ @private
+  BOOL verboseLoggingEnabled_;
+}
 @end  // GTMLogLevelFilter
 
 // A simple log filter that does NOT filter anything out;

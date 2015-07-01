@@ -10,6 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "storage/browser/fileapi/file_system_operation_context.h"
 #include "storage/browser/fileapi/file_system_url.h"
+#include "storage/common/fileapi/file_system_mount_option.h"
 
 namespace storage {
 
@@ -81,12 +82,12 @@ class NativeFileEnumerator : public FileSystemFileUtil::AbstractFileEnumerator {
     : file_enum_(root_path, recursive, file_type) {
   }
 
-  virtual ~NativeFileEnumerator() {}
+  ~NativeFileEnumerator() override {}
 
-  virtual base::FilePath Next() OVERRIDE;
-  virtual int64 Size() OVERRIDE;
-  virtual base::Time LastModifiedTime() OVERRIDE;
-  virtual bool IsDirectory() OVERRIDE;
+  base::FilePath Next() override;
+  int64 Size() override;
+  base::Time LastModifiedTime() override;
+  bool IsDirectory() override;
 
  private:
   base::FileEnumerator file_enum_;
@@ -115,8 +116,10 @@ bool NativeFileEnumerator::IsDirectory() {
 NativeFileUtil::CopyOrMoveMode NativeFileUtil::CopyOrMoveModeForDestination(
     const FileSystemURL& dest_url, bool copy) {
   if (copy) {
-    return dest_url.mount_option().copy_sync_option() == COPY_SYNC_OPTION_SYNC ?
-        COPY_SYNC : COPY_NOSYNC;
+    return dest_url.mount_option().flush_policy() ==
+                   FlushPolicy::FLUSH_ON_COMPLETION
+               ? COPY_SYNC
+               : COPY_NOSYNC;
   }
   return MOVE;
 }
@@ -206,9 +209,9 @@ scoped_ptr<FileSystemFileUtil::AbstractFileEnumerator>
     NativeFileUtil::CreateFileEnumerator(const base::FilePath& root_path,
                                          bool recursive) {
   return make_scoped_ptr(new NativeFileEnumerator(
-      root_path, recursive,
-      base::FileEnumerator::FILES | base::FileEnumerator::DIRECTORIES))
-      .PassAs<FileSystemFileUtil::AbstractFileEnumerator>();
+      root_path,
+      recursive,
+      base::FileEnumerator::FILES | base::FileEnumerator::DIRECTORIES));
 }
 
 base::File::Error NativeFileUtil::Touch(

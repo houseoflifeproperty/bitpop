@@ -13,7 +13,7 @@
 #include "base/memory/shared_memory.h"
 #include "cc/layers/delegated_frame_resource_collection.h"
 #include "content/common/content_export.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace base {
 class SharedMemory;
@@ -21,7 +21,6 @@ class SharedMemory;
 
 namespace cc {
 class CompositorFrame;
-class CopyOutputResult;
 class Layer;
 class SolidColorLayer;
 class DelegatedFrameProvider;
@@ -59,9 +58,6 @@ class CONTENT_EXPORT ChildFrameCompositingHelper
   static ChildFrameCompositingHelper* CreateForRenderFrameProxy(
       RenderFrameProxy* render_frame_proxy);
 
-  void CopyFromCompositingSurface(int request_id,
-                                  gfx::Rect source_rect,
-                                  gfx::Size dest_size);
   void DidCommitCompositorFrame();
   void EnableCompositing(bool);
   void OnContainerDestroy();
@@ -74,7 +70,7 @@ class CONTENT_EXPORT ChildFrameCompositingHelper
   void ChildFrameGone();
 
   // cc::DelegatedFrameProviderClient implementation.
-  virtual void UnusedResourcesAreAvailable() OVERRIDE;
+  void UnusedResourcesAreAvailable() override;
   void SetContentsOpaque(bool);
 
  protected:
@@ -102,10 +98,6 @@ class CONTENT_EXPORT ChildFrameCompositingHelper
                                          float device_scale_factor,
                                          cc::Layer* layer);
   void SendReturnedDelegatedResources();
-  void CopyFromCompositingSurfaceHasResult(
-      int request_id,
-      gfx::Size dest_size,
-      scoped_ptr<cc::CopyOutputResult> result);
 
   int host_routing_id_;
   int last_route_id_;

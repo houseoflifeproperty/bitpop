@@ -41,7 +41,6 @@ class MockAudioOutputControllerEventHandler
   MOCK_METHOD0(OnPlaying, void());
   MOCK_METHOD0(OnPaused, void());
   MOCK_METHOD0(OnError, void());
-  MOCK_METHOD2(OnDeviceChange, void(int new_buffer_size, int new_sample_rate));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockAudioOutputControllerEventHandler);
@@ -99,8 +98,7 @@ class AudioOutputControllerTest : public testing::Test {
         pause_event_(false, false) {
   }
 
-  virtual ~AudioOutputControllerTest() {
-  }
+  ~AudioOutputControllerTest() override {}
 
  protected:
   void Create(int samples_per_packet) {
@@ -190,9 +188,9 @@ class AudioOutputControllerTest : public testing::Test {
 
   void ReadDivertedAudioData() {
     scoped_ptr<AudioBus> dest = AudioBus::Create(params_);
-    ASSERT_TRUE(!!mock_stream_.callback());
+    ASSERT_TRUE(mock_stream_.callback());
     const int frames_read =
-        mock_stream_.callback()->OnMoreData(dest.get(), AudioBuffersState());
+        mock_stream_.callback()->OnMoreData(dest.get(), 0);
     EXPECT_LT(0, frames_read);
     EXPECT_EQ(kBufferNonZeroData, dest->channel(0)[0]);
   }

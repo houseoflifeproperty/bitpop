@@ -16,13 +16,27 @@ namespace cc {
 
 FakeOutputSurface::FakeOutputSurface(
     scoped_refptr<ContextProvider> context_provider,
+    scoped_refptr<ContextProvider> worker_context_provider,
+    bool delegated_rendering)
+    : OutputSurface(context_provider, worker_context_provider),
+      client_(NULL),
+      num_sent_frames_(0),
+      has_external_stencil_test_(false),
+      framebuffer_(0) {
+  if (delegated_rendering) {
+    capabilities_.delegated_rendering = true;
+    capabilities_.max_frames_pending = 1;
+  }
+}
+
+FakeOutputSurface::FakeOutputSurface(
+    scoped_refptr<ContextProvider> context_provider,
     bool delegated_rendering)
     : OutputSurface(context_provider),
       client_(NULL),
       num_sent_frames_(0),
-      needs_begin_frame_(false),
       has_external_stencil_test_(false),
-      fake_weak_ptr_factory_(this) {
+      framebuffer_(0) {
   if (delegated_rendering) {
     capabilities_.delegated_rendering = true;
     capabilities_.max_frames_pending = 1;
@@ -36,7 +50,7 @@ FakeOutputSurface::FakeOutputSurface(
       client_(NULL),
       num_sent_frames_(0),
       has_external_stencil_test_(false),
-      fake_weak_ptr_factory_(this) {
+      framebuffer_(0) {
   if (delegated_rendering) {
     capabilities_.delegated_rendering = true;
     capabilities_.max_frames_pending = 1;
@@ -51,7 +65,7 @@ FakeOutputSurface::FakeOutputSurface(
       client_(NULL),
       num_sent_frames_(0),
       has_external_stencil_test_(false),
-      fake_weak_ptr_factory_(this) {
+      framebuffer_(0) {
   if (delegated_rendering) {
     capabilities_.delegated_rendering = true;
     capabilities_.max_frames_pending = 1;
@@ -73,39 +87,29 @@ void FakeOutputSurface::SwapBuffers(CompositorFrame* frame) {
     }
 
     ++num_sent_frames_;
-    PostSwapBuffersComplete();
-    client_->DidSwapBuffers();
   } else {
-    OutputSurface::SwapBuffers(frame);
+    last_swap_rect_ = frame->gl_frame_data->sub_buffer_rect;
     frame->AssignTo(&last_sent_frame_);
     ++num_sent_frames_;
   }
+  PostSwapBuffersComplete();
+  client_->DidSwapBuffers();
 }
 
-void FakeOutputSurface::SetNeedsBeginFrame(bool enable) {
-  needs_begin_frame_ = enable;
-  OutputSurface::SetNeedsBeginFrame(enable);
-
-  if (enable) {
-    base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&FakeOutputSurface::OnBeginFrame,
-                   fake_weak_ptr_factory_.GetWeakPtr()),
-        base::TimeDelta::FromMilliseconds(16));
-  }
+void FakeOutputSurface::BindFramebuffer() {
+  if (framebuffer_)
+    context_provider_->ContextGL()->BindFramebuffer(GL_FRAMEBUFFER,
+                                                    framebuffer_);
+  else
+    OutputSurface::BindFramebuffer();
 }
-
-void FakeOutputSurface::OnBeginFrame() {
-  client_->BeginFrame(CreateBeginFrameArgsForTesting());
-}
-
 
 bool FakeOutputSurface::BindToClient(OutputSurfaceClient* client) {
   if (OutputSurface::BindToClient(client)) {
     client_ = client;
     if (memory_policy_to_set_at_bind_) {
       client_->SetMemoryPolicy(*memory_policy_to_set_at_bind_.get());
-      memory_policy_to_set_at_bind_.reset();
+      memory_policy_to_set_at_bind_ = nullptr;
     }
     return true;
   } else {

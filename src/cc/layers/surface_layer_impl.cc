@@ -4,10 +4,10 @@
 
 #include "cc/layers/surface_layer_impl.h"
 
-#include "base/debug/trace_event_argument.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "cc/debug/debug_colors.h"
 #include "cc/quads/surface_draw_quad.h"
-#include "cc/trees/occlusion_tracker.h"
+#include "cc/trees/occlusion.h"
 
 namespace cc {
 
@@ -19,7 +19,7 @@ SurfaceLayerImpl::~SurfaceLayerImpl() {}
 
 scoped_ptr<LayerImpl> SurfaceLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return SurfaceLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return SurfaceLayerImpl::Create(tree_impl, id());
 }
 
 void SurfaceLayerImpl::SetSurfaceId(SurfaceId surface_id) {
@@ -37,10 +37,8 @@ void SurfaceLayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer_impl->SetSurfaceId(surface_id_);
 }
 
-void SurfaceLayerImpl::AppendQuads(
-    RenderPass* render_pass,
-    const OcclusionTracker<LayerImpl>& occlusion_tracker,
-    AppendQuadsData* append_quads_data) {
+void SurfaceLayerImpl::AppendQuads(RenderPass* render_pass,
+                                   AppendQuadsData* append_quads_data) {
   SharedQuadState* shared_quad_state =
       render_pass->CreateAndAppendSharedQuadState();
   PopulateSharedQuadState(shared_quad_state);
@@ -53,9 +51,8 @@ void SurfaceLayerImpl::AppendQuads(
 
   gfx::Rect quad_rect(content_bounds());
   gfx::Rect visible_quad_rect =
-      occlusion_tracker.GetCurrentOcclusionForLayer(
-                            draw_properties().target_space_transform)
-          .GetUnoccludedContentRect(quad_rect);
+      draw_properties().occlusion_in_content_space.GetUnoccludedContentRect(
+          quad_rect);
   if (visible_quad_rect.IsEmpty())
     return;
   SurfaceDrawQuad* quad =
@@ -69,7 +66,7 @@ void SurfaceLayerImpl::GetDebugBorderProperties(SkColor* color,
   *width = DebugColors::SurfaceLayerBorderWidth(layer_tree_impl());
 }
 
-void SurfaceLayerImpl::AsValueInto(base::debug::TracedValue* dict) const {
+void SurfaceLayerImpl::AsValueInto(base::trace_event::TracedValue* dict) const {
   LayerImpl::AsValueInto(dict);
   dict->SetInteger("surface_id", surface_id_.id);
 }

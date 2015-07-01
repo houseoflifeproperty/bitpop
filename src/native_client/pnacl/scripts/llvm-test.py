@@ -29,6 +29,8 @@ import subprocess
 import sys
 import parse_llvm_test_report
 
+sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
+import pynacl.platform
 
 @contextlib.contextmanager
 def remember_cwd():
@@ -54,7 +56,7 @@ Specify the tests or test subsets in the options; common tests are
 --llvm-regression and --testsuite-all.
 
 The --opt arguments control the frontend/backend optimization flags.
-The default set is {O3f,O2b}, other options are {O0f,O0b}.
+The default set is {O3f,O2b}, other options are {O0f,O0b,O2b_sz,O0b_sz}.
 """
   parser = optparse.OptionParser(usage=usage)
   parser.add_option('--arch', dest='arch',
@@ -148,7 +150,12 @@ def ParseConfig(options):
                  O3f={'frontend_opt': '-O3', 'frontend_attr': 'O3f'},
                  O0b={'backend_opt': '-translate-fast',
                       'backend_attr': 'O0b'},
-                 O2b={'backend_opt': '-O2', 'backend_attr': 'O2b'})
+                 O2b={'backend_opt': '-O2', 'backend_attr': 'O2b'},
+                 O0b_sz={'backend_opt': '-translate-fast --use-sz',
+                         'backend_attr': 'O0b_sz'},
+                 O2b_sz={'backend_opt': '-O2 --use-sz',
+                         'backend_attr': 'O2b_sz'},
+                 )
   result = {}
   # Default is pnacl-clang -O3, pnacl-translate -O2
   for attr in ['O3f', 'O2b'] + options.opt_attributes:
@@ -191,9 +198,11 @@ def SetupEnvironment(options):
   env['PNACL_BUILDBOT'] = os.environ.get('PNACL_BUILDBOT', 'false')
   if sys.platform == 'linux2':
     env['BUILD_PLATFORM'] = 'linux'
-    env['BUILD_ARCH'] = os.environ.get('BUILD_ARCH', os.uname()[4])
+    env['BUILD_ARCH'] = os.environ.get(
+        'BUILD_ARCH',
+        'x86_64' if pynacl.platform.IsArch64Bit() else 'i686')
     env['HOST_ARCH'] = os.environ.get('HOST_ARCH', env['BUILD_ARCH'])
-    env['HOST_TRIPLE'] = 'x86_64_linux'
+    env['HOST_TRIPLE'] = env['HOST_ARCH'] + '_linux'
   elif sys.platform == 'cygwin':
     env['BUILD_PLATFORM'] = 'win'
     env['HOST_ARCH'] = os.environ.get('HOST_ARCH', 'x86_32')
@@ -229,12 +238,12 @@ def SetupEnvironment(options):
     '{NACL_ROOT}/toolchain_build/out/llvm_{HOST_TRIPLE}_work'.format(**env))
   env['TC_BUILD_LIBCXX'] = (
     ('{NACL_ROOT}/toolchain_build/out/' +
-     'libcxx_portable_work/').format(**env))
+     'libcxx_le32_work/').format(**env))
   env['PNACL_CONCURRENCY'] = os.environ.get('PNACL_CONCURRENCY', '8')
 
   # The toolchain used may not be the one downloaded, but one that is freshly
   # built into a different directory,
-  # Overriding the default here will Not affect the sel_ldr
+  # Overriding the default here will not affect the sel_ldr
   # and IRT used to run the tests (they are controlled by run.py)
   env['PNACL_TOOLCHAIN_DIR'] = (
     os.environ.get('PNACL_TOOLCHAIN_DIR',
@@ -242,7 +251,7 @@ def SetupEnvironment(options):
   env['PNACL_BIN'] = (
     '{NACL_ROOT}/toolchain/{PNACL_TOOLCHAIN_DIR}/bin'.format(**env))
   env['PNACL_SDK_DIR'] = (
-    '{NACL_ROOT}/toolchain/{PNACL_TOOLCHAIN_DIR}/sdk/lib'
+    '{NACL_ROOT}/toolchain/{PNACL_TOOLCHAIN_DIR}/le32-nacl/lib'
     .format(**env))
   env['PNACL_SCRIPTS'] = '{NACL_ROOT}/pnacl/scripts'.format(**env)
   env['LLVM_REGRESSION_KNOWN_FAILURES'] = (
@@ -318,6 +327,7 @@ def RunLitTest(testdir, testarg, lit_failures, env, options):
     parse_options['lit'] = True
     parse_options['excludes'].append(env[lit_failures])
     parse_options['attributes'].append(env['BUILD_PLATFORM'])
+    parse_options['attributes'].append(env['HOST_ARCH'])
     print (str(datetime.datetime.now()) + ' ' +
            'Parsing LIT test report output.')
     ret = parse_llvm_test_report.Report(parse_options, filecontents=make_stdout)
@@ -325,16 +335,17 @@ def RunLitTest(testdir, testarg, lit_failures, env, options):
 
 
 def EnsureSdkExists(env):
-  """Ensure that the SDK directory exists.  Exits if not.
+  """Ensure that a build of the SDK exists.  Exits if not.
 
   Args:
     env: The result of SetupEnvironment().
   """
-  if not os.path.isdir(env['PNACL_SDK_DIR']):
+  libnacl_path = os.path.join(env['PNACL_SDK_DIR'], 'libnacl.a')
+  if not os.path.isfile(libnacl_path):
     Fatal("""
-ERROR: sdk dir does not seem to exist
-ERROR: have you run 'pnacl/build.sh sdk newlib' ?
-""")
+ERROR: libnacl does not seem to exist in %s
+ERROR: have you run 'pnacl/build.sh sdk' ?
+    """ % libnacl_path)
 
 
 def TestsuitePrereq(env, options):
@@ -352,6 +363,7 @@ def TestsuitePrereq(env, options):
                           'platform=' + arch,
                           'irt_core',
                           'sel_ldr',
+                          'elf_loader',
                           '-j{PNACL_CONCURRENCY}'.format(**env)])
 
 
@@ -510,6 +522,7 @@ def main(argv):
                                   'LLVM_REGRESSION_KNOWN_FAILURES',
                                   env, options)
   if options.run_libcxx_tests:
+    EnsureSdkExists(env)
     result = result or RunLitTest(env['TC_BUILD_LIBCXX'], 'check-libcxx',
                                   'LIBCXX_KNOWN_FAILURES',
                                   env, options)

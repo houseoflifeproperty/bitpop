@@ -23,6 +23,7 @@ cr.define('cr.ui.table', function() {
     this.name_ = name;
     this.width_ = width;
     this.endAlign_ = !!opt_endAlign;
+    this.visible_ = true;
   }
 
   TableColumn.prototype = {
@@ -40,6 +41,9 @@ cr.define('cr.ui.table', function() {
       tableColumn.renderFunction = this.renderFunction_;
       tableColumn.headerRenderFunction = this.headerRenderFunction_;
       tableColumn.defaultOrder = this.defaultOrder_;
+
+      tableColumn.visible_  = this.visible_;
+
       return tableColumn;
     },
 
@@ -51,18 +55,37 @@ cr.define('cr.ui.table', function() {
      * @return {HTMLElement} Rendered element.
      */
     renderFunction_: function(dataItem, columnId, table) {
-      var div = table.ownerDocument.createElement('div');
+      var div = /** @type {HTMLElement} */
+          (table.ownerDocument.createElement('div'));
       div.textContent = dataItem[columnId];
+      div.hidden = !this.visible;
       return div;
     },
 
     /**
      * Renders table header. This is the default render function.
      * @param {cr.ui.Table} table The table.
-     * @return {HTMLElement} Rendered element.
+     * @return {Text} Rendered text node.
      */
     headerRenderFunction_: function(table) {
       return table.ownerDocument.createTextNode(this.name);
+    },
+
+    /**
+     * The width of the column.  Hidden columns have zero width.
+     * @type {number}
+     */
+    get width() {
+      return this.visible_ ? this.width_ : 0;
+    },
+
+    /**
+     * The width of the column, disregarding visibility.  For hidden columns,
+     * this would be the width of the column if it were to be made visible.
+     * @type {number}
+     */
+    get absoluteWidth() {
+      return this.width_;
     },
   };
 
@@ -85,6 +108,12 @@ cr.define('cr.ui.table', function() {
   cr.defineProperty(TableColumn, 'width');
 
   /**
+   * The column visibility.
+   * @type {boolean}
+   */
+  cr.defineProperty(TableColumn, 'visible');
+
+  /**
    * True if the column is aligned to end.
    * @type {boolean}
    */
@@ -92,13 +121,13 @@ cr.define('cr.ui.table', function() {
 
   /**
    * The column render function.
-   * @type {Function(*, string, cr.ui.Table): HTMLElement}
+   * @type {function(*, string, cr.ui.Table): HTMLElement}
    */
   cr.defineProperty(TableColumn, 'renderFunction');
 
   /**
    * The column header render function.
-   * @type {Function(cr.ui.Table): HTMLElement}
+   * @type {function(cr.ui.Table): Text}
    */
   cr.defineProperty(TableColumn, 'headerRenderFunction');
 

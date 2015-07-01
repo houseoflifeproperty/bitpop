@@ -31,8 +31,8 @@ class AppLoadObserver : public ExtensionRegistryObserver {
     extension_registry_observer_.Add(ExtensionRegistry::Get(browser_context));
   }
 
-  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
-                                 const Extension* extension) OVERRIDE {
+  void OnExtensionLoaded(content::BrowserContext* browser_context,
+                         const Extension* extension) override {
     callback_.Run(extension);
   }
 
@@ -64,7 +64,7 @@ const int kGraylistedPath = base::DIR_HOME;
 
 class FileSystemApiTest : public PlatformAppBrowserTest {
  public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     PlatformAppBrowserTest::SetUpCommandLine(command_line);
     test_root_folder_ = test_data_dir_.AppendASCII("api_test")
         .AppendASCII("file_system");
@@ -72,11 +72,9 @@ class FileSystemApiTest : public PlatformAppBrowserTest {
         "test_root", test_root_folder_);
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
-    ClearCommandLineArgs();
-  }
+  void SetUpOnMainThread() override { ClearCommandLineArgs(); }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     FileSystemChooseEntryFunction::StopSkippingPickerForTest();
     PlatformAppBrowserTest::TearDown();
   };
@@ -633,5 +631,14 @@ IN_PROC_BROWSER_TEST_F(FileSystemApiTest, FileSystemApiRestoreDirectoryEntry) {
   ASSERT_TRUE(RunPlatformAppTest("api_test/file_system/restore_directory"))
       << message_;
 }
+
+#if !defined(OS_CHROMEOS)
+IN_PROC_BROWSER_TEST_F(FileSystemApiTest, RequestFileSystem_NotChromeOS) {
+  ASSERT_TRUE(RunPlatformAppTestWithFlags(
+      "api_test/file_system/request_file_system_not_chromeos",
+      kFlagIgnoreManifestWarnings))
+      << message_;
+}
+#endif
 
 }  // namespace extensions

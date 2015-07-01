@@ -24,32 +24,30 @@ class CHROMEOS_EXPORT FakeNfcTagClient : public NfcTagClient {
 
   struct Properties : public NfcTagClient::Properties {
     explicit Properties(const PropertyChangedCallback& callback);
-    virtual ~Properties();
+    ~Properties() override;
 
     // dbus::PropertySet overrides.
-    virtual void Get(dbus::PropertyBase* property,
-                     dbus::PropertySet::GetCallback callback) OVERRIDE;
-    virtual void GetAll() OVERRIDE;
-    virtual void Set(dbus::PropertyBase* property,
-                     dbus::PropertySet::SetCallback callback) OVERRIDE;
+    void Get(dbus::PropertyBase* property,
+             dbus::PropertySet::GetCallback callback) override;
+    void GetAll() override;
+    void Set(dbus::PropertyBase* property,
+             dbus::PropertySet::SetCallback callback) override;
   };
 
   FakeNfcTagClient();
-  virtual ~FakeNfcTagClient();
+  ~FakeNfcTagClient() override;
 
   // NfcTagClient overrides.
-  virtual void Init(dbus::Bus* bus) OVERRIDE;
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual std::vector<dbus::ObjectPath> GetTagsForAdapter(
-      const dbus::ObjectPath& adapter_path) OVERRIDE;
-  virtual Properties* GetProperties(
-      const dbus::ObjectPath& object_path) OVERRIDE;
-  virtual void Write(
-      const dbus::ObjectPath& object_path,
-      const base::DictionaryValue& attributes,
-      const base::Closure& callback,
-      const nfc_client_helpers::ErrorCallback& error_callback) OVERRIDE;
+  void Init(dbus::Bus* bus) override;
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
+  std::vector<dbus::ObjectPath> GetTagsForAdapter(
+      const dbus::ObjectPath& adapter_path) override;
+  Properties* GetProperties(const dbus::ObjectPath& object_path) override;
+  void Write(const dbus::ObjectPath& object_path,
+             const base::DictionaryValue& attributes,
+             const base::Closure& callback,
+             const nfc_client_helpers::ErrorCallback& error_callback) override;
 
   // Simulates the appearance of a tag. The fake tag will show up after
   // exactly |visibility_delay| milliseconds. |visibility_delay| must have a

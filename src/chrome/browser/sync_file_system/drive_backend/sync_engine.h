@@ -85,7 +85,7 @@ class SyncEngine : public RemoteFileSyncService,
   static void AppendDependsOnFactories(
       std::set<BrowserContextKeyedServiceFactory*>* factories);
 
-  virtual ~SyncEngine();
+  ~SyncEngine() override;
   void Reset();
 
   // Can be called more than once.
@@ -101,59 +101,53 @@ class SyncEngine : public RemoteFileSyncService,
       scoped_ptr<SyncWorkerInterface> sync_worker);
 
   // RemoteFileSyncService overrides.
-  virtual void AddServiceObserver(SyncServiceObserver* observer) OVERRIDE;
-  virtual void AddFileStatusObserver(FileStatusObserver* observer) OVERRIDE;
-  virtual void RegisterOrigin(
-      const GURL& origin,
-      const SyncStatusCallback& callback) OVERRIDE;
-  virtual void EnableOrigin(
-      const GURL& origin,
-      const SyncStatusCallback& callback) OVERRIDE;
-  virtual void DisableOrigin(
-      const GURL& origin,
-      const SyncStatusCallback& callback) OVERRIDE;
-  virtual void UninstallOrigin(
-      const GURL& origin,
-      UninstallFlag flag,
-      const SyncStatusCallback& callback) OVERRIDE;
-  virtual void ProcessRemoteChange(const SyncFileCallback& callback) OVERRIDE;
-  virtual void SetRemoteChangeProcessor(
-      RemoteChangeProcessor* processor) OVERRIDE;
-  virtual LocalChangeProcessor* GetLocalChangeProcessor() OVERRIDE;
-  virtual RemoteServiceState GetCurrentState() const OVERRIDE;
-  virtual void GetOriginStatusMap(const StatusMapCallback& callback) OVERRIDE;
-  virtual void DumpFiles(const GURL& origin,
-                         const ListCallback& callback) OVERRIDE;
-  virtual void DumpDatabase(const ListCallback& callback) OVERRIDE;
-  virtual void SetSyncEnabled(bool enabled) OVERRIDE;
-  virtual void PromoteDemotedChanges(const base::Closure& callback) OVERRIDE;
+  void AddServiceObserver(SyncServiceObserver* observer) override;
+  void AddFileStatusObserver(FileStatusObserver* observer) override;
+  void RegisterOrigin(const GURL& origin,
+                      const SyncStatusCallback& callback) override;
+  void EnableOrigin(const GURL& origin,
+                    const SyncStatusCallback& callback) override;
+  void DisableOrigin(const GURL& origin,
+                     const SyncStatusCallback& callback) override;
+  void UninstallOrigin(const GURL& origin,
+                       UninstallFlag flag,
+                       const SyncStatusCallback& callback) override;
+  void ProcessRemoteChange(const SyncFileCallback& callback) override;
+  void SetRemoteChangeProcessor(RemoteChangeProcessor* processor) override;
+  LocalChangeProcessor* GetLocalChangeProcessor() override;
+  RemoteServiceState GetCurrentState() const override;
+  void GetOriginStatusMap(const StatusMapCallback& callback) override;
+  void DumpFiles(const GURL& origin, const ListCallback& callback) override;
+  void DumpDatabase(const ListCallback& callback) override;
+  void SetSyncEnabled(bool enabled) override;
+  void PromoteDemotedChanges(const base::Closure& callback) override;
 
   // LocalChangeProcessor overrides.
-  virtual void ApplyLocalChange(const FileChange& local_change,
-                                const base::FilePath& local_path,
-                                const SyncFileMetadata& local_metadata,
-                                const storage::FileSystemURL& url,
-                                const SyncStatusCallback& callback) OVERRIDE;
+  void ApplyLocalChange(const FileChange& local_change,
+                        const base::FilePath& local_path,
+                        const SyncFileMetadata& local_metadata,
+                        const storage::FileSystemURL& url,
+                        const SyncStatusCallback& callback) override;
 
   // drive::DriveNotificationObserver overrides.
-  virtual void OnNotificationReceived() OVERRIDE;
-  virtual void OnPushNotificationEnabled(bool enabled) OVERRIDE;
+  void OnNotificationReceived() override;
+  void OnPushNotificationEnabled(bool enabled) override;
 
   // drive::DriveServiceObserver overrides.
-  virtual void OnReadyToSendRequests() OVERRIDE;
-  virtual void OnRefreshTokenInvalid() OVERRIDE;
+  void OnReadyToSendRequests() override;
+  void OnRefreshTokenInvalid() override;
 
   // net::NetworkChangeNotifier::NetworkChangeObserver overrides.
-  virtual void OnNetworkChanged(
-      net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
+  void OnNetworkChanged(
+      net::NetworkChangeNotifier::ConnectionType type) override;
 
   // SigninManagerBase::Observer overrides.
-  virtual void GoogleSigninFailed(const GoogleServiceAuthError& error) OVERRIDE;
-  virtual void GoogleSigninSucceeded(const std::string& account_id,
-                                     const std::string& username,
-                                     const std::string& password) OVERRIDE;
-  virtual void GoogleSignedOut(const std::string& account_id,
-                               const std::string& username) OVERRIDE;
+  void GoogleSigninFailed(const GoogleServiceAuthError& error) override;
+  void GoogleSigninSucceeded(const std::string& account_id,
+                             const std::string& username,
+                             const std::string& password) override;
+  void GoogleSignedOut(const std::string& account_id,
+                       const std::string& username) override;
 
  private:
   class WorkerObserver;
@@ -165,6 +159,7 @@ class SyncEngine : public RemoteFileSyncService,
   SyncEngine(const scoped_refptr<base::SingleThreadTaskRunner>& ui_task_runner,
              const scoped_refptr<base::SequencedTaskRunner>& worker_task_runner,
              const scoped_refptr<base::SequencedTaskRunner>& drive_task_runner,
+             const scoped_refptr<base::SequencedWorkerPool>& worker_pool,
              const base::FilePath& sync_file_system_dir,
              TaskLogger* task_logger,
              drive::DriveNotificationManager* notification_manager,
@@ -178,6 +173,7 @@ class SyncEngine : public RemoteFileSyncService,
   // Called by WorkerObserver.
   void OnPendingFileListUpdated(int item_count);
   void OnFileStatusChanged(const storage::FileSystemURL& url,
+                           SyncFileType file_type,
                            SyncFileStatus file_status,
                            SyncAction sync_action,
                            SyncDirection direction);
@@ -189,6 +185,7 @@ class SyncEngine : public RemoteFileSyncService,
   scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner_;
   scoped_refptr<base::SequencedTaskRunner> worker_task_runner_;
   scoped_refptr<base::SequencedTaskRunner> drive_task_runner_;
+  scoped_refptr<base::SequencedWorkerPool> worker_pool_;
 
   const base::FilePath sync_file_system_dir_;
   TaskLogger* task_logger_;

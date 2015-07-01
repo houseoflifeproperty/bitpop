@@ -5,17 +5,20 @@
 
 """Archives a set of files or directories to an Isolate Server."""
 
-__version__ = '0.3.4'
+__version__ = '0.4.3'
 
+import base64
 import functools
 import logging
+import optparse
 import os
 import re
-import shutil
+import signal
 import sys
 import tempfile
 import threading
 import time
+import types
 import urllib
 import urlparse
 import zlib
@@ -25,6 +28,7 @@ from third_party.depot_tools import fix_encoding
 from third_party.depot_tools import subcommand
 
 from utils import file_path
+from utils import lru
 from utils import net
 from utils import on_error
 from utils import threading_utils
@@ -94,15 +98,18 @@ DEFAULT_BLACKLIST = (
 )
 
 
-# Chromium-specific.
-DEFAULT_BLACKLIST += (
-  r'^.+\.(?:run_test_cases)$',
-  r'^(?:.+' + re.escape(os.path.sep) + r'|)testserver\.log$',
-)
+# A class to use to communicate with the server by default. Can be changed by
+# 'set_storage_api_class'. Default is IsolateServer.
+_storage_api_cls = None
 
 
 class Error(Exception):
   """Generic runtime error."""
+  pass
+
+
+class Aborted(Error):
+  """Operation aborted."""
   pass
 
 
@@ -322,7 +329,8 @@ class Storage(object):
   Works only within single namespace (and thus hashing algorithm and compression
   scheme are fixed).
 
-  Spawns multiple internal threads. Thread safe, but not fork safe.
+  Spawns multiple internal threads. Thread safe, but not fork safe. Modifies
+  signal handlers table to handle Ctrl+C.
   """
 
   def __init__(self, storage_api):
@@ -332,6 +340,8 @@ class Storage(object):
     self._hash_algo = isolated_format.get_hash_algo(storage_api.namespace)
     self._cpu_thread_pool = None
     self._net_thread_pool = None
+    self._aborted = False
+    self._prev_sig_handlers = {}
 
   @property
   def hash_algo(self):
@@ -343,11 +353,7 @@ class Storage(object):
 
   @property
   def location(self):
-    """Location of a backing store that this class is using.
-
-    Exact meaning depends on the storage_api type. For IsolateServer it is
-    an URL of isolate server, for FileSystem is it a path in file system.
-    """
+    """URL of the backing store that this class is using."""
     return self._storage_api.location
 
   @property
@@ -362,8 +368,11 @@ class Storage(object):
   def cpu_thread_pool(self):
     """ThreadPool for CPU-bound tasks like zipping."""
     if self._cpu_thread_pool is None:
-      self._cpu_thread_pool = threading_utils.ThreadPool(
-          2, max(threading_utils.num_processors(), 2), 0, 'zip')
+      threads = max(threading_utils.num_processors(), 2)
+      if sys.maxsize <= 2L**32:
+        # On 32 bits userland, do not try to use more than 16 threads.
+        threads = min(threads, 16)
+      self._cpu_thread_pool = threading_utils.ThreadPool(2, threads, 0, 'zip')
     return self._cpu_thread_pool
 
   @property
@@ -375,6 +384,7 @@ class Storage(object):
 
   def close(self):
     """Waits for all pending tasks to finish."""
+    logging.info('Waiting for all threads to die...')
     if self._cpu_thread_pool:
       self._cpu_thread_pool.join()
       self._cpu_thread_pool.close()
@@ -383,14 +393,31 @@ class Storage(object):
       self._net_thread_pool.join()
       self._net_thread_pool.close()
       self._net_thread_pool = None
+    logging.info('Done.')
+
+  def abort(self):
+    """Cancels any pending or future operations."""
+    # This is not strictly theadsafe, but in the worst case the logging message
+    # will be printed twice. Not a big deal. In other places it is assumed that
+    # unprotected reads and writes to _aborted are serializable (it is true
+    # for python) and thus no locking is used.
+    if not self._aborted:
+      logging.warning('Aborting... It can take a while.')
+      self._aborted = True
 
   def __enter__(self):
     """Context manager interface."""
+    assert not self._prev_sig_handlers, self._prev_sig_handlers
+    for s in (signal.SIGINT, signal.SIGTERM):
+      self._prev_sig_handlers[s] = signal.signal(s, lambda *_args: self.abort())
     return self
 
   def __exit__(self, _exc_type, _exc_value, _traceback):
     """Context manager interface."""
     self.close()
+    while self._prev_sig_handlers:
+      s, h = self._prev_sig_handlers.popitem()
+      signal.signal(s, h)
     return False
 
   def upload_items(self, items):
@@ -404,10 +431,7 @@ class Storage(object):
     Returns:
       List of items that were uploaded. All other items are already there.
     """
-    # TODO(vadimsh): Optimize special case of len(items) == 1 that is frequently
-    # used by swarming.py. There's no need to spawn multiple threads and try to
-    # do stuff in parallel: there's nothing to parallelize. 'contains' check and
-    # 'push' should be performed sequentially in the context of current thread.
+    logging.info('upload_items(items=%d)', len(items))
 
     # Ensure all digests are calculated.
     for item in items:
@@ -423,7 +447,7 @@ class Storage(object):
         duplicates += 1
     items = seen.values()
     if duplicates:
-      logging.info('Skipped %d duplicated files', duplicates)
+      logging.info('Skipped %d files with duplicated content', duplicates)
 
     # Enqueue all upload tasks.
     missing = set()
@@ -508,6 +532,8 @@ class Storage(object):
 
     def push(content):
       """Pushes an Item and returns it to |channel|."""
+      if self._aborted:
+        raise Aborted()
       item.prepare(self._hash_algo)
       self._storage_api.push(item, push_state, content)
       return item
@@ -523,6 +549,8 @@ class Storage(object):
       # TODO(vadimsh): Implement streaming uploads. Before it's done, assemble
       # content right here. It will block until all file is zipped.
       try:
+        if self._aborted:
+          raise Aborted()
         stream = zip_compress(item.content(), item.compression_level)
         data = ''.join(stream)
       except Exception as exc:
@@ -605,11 +633,15 @@ class Storage(object):
     for item in items:
       item.prepare(self._hash_algo)
 
+    def contains(batch):
+      if self._aborted:
+        raise Aborted()
+      return self._storage_api.contains(batch)
+
     # Enqueue all requests.
     for batch in batch_items_for_check(items):
       self.net_thread_pool.add_task_with_channel(
-          channel, threading_utils.PRIORITY_HIGH,
-          self._storage_api.contains, batch)
+          channel, threading_utils.PRIORITY_HIGH, contains, batch)
       pending += 1
 
     # Yield results as they come in.
@@ -747,6 +779,7 @@ class FetchStreamVerifier(object):
   """Verifies that fetched file is valid before passing it to the LocalCache."""
 
   def __init__(self, stream, expected_size):
+    assert stream is not None
     self.stream = stream
     self.expected_size = expected_size
     self.current_size = 0
@@ -803,11 +836,7 @@ class StorageApi(object):
 
   @property
   def location(self):
-    """Location of a backing store that this class is using.
-
-    Exact meaning depends on the type. For IsolateServer it is an URL of isolate
-    server, for FileSystem is it a path in file system.
-    """
+    """URL of the backing store that this class is using."""
     raise NotImplementedError()
 
   @property
@@ -887,11 +916,18 @@ class _IsolateServerPushState(object):
   Note this needs to be a global class to support pickling.
   """
 
-  def __init__(self, upload_url, finalize_url):
-    self.upload_url = upload_url
-    self.finalize_url = finalize_url
+  def __init__(self, preupload_status, size):
+    self.preupload_status = preupload_status
+    gs_upload_url = preupload_status.get('gs_upload_url') or None
+    if gs_upload_url:
+      self.upload_url = gs_upload_url
+      self.finalize_url = '_ah/api/isolateservice/v1/finalize_gs_upload'
+    else:
+      self.upload_url = '_ah/api/isolateservice/v1/store_inline'
+      self.finalize_url = None
     self.uploaded = False
     self.finalized = False
+    self.size = size
 
 
 class IsolateServer(StorageApi):
@@ -903,67 +939,37 @@ class IsolateServer(StorageApi):
 
   def __init__(self, base_url, namespace):
     super(IsolateServer, self).__init__()
-    assert base_url.startswith('http'), base_url
+    assert file_path.is_url(base_url), base_url
     self._base_url = base_url.rstrip('/')
     self._namespace = namespace
+    self._namespace_dict = {
+        'compression': 'flate' if namespace.endswith(
+            ('-gzip', '-flate')) else '',
+        'digest_hash': 'sha-1',
+        'namespace': namespace,
+    }
     self._lock = threading.Lock()
     self._server_caps = None
-
-  @staticmethod
-  def _generate_handshake_request():
-    """Returns a dict to be sent as handshake request body."""
-    # TODO(vadimsh): Set 'pusher' and 'fetcher' according to intended usage.
-    return {
-        'client_app_version': __version__,
-        'fetcher': True,
-        'protocol_version': ISOLATE_PROTOCOL_VERSION,
-        'pusher': True,
-    }
-
-  @staticmethod
-  def _validate_handshake_response(caps):
-    """Validates and normalizes handshake response."""
-    logging.info('Protocol version: %s', caps['protocol_version'])
-    logging.info('Server version: %s', caps['server_app_version'])
-    if caps.get('error'):
-      raise isolated_format.MappingError(caps['error'])
-    if not caps['access_token']:
-      raise ValueError('access_token is missing')
-    return caps
+    self._memory_use = 0
 
   @property
   def _server_capabilities(self):
-    """Performs handshake with the server if not yet done.
+    """Gets server details.
 
     Returns:
-      Server capabilities dictionary as returned by /handshake endpoint.
-
-    Raises:
-      MappingError if server rejects the handshake.
+      Server capabilities dictionary as returned by /server_details endpoint.
     """
     # TODO(maruel): Make this request much earlier asynchronously while the
     # files are being enumerated.
 
     # TODO(vadimsh): Put |namespace| in the URL so that server can apply
     # namespace-level ACLs to this call.
+
     with self._lock:
       if self._server_caps is None:
-        try:
-          caps = net.url_read_json(
-              url=self._base_url + '/content-gs/handshake',
-              data=self._generate_handshake_request())
-          if caps is None:
-            raise isolated_format.MappingError('Failed to perform handshake.')
-          if not isinstance(caps, dict):
-            raise ValueError('Expecting JSON dict')
-          self._server_caps = self._validate_handshake_response(caps)
-        except (ValueError, KeyError, TypeError) as exc:
-          # KeyError exception has very confusing str conversion: it's just a
-          # missing key value and nothing else. So print exception class name
-          # as well.
-          raise isolated_format.MappingError(
-              'Invalid handshake response (%s): %s' % (
-              exc.__class__.__name__, exc))
+        self._server_caps = net.url_read_json(
+            url='%s/_ah/api/isolateservice/v1/server_details' % self._base_url,
+            data={})
       return self._server_caps
 
   @property
@@ -980,18 +986,24 @@ class IsolateServer(StorageApi):
         self._base_url, self._namespace, digest)
 
   def fetch(self, digest, offset=0):
-    source_url = self.get_fetch_url(digest)
+    assert offset >= 0
+    source_url = '%s/_ah/api/isolateservice/v1/retrieve' % (
+        self._base_url)
     logging.debug('download_file(%s, %d)', source_url, offset)
+    response = self.do_fetch(source_url, digest, offset)
 
-    connection = net.url_open(
-        source_url,
-        read_timeout=DOWNLOAD_READ_TIMEOUT,
-        headers={'Range': 'bytes=%d-' % offset} if offset else None)
+    if not response:
+      raise IOError('Attempted to fetch from %s; no data exist.' % source_url)
 
-    if not connection:
-      raise IOError('Request failed - %s' % source_url)
+    # for DB uploads
+    content = response.get('content')
+    if content is not None:
+      return base64.b64decode(content)
 
-    # If |offset| is used, verify server respects it by checking Content-Range.
+    # for GS entities
+    connection = net.url_open(response['url'])
+
+    # If |offset|, verify server respects it by checking Content-Range.
     if offset:
       content_range = connection.get_header('Content-Range')
       if not content_range:
@@ -1030,78 +1042,97 @@ class IsolateServer(StorageApi):
 
     # Default to item.content().
     content = item.content() if content is None else content
-
-    # Do not iterate byte by byte over 'str'. Push it all as a single chunk.
-    if isinstance(content, basestring):
-      assert not isinstance(content, unicode), 'Unicode string is not allowed'
-      content = [content]
-
-    # TODO(vadimsh): Do not read from |content| generator when retrying push.
-    # If |content| is indeed a generator, it can not be re-winded back
-    # to the beginning of the stream. A retry will find it exhausted. A possible
-    # solution is to wrap |content| generator with some sort of caching
-    # restartable generator. It should be done alongside streaming support
-    # implementation.
-
-    # This push operation may be a retry after failed finalization call below,
-    # no need to reupload contents in that case.
-    if not push_state.uploaded:
-      # A cheezy way to avoid memcpy of (possibly huge) file, until streaming
-      # upload support is implemented.
-      if isinstance(content, list) and len(content) == 1:
-        content = content[0]
-      else:
-        content = ''.join(content)
-      # PUT file to |upload_url|.
-      response = net.url_read(
-          url=push_state.upload_url,
-          data=content,
-          content_type='application/octet-stream',
-          method='PUT')
-      if response is None:
-        raise IOError('Failed to upload a file %s to %s' % (
-            item.digest, push_state.upload_url))
-      push_state.uploaded = True
+    logging.info('Push state size: %d', push_state.size)
+    if isinstance(content, (basestring, list)):
+      # Memory is already used, too late.
+      with self._lock:
+        self._memory_use += push_state.size
     else:
-      logging.info(
-          'A file %s already uploaded, retrying finalization only', item.digest)
+      # TODO(vadimsh): Do not read from |content| generator when retrying push.
+      # If |content| is indeed a generator, it can not be re-winded back to the
+      # beginning of the stream. A retry will find it exhausted. A possible
+      # solution is to wrap |content| generator with some sort of caching
+      # restartable generator. It should be done alongside streaming support
+      # implementation.
+      #
+      # In theory, we should keep the generator, so that it is not serialized in
+      # memory. Sadly net.HttpService.request() requires the body to be
+      # serialized.
+      assert isinstance(content, types.GeneratorType), repr(content)
+      slept = False
+      # HACK HACK HACK. Please forgive me for my sins but OMG, it works!
+      # One byte less than 512mb. This is to cope with incompressible content.
+      max_size = int(sys.maxsize * 0.25)
+      while True:
+        with self._lock:
+          # This is due to 32 bits python when uploading very large files. The
+          # problem is that it's comparing uncompressed sizes, while we care
+          # about compressed sizes since it's what is serialized in memory.
+          # The first check assumes large files are compressible and that by
+          # throttling one upload at once, we can survive. Otherwise, kaboom.
+          memory_use = self._memory_use
+          if ((push_state.size >= max_size and not memory_use) or
+              (memory_use + push_state.size <= max_size)):
+            self._memory_use += push_state.size
+            memory_use = self._memory_use
+            break
+        time.sleep(0.1)
+        slept = True
+      if slept:
+        logging.info('Unblocked: %d %d', memory_use, push_state.size)
 
-    # Optionally notify the server that it's done.
-    if push_state.finalize_url:
-      # TODO(vadimsh): Calculate MD5 or CRC32C sum while uploading a file and
-      # send it to isolated server. That way isolate server can verify that
-      # the data safely reached Google Storage (GS provides MD5 and CRC32C of
-      # stored files).
-      # TODO(maruel): Fix the server to accept propery data={} so
-      # url_read_json() can be used.
-      response = net.url_read(
-          url=push_state.finalize_url,
-          data='',
-          content_type='application/json',
-          method='POST')
-      if response is None:
-        raise IOError('Failed to finalize an upload of %s' % item.digest)
-    push_state.finalized = True
+    try:
+      # This push operation may be a retry after failed finalization call below,
+      # no need to reupload contents in that case.
+      if not push_state.uploaded:
+        # PUT file to |upload_url|.
+        success = self.do_push(push_state, content)
+        if not success:
+          raise IOError('Failed to upload file with hash %s to URL %s' % (
+              item.digest, push_state.upload_url))
+        push_state.uploaded = True
+      else:
+        logging.info(
+            'A file %s already uploaded, retrying finalization only',
+            item.digest)
+
+      # Optionally notify the server that it's done.
+      if push_state.finalize_url:
+        # TODO(vadimsh): Calculate MD5 or CRC32C sum while uploading a file and
+        # send it to isolated server. That way isolate server can verify that
+        # the data safely reached Google Storage (GS provides MD5 and CRC32C of
+        # stored files).
+        # TODO(maruel): Fix the server to accept properly data={} so
+        # url_read_json() can be used.
+        response = net.url_read_json(
+            url='%s/%s' % (self._base_url, push_state.finalize_url),
+            data={
+                'upload_ticket': push_state.preupload_status['upload_ticket'],
+            })
+        if not response or not response['ok']:
+          raise IOError('Failed to finalize file with hash %s.' % item.digest)
+      push_state.finalized = True
+    finally:
+      with self._lock:
+        self._memory_use -= push_state.size
 
   def contains(self, items):
-    logging.info('Checking existence of %d files...', len(items))
-
     # Ensure all items were initialized with 'prepare' call. Storage does that.
     assert all(i.digest is not None and i.size is not None for i in items)
 
     # Request body is a json encoded list of dicts.
-    body = [
-        {
-          'h': item.digest,
-          's': item.size,
-          'i': int(item.high_priority),
-        } for item in items
-    ]
+    body = {
+        'items': [
+          {
+            'digest': item.digest,
+            'is_isolated': bool(item.high_priority),
+            'size': item.size,
+          } for item in items
+        ],
+        'namespace': self._namespace_dict,
+    }
 
-    query_url = '%s/content-gs/pre-upload/%s?token=%s' % (
-        self._base_url,
-        self._namespace,
-        urllib.quote(self._server_capabilities['access_token']))
+    query_url = '%s/_ah/api/isolateservice/v1/preupload' % self._base_url
 
     # Response body is a list of push_urls (or null if file is already present).
     response = None
@@ -1109,77 +1140,85 @@ class IsolateServer(StorageApi):
       response = net.url_read_json(url=query_url, data=body)
       if response is None:
         raise isolated_format.MappingError(
-            'Failed to execute /pre-upload query')
-      if not isinstance(response, list):
-        raise ValueError('Expecting response with json-encoded list')
-      if len(response) != len(items):
-        raise ValueError(
-            'Incorrect number of items in the list, expected %d, '
-            'but got %d' % (len(items), len(response)))
+            'Failed to execute preupload query')
     except ValueError as err:
       raise isolated_format.MappingError(
           'Invalid response from server: %s, body is %s' % (err, response))
 
     # Pick Items that are missing, attach _PushState to them.
     missing_items = {}
-    for i, push_urls in enumerate(response):
-      if push_urls:
-        assert len(push_urls) == 2, str(push_urls)
-        missing_items[items[i]] = _IsolateServerPushState(
-            push_urls[0], push_urls[1])
+    for preupload_status in response.get('items', []):
+      assert 'upload_ticket' in preupload_status, (
+          preupload_status, '/preupload did not generate an upload ticket')
+      index = int(preupload_status['index'])
+      missing_items[items[index]] = _IsolateServerPushState(
+          preupload_status, items[index].size)
     logging.info('Queried %d files, %d cache hit',
         len(items), len(items) - len(missing_items))
     return missing_items
 
+  def do_fetch(self, url, digest, offset):
+    """Fetches isolated data from the URL.
 
-class FileSystem(StorageApi):
-  """StorageApi implementation that fetches data from the file system.
+    Used only for fetching files, not for API calls. Can be overridden in
+    subclasses.
 
-  The common use case is a NFS/CIFS file server that is mounted locally that is
-  used to fetch the file on a local partition.
-  """
+    Args:
+      url: URL to fetch the data from, can possibly return http redirect.
+      offset: byte offset inside the file to start fetching from.
 
-  # Used for push_state instead of None. That way caller is forced to
-  # call 'contains' before 'push'. Naively passing None in 'push' will not work.
-  _DUMMY_PUSH_STATE = object()
+    Returns:
+      net.HttpResponse compatible object, with 'read' and 'get_header' calls.
+    """
+    assert isinstance(offset, int)
+    data = {
+        'digest': digest.encode('utf-8'),
+        'namespace': self._namespace_dict,
+        'offset': offset,
+    }
+    return net.url_read_json(
+        url=url,
+        data=data,
+        read_timeout=DOWNLOAD_READ_TIMEOUT)
 
-  def __init__(self, base_path, namespace):
-    super(FileSystem, self).__init__()
-    self._base_path = base_path
-    self._namespace = namespace
+  def do_push(self, push_state, content):
+    """Uploads isolated file to the URL.
 
-  @property
-  def location(self):
-    return self._base_path
+    Used only for storing files, not for API calls. Can be overridden in
+    subclasses.
 
-  @property
-  def namespace(self):
-    return self._namespace
+    Args:
+      url: URL to upload the data to.
+      push_state: an _IsolateServicePushState instance
+      item: the original Item to be uploaded
+      content: an iterable that yields 'str' chunks.
+    """
+    # A cheezy way to avoid memcpy of (possibly huge) file, until streaming
+    # upload support is implemented.
+    if isinstance(content, list) and len(content) == 1:
+      content = content[0]
+    else:
+      content = ''.join(content)
 
-  def get_fetch_url(self, digest):
-    return None
+    # DB upload
+    if not push_state.finalize_url:
+      url = '%s/%s' % (self._base_url, push_state.upload_url)
+      content = base64.b64encode(content)
+      data = {
+          'upload_ticket': push_state.preupload_status['upload_ticket'],
+          'content': content,
+      }
+      response = net.url_read_json(url=url, data=data)
+      return response is not None and response['ok']
 
-  def fetch(self, digest, offset=0):
-    assert isinstance(digest, basestring)
-    return file_read(os.path.join(self._base_path, digest), offset=offset)
-
-  def push(self, item, push_state, content=None):
-    assert isinstance(item, Item)
-    assert item.digest is not None
-    assert item.size is not None
-    assert push_state is self._DUMMY_PUSH_STATE
-    content = item.content() if content is None else content
-    if isinstance(content, basestring):
-      assert not isinstance(content, unicode), 'Unicode string is not allowed'
-      content = [content]
-    file_write(os.path.join(self._base_path, item.digest), content)
-
-  def contains(self, items):
-    assert all(i.digest is not None and i.size is not None for i in items)
-    return dict(
-        (item, self._DUMMY_PUSH_STATE) for item in items
-        if not os.path.exists(os.path.join(self._base_path, item.digest))
-    )
+    # upload to GS
+    url = push_state.upload_url
+    response = net.url_read(
+        content_type='application/octet-stream',
+        data=content,
+        method='PUT',
+        url=url)
+    return response is not None
 
 
 class LocalCache(object):
@@ -1276,6 +1315,299 @@ class MemoryCache(LocalCache):
     file_write(dest, [self.read(digest)])
     if file_mode is not None:
       os.chmod(dest, file_mode & self._file_mode_mask)
+
+
+class CachePolicies(object):
+  def __init__(self, max_cache_size, min_free_space, max_items):
+    """
+    Arguments:
+    - max_cache_size: Trim if the cache gets larger than this value. If 0, the
+                      cache is effectively a leak.
+    - min_free_space: Trim if disk free space becomes lower than this value. If
+                      0, it unconditionally fill the disk.
+    - max_items: Maximum number of items to keep in the cache. If 0, do not
+                 enforce a limit.
+    """
+    self.max_cache_size = max_cache_size
+    self.min_free_space = min_free_space
+    self.max_items = max_items
+
+
+class DiskCache(LocalCache):
+  """Stateful LRU cache in a flat hash table in a directory.
+
+  Saves its state as json file.
+  """
+  STATE_FILE = 'state.json'
+
+  def __init__(self, cache_dir, policies, hash_algo):
+    """
+    Arguments:
+      cache_dir: directory where to place the cache.
+      policies: cache retention policies.
+      algo: hashing algorithm used.
+    """
+    super(DiskCache, self).__init__()
+    self.cache_dir = cache_dir
+    self.policies = policies
+    self.hash_algo = hash_algo
+    self.state_file = os.path.join(cache_dir, self.STATE_FILE)
+
+    # All protected methods (starting with '_') except _path should be called
+    # with this lock locked.
+    self._lock = threading_utils.LockWithAssert()
+    self._lru = lru.LRUDict()
+
+    # Profiling values.
+    self._added = []
+    self._removed = []
+    self._free_disk = 0
+
+    with tools.Profiler('Setup'):
+      with self._lock:
+        self._load()
+
+  def __enter__(self):
+    return self
+
+  def __exit__(self, _exc_type, _exec_value, _traceback):
+    with tools.Profiler('CleanupTrimming'):
+      with self._lock:
+        self._trim()
+
+        logging.info(
+            '%5d (%8dkb) added',
+            len(self._added), sum(self._added) / 1024)
+        logging.info(
+            '%5d (%8dkb) current',
+            len(self._lru),
+            sum(self._lru.itervalues()) / 1024)
+        logging.info(
+            '%5d (%8dkb) removed',
+            len(self._removed), sum(self._removed) / 1024)
+        logging.info(
+            '       %8dkb free',
+            self._free_disk / 1024)
+    return False
+
+  def cached_set(self):
+    with self._lock:
+      return self._lru.keys_set()
+
+  def touch(self, digest, size):
+    """Verifies an actual file is valid.
+
+    Note that is doesn't compute the hash so it could still be corrupted if the
+    file size didn't change.
+
+    TODO(maruel): More stringent verification while keeping the check fast.
+    """
+    # Do the check outside the lock.
+    if not is_valid_file(self._path(digest), size):
+      return False
+
+    # Update it's LRU position.
+    with self._lock:
+      if digest not in self._lru:
+        return False
+      self._lru.touch(digest)
+    return True
+
+  def evict(self, digest):
+    with self._lock:
+      self._lru.pop(digest)
+      self._delete_file(digest, UNKNOWN_FILE_SIZE)
+
+  def read(self, digest):
+    with open(self._path(digest), 'rb') as f:
+      return f.read()
+
+  def write(self, digest, content):
+    assert content is not None
+    path = self._path(digest)
+    # A stale broken file may remain. It is possible for the file to have write
+    # access bit removed which would cause the file_write() call to fail to open
+    # in write mode. Take no chance here.
+    file_path.try_remove(path)
+    try:
+      size = file_write(path, content)
+    except:
+      # There are two possible places were an exception can occur:
+      #   1) Inside |content| generator in case of network or unzipping errors.
+      #   2) Inside file_write itself in case of disk IO errors.
+      # In any case delete an incomplete file and propagate the exception to
+      # caller, it will be logged there.
+      file_path.try_remove(path)
+      raise
+    # Make the file read-only in the cache.  This has a few side-effects since
+    # the file node is modified, so every directory entries to this file becomes
+    # read-only. It's fine here because it is a new file.
+    file_path.set_read_only(path, True)
+    with self._lock:
+      self._add(digest, size)
+
+  def hardlink(self, digest, dest, file_mode):
+    """Hardlinks the file to |dest|.
+
+    Note that the file permission bits are on the file node, not the directory
+    entry, so changing the access bit on any of the directory entries for the
+    file node will affect them all.
+    """
+    path = self._path(digest)
+    # TODO(maruel): file_path.HARDLINK_WITH_FALLBACK ?
+    file_path.hardlink(path, dest)
+    if file_mode is not None:
+      # Ignores all other bits.
+      os.chmod(dest, file_mode & 0500)
+
+  def _load(self):
+    """Loads state of the cache from json file."""
+    self._lock.assert_locked()
+
+    if not os.path.isdir(self.cache_dir):
+      os.makedirs(self.cache_dir)
+    else:
+      # Make sure the cache is read-only.
+      # TODO(maruel): Calculate the cost and optimize the performance
+      # accordingly.
+      file_path.make_tree_read_only(self.cache_dir)
+
+    # Load state of the cache.
+    if os.path.isfile(self.state_file):
+      try:
+        self._lru = lru.LRUDict.load(self.state_file)
+      except ValueError as err:
+        logging.error('Failed to load cache state: %s' % (err,))
+        # Don't want to keep broken state file.
+        file_path.try_remove(self.state_file)
+
+    # Ensure that all files listed in the state still exist and add new ones.
+    previous = self._lru.keys_set()
+    unknown = []
+    for filename in os.listdir(self.cache_dir):
+      if filename == self.STATE_FILE:
+        continue
+      if filename in previous:
+        previous.remove(filename)
+        continue
+      # An untracked file.
+      if not isolated_format.is_valid_hash(filename, self.hash_algo):
+        logging.warning('Removing unknown file %s from cache', filename)
+        p = self._path(filename)
+        if os.path.isdir(p):
+          try:
+            file_path.rmtree(p)
+          except OSError:
+            pass
+        else:
+          file_path.try_remove(p)
+        continue
+      # File that's not referenced in 'state.json'.
+      # TODO(vadimsh): Verify its SHA1 matches file name.
+      logging.warning('Adding unknown file %s to cache', filename)
+      unknown.append(filename)
+
+    if unknown:
+      # Add as oldest files. They will be deleted eventually if not accessed.
+      self._add_oldest_list(unknown)
+      logging.warning('Added back %d unknown files', len(unknown))
+
+    if previous:
+      # Filter out entries that were not found.
+      logging.warning('Removed %d lost files', len(previous))
+      for filename in previous:
+        self._lru.pop(filename)
+    self._trim()
+
+  def _save(self):
+    """Saves the LRU ordering."""
+    self._lock.assert_locked()
+    if sys.platform != 'win32':
+      d = os.path.dirname(self.state_file)
+      if os.path.isdir(d):
+        # Necessary otherwise the file can't be created.
+        file_path.set_read_only(d, False)
+    if os.path.isfile(self.state_file):
+      file_path.set_read_only(self.state_file, False)
+    self._lru.save(self.state_file)
+
+  def _trim(self):
+    """Trims anything we don't know, make sure enough free space exists."""
+    self._lock.assert_locked()
+
+    # Ensure maximum cache size.
+    if self.policies.max_cache_size:
+      total_size = sum(self._lru.itervalues())
+      while total_size > self.policies.max_cache_size:
+        total_size -= self._remove_lru_file()
+
+    # Ensure maximum number of items in the cache.
+    if self.policies.max_items and len(self._lru) > self.policies.max_items:
+      for _ in xrange(len(self._lru) - self.policies.max_items):
+        self._remove_lru_file()
+
+    # Ensure enough free space.
+    self._free_disk = file_path.get_free_space(self.cache_dir)
+    trimmed_due_to_space = False
+    while (
+        self.policies.min_free_space and
+        self._lru and
+        self._free_disk < self.policies.min_free_space):
+      trimmed_due_to_space = True
+      self._remove_lru_file()
+      self._free_disk = file_path.get_free_space(self.cache_dir)
+    if trimmed_due_to_space:
+      total_usage = sum(self._lru.itervalues())
+      usage_percent = 0.
+      if total_usage:
+        usage_percent = 100. * self.policies.max_cache_size / float(total_usage)
+      logging.warning(
+          'Trimmed due to not enough free disk space: %.1fkb free, %.1fkb '
+          'cache (%.1f%% of its maximum capacity)',
+          self._free_disk / 1024.,
+          total_usage / 1024.,
+          usage_percent)
+    self._save()
+
+  def _path(self, digest):
+    """Returns the path to one item."""
+    return os.path.join(self.cache_dir, digest)
+
+  def _remove_lru_file(self):
+    """Removes the last recently used file and returns its size."""
+    self._lock.assert_locked()
+    digest, size = self._lru.pop_oldest()
+    self._delete_file(digest, size)
+    return size
+
+  def _add(self, digest, size=UNKNOWN_FILE_SIZE):
+    """Adds an item into LRU cache marking it as a newest one."""
+    self._lock.assert_locked()
+    if size == UNKNOWN_FILE_SIZE:
+      size = os.stat(self._path(digest)).st_size
+    self._added.append(size)
+    self._lru.add(digest, size)
+
+  def _add_oldest_list(self, digests):
+    """Adds a bunch of items into LRU cache marking them as oldest ones."""
+    self._lock.assert_locked()
+    pairs = []
+    for digest in digests:
+      size = os.stat(self._path(digest)).st_size
+      self._added.append(size)
+      pairs.append((digest, size))
+    self._lru.batch_insert_oldest(pairs)
+
+  def _delete_file(self, digest, size=UNKNOWN_FILE_SIZE):
+    """Deletes cache file from the file system."""
+    self._lock.assert_locked()
+    try:
+      if size == UNKNOWN_FILE_SIZE:
+        size = os.stat(self._path(digest)).st_size
+      file_path.try_remove(self._path(digest))
+      self._removed.append(size)
+    except OSError as e:
+      logging.error('Error attempting to delete a file %s:\n%s' % (digest, e))
 
 
 class IsolatedBundle(object):
@@ -1401,7 +1733,15 @@ class IsolatedBundle(object):
       self.relative_cwd = node.data['relative_cwd']
 
 
-def get_storage_api(file_or_url, namespace):
+def set_storage_api_class(cls):
+  """Replaces StorageApi implementation used by default."""
+  global _storage_api_cls
+  assert _storage_api_cls is None
+  assert issubclass(cls, StorageApi)
+  _storage_api_cls = cls
+
+
+def get_storage_api(url, namespace):
   """Returns an object that implements low-level StorageApi interface.
 
   It is used by Storage to work with single isolate |namespace|. It should
@@ -1409,8 +1749,7 @@ def get_storage_api(file_or_url, namespace):
   a better alternative.
 
   Arguments:
-    file_or_url: a file path to use file system based storage, or URL of isolate
-        service to use shared cloud based storage.
+    url: URL of isolate service to use shared cloud based storage.
     namespace: isolate namespace to operate in, also defines hashing and
         compression scheme used, i.e. namespace names that end with '-gzip'
         store compressed data.
@@ -1418,18 +1757,15 @@ def get_storage_api(file_or_url, namespace):
   Returns:
     Instance of StorageApi subclass.
   """
-  if file_path.is_url(file_or_url):
-    return IsolateServer(file_or_url, namespace)
-  else:
-    return FileSystem(file_or_url, namespace)
+  cls = _storage_api_cls or IsolateServer
+  return cls(url, namespace)
 
 
-def get_storage(file_or_url, namespace):
+def get_storage(url, namespace):
   """Returns Storage class that can upload and download from |namespace|.
 
   Arguments:
-    file_or_url: a file path to use file system based storage, or URL of isolate
-        service to use shared cloud based storage.
+    url: URL of isolate service to use shared cloud based storage.
     namespace: isolate namespace to operate in, also defines hashing and
         compression scheme used, i.e. namespace names that end with '-gzip'
         store compressed data.
@@ -1437,38 +1773,38 @@ def get_storage(file_or_url, namespace):
   Returns:
     Instance of Storage.
   """
-  return Storage(get_storage_api(file_or_url, namespace))
+  return Storage(get_storage_api(url, namespace))
 
 
-def upload_tree(base_url, indir, infiles, namespace):
+def upload_tree(base_url, infiles, namespace):
   """Uploads the given tree to the given url.
 
   Arguments:
-    base_url:  The base url, it is assume that |base_url|/has/ can be used to
-               query if an element was already uploaded, and |base_url|/store/
-               can be used to upload a new element.
-    indir:     Root directory the infiles are based in.
-    infiles:   dict of files to upload from |indir| to |base_url|.
+    base_url:  The url of the isolate server to upload to.
+    infiles:   iterable of pairs (absolute path, metadata dict) of files.
     namespace: The namespace to use on the server.
   """
-  logging.info('upload_tree(indir=%s, files=%d)', indir, len(infiles))
-
-  # Convert |indir| + |infiles| into a list of FileItem objects.
+  # Convert |infiles| into a list of FileItem objects, skip duplicates.
   # Filter out symlinks, since they are not represented by items on isolate
   # server side.
-  items = [
-      FileItem(
-          path=os.path.join(indir, filepath),
+  items = []
+  seen = set()
+  skipped = 0
+  for filepath, metadata in infiles:
+    if 'l' not in metadata and filepath not in seen:
+      seen.add(filepath)
+      item = FileItem(
+          path=filepath,
           digest=metadata['h'],
           size=metadata['s'],
           high_priority=metadata.get('priority') == '0')
-      for filepath, metadata in infiles.iteritems()
-      if 'l' not in metadata
-  ]
+      items.append(item)
+    else:
+      skipped += 1
 
+  logging.info('Skipped %d duplicated entries', skipped)
   with get_storage(base_url, namespace) as storage:
     storage.upload_items(items)
-  return 0
 
 
 def fetch_isolated(isolated_hash, storage, cache, outdir, require_command):
@@ -1567,7 +1903,7 @@ def directory_to_metadata(root, algo, blacklist):
       root, '.' + os.path.sep, blacklist, sys.platform != 'win32')
   metadata = {
     relpath: isolated_format.file_to_metadata(
-        os.path.join(root, relpath), {}, False, algo)
+        os.path.join(root, relpath), {}, 0, algo)
     for relpath in paths
   }
   for v in metadata.itervalues():
@@ -1612,8 +1948,8 @@ def archive_files_to_storage(storage, files, blacklist):
 
           # Create the .isolated file.
           if not tempdir:
-            tempdir = tempfile.mkdtemp(prefix='isolateserver')
-          handle, isolated = tempfile.mkstemp(dir=tempdir, suffix='.isolated')
+            tempdir = tempfile.mkdtemp(prefix=u'isolateserver')
+          handle, isolated = tempfile.mkstemp(dir=tempdir, suffix=u'.isolated')
           os.close(handle)
           data = {
               'algo':
@@ -1650,8 +1986,8 @@ def archive_files_to_storage(storage, files, blacklist):
     _uploaded_files = storage.upload_items(items_to_upload)
     return results
   finally:
-    if tempdir:
-      shutil.rmtree(tempdir)
+    if tempdir and os.path.isdir(tempdir):
+      file_path.rmtree(tempdir)
 
 
 def archive(out, namespace, files, blacklist):
@@ -1680,16 +2016,10 @@ def CMDarchive(parser, args):
   directories, the .isolated generated for the directory is listed as the
   directory entry itself.
   """
-  add_isolate_server_options(parser, False)
-  parser.add_option(
-      '--blacklist',
-      action='append', default=list(DEFAULT_BLACKLIST),
-      help='List of regexp to use as blacklist filter when uploading '
-           'directories')
+  add_isolate_server_options(parser)
+  add_archive_options(parser)
   options, files = parser.parse_args(args)
-  process_isolate_server_options(parser, options)
-  if file_path.is_url(options.isolate_server):
-    auth.ensure_logged_in(options.isolate_server)
+  process_isolate_server_options(parser, options, True)
   try:
     archive(options.isolate_server, options.namespace, files, options.blacklist)
   except Error as e:
@@ -1703,33 +2033,37 @@ def CMDdownload(parser, args):
   It can either download individual files or a complete tree from a .isolated
   file.
   """
-  add_isolate_server_options(parser, True)
+  add_isolate_server_options(parser)
   parser.add_option(
-      '-i', '--isolated', metavar='HASH',
+      '-s', '--isolated', metavar='HASH',
       help='hash of an isolated file, .isolated file content is discarded, use '
            '--file if you need it')
   parser.add_option(
       '-f', '--file', metavar='HASH DEST', default=[], action='append', nargs=2,
       help='hash and destination of a file, can be used multiple times')
   parser.add_option(
-      '-t', '--target', metavar='DIR', default=os.getcwd(),
+      '-t', '--target', metavar='DIR', default='download',
       help='destination directory')
+  add_cache_options(parser)
   options, args = parser.parse_args(args)
-  process_isolate_server_options(parser, options)
   if args:
     parser.error('Unsupported arguments: %s' % args)
+
+  process_isolate_server_options(parser, options, True)
   if bool(options.isolated) == bool(options.file):
     parser.error('Use one of --isolated or --file, and only one.')
 
+  cache = process_cache_options(options)
   options.target = os.path.abspath(options.target)
-
-  remote = options.isolate_server or options.indir
-  if file_path.is_url(remote):
-    auth.ensure_logged_in(remote)
-
-  with get_storage(remote, options.namespace) as storage:
+  if options.isolated:
+    if (os.path.isfile(options.target) or
+        (os.path.isdir(options.target) and os.listdir(options.target))):
+      parser.error(
+          '--target \'%s\' exists, please use another target' % options.target)
+  with get_storage(options.isolate_server, options.namespace) as storage:
     # Fetching individual files.
     if options.file:
+      # TODO(maruel): Enable cache in this case too.
       channel = threading_utils.TaskChannel()
       pending = {}
       for digest, dest in options.file:
@@ -1747,25 +2081,32 @@ def CMDdownload(parser, args):
 
     # Fetching whole isolated tree.
     if options.isolated:
-      bundle = fetch_isolated(
-          isolated_hash=options.isolated,
-          storage=storage,
-          cache=MemoryCache(),
-          outdir=options.target,
-          require_command=False)
-      rel = os.path.join(options.target, bundle.relative_cwd)
-      print('To run this test please run from the directory %s:' %
-            os.path.join(options.target, rel))
-      print('  ' + ' '.join(bundle.command))
+      with cache:
+        bundle = fetch_isolated(
+            isolated_hash=options.isolated,
+            storage=storage,
+            cache=cache,
+            outdir=options.target,
+            require_command=False)
+      if bundle.command:
+        rel = os.path.join(options.target, bundle.relative_cwd)
+        print('To run this test please run from the directory %s:' %
+              os.path.join(options.target, rel))
+        print('  ' + ' '.join(bundle.command))
 
   return 0
 
 
-def add_isolate_server_options(parser, add_indir):
-  """Adds --isolate-server and --namespace options to parser.
+def add_archive_options(parser):
+  parser.add_option(
+      '--blacklist',
+      action='append', default=list(DEFAULT_BLACKLIST),
+      help='List of regexp to use as blacklist filter when uploading '
+           'directories')
 
-  Includes --indir if desired.
-  """
+
+def add_isolate_server_options(parser):
+  """Adds --isolate-server and --namespace options to parser."""
   parser.add_option(
       '-I', '--isolate-server',
       metavar='URL', default=os.environ.get('ISOLATE_SERVER', ''),
@@ -1775,51 +2116,68 @@ def add_isolate_server_options(parser, add_indir):
   parser.add_option(
       '--namespace', default='default-gzip',
       help='The namespace to use on the Isolate Server, default: %default')
-  if add_indir:
-    parser.add_option(
-        '--indir', metavar='DIR',
-        help='Directory used to store the hashtable instead of using an '
-             'isolate server.')
 
 
-def process_isolate_server_options(parser, options):
-  """Processes the --isolate-server and --indir options and aborts if neither is
-  specified.
+def process_isolate_server_options(parser, options, set_exception_handler):
+  """Processes the --isolate-server option and aborts if not specified.
+
+  Returns the identity as determined by the server.
   """
-  has_indir = hasattr(options, 'indir')
   if not options.isolate_server:
-    if not has_indir:
-      parser.error('--isolate-server is required.')
-    elif not options.indir:
-      parser.error('Use one of --indir or --isolate-server.')
-  else:
-    if has_indir and options.indir:
-      parser.error('Use only one of --indir or --isolate-server.')
-
-  if options.isolate_server:
-    parts = urlparse.urlparse(options.isolate_server, 'https')
-    if parts.query:
-      parser.error('--isolate-server doesn\'t support query parameter.')
-    if parts.fragment:
-      parser.error('--isolate-server doesn\'t support fragment in the url.')
-    # urlparse('foo.com') will result in netloc='', path='foo.com', which is not
-    # what is desired here.
-    new = list(parts)
-    if not new[1] and new[2]:
-      new[1] = new[2].rstrip('/')
-      new[2] = ''
-    new[2] = new[2].rstrip('/')
-    options.isolate_server = urlparse.urlunparse(new)
+    parser.error('--isolate-server is required.')
+  try:
+    options.isolate_server = net.fix_url(options.isolate_server)
+  except ValueError as e:
+    parser.error('--isolate-server %s' % e)
+  if set_exception_handler:
     on_error.report_on_exception_exit(options.isolate_server)
-    return
+  try:
+    return auth.ensure_logged_in(options.isolate_server)
+  except ValueError as e:
+    parser.error(str(e))
 
-  if file_path.is_url(options.indir):
-    parser.error('Can\'t use an URL for --indir.')
-  options.indir = unicode(options.indir).replace('/', os.path.sep)
-  options.indir = os.path.abspath(
-      os.path.normpath(os.path.join(os.getcwd(), options.indir)))
-  if not os.path.isdir(options.indir):
-    parser.error('Path given to --indir must exist.')
+
+def add_cache_options(parser):
+  cache_group = optparse.OptionGroup(parser, 'Cache management')
+  cache_group.add_option(
+      '--cache', metavar='DIR',
+      help='Directory to keep a local cache of the files. Accelerates download '
+           'by reusing already downloaded files. Default=%default')
+  cache_group.add_option(
+      '--max-cache-size',
+      type='int',
+      metavar='NNN',
+      default=20*1024*1024*1024,
+      help='Trim if the cache gets larger than this value, default=%default')
+  cache_group.add_option(
+      '--min-free-space',
+      type='int',
+      metavar='NNN',
+      default=2*1024*1024*1024,
+      help='Trim if disk free space becomes lower than this value, '
+           'default=%default')
+  cache_group.add_option(
+      '--max-items',
+      type='int',
+      metavar='NNN',
+      default=100000,
+      help='Trim if more than this number of items are in the cache '
+           'default=%default')
+  parser.add_option_group(cache_group)
+
+
+def process_cache_options(options):
+  if options.cache:
+    policies = CachePolicies(
+        options.max_cache_size, options.min_free_space, options.max_items)
+
+    # |options.cache| path may not exist until DiskCache() instance is created.
+    return DiskCache(
+        unicode(os.path.abspath(options.cache)),
+        policies,
+        isolated_format.get_hash_algo(options.namespace))
+  else:
+    return MemoryCache()
 
 
 class OptionParserIsolateServer(tools.OptionParserWithLogging):

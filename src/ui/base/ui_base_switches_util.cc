@@ -9,29 +9,48 @@
 
 namespace switches {
 
+bool IsLinkDisambiguationPopupEnabled() {
+#if defined(OS_ANDROID)
+  return true;
+#else
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableLinkDisambiguationPopup)) {
+    return true;
+  }
+  return false;
+#endif
+}
+
 bool IsTextInputFocusManagerEnabled() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableTextInputFocusManager);
 }
 
 bool IsTouchDragDropEnabled() {
 #if defined(OS_CHROMEOS)
-  return !CommandLine::ForCurrentProcess()->HasSwitch(
+  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableTouchDragDrop);
 #else
-  return CommandLine::ForCurrentProcess()->HasSwitch(
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableTouchDragDrop);
 #endif
 }
 
 bool IsTouchEditingEnabled() {
 #if defined(USE_AURA)
-  return !CommandLine::ForCurrentProcess()->HasSwitch(
+  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableTouchEditing);
 #else
-  return CommandLine::ForCurrentProcess()->HasSwitch(
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableTouchEditing);
 #endif
+}
+
+bool IsTouchFeedbackEnabled() {
+  static bool touch_feedback_enabled =
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableTouchFeedback);
+  return touch_feedback_enabled;
 }
 
 }  // namespace switches

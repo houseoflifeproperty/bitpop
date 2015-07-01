@@ -7,26 +7,13 @@
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
 #include "base/time/time.h"
+#include "chrome/browser/ui/toolbar/toolbar_actions_bar.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/browser/ui/views/toolbar/wrench_menu.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/submenu_view.h"
-
-namespace {
-
-// Returns the padding before the BrowserActionsContainer in the menu.
-int start_padding() {
-  // We pad enough on the left so that the first icon starts at the same point
-  // as the labels. We need to subtract 1 because we want the pixel *before*
-  // the label, and we subtract kItemSpacing because there needs to be padding
-  // so we can see the drop indicator.
-  return views::MenuItemView::label_start() - 1 -
-      BrowserActionsContainer::kItemSpacing;
-}
-
-}  // namespace
 
 ExtensionToolbarMenuView::ExtensionToolbarMenuView(Browser* browser,
                                                    WrenchMenu* wrench_menu)
@@ -38,10 +25,7 @@ ExtensionToolbarMenuView::ExtensionToolbarMenuView(Browser* browser,
   BrowserActionsContainer* main =
       BrowserView::GetBrowserViewForBrowser(browser_)
           ->toolbar()->browser_actions();
-  container_ = new BrowserActionsContainer(
-      browser_,
-      NULL,  // No owner view, means no extra keybindings are registered.
-      main);
+  container_ = new BrowserActionsContainer(browser_, main);
   container_->Init();
   AddChildView(container_);
   // We Layout() the container here so that we know the number of actions
@@ -72,7 +56,7 @@ int ExtensionToolbarMenuView::GetHeightForWidth(int width) const {
   const views::MenuConfig& menu_config =
       static_cast<const views::MenuItemView*>(parent())->GetMenuConfig();
   int end_padding = menu_config.arrow_to_edge_padding -
-                    BrowserActionsContainer::kItemSpacing;
+      container_->toolbar_actions_bar()->platform_settings().item_spacing;
   width -= start_padding() + end_padding;
 
   int height = container_->GetHeightForWidth(width);
@@ -101,3 +85,13 @@ void ExtensionToolbarMenuView::OnBrowserActionDragDone() {
 void ExtensionToolbarMenuView::CloseWrenchMenu() {
   wrench_menu_->CloseMenu();
 }
+
+int ExtensionToolbarMenuView::start_padding() const {
+  // We pad enough on the left so that the first icon starts at the same point
+  // as the labels. We need to subtract 1 because we want the pixel *before*
+  // the label, and we subtract kItemSpacing because there needs to be padding
+  // so we can see the drop indicator.
+  return views::MenuItemView::label_start() - 1 -
+      container_->toolbar_actions_bar()->platform_settings().item_spacing;
+}
+

@@ -2,9 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from telemetry.core import exceptions
-from telemetry.core.backends.chrome import inspector_backend_list
 from telemetry.core.backends.chrome import oobe
+from telemetry.core.backends.chrome_inspector import inspector_backend_list
+from telemetry.core import exceptions
 
 
 class MiscWebContentsBackend(inspector_backend_list.InspectorBackendList):
@@ -14,17 +14,14 @@ class MiscWebContentsBackend(inspector_backend_list.InspectorBackendList):
   """
 
   def __init__(self, browser_backend):
-    super(MiscWebContentsBackend, self).__init__(
-        browser_backend, backend_wrapper=oobe.Oobe)
+    super(MiscWebContentsBackend, self).__init__(browser_backend)
 
   @property
   def oobe_exists(self):
     """Lightweight property to determine if the oobe webui is visible."""
     try:
       return bool(len(self))
-    except (exceptions.BrowserGoneException,
-            exceptions.BrowserConnectionGoneException,
-            exceptions.TabCrashException):
+    except exceptions.Error:
       return False
 
   def GetOobe(self):
@@ -34,3 +31,6 @@ class MiscWebContentsBackend(inspector_backend_list.InspectorBackendList):
 
   def ShouldIncludeContext(self, context):
     return context.get('url').startswith('chrome://oobe')
+
+  def CreateWrapper(self, inspector_backend):
+    return oobe.Oobe(inspector_backend)

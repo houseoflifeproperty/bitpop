@@ -203,7 +203,7 @@ void SupervisedUserCreationControllerNew::StartCreationImpl() {
       base::TimeDelta::FromSeconds(kUserCreationTimeoutSeconds),
       this,
       &SupervisedUserCreationControllerNew::CreationTimedOut);
-  authenticator_ = new ExtendedAuthenticator(this);
+  authenticator_ = ExtendedAuthenticator::Create(this);
   UserContext user_context;
   user_context.SetKey(Key(creation_context_->master_key));
   authenticator_->TransformKeyIfNeeded(
@@ -347,10 +347,12 @@ void SupervisedUserCreationControllerNew::RegistrationCallback(
     creation_context_->token = token;
 
     PostTaskAndReplyWithResult(
-        content::BrowserThread::GetBlockingPool(),
+        content::BrowserThread::GetBlockingPool()
+            ->GetTaskRunnerWithShutdownBehavior(
+                  base::SequencedWorkerPool::CONTINUE_ON_SHUTDOWN)
+            .get(),
         FROM_HERE,
-        base::Bind(&StoreSupervisedUserFiles,
-                   creation_context_->token,
+        base::Bind(&StoreSupervisedUserFiles, creation_context_->token,
                    ProfileHelper::GetProfilePathByUserIdHash(
                        creation_context_->mount_hash)),
         base::Bind(

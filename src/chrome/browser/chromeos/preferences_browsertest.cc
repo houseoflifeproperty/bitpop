@@ -5,6 +5,7 @@
 #include <sys/types.h>
 
 #include "ash/shell.h"
+#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "base/prefs/pref_service.h"
@@ -21,18 +22,19 @@
 #include "chrome/browser/ui/ash/multi_user/multi_user_window_manager_chromeos.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
-#include "chromeos/ime/fake_ime_keyboard.h"
 #include "components/feedback/tracing_manager.h"
 #include "components/user_manager/user_manager.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/ime/chromeos/fake_ime_keyboard.h"
 #include "ui/events/event_utils.h"
 
 namespace chromeos {
 
 namespace {
 
-const char* kTestUsers[] = {"test-user1@gmail.com", "test-user2@gmail.com"};
+const char* const kTestUsers[] = {"test-user1@gmail.com",
+                                  "test-user2@gmail.com"};
 
 }  // namespace
 
@@ -43,12 +45,12 @@ class PreferencesTest : public LoginManagerTest {
         input_settings_(NULL),
         keyboard_(NULL) {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     LoginManagerTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kStubCrosSettings);
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     LoginManagerTest::SetUpOnMainThread();
     input_settings_ = new system::FakeInputDeviceSettings();
     system::InputDeviceSettings::SetSettingsForTesting(input_settings_);

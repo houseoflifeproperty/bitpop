@@ -5,8 +5,10 @@
 #include "chrome/browser/services/gcm/fake_gcm_profile_service.h"
 
 #include "base/bind.h"
+#include "base/format_macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/gcm_driver/fake_gcm_client_factory.h"
 #include "components/gcm_driver/fake_gcm_driver.h"
@@ -20,7 +22,7 @@ namespace {
 class CustomFakeGCMDriver : public FakeGCMDriver {
  public:
   explicit CustomFakeGCMDriver(FakeGCMProfileService* service);
-  virtual ~CustomFakeGCMDriver();
+  ~CustomFakeGCMDriver() override;
 
   void OnRegisterFinished(const std::string& app_id,
                           const std::string& registration_id,
@@ -33,13 +35,12 @@ class CustomFakeGCMDriver : public FakeGCMDriver {
 
  protected:
   // FakeGCMDriver overrides:
-  virtual void RegisterImpl(
-      const std::string& app_id,
-      const std::vector<std::string>& sender_ids) OVERRIDE;
-  virtual void UnregisterImpl(const std::string& app_id) OVERRIDE;
-  virtual void SendImpl(const std::string& app_id,
-                        const std::string& receiver_id,
-                        const GCMClient::OutgoingMessage& message) OVERRIDE;
+  void RegisterImpl(const std::string& app_id,
+                    const std::vector<std::string>& sender_ids) override;
+  void UnregisterImpl(const std::string& app_id) override;
+  void SendImpl(const std::string& app_id,
+                const std::string& receiver_id,
+                const GCMClient::OutgoingMessage& message) override;
 
  private:
   FakeGCMProfileService* service_;
@@ -112,7 +113,9 @@ KeyedService* FakeGCMProfileService::Build(content::BrowserContext* context) {
 }
 
 FakeGCMProfileService::FakeGCMProfileService(Profile* profile)
-    : collect_(false) {}
+    : collect_(false),
+      registration_count_(0) {
+}
 
 FakeGCMProfileService::~FakeGCMProfileService() {}
 
@@ -124,11 +127,18 @@ void FakeGCMProfileService::RegisterFinished(
     last_registered_sender_ids_ = sender_ids;
   }
 
+  // Generate fake registration IDs, encoding the number of sender IDs (used by
+  // GcmApiTest.RegisterValidation), then an incrementing count (even for the
+  // same app_id - there's no caching) so tests can distinguish registrations.
+  std::string registration_id = base::StringPrintf("%" PRIuS "-%d",
+                                                   sender_ids.size(),
+                                                   registration_count_);
+  ++registration_count_;
+
   CustomFakeGCMDriver* custom_driver =
       static_cast<CustomFakeGCMDriver*>(driver());
-  custom_driver->OnRegisterFinished(app_id,
-                           base::UintToString(sender_ids.size()),
-                           GCMClient::SUCCESS);
+  custom_driver->OnRegisterFinished(
+      app_id, registration_id, GCMClient::SUCCESS);
 }
 
 void FakeGCMProfileService::UnregisterFinished(const std::string& app_id) {
@@ -141,6 +151,9 @@ void FakeGCMProfileService::UnregisterFinished(const std::string& app_id) {
   CustomFakeGCMDriver* custom_driver =
       static_cast<CustomFakeGCMDriver*>(driver());
   custom_driver->OnUnregisterFinished(app_id, result);
+
+  if (!unregister_callback_.is_null())
+    unregister_callback_.Run(app_id);
 }
 
 void FakeGCMProfileService::SendFinished(
@@ -160,6 +173,11 @@ void FakeGCMProfileService::SendFinished(
 void FakeGCMProfileService::AddExpectedUnregisterResponse(
     GCMClient::Result result) {
   unregister_responses_.push_back(result);
+}
+
+void FakeGCMProfileService::SetUnregisterCallback(
+    const UnregisterCallback& callback) {
+  unregister_callback_ = callback;
 }
 
 }  // namespace gcm

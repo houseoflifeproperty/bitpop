@@ -16,6 +16,9 @@ const char kEnableNaClDebug[]               = "enable-nacl-debug";
 // sandbox.
 const char kEnableNaClNonSfiMode[]          = "enable-nacl-nonsfi-mode";
 
+// Enable use of the Subzero as the PNaCl translator instead of LLC.
+const char kEnablePNaClSubzero[] = "enable-pnacl-subzero";
+
 // Value for --type that causes the process to run as a NativeClient broker
 // (used for launching NaCl loader processes on 64-bit Windows).
 const char kNaClBrokerProcess[]             = "nacl-broker";
@@ -48,5 +51,12 @@ const char kNaClLoaderNonSfiProcess[]       = "nacl-loader-nonsfi";
 // Value for --type that causes the process to run as a NativeClient loader
 // for SFI mode.
 const char kNaClLoaderProcess[]             = "nacl-loader";
+
+// Use nacl_helper_nonsfi executable (the new, newlib-based version of the
+// Non-SFI runtime) to run Non-SFI nexe, instead of nacl_helper executable
+// (which uses the older, glib-based runtime for Non-SFI mode).
+// TODO(hidehiko): Make this default and then remove this flag after
+// nacl_helper_nonsfi is supported.
+const char kUseNaClHelperNonSfi[]           = "use-nacl-helper-nonsfi";
 
 }  // namespace switches

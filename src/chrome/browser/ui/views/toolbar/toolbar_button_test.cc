@@ -20,56 +20,56 @@ class ToolbarButtonDragTest : public ViewEventTestBase,
         menu_closed_(false) {
   }
 
-  virtual ~ToolbarButtonDragTest() {
+  ~ToolbarButtonDragTest() override {
   }
 
   // ViewEventTestBase implementation.
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     button_ = new ToolbarButton(NULL, new ui::SimpleMenuModel(this));
 
     ViewEventTestBase::SetUp();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     ViewEventTestBase::TearDown();
   }
 
-  virtual views::View* CreateContentsView() OVERRIDE {
+  views::View* CreateContentsView() override {
     return button_;
   }
 
-  virtual gfx::Size GetPreferredSize() const OVERRIDE {
+  gfx::Size GetPreferredSize() const override {
     return button_->GetPreferredSize();
   }
 
   // ui::SimpleMenuModel::Delegate implementation.
-  virtual bool IsCommandIdChecked(int id) const OVERRIDE {
+  bool IsCommandIdChecked(int id) const override {
     return false;
   }
 
-  virtual bool IsCommandIdEnabled(int id) const OVERRIDE {
+  bool IsCommandIdEnabled(int id) const override {
     return true;
   }
 
-  virtual bool GetAcceleratorForCommandId(
+  bool GetAcceleratorForCommandId(
       int id,
-      ui::Accelerator* accelerator) OVERRIDE {
+      ui::Accelerator* accelerator) override {
     return false;
   }
 
-  virtual void ExecuteCommand(int id, int event_flags) OVERRIDE {
+  void ExecuteCommand(int id, int event_flags) override {
   }
 
-  virtual void MenuWillShow(ui::SimpleMenuModel* /*source*/) OVERRIDE {
+  void MenuWillShow(ui::SimpleMenuModel* /*source*/) override {
     menu_shown_ = true;
   }
 
-  virtual void MenuClosed(ui::SimpleMenuModel* /*source*/) OVERRIDE {
+  void MenuClosed(ui::SimpleMenuModel* /*source*/) override {
     menu_closed_ = true;
   }
 
   // ViewEventTestBase implementation.
-  virtual void DoTestOnMessageLoop() OVERRIDE {
+  void DoTestOnMessageLoop() override {
     // Click on the ToolbarButton.
     ui_test_utils::MoveMouseToCenterAndPress(
         button_,

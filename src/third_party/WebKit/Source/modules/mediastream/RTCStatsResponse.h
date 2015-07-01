@@ -35,24 +35,24 @@
 
 namespace blink {
 
-class RTCStatsResponse FINAL : public RTCStatsResponseBase, public ScriptWrappable {
+class RTCStatsResponse final : public RTCStatsResponseBase, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static RTCStatsResponse* create();
 
-    const HeapVector<Member<RTCStatsReport> >& result() const { return m_result; }
+    const HeapVector<Member<RTCStatsReport>>& result() const { return m_result; }
 
     RTCStatsReport* namedItem(const AtomicString& name);
 
-    virtual size_t addReport(const String& id, const String& type, double timestamp) OVERRIDE;
-    virtual void addStatistic(size_t report, const String& name, const String& value) OVERRIDE;
+    virtual size_t addReport(const String& id, const String& type, double timestamp) override;
+    virtual void addStatistic(size_t report, const String& name, const String& value) override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     RTCStatsResponse();
 
-    HeapVector<Member<RTCStatsReport> > m_result;
+    HeapVector<Member<RTCStatsReport>> m_result;
     HashMap<String, int> m_idmap;
 };
 

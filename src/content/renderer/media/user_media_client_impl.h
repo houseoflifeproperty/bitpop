@@ -62,34 +62,30 @@ class CONTENT_EXPORT UserMediaClientImpl
   virtual void cancelUserMediaRequest(
       const blink::WebUserMediaRequest& user_media_request);
   virtual void requestMediaDevices(
-      const blink::WebMediaDevicesRequest& media_devices_request) OVERRIDE;
+      const blink::WebMediaDevicesRequest& media_devices_request) override;
   virtual void cancelMediaDevicesRequest(
-      const blink::WebMediaDevicesRequest& media_devices_request) OVERRIDE;
+      const blink::WebMediaDevicesRequest& media_devices_request) override;
   virtual void requestSources(
-      const blink::WebMediaStreamTrackSourcesRequest& sources_request) OVERRIDE;
+      const blink::WebMediaStreamTrackSourcesRequest& sources_request) override;
 
   // MediaStreamDispatcherEventHandler implementation.
-  virtual void OnStreamGenerated(
-      int request_id,
-      const std::string& label,
-      const StreamDeviceInfoArray& audio_array,
-      const StreamDeviceInfoArray& video_array) OVERRIDE;
-  virtual void OnStreamGenerationFailed(
-      int request_id,
-      MediaStreamRequestResult result) OVERRIDE;
-  virtual void OnDeviceStopped(const std::string& label,
-                               const StreamDeviceInfo& device_info) OVERRIDE;
-  virtual void OnDevicesEnumerated(
-      int request_id,
-      const StreamDeviceInfoArray& device_array) OVERRIDE;
-  virtual void OnDeviceOpened(
-      int request_id,
-      const std::string& label,
-      const StreamDeviceInfo& device_info) OVERRIDE;
-  virtual void OnDeviceOpenFailed(int request_id) OVERRIDE;
+  void OnStreamGenerated(int request_id,
+                         const std::string& label,
+                         const StreamDeviceInfoArray& audio_array,
+                         const StreamDeviceInfoArray& video_array) override;
+  void OnStreamGenerationFailed(int request_id,
+                                MediaStreamRequestResult result) override;
+  void OnDeviceStopped(const std::string& label,
+                       const StreamDeviceInfo& device_info) override;
+  void OnDevicesEnumerated(int request_id,
+                           const StreamDeviceInfoArray& device_array) override;
+  void OnDeviceOpened(int request_id,
+                      const std::string& label,
+                      const StreamDeviceInfo& device_info) override;
+  void OnDeviceOpenFailed(int request_id) override;
 
-  // RenderFrameObserver OVERRIDE
-  virtual void FrameWillClose() OVERRIDE;
+  // RenderFrameObserver override
+  void FrameWillClose() override;
 
  protected:
   // Called when |source| has been stopped from JavaScript.
@@ -100,14 +96,19 @@ class CONTENT_EXPORT UserMediaClientImpl
   // |request| have completed.
   virtual void GetUserMediaRequestSucceeded(
        const blink::WebMediaStream& stream,
-       blink::WebUserMediaRequest* request_info);
+       blink::WebUserMediaRequest request_info);
+  void DelayedGetUserMediaRequestSucceeded(
+      const blink::WebMediaStream& stream,
+      blink::WebUserMediaRequest request_info);
   virtual void GetUserMediaRequestFailed(
-      blink::WebUserMediaRequest* request_info,
-      MediaStreamRequestResult result);
-  virtual void GetUserMediaRequestTrackStartedFailed(
-      blink::WebUserMediaRequest* request_info,
+      blink::WebUserMediaRequest request_info,
       MediaStreamRequestResult result,
       const blink::WebString& result_name);
+  void DelayedGetUserMediaRequestFailed(
+      blink::WebUserMediaRequest request_info,
+      MediaStreamRequestResult result,
+      const blink::WebString& result_name);
+
   virtual void EnumerateDevicesSucceded(
       blink::WebMediaDevicesRequest* request,
       blink::WebVector<blink::WebMediaDeviceInfo>& devices);

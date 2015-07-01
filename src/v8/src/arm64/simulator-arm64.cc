@@ -12,6 +12,7 @@
 #include "src/arm64/decoder-arm64-inl.h"
 #include "src/arm64/simulator-arm64.h"
 #include "src/assembler.h"
+#include "src/codegen.h"
 #include "src/disasm.h"
 #include "src/macro-assembler.h"
 #include "src/ostreams.h"
@@ -413,7 +414,7 @@ void Simulator::ResetState() {
 
   // Reset debug helpers.
   breakpoints_.empty();
-  break_on_next_= false;
+  break_on_next_ = false;
 }
 
 
@@ -2463,6 +2464,12 @@ void Simulator::VisitFPDataProcessing1Source(Instruction* instr) {
         set_sreg(fd, FPRoundInt(sreg(fn), FPNegativeInfinity)); break;
     case FRINTM_d:
         set_dreg(fd, FPRoundInt(dreg(fn), FPNegativeInfinity)); break;
+    case FRINTP_s:
+      set_sreg(fd, FPRoundInt(sreg(fn), FPPositiveInfinity));
+      break;
+    case FRINTP_d:
+      set_dreg(fd, FPRoundInt(dreg(fn), FPPositiveInfinity));
+      break;
     case FRINTN_s: set_sreg(fd, FPRoundInt(sreg(fn), FPTieEven)); break;
     case FRINTN_d: set_dreg(fd, FPRoundInt(dreg(fn), FPTieEven)); break;
     case FRINTZ_s: set_sreg(fd, FPRoundInt(sreg(fn), FPZero)); break;
@@ -2765,6 +2772,10 @@ double Simulator::FPRoundInt(double value, FPRounding round_mode) {
     }
     case FPNegativeInfinity: {
       // We always use floor(value).
+      break;
+    }
+    case FPPositiveInfinity: {
+      int_result = ceil(value);
       break;
     }
     default: UNIMPLEMENTED();
@@ -3090,7 +3101,7 @@ T Simulator::FPSqrt(T op) {
   } else if (op < 0.0) {
     return FPDefaultNaN<T>();
   } else {
-    return std::sqrt(op);
+    return fast_sqrt(op);
   }
 }
 

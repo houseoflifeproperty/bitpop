@@ -56,7 +56,7 @@ public:
 
     DOMFileSystem* filesystem() const { return static_cast<DOMFileSystem*>(m_fileSystem.get()); }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     class EntriesCallbackHelper;
@@ -70,7 +70,7 @@ private:
 
     bool m_isReading;
     EntryHeapVector m_entries;
-    RefPtrWillBeMember<FileError> m_error;
+    Member<FileError> m_error;
     Member<EntriesCallback> m_entriesCallback;
     Member<ErrorCallback> m_errorCallback;
 };

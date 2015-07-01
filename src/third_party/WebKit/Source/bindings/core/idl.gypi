@@ -11,13 +11,18 @@
   ],
 
   'variables': {
+    # IDL files that are processed by the blink's code generator. The code
+    # generator will generate corresponding .h/.cpp files. Do not add IDL files
+    # which won't have .h/.cpp files.
     'core_definition_idl_files': [
       '<@(core_dictionary_idl_files)',
       '<@(core_idl_files)',
+      '<@(core_idl_with_modules_dependency_files)',
     ],
     'core_testing_definition_idl_files': [
       '<@(core_testing_dictionary_idl_files)',
       '<@(webcore_testing_idl_files)',
+      '<@(webcore_testing_idl_with_modules_dependency_files)',
     ],
 
     # IDL file lists; see: http://www.chromium.org/developers/web-idl-interfaces
@@ -32,6 +37,10 @@
     # exceed OS length limits.
     'core_idl_files_list': '<|(core_idl_files_list.tmp <@(core_definition_idl_files))',
     'core_dictionary_idl_files_list': '<|(core_dictionary_idl_files_list.tmp <@(core_dictionary_idl_files) <@(core_testing_dictionary_idl_files))',
+
+    # Write a list of core IDL files which have dependency IDL files in
+    #  modules.
+    'core_idl_with_modules_dependency_files_list': '<|(core_idl_with_modules_dependency_files_list.tmp <@(core_idl_with_modules_dependency_files))',
 
     # Dependency IDL files: don't generate individual bindings, but do process
     # in IDL dependency computation, and count as build dependencies
@@ -64,6 +73,7 @@
     'core_static_interface_idl_files': [
       '<@(core_definition_idl_files)',
       '<@(core_testing_definition_idl_files)',
+      '<@(core_typedefs_enums_only_idl_files)',
     ],
     'core_static_dependency_idl_files': [
       '<@(core_dependency_idl_files)',

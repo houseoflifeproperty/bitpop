@@ -21,9 +21,9 @@
 #ifndef CSSComputedStyleDeclaration_h
 #define CSSComputedStyleDeclaration_h
 
+#include "core/CoreExport.h"
 #include "core/css/CSSStyleDeclaration.h"
-#include "core/rendering/style/RenderStyleConstants.h"
-#include "platform/fonts/FixedPitchFontType.h"
+#include "core/style/ComputedStyleConstants.h"
 #include "wtf/HashMap.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/AtomicString.h"
@@ -37,16 +37,14 @@ class CSSValueList;
 class ExceptionState;
 class MutableStylePropertySet;
 class Node;
-class RenderObject;
-class RenderStyle;
+class LayoutObject;
+class ComputedStyle;
 class ShadowData;
 class ShadowList;
 class StyleColor;
 class StylePropertyShorthand;
 
-enum EUpdateLayout { DoNotUpdateLayout = false, UpdateLayout = true };
-
-class CSSComputedStyleDeclaration FINAL : public CSSStyleDeclaration {
+class CORE_EXPORT CSSComputedStyleDeclaration final : public CSSStyleDeclaration {
 public:
     static PassRefPtrWillBeRawPtr<CSSComputedStyleDeclaration> create(PassRefPtrWillBeRawPtr<Node> node, bool allowVisitedStyle = false, const String& pseudoElementName = String())
     {
@@ -55,23 +53,22 @@ public:
     virtual ~CSSComputedStyleDeclaration();
 
 #if !ENABLE(OILPAN)
-    virtual void ref() OVERRIDE;
-    virtual void deref() OVERRIDE;
+    virtual void ref() override;
+    virtual void deref() override;
 #endif
 
     String getPropertyValue(CSSPropertyID) const;
     bool getPropertyPriority(CSSPropertyID) const;
 
-    virtual PassRefPtrWillBeRawPtr<MutableStylePropertySet> copyProperties() const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<MutableStylePropertySet> copyProperties() const override;
 
-    PassRefPtrWillBeRawPtr<CSSValue> getPropertyCSSValue(CSSPropertyID, EUpdateLayout = UpdateLayout) const;
+    PassRefPtrWillBeRawPtr<CSSValue> getPropertyCSSValue(CSSPropertyID) const;
     PassRefPtrWillBeRawPtr<CSSValue> getFontSizeCSSValuePreferringKeyword() const;
-    FixedPitchFontType fixedPitchFontType() const;
-    PassRefPtrWillBeRawPtr<CSSValue> getSVGPropertyCSSValue(CSSPropertyID, EUpdateLayout) const;
+    bool isMonospaceFont() const;
 
     PassRefPtrWillBeRawPtr<MutableStylePropertySet> copyPropertiesInSet(const Vector<CSSPropertyID>&) const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     CSSComputedStyleDeclaration(PassRefPtrWillBeRawPtr<Node>, bool allowVisitedStyle, const String&);
@@ -84,35 +81,23 @@ private:
     Node* styledNode() const;
 
     // CSSOM functions. Don't make these public.
-    virtual CSSRule* parentRule() const OVERRIDE;
-    virtual unsigned length() const OVERRIDE;
-    virtual String item(unsigned index) const OVERRIDE;
-    PassRefPtr<RenderStyle> computeRenderStyle() const;
-    virtual PassRefPtrWillBeRawPtr<CSSValue> getPropertyCSSValue(const String& propertyName) OVERRIDE;
-    virtual String getPropertyValue(const String& propertyName) OVERRIDE;
-    virtual String getPropertyPriority(const String& propertyName) OVERRIDE;
-    virtual String getPropertyShorthand(const String& propertyName) OVERRIDE;
-    virtual bool isPropertyImplicit(const String& propertyName) OVERRIDE;
-    virtual void setProperty(const String& propertyName, const String& value, const String& priority, ExceptionState&) OVERRIDE;
-    virtual String removeProperty(const String& propertyName, ExceptionState&) OVERRIDE;
-    virtual String cssText() const OVERRIDE;
-    virtual void setCSSText(const String&, ExceptionState&) OVERRIDE;
-    virtual PassRefPtrWillBeRawPtr<CSSValue> getPropertyCSSValueInternal(CSSPropertyID) OVERRIDE;
-    virtual String getPropertyValueInternal(CSSPropertyID) OVERRIDE;
-    virtual void setPropertyInternal(CSSPropertyID, const String& value, bool important, ExceptionState&) OVERRIDE;
+    virtual CSSRule* parentRule() const override;
+    virtual unsigned length() const override;
+    virtual String item(unsigned index) const override;
+    const ComputedStyle* computeComputedStyle() const;
+    virtual String getPropertyValue(const String& propertyName) override;
+    virtual String getPropertyPriority(const String& propertyName) override;
+    virtual String getPropertyShorthand(const String& propertyName) override;
+    virtual bool isPropertyImplicit(const String& propertyName) override;
+    virtual void setProperty(const String& propertyName, const String& value, const String& priority, ExceptionState&) override;
+    virtual String removeProperty(const String& propertyName, ExceptionState&) override;
+    virtual String cssText() const override;
+    virtual void setCSSText(const String&, ExceptionState&) override;
+    virtual PassRefPtrWillBeRawPtr<CSSValue> getPropertyCSSValueInternal(CSSPropertyID) override;
+    virtual String getPropertyValueInternal(CSSPropertyID) override;
+    virtual void setPropertyInternal(CSSPropertyID, const String& value, bool important, ExceptionState&) override;
 
-    virtual bool cssPropertyMatches(CSSPropertyID, const CSSValue*) const OVERRIDE;
-
-    PassRefPtrWillBeRawPtr<CSSValue> valueForShadowData(const ShadowData&, const RenderStyle&, bool useSpread) const;
-    PassRefPtrWillBeRawPtr<CSSValue> valueForShadowList(const ShadowList*, const RenderStyle&, bool useSpread) const;
-    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> currentColorOrValidColor(const RenderStyle&, const StyleColor&) const;
-
-    PassRefPtrWillBeRawPtr<CSSValue> valueForFilter(const RenderObject*, const RenderStyle&) const;
-
-    PassRefPtrWillBeRawPtr<CSSValueList> valuesForShorthandProperty(const StylePropertyShorthand&) const;
-    PassRefPtrWillBeRawPtr<CSSValueList> valuesForSidesShorthand(const StylePropertyShorthand&) const;
-    PassRefPtrWillBeRawPtr<CSSValueList> valuesForBackgroundShorthand() const;
-    PassRefPtrWillBeRawPtr<CSSValueList> valuesForGridShorthand(const StylePropertyShorthand&) const;
+    virtual bool cssPropertyMatches(CSSPropertyID, const CSSValue*) const override;
 
     RefPtrWillBeMember<Node> m_node;
     PseudoId m_pseudoElementSpecifier;

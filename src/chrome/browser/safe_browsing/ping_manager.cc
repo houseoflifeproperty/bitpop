@@ -8,16 +8,31 @@
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/net/certificate_error_reporter.h"
 #include "chrome/common/env_vars.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/google_api_keys.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
+#include "net/ssl/ssl_info.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
+#include "url/gurl.h"
 
+using chrome_browser_net::CertificateErrorReporter;
 using content::BrowserThread;
+
+namespace {
+// URLs to upload invalid certificate chain reports. The HTTP URL is
+// preferred since a client seeing an invalid cert might not be able to
+// make an HTTPS connection to report it.
+const char kExtendedReportingUploadUrlInsecure[] =
+    "http://safebrowsing.googleusercontent.com/safebrowsing/clientreport/"
+    "chrome-certs";
+const char kExtendedReportingUploadUrlSecure[] =
+    "https://sb-ssl.google.com/safebrowsing/clientreport/chrome-certs";
+}  // namespace
 
 // SafeBrowsingPingManager implementation ----------------------------------
 
@@ -25,7 +40,7 @@ using content::BrowserThread;
 SafeBrowsingPingManager* SafeBrowsingPingManager::Create(
     net::URLRequestContextGetter* request_context_getter,
     const SafeBrowsingProtocolConfig& config) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   return new SafeBrowsingPingManager(request_context_getter, config);
 }
 
@@ -36,6 +51,27 @@ SafeBrowsingPingManager::SafeBrowsingPingManager(
       request_context_getter_(request_context_getter),
       url_prefix_(config.url_prefix) {
   DCHECK(!url_prefix_.empty());
+
+  if (request_context_getter) {
+    // Set the upload URL and whether or not to send cookies with
+    // certificate reports sent to Safe Browsing servers.
+    bool use_insecure_certificate_upload_url =
+        CertificateErrorReporter::IsHttpUploadUrlSupported();
+
+    CertificateErrorReporter::CookiesPreference cookies_preference;
+    GURL certificate_upload_url;
+    if (use_insecure_certificate_upload_url) {
+      cookies_preference = CertificateErrorReporter::DO_NOT_SEND_COOKIES;
+      certificate_upload_url = GURL(kExtendedReportingUploadUrlInsecure);
+    } else {
+      cookies_preference = CertificateErrorReporter::SEND_COOKIES;
+      certificate_upload_url = GURL(kExtendedReportingUploadUrlSecure);
+    }
+
+    certificate_error_reporter_.reset(new CertificateErrorReporter(
+        request_context_getter->GetURLRequestContext(), certificate_upload_url,
+        cookies_preference));
+  }
 
   version_ = SafeBrowsingProtocolManagerHelper::Version();
 }
@@ -68,10 +104,11 @@ void SafeBrowsingPingManager::ReportSafeBrowsingHit(
   GURL report_url = SafeBrowsingHitUrl(malicious_url, page_url,
                                        referrer_url, is_subresource,
                                        threat_type);
-  net::URLFetcher* report = net::URLFetcher::Create(
-      report_url,
-      post_data.empty() ? net::URLFetcher::GET : net::URLFetcher::POST,
-      this);
+  net::URLFetcher* report =
+      net::URLFetcher::Create(
+          report_url,
+          post_data.empty() ? net::URLFetcher::GET : net::URLFetcher::POST,
+          this).release();
   report->SetLoadFlags(net::LOAD_DISABLE_CACHE);
   report->SetRequestContext(request_context_getter_.get());
   if (!post_data.empty())
@@ -84,8 +121,9 @@ void SafeBrowsingPingManager::ReportSafeBrowsingHit(
 void SafeBrowsingPingManager::ReportMalwareDetails(
     const std::string& report) {
   GURL report_url = MalwareDetailsUrl();
-  net::URLFetcher* fetcher = net::URLFetcher::Create(
-      report_url, net::URLFetcher::POST, this);
+  net::URLFetcher* fetcher =
+      net::URLFetcher::Create(report_url, net::URLFetcher::POST, this)
+          .release();
   fetcher->SetLoadFlags(net::LOAD_DISABLE_CACHE);
   fetcher->SetRequestContext(request_context_getter_.get());
   fetcher->SetUploadData("application/octet-stream", report);
@@ -95,12 +133,26 @@ void SafeBrowsingPingManager::ReportMalwareDetails(
   safebrowsing_reports_.insert(fetcher);
 }
 
+void SafeBrowsingPingManager::ReportInvalidCertificateChain(
+    const std::string& serialized_report) {
+  DCHECK(certificate_error_reporter_);
+  certificate_error_reporter_->SendReport(
+      CertificateErrorReporter::REPORT_TYPE_EXTENDED_REPORTING,
+      serialized_report);
+}
+
+void SafeBrowsingPingManager::SetCertificateErrorReporterForTesting(
+    scoped_ptr<CertificateErrorReporter> certificate_error_reporter) {
+  certificate_error_reporter_ = certificate_error_reporter.Pass();
+}
+
 GURL SafeBrowsingPingManager::SafeBrowsingHitUrl(
     const GURL& malicious_url, const GURL& page_url,
     const GURL& referrer_url, bool is_subresource,
     SBThreatType threat_type) const {
   DCHECK(threat_type == SB_THREAT_TYPE_URL_MALWARE ||
          threat_type == SB_THREAT_TYPE_URL_PHISHING ||
+         threat_type == SB_THREAT_TYPE_URL_UNWANTED ||
          threat_type == SB_THREAT_TYPE_BINARY_MALWARE_URL ||
          threat_type == SB_THREAT_TYPE_CLIENT_SIDE_PHISHING_URL ||
          threat_type == SB_THREAT_TYPE_CLIENT_SIDE_MALWARE_URL);
@@ -113,6 +165,9 @@ GURL SafeBrowsingPingManager::SafeBrowsingHitUrl(
       break;
     case SB_THREAT_TYPE_URL_PHISHING:
       threat_list = "phishblhit";
+      break;
+    case SB_THREAT_TYPE_URL_UNWANTED:
+      threat_list = "uwsblhit";
       break;
     case SB_THREAT_TYPE_BINARY_MALWARE_URL:
       threat_list = "binurlhit";

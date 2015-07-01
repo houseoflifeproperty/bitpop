@@ -37,8 +37,11 @@
 #ifndef V8_X87_ASSEMBLER_X87_H_
 #define V8_X87_ASSEMBLER_X87_H_
 
+#include <deque>
+
+#include "src/assembler.h"
+#include "src/compiler.h"
 #include "src/isolate.h"
-#include "src/serialize.h"
 
 namespace v8 {
 namespace internal {
@@ -147,6 +150,13 @@ struct X87Register {
   static int NumAllocatableRegisters() {
     return kMaxNumAllocatableRegisters;
   }
+
+
+  // TODO(turbofan): Proper support for float32.
+  static int NumAllocatableAliasedRegisters() {
+    return NumAllocatableRegisters();
+  }
+
 
   static int ToAllocationIndex(X87Register reg) {
     return reg.code_;
@@ -341,6 +351,11 @@ class Operand BASE_EMBEDDED {
                    int32_t disp,
                    RelocInfo::Mode rmode = RelocInfo::NONE32);
 
+  static Operand JumpTable(Register index, ScaleFactor scale, Label* table) {
+    return Operand(index, scale, reinterpret_cast<int32_t>(table),
+                   RelocInfo::INTERNAL_REFERENCE);
+  }
+
   static Operand StaticVariable(const ExternalReference& ext) {
     return Operand(reinterpret_cast<int32_t>(ext.address()),
                    RelocInfo::EXTERNAL_REFERENCE);
@@ -414,11 +429,7 @@ class Operand BASE_EMBEDDED {
 
 class Displacement BASE_EMBEDDED {
  public:
-  enum Type {
-    UNCONDITIONAL_JUMP,
-    CODE_RELATIVE,
-    OTHER
-  };
+  enum Type { UNCONDITIONAL_JUMP, CODE_RELATIVE, OTHER, CODE_ABSOLUTE };
 
   int data() const { return data_; }
   Type type() const { return TypeField::decode(data_); }
@@ -517,6 +528,11 @@ class Assembler : public AssemblerBase {
       Address instruction_payload, Code* code, Address target) {
     set_target_address_at(instruction_payload, code, target);
   }
+
+  // This sets the internal reference at the pc.
+  inline static void deserialization_set_target_internal_reference_at(
+      Address pc, Address target,
+      RelocInfo::Mode mode = RelocInfo::INTERNAL_REFERENCE);
 
   static const int kSpecialTargetSize = kPointerSize;
 
@@ -718,8 +734,11 @@ class Assembler : public AssemblerBase {
 
   void rcl(Register dst, uint8_t imm8);
   void rcr(Register dst, uint8_t imm8);
-  void ror(Register dst, uint8_t imm8);
-  void ror_cl(Register dst);
+
+  void ror(Register dst, uint8_t imm8) { ror(Operand(dst), imm8); }
+  void ror(const Operand& dst, uint8_t imm8);
+  void ror_cl(Register dst) { ror_cl(Operand(dst)); }
+  void ror_cl(const Operand& dst);
 
   void sar(Register dst, uint8_t imm8) { sar(Operand(dst), imm8); }
   void sar(const Operand& dst, uint8_t imm8);
@@ -777,6 +796,7 @@ class Assembler : public AssemblerBase {
   void int3();
   void nop();
   void ret(int imm16);
+  void ud2();
 
   // Label operations & relative jumps (PPUM Appendix D)
   //
@@ -909,9 +929,6 @@ class Assembler : public AssemblerBase {
 
   // TODO(lrn): Need SFENCE for movnt?
 
-  // Debugging
-  void Print();
-
   // Check the code size generated from label to here.
   int SizeOfCodeGeneratedSince(Label* label) {
     return pc_offset() - label->pos();
@@ -924,14 +941,18 @@ class Assembler : public AssemblerBase {
   void RecordDebugBreakSlot();
 
   // Record a comment relocation entry that can be used by a disassembler.
-  // Use --code-comments to enable, or provide "force = true" flag to always
-  // write a comment.
-  void RecordComment(const char* msg, bool force = false);
+  // Use --code-comments to enable.
+  void RecordComment(const char* msg);
+
+  // Record a deoptimization reason that can be used by a log or cpu profiler.
+  // Use --trace-deopt to enable.
+  void RecordDeoptReason(const int reason, const SourcePosition position);
 
   // Writes a single byte or word of data in the code stream.  Used for
   // inline tables, e.g., jump-tables.
   void db(uint8_t data);
   void dd(uint32_t data);
+  void dd(Label* label);
 
   // Check if there is less than kGap bytes available in the buffer.
   // If this is the case, we need to grow the buffer before emitting
@@ -1002,6 +1023,8 @@ class Assembler : public AssemblerBase {
 
   void emit_operand(Register reg, const Operand& adr);
 
+  void emit_label(Label* label);
+
   void emit_farith(int b1, int b2, int i);
 
   // labels
@@ -1019,6 +1042,11 @@ class Assembler : public AssemblerBase {
 
   friend class CodePatcher;
   friend class EnsureSpace;
+
+  // Internal reference positions, required for (potential) patching in
+  // GrowBuffer(); contains only those internal references whose labels
+  // are already bound.
+  std::deque<int> internal_reference_positions_;
 
   // code generation
   RelocInfoWriter reloc_info_writer;

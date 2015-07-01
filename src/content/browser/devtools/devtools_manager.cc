@@ -6,10 +6,10 @@
 
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
+#include "content/browser/devtools/devtools_agent_host_impl.h"
 #include "content/browser/devtools/devtools_netlog_observer.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/browser/devtools_manager_delegate.h"
 
 namespace content {
 
@@ -20,30 +20,31 @@ DevToolsManager* DevToolsManager::GetInstance() {
 
 DevToolsManager::DevToolsManager()
     : delegate_(GetContentClient()->browser()->GetDevToolsManagerDelegate()),
-      client_count_(0) {
+      attached_hosts_count_(0) {
 }
 
 DevToolsManager::~DevToolsManager() {
-  DCHECK(!client_count_);
+  DCHECK(!attached_hosts_count_);
 }
 
-void DevToolsManager::OnClientAttached() {
-  if (!client_count_) {
-    BrowserThread::PostTask(
-        BrowserThread::IO,
-        FROM_HERE,
-        base::Bind(&DevToolsNetLogObserver::Attach));
-  }
-  client_count_++;
-}
-
-void DevToolsManager::OnClientDetached() {
-  client_count_--;
-  if (!client_count_) {
-    BrowserThread::PostTask(
-        BrowserThread::IO,
-        FROM_HERE,
-        base::Bind(&DevToolsNetLogObserver::Detach));
+void DevToolsManager::AgentHostStateChanged(
+    DevToolsAgentHostImpl* agent_host, bool attached) {
+  if (attached) {
+    if (!attached_hosts_count_) {
+      BrowserThread::PostTask(
+          BrowserThread::IO,
+          FROM_HERE,
+          base::Bind(&DevToolsNetLogObserver::Attach));
+    }
+    ++attached_hosts_count_;
+  } else {
+    --attached_hosts_count_;
+    if (!attached_hosts_count_) {
+      BrowserThread::PostTask(
+          BrowserThread::IO,
+          FROM_HERE,
+          base::Bind(&DevToolsNetLogObserver::Detach));
+    }
   }
 }
 
