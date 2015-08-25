@@ -375,7 +375,7 @@ function onWizardBridgeSettingsShow() {
 
 
 function onCustomBridgesTextInput() {
-  $(input[name="bridgeType"]).val('custom').change();
+  $(input[name="bridgeType"][value="custom"]).prop('checked', true).change();
   onBridgeTypeRadioChange();
 }
 
@@ -467,7 +467,7 @@ function *readTorSettings() {
                  (yield *initFirewallSettings()) &&
                  (yield *initBridgeSettings());
   }
-  catch (e) { console.log("Error in readTorSettings: " + e + '\n' + e.stack); }
+  catch (e) { console.info("Error in readTorSettings: " + e + '\n' + e.stack); }
 
   if (!didSucceed) {
     // Unable to communicate with tor.  Hide settings and display an error.
@@ -859,7 +859,7 @@ function *initProxySettings() {
     var reply = yield torProtocolRemoteMethodCall('TorGetConfStr',
         kTorConfKeySocks5Proxy, null);
     if (!gProtocolSvc.TorCommandSucceeded(reply)) {
-      console.log('TorGetConfStr:kTorConfKeySocks5Proxy shippai');
+      console.info('TorGetConfStr:kTorConfKeySocks5Proxy shippai');
       return false;
     }
 
@@ -919,7 +919,7 @@ function *initProxySettings() {
     setElemValue(kProxyUsername, proxyUsername);
     setElemValue(kProxyPassword, proxyPassword);
   } catch (e) {
-    console.log('Error setting data: ' + e + '\n' + e.stack);
+    console.info('Error setting data: ' + e + '\n' + e.stack);
   }
 
   return true;
@@ -1025,11 +1025,16 @@ function *applySettings()
                  (yield *applyFirewallSettings()) &&
                  (yield *applyBridgeSettings());
   }
-  catch (e) { console.log("Error in applySettings: " + e + '\n' + e.stack); }
+  catch (e) { console.info("Error in applySettings: " + e + '\n' + e.stack); }
   if (didSucceed)
     yield *useSettings();
 
   console.info("applySettings done");
+
+  if (gIsBootstrapComplete) {
+    chrome.torlauncher.notifyTorCircuitsEstablished();
+    chrome.app.window.current().close();
+  }
 
   return false;
 }
@@ -1046,14 +1051,16 @@ function *useSettings(callbackAfter) {
     gTorProcessService.TorClearBootstrapError();
 
     gIsBootstrapComplete = gTorProcessService.TorIsBootstrapDone;
+    console.info('useSettings: gIsBootstrapComplete == ' + (gIsBootstrapComplete ? 'true' : 'false'));
     if (!gIsBootstrapComplete) {
       yield openProgressDialog();
-      if (gIsBootstrapComplete)
-        chrome.app.window.current.close();
+      if (gIsBootstrapComplete) {
+        chrome.app.window.current().close();
+      }
     }
 
   } catch (e) {
-    console.error(e.name + ': ' + e.message);
+    console.info('useSettings error: ' + JSON.stringify(e));
     throw e;
   }
 }
@@ -1115,8 +1122,10 @@ function onProgressDialogClose(aBootstrapCompleted) {
 function *applyProxySettings()
 {
   var settings = yield *getAndValidateProxySettings();
-  if (!settings)
+  if (!settings) {
+    console.info('applyProxySettings: !settings');
     return false;
+  }
 
   return (yield *setConfAndReportErrors(settings, "proxyYES"));
 }
@@ -1139,11 +1148,15 @@ function *getAndValidateProxySettings() {
     proxyAddrPort = createColonStr(getElemValue(kProxyAddr, null),
                                    getElemValue(kProxyPort, null));
     if (!proxyAddrPort) {
+      console.info('!proxyAddrPort');
       yield *reportValidationError("error_proxy_addr_missing");
       return null;
     }
 
+    console.info(proxyAddrPort);
+
     proxyType = getElemValue(kProxyTypeMenulist, null);
+    console.info('proxyType: ' + proxyType);
     if (!proxyType) {
       yield *reportValidationError("error_proxy_type_missing");
       return null;
@@ -1170,13 +1183,16 @@ function *getAndValidateProxySettings() {
                                   createColonStr(proxyUsername, proxyPassword);
   }
 
+  console.info(JSON.stringify(settings));
   return settings;
 } // getAndValidateProxySettings
 
 
 function isProxyConfigured() {
-  return (getWizard()) ? getYesNoRadioValue(kWizardProxyRadioGroup) :
-                         getElemValue(kUseProxyCheckbox, false);
+  var res = (getWizard() ? getYesNoRadioValue(kWizardProxyRadioGroup) :
+                        getElemValue(kUseProxyCheckbox, false));
+  console.info('isProxyConfigured: ' + (res ? 'true' : 'false'));
+  return res;
 }
 
 // @return: typeof retval == Promise
@@ -1509,14 +1525,14 @@ function getElemValue(aID, aDefaultValue)
 
 // This assumes that first radio button is yes.
 function setYesNoRadioValue(aGroupID, aIsYes) {
-  $('input[name="' + aGroupID + '"]').val(aIsYes ? 'yes' : 'no');
+  $('input[name="' + aGroupID + '"][value="'+ (aIsYes ? 'yes' : 'no') + '"]').prop('checked', true);
 }
 
 
 // This assumes that first radio button is yes.
 function getYesNoRadioValue(aGroupID)
 {
-  var val = $('input[name="' + aGroupID + '"]').val();
+  var val = $('input[name="' + aGroupID + '"]:checked').val();
   return (val) ? ('yes' == val) : false;
 }
 

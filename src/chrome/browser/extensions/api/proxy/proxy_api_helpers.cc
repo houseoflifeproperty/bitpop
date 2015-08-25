@@ -182,7 +182,18 @@ bool GetProxyServer(const base::DictionaryValue* proxy_server,
   if (!proxy_server->GetInteger(keys::kProxyConfigRulePort, &port))
     port = net::ProxyServer::GetDefaultPortForScheme(scheme);
 
-  *out = net::ProxyServer(scheme, net::HostPortPair(host, port));
+  std::string username, password;
+  if (proxy_server->GetString(keys::kProxyConfigRuleUsername, &username)) {
+    if (proxy_server->GetString(keys::kProxyConfigRulePassword, &password)) {
+      *out = net::ProxyServer(scheme, net::HostPortPair(host, port),
+          username, password);
+    } else {
+      *out = net::ProxyServer(scheme, net::HostPortPair(host, port),
+          username, "");
+    }
+  } else {
+    *out = net::ProxyServer(scheme, net::HostPortPair(host, port));
+  }
 
   return true;
 }
@@ -453,6 +464,8 @@ base::DictionaryValue* CreateProxyServerDict(const net::ProxyServer& proxy) {
   }
   out->SetString(keys::kProxyConfigRuleHost, proxy.host_port_pair().host());
   out->SetInteger(keys::kProxyConfigRulePort, proxy.host_port_pair().port());
+  out->SetString(keys::kProxyConfigRuleUsername, proxy.username());
+  out->SetString(keys::kProxyConfigRulePassword, proxy.password());
   return out.release();
 }
 

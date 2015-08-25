@@ -76,7 +76,8 @@ void PasswordManagerHandler::GetLocalizedValues(
       IDS_PASSWORDS_PAGE_VIEW_NO_EXCEPTIONS_DESCRIPTION },
   };
 
-  OptionsPageUIHandleStaticContainer::RegisterStrings(localized_strings, resources, arraysize(resources));
+  OptionsPageUIHandlerStaticContainer::RegisterStrings(
+      localized_strings, resources, arraysize(resources));
 
   const ProfileSyncService* sync_service =
       ProfileSyncServiceFactory::GetForProfile(GetProfile());

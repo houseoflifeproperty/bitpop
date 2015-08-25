@@ -22,80 +22,102 @@
 namespace extensions {
 
 class TorlauncherLaunchTorBrowserFunction : public UIThreadExtensionFunction {
-  virtual ~TorlauncherLaunchTorBrowserFunction() {}
-  virtual ResponseAction Run() OVERRIDE;
+  ~TorlauncherLaunchTorBrowserFunction() override {}
+  ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("torlauncher.launchTorBrowser", TORLAUNCHER_LAUNCHTORBROWSER);
 };
 
 class TorlauncherStartTorFunction : public UIThreadExtensionFunction {
-  virtual ~TorlauncherStartTorFunction() {}
-  virtual ResponseAction Run() OVERRIDE;
+  ~TorlauncherStartTorFunction() override {}
+  ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("torlauncher.startTor", TORLAUNCHER_STARTTOR)
 };
 class TorlauncherInitiateAppQuitFunction : public UIThreadExtensionFunction {
-  virtual ~TorlauncherInitiateAppQuitFunction() {}
-  virtual ResponseAction Run() OVERRIDE;
+  ~TorlauncherInitiateAppQuitFunction() override {}
+  ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("torlauncher.initiateAppQuit",
                              TORLAUNCHER_INITIATEAPPQUIT)
 };
 class TorlauncherGetTorProcessStatusFunction : public UIThreadExtensionFunction {
-  virtual ~TorlauncherGetTorProcessStatusFunction() {}
-  virtual ResponseAction Run() OVERRIDE;
+  ~TorlauncherGetTorProcessStatusFunction() override {}
+  ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("torlauncher.getTorProcessStatus",
                              TORLAUNCHER_GETTORPROCESSSTATUS)
 };
 class TorlauncherSetTorStatusRunningFunction : public UIThreadExtensionFunction {
-  virtual ~TorlauncherSetTorStatusRunningFunction() {}
-  virtual ResponseAction Run() OVERRIDE;
+  ~TorlauncherSetTorStatusRunningFunction() override {}
+  ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("torlauncher.setTorStatusRunning",
                              TORLAUNCHER_SETTORSTATUSRUNNING)
 };
 class TorlauncherGetTorServiceSettingsFunction : public UIThreadExtensionFunction {
-  virtual ~TorlauncherGetTorServiceSettingsFunction() {}
-  virtual ResponseAction Run() OVERRIDE;
+  ~TorlauncherGetTorServiceSettingsFunction() override {}
+  ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("torlauncher.getTorServiceSettings",
                              TORLAUNCHER_GETTORSERVICESETTINGS)
 };
 class TorlauncherEnvExistsFunction : public UIThreadExtensionFunction {
-  virtual ~TorlauncherEnvExistsFunction() {}
-  virtual ResponseAction Run() OVERRIDE;
+  ~TorlauncherEnvExistsFunction() override {}
+  ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("torlauncher.envExists",
                              TORLAUNCHER_ENVEXISTS)
 };
 class TorlauncherEnvGetFunction : public UIThreadExtensionFunction {
-  virtual ~TorlauncherEnvGetFunction() {}
-  virtual ResponseAction Run() OVERRIDE;
+  ~TorlauncherEnvGetFunction() override {}
+  ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("torlauncher.envGet",
                              TORLAUNCHER_ENVGET)
 };
 class TorlauncherReadAuthenticationCookieFunction:
     public UIThreadExtensionFunction {
-  virtual ~TorlauncherReadAuthenticationCookieFunction() {}
-  virtual ResponseAction Run() OVERRIDE;
+  ~TorlauncherReadAuthenticationCookieFunction() override {}
+  ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("torlauncher.readAuthenticationCookie",
                              TORLAUNCHER_READAUTHENTICATIONCOOKIE)
 };
 class TorlauncherSendTorNetworkSettingsResultFunction:
     public UIThreadExtensionFunction {
-  virtual ~TorlauncherSendTorNetworkSettingsResultFunction() {}
-  virtual ResponseAction Run() OVERRIDE;
+  ~TorlauncherSendTorNetworkSettingsResultFunction() override {}
+  ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("torlauncher.sendTorNetworkSettingsResult",
                              TORLAUNCHER_SENDTORNETWORKSETTINGSRESULT)
 };
 class TorlauncherNotifyTorOpenControlConnectionSuccessFunction:
     public UIThreadExtensionFunction {
-  virtual ~TorlauncherNotifyTorOpenControlConnectionSuccessFunction() {}
-  virtual ResponseAction Run() OVERRIDE;
+  ~TorlauncherNotifyTorOpenControlConnectionSuccessFunction() override {}
+  ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("torlauncher.notifyTorOpenControlConnectionSuccess",
                              TORLAUNCHER_NOTIFYTOROPENCONTROLCONNECTIONSUCCESS)
 };
 class TorlauncherNotifyTorCircuitsEstablishedFunction:
     public UIThreadExtensionFunction {
-  virtual ~TorlauncherNotifyTorCircuitsEstablishedFunction() {}
-  virtual ResponseAction Run() OVERRIDE;
+  ~TorlauncherNotifyTorCircuitsEstablishedFunction() override {}
+  ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("torlauncher.notifyTorCircuitsEstablished",
                              TORLAUNCHER_NOTIFYTORCIRCUITSESTABLISHED)
 };
+class TorlauncherNotifyTorSaveSettingsSuccessFunction:
+    public UIThreadExtensionFunction {
+  ~TorlauncherNotifyTorSaveSettingsSuccessFunction() override {}
+  ResponseAction Run() override;
+  DECLARE_EXTENSION_FUNCTION("torlauncher.notifyTorSaveSettingsSuccess",
+                             TORLAUNCHER_NOTIFYTORSAVESETTINGSSUCCESS)
+};
+class TorlauncherNotifyTorSaveSettingsErrorFunction:
+    public UIThreadExtensionFunction {
+  ~TorlauncherNotifyTorSaveSettingsErrorFunction() override {}
+  ResponseAction Run() override;
+  DECLARE_EXTENSION_FUNCTION("torlauncher.notifyTorSaveSettingsError",
+                             TORLAUNCHER_NOTIFYTORSAVESETTINGSERROR)
+};
+class TorlauncherSetTorProxyFunction:
+    public UIThreadExtensionFunction {
+  ~TorlauncherSetTorProxyFunction() override {}
+  ResponseAction Run() override;
+  DECLARE_EXTENSION_FUNCTION("torlauncher.setTorProxy",
+                             TORLAUNCHER_SETTORPROXY)
+};
+
 } // namespace extensions
 
 #endif // CHROME_BROWSER_EXTENSIONS_API_TORLAUNCHER_TORLAUNCHER_API_H_

@@ -1,0 +1,241 @@
+Design of flash proxies
+
+0. Problem statement
+
+  Provide access to the Tor network for users behind a restrictive
+  firewall that blocks direct access to all Tor relays and bridges.
+
+1. Overview and background
+
+  We assume the existence of an adversary powerful enough to enumerate
+  and block all public and non-public (bridge) relays. For users facing
+  such an adversary, we assume there exists a subset of reachable hosts
+  that themselves can reach the Tor network. We call this subset the
+  unrestricted Internet.
+
+  A browser-based proxy (flash proxy), running in a web page in the
+  unrestricted Internet, proxies connections between the restricted
+  Internet and the Tor network. These proxies are expected to be
+  temporary and short-lived, but their number will be great enough that
+  they can't all be blocked effectively.
+
+  The implementation of a browser-based proxy using WebSocket is
+  complicated by restrictions that prevent it being a straightforward
+  proxy. Chief among these is the lack of listening sockets. WebSocket
+  can only initiate outgoing connections, not receive incoming ones. The
+  flash proxy can only connect to external hosts by connecting directly
+  to them. Another, but less important, restriction is that
+  browser-based networking does not provide low-level socket access such
+  as control of source address.
+
+2. Components
+
+  Conceptually, each flash proxy is nothing more than a simple proxy,
+  which accepts connections from a client and forwards data to a server.
+  But because of the limited networking facilities available to an
+  in-browser application, several other pieces are needed.
+
+  1. Tor client: with a ClientTransportPlugin config option to allow it to
+     use the flashproxy transport client.
+  2. Client transport plugin: Runs on the same computer as the Tor client.
+     On startup, it registers with the facilitator to inform that it is
+     waiting for a connection from a flash proxy. When this is received,
+     it starts proxying data between it and the local Tor client.
+  3. Flash proxy: Runs in someone's browser, in an uncensored region of
+     the Internet. The flash proxy first connects to the facilitator to
+     get a client registration. It then makes two outgoing connections,
+     one to a Tor relay and one to a waiting Tor client, and starts
+     proxying data between them.
+  4. Facilitator: Keeps track of client registrations and hands them out
+     to clients. It is capable of receiving client registrations in a
+     variety of ways. It sends registrations to flash proxies over HTTP.
+     The facilitator is responsible for matching clients to proxies in a
+     reasonable manner.
+  5. Tor relay: with a ServerTransportPlugin config option to allow it to
+     use the flashproxy transport server.
+  6. Server transport plugin: Waits for a connection from a flash proxy and
+     proxies data between it and the local Tor relay.
+
+3. Protocols
+
+  The numbers refer to the same components as in sect 2 above. Arrows
+  indicate the direction of the initial TCP connection.
+
+  1>2. Pluggable transport, client-side. See core tor docs for details.
+  2>4. Secure rendezvous using a variety of custom methods; see
+       facilitator-howto.txt for details. This must be very hard to censor,
+       e.g. using a popular web service over HTTPS.
+  3>4. Custom protocol specific to flashproxy, where each flashproxy polls
+       a facilitator for client registrations.
+  2<3. WebSocket. This must be very hard to censor, which may require
+       additional transformations to the underlying data stream. Note
+       that this stream is controlled by the source client, not the flash
+       proxy; in a plain flashproxy-only channel, it is as described in
+       websocket-transport.txt.
+  5<3. WebSocket.
+  5>6. Pluggable transport, server-side. See core tor docs for details.
+
+4. Sample session
+
+  1. The restricted Tor user starts the client transport plugin.
+  2. The client transport plugin notifies the facilitator that it needs
+     a connection.
+  3. The restricted user starts Tor, which connects to the client
+     transport plugin.
+  4. An unrestricted user opens the web page containing the flash proxy.
+  5. The flash proxy connects to the facilitator and asks for a client.
+  6. The facilitator sends one of its client registrations to the proxy.
+  7. The flash proxy connects to a Tor relay and to the waiting client
+     transport plugin.
+  8. The client transport plugin receives the flash proxy's connection
+     and begins relaying data between it and the Tor relay.
+
+  Later, the flash proxy may go offline. Assuming that another flash
+  proxy is available, it will receive the same client's address from the
+  facilitator, and the local Tor client will reconnect to the client
+  through it.
+
+5. Behavior of the Tor client
+
+  The Tor client must be configured to make its connections through a
+  local proxy (the client transport plugin). This configuration is
+  sufficient:
+    ClientTransportPlugin flashproxy socks4 127.0.0.1:9001
+    UseBridges 1
+    Bridge flashproxy 0.0.1.0:1
+    LearnCircuitBuildTimeout 0
+  The address given for the "Bridge" option is actually irrelevant. The
+  client transport plugin will ignore it and connect (through the flash
+  proxy) to a Tor relay. The Tor client does not have control of its
+  first hop.
+
+6. Behavior of the client transport plugin
+
+  The client transport plugin serves two purposes: It sends a
+  registration message to the facilitator and it carries data between a
+  flash proxy and the local Tor client.
+
+  On startup, the client transport plugin sends a registration message
+  to the facilitator, informing the facilitator that it is waiting for
+  a connection. If the client transport plugin obfuscates its
+  connections using pluggable transports, then it also appends the
+  listening address of its transports to the registration message.
+
+  The facilitator will later hand this registration to a flash
+  proxy. The registration message is an HTTP POST request of the form:
+
+    POST / HTTP/1.0
+
+    client=[<address>]:<port>[&client-transport=<transport>][
+    client=[<address>]:<port>[&client-transport=<transport>] ...]
+
+  Where 'transport' is the name of the pluggable transport that is
+  listening on <address>:<port>. The default flashproxy transport is
+  named 'websocket'.
+
+  For example a registration message might look like this:
+    client=1.2.3.4:9000
+    client=1.2.3.4:10000&client-transport=obfs3|websocket
+
+  The facilitator sends a 200 reply if the registration was successful
+  and an error status otherwise. If the transport plugin omits the
+  [<address>] part, the facilitator will automatically fill it in based
+  on the HTTP client address, which means the transport plugin doesn't
+  have to know its external address.
+
+  The client transport plugin solves the impedance mismatch between the
+  Tor client and the flash proxy, both of which want to make outgoing
+  connections to the other. The transport plugin sits in between,
+  listens for connections from both ends, and matches them together. The
+  remote socket listens on port 9000 and the local on port 9001.
+
+  On the local side, it acts as a SOCKS proxy (albeit one that always
+  goes to the same destination).
+
+7. Behavior of the flash proxy
+
+  The flash proxy polls the facilitator for client registrations. When
+  it receives a registration, it opens one connection to the given Tor
+  relay, one to the given client, and begin proxying data between them.
+
+  The proxy asks the facilitator for a registration with an HTTP GET
+  request:
+
+    GET /?r=<version>&client=<addr>:<port>&transport=<transport name> HTTP/1.0
+
+  The 'r' parameter is the protocol revision number (should be '1' for now).
+  The 'client' parameter carries the IP address of a flashproxy
+  client. The client parameter can repeat to report multiple
+  connected clients.
+  The 'transport' parameter may be repeated zero or many times and
+  signals the outer-transports that this flashproxy supports. (See
+  section 10 for a discussion of inner and outer transports.)
+
+  For example:
+   GET /?r=1&client=7.1.43.21:9999&client=1.2.3.4:9000&transport=webrtc&transport=websocket HTTP/1.0
+
+  The response code is 200 and the body looks like this:
+
+    client=<address>:<port>&client-transport=<transport>&relay=<address>:<port>&relay-transport=<transport>
+
+  For example:
+   client=1.2.3.4:2000&client-transport=websocket&relay=10.10.10:9902&relay-transport=websocket
+
+  As with the request, the response transports are actually outer
+  transports; inner transports are not the proxy's concern and therefore
+  not given.
+
+  If the value for the client parameter is empty, it means that there are no
+  client registrations for this proxy.
+
+  The flash proxy may serve more than one relay–client pair at once.
+
+8. Behavior of the facilitator
+
+  The faciliator is a HTTP server that handles client POST registrations
+  and proxy GET requests according to the formats given above. The
+  facilitator listens on port 9002.
+
+  In the current implementation, the facilitator forgets a client
+  registration after giving it to a flash proxy. The client must
+  re-register if it wants another connection later.
+
+9. Behavior of the Tor relay.
+
+  The Tor relay requires no special configuration.
+
+10. Inner and outer transports
+
+  The client can talk to the relay using not only the Tor protocol, but
+  any transport protocol implemented by e.g. another pluggable transport
+  that sits between tor and the flashproxy PT. For the facilitator to
+  match a client with a relay that understands it, flashproxy-client
+  must be given the name of the transport protocol, via the --transport
+  option. This is divided into two parts, the inner and outer transport,
+  written like "inner|outer" or just "outer" if the inner transport is
+  the plain Tor protocol.
+
+  The inner transport is the protocol that the non-flashproxy parts of
+  the client and relay talk to each other with, and must be the same for
+  each connected pair. Beyond that, the semantics of the transport are
+  opaque to flashproxy; it does not know or care.
+
+  The outer transports are the protocols that the browser proxy uses to
+  talk to the client and relay, and may be different for each. The proxy
+  un-applies the outer transport of the client so that only the inner
+  traffic remains, then re-applies the outer transport of the relay to
+  this and sends it to the relay; and vice-versa for traffic going in
+  the opposite direction.
+
+  Diagram:
+
+    client <======outer-C=======> proxy <======outer-S=======> relay
+           <=======inner=========-------========inner========>
+
+  Currently the only supported outer transport is "websocket", but we
+  will also add support for newer technologies such as webRTC.
+
+  (We have also seen third-party proxies running outside the browser
+  on NodeJS that can open plain TCP connections, so that the outer
+  transport is effectively just "tcp", although this is not currently
+  recognised by the facilitator.)

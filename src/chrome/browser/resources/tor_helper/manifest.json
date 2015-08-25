@@ -20,7 +20,7 @@
   "description": "Interacts with Tor Launcher app and provides access to Tor settings",
   "manifest_version": 2,
   "version": "0.1",
-  "permissions": [ "tabs", "management" ],
+  "permissions": [ "tabs", "management", "preferencesPrivate" ],
   "background": {
     "scripts": [
       "background.js"

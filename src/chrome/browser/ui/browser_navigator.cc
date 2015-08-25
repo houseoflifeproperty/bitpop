@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/command_line.h"
+#include "base/logging.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -513,6 +514,7 @@ void FillNavigateParamsFromOpenURLParams(chrome::NavigateParams* nav_params,
 }
 
 void Navigate(NavigateParams* params) {
+  DLOG(INFO) << "Navigate to " << params->url.spec();
   Browser* source_browser = params->browser;
   if (source_browser)
     params->initiating_profile = source_browser->profile();
@@ -542,6 +544,9 @@ void Navigate(NavigateParams* params) {
   params->browser = GetBrowserForDisposition(params);
   if (!params->browser)
     return;
+
+  DLOG(INFO) << "params->browseer->profile()->IsOffTheRecord: " <<
+      params->browser->profile()->IsOffTheRecord();
 
 #if defined(USE_ASH)
   if (source_browser && source_browser != params->browser) {
@@ -715,6 +720,9 @@ void Navigate(NavigateParams* params) {
         content::Source<content::WebContentsDelegate>(params->browser),
         content::Details<WebContents>(params->target_contents));
   }
+
+  DLOG(INFO) << "params->browseer->profile()->IsOffTheRecord: " <<
+      params->browser->profile()->IsOffTheRecord();
 }
 
 bool IsURLAllowedInIncognito(const GURL& url,

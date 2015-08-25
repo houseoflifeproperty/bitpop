@@ -127,6 +127,18 @@
         "$ref": "types.private.ChromeDirectSetting",
         "value": ["extensions.torlauncher.default_bridge", {"type":"string"}],
         "description": "none"
+      },
+      "proxy": {
+        "nocompile": true,
+        "$ref": "types.private.ChromeDirectSetting",
+        "value": ["proxy", {
+          "type": "object",
+          "properties": {
+            "mode": { "type": "string", "description": "" },
+            "server": { "type": "string"}
+          }
+        }],
+        "description": "none"
       }
     },
     "functions": [
@@ -298,6 +310,39 @@
         "description": "none",
         "type": "function",
         "parameters": [
+        ]
+      },
+      {
+        "name": "notifyTorSaveSettingsSuccess",
+        "description": "none",
+        "type": "function",
+        "parameters": [
+        ]
+      },
+      {
+        "name": "notifyTorSaveSettingsError",
+        "description": "none",
+        "type": "function",
+        "parameters": [
+          {
+            "name": "message",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "name": "setTorProxy",
+        "description": "none",
+        "type": "function",
+        "parameters": [
+          {
+            "name": "tor_proxy_username",
+            "type": "string"
+          },
+          {
+            "name": "tor_proxy_password",
+            "type": "string"
+          }
         ]
       }
     ]

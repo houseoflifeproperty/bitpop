@@ -28,7 +28,6 @@
 #include "components/bookmarks/browser/bookmark_node.h"
 #include "components/bookmarks/browser/bookmark_storage.h"
 
-class BookmarkModel;
 class Profile;
 
 namespace base {
@@ -68,13 +67,15 @@ class OriginalProfileDataImporter
 
   virtual ~OriginalProfileDataImporter();
 
-  void CopyBookmarkFolder(const BookmarkNode* src, const BookmarkNode* dst);
+  void CopyBookmarkFolder(const bookmarks::BookmarkNode* src,
+                          const bookmarks::BookmarkNode* dst);
 
   scoped_ptr<bookmarks::BookmarkLoadDetails> CreateLoadDetails();
 
   int64 generate_next_node_id();
 
-  BookmarkPermanentNode* CreatePermanentNode(BookmarkNode::Type type);
+  bookmarks::BookmarkPermanentNode* CreatePermanentNode(
+      bookmarks::BookmarkNode::Type type);
 
   bookmarks::BookmarkPermanentNodeList LoadExtraNodes(int64* next_node_id);
 

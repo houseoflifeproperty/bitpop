@@ -107,7 +107,7 @@
               },
               'includes': [ '../build/grit_action.gypi' ],
             },
-			{
+			      {
               # GN version: //chrome/browser/resources:settings_resources
               'action_name': 'generate_settings_resources',
               'variables': {

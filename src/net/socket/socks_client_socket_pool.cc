@@ -22,9 +22,21 @@ SOCKSSocketParams::SOCKSSocketParams(
     const scoped_refptr<TransportSocketParams>& proxy_server,
     bool socks_v5,
     const HostPortPair& host_port_pair)
+    : SOCKSSocketParams(proxy_server, socks_v5, host_port_pair, "", "") {
+
+}
+
+SOCKSSocketParams::SOCKSSocketParams(
+    const scoped_refptr<TransportSocketParams>& proxy_server,
+    bool socks_v5,
+    const HostPortPair& host_port_pair,
+    const std::string& username,
+    const std::string& password)
     : transport_params_(proxy_server),
       destination_(host_port_pair),
-      socks_v5_(socks_v5) {
+      socks_v5_(socks_v5),
+      username_(username),
+      password_(password) {
   if (transport_params_.get())
     ignore_limits_ = transport_params_->ignore_limits();
   else
@@ -141,8 +153,13 @@ int SOCKSConnectJob::DoSOCKSConnect() {
 
   // Add a SOCKS connection on top of the tcp socket.
   if (socks_params_->is_socks_v5()) {
+    std::string username = socks_params_->username();
+    std::string password = socks_params_->password();
+    SOCKS5ClientSocket::AuthenticationInfo auth_info(
+        !username.empty(), username, password);
     socket_.reset(new SOCKS5ClientSocket(transport_socket_handle_.Pass(),
-                                         socks_params_->destination()));
+                                         socks_params_->destination(),
+                                         auth_info));
   } else {
     socket_.reset(new SOCKSClientSocket(transport_socket_handle_.Pass(),
                                         socks_params_->destination(),

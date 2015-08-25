@@ -4,6 +4,7 @@
 
 #include "chrome/common/chrome_paths.h"
 
+#include "base/command_line.h"
 #include "base/files/file_util.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
@@ -15,6 +16,7 @@
 #include "base/version.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/widevine_cdm_constants.h"
 #include "ui/base/ui_base_paths.h"
 
@@ -158,6 +160,10 @@ bool PathProvider(int key, base::FilePath* result) {
       if (!GetDefaultUserDataDirectory(&cur)) {
         NOTREACHED();
         return false;
+      }
+      if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kLaunchTorBrowser)) {
+        cur = cur.Append(FILE_PATH_LITERAL("Tor_User_Data"));
       }
       create_dir = true;
       break;
@@ -556,19 +562,19 @@ bool PathProvider(int key, base::FilePath* result) {
       break;
 #endif  // !defined(OS_ANDROID)
 
-    case chrome::DIR_TOR_USER_DATA:
-#if defined(OS_WIN)
-      // FIXME: add windows path
-      return false;
-#elif defined(OS_MACOSX)
-      if (!PathService::Get(chrome::DIR_APP, &cur))
-        return false;
-      cur = cur.DirName().DirName().DirName().DirName().Append("User Data");
-      DLOG(INFO) << cur.value();
-#else
-      return false;
-#endif
-      break;
+//     case chrome::DIR_TOR_USER_DATA:
+// #if defined(OS_WIN)
+//       // FIXME: add windows path
+//       return false;
+// #elif defined(OS_MACOSX)
+//       if (!PathService::Get(chrome::DIR_APP, &cur))
+//         return false;
+//       cur = cur.DirName().DirName().DirName().DirName().Append("User Data");
+//       DLOG(INFO) << cur.value();
+// #else
+//       return false;
+// #endif
+//       break;
 
     case chrome::DIR_TOR_BROWSER_COMPONENTS:
 #if defined(OS_WIN)
@@ -577,7 +583,7 @@ bool PathProvider(int key, base::FilePath* result) {
 #elif defined(OS_MACOSX)
       if (!PathService::Get(chrome::DIR_APP, &cur))
         return false;
-      cur = cur.DirName().DirName().DirName().DirName().Append("TorBrowser");
+      cur = cur.DirName().DirName().DirName().Append("TorBrowser");
       DLOG(INFO) << cur.value();
 #else
       return false;

@@ -58,18 +58,18 @@ torlauncher.TorProcessService.prototype = {
   kTorProcessRemoteCall: "torProcessRemoteCall",
   kTorProtocolRemoteCall: "torProtocolRemoteCall",
 
-  getIsProtectedMode: function () {
-    var _this = this;
-    return new Promise(function (resolve, reject) {
-      chrome.runtime.sendMessage(_this.kTorHelperExtensionId,
-        { kind: "GetIsBrowserProtectedMode" }, {},
-        function (response) {
-          if (chrome.runtime.lastError)
-            reject(new Error(chrome.runtime.lastError.message));
-          resolve(response.is_protected_mode);
-        });
-    });
-  },
+  // getIsProtectedMode: function () {
+  //   var _this = this;
+  //   return new Promise(function (resolve, reject) {
+  //     chrome.runtime.sendMessage(_this.kTorHelperExtensionId,
+  //       { kind: "GetIsBrowserProtectedMode" }, {},
+  //       function (response) {
+  //         if (chrome.runtime.lastError)
+  //           reject(new Error(chrome.runtime.lastError.message));
+  //         resolve(response.is_protected_mode);
+  //       });
+  //   });
+  // },
 
   init: function () {
 
@@ -88,7 +88,7 @@ torlauncher.TorProcessService.prototype = {
     const kLauncherIsRunning = "TorLauncherIsRunning";
     const kOpenNetworkSettingsDialog = "TorOpenNetworkSettingsDialog";
     const kOpenAboutProtectedModeDialog = "TorOpenAboutProtectedModeDialog";
-
+    const kSettingsAppliedAfterBootstrap = "TorSettingsAppliedAfterBootstrap";
 
     chrome.runtime.onMessage.addListener(
       function (message, sender, sendResponse) {
@@ -97,7 +97,7 @@ torlauncher.TorProcessService.prototype = {
         } else if (message.kind == kUserQuitTopic) {
           _this.mQuitSoon = true;
           _this.mRestartWithQuit =
-              (message.param && "restart" == message.param);
+              (message.param && ("restart" == message.param)) ? true : false;
         } else if (message.kind == kBootstrapStatusTopic) {
           _this._processBootstrapStatus(message.subject);
         } else if (message.kind == _this.kTorProcessRemoteCall ||
@@ -105,7 +105,8 @@ torlauncher.TorProcessService.prototype = {
           _this.runAsyncFromMessage(message, sendResponse);
           return true; // because of async sendResponse call
         } else if (message.kind == kBootstrapCompleteInProgressDialog) {
-          _this._networkSettingsWindow.close();
+          if (_this._networkSettingsWindow)
+            _this._networkSettingsWindow.close();
         }
       }
     );
@@ -141,6 +142,7 @@ torlauncher.TorProcessService.prototype = {
   },
 
   runAsyncFromMessage: function (message, sendResponse) {
+    this.mTempMessage = JSON.parse(JSON.stringify(message));
     var obj = null;
     if (message.kind == this.kTorProcessRemoteCall)
       obj = this;
@@ -150,12 +152,12 @@ torlauncher.TorProcessService.prototype = {
     torlauncher.util.runGenerator(function *() {
       if (message.method == 'TorSetConfWithReply' &&
           message.kind == _this.kTorProtocolRemoteCall) {
-        var errObj = message.args[1];
+        var errObj = _this.mTempMessage.args[1];
         var didSucceed =
-            (yield* obj.TorSetConfWithReply(message.args[0], errObj));
+            (yield* obj.TorSetConfWithReply(_this.mTempMessage.args[0], errObj));
         sendResponse({ didSucceed: didSucceed, errorObj: errObj });
       } else
-        sendResponse(yield* obj[message.method].apply(obj, message.args));
+        sendResponse(yield* obj[_this.mTempMessage.method].apply(obj, _this.mTempMessage.args));
     });
   },
 
@@ -432,11 +434,11 @@ torlauncher.TorProcessService.prototype = {
 
   // public:
   launchControlTorPhaseTwo: function () {
-    console.log('inside lctp2');
+    console.info('inside lctp2');
     var _this = this;
-    console.log('after assignment');
+    console.info('after assignment');
     torlauncher.util.runGenerator(function* phaseTwo() {
-      console.log('inside runGenerator');
+      console.info('inside runGenerator');
       torlauncher.util.pr_debug('onControlConnTimer: _defaultBridgesStatus()');
       var network_enabled_by_bridges_setup = false;
       if ((yield *_this._defaultBridgesStatus()) ==
@@ -667,6 +669,22 @@ torlauncher.TorProcessService.prototype = {
         });
       });
     });
+  },
+
+  changeExitNodeCountry: function (ccode) {
+    if (this.TorIsBootstrapDone) {
+      var _this = this;
+      torlauncher.util.runGenerator(function *() {
+        var didSucceed = true;
+        var errObj = {};
+        var settings = {};
+        settings["ExitNodes"] = "{" + ccode + "}";
+        settings["StrictExitNodes"] = "1";
+        if (!(yield *_this.mProtocolSvc.TorSetConfWithReply(settings, errObj))) {
+          didSucceed = false;
+        }
+      });
+    }
   }
 };
 

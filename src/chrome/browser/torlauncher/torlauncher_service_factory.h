@@ -39,15 +39,15 @@ class TorLauncherServiceFactory : public BrowserContextKeyedServiceFactory {
   friend struct DefaultSingletonTraits<TorLauncherServiceFactory>;
 
   TorLauncherServiceFactory();
-  virtual ~TorLauncherServiceFactory();
+  ~TorLauncherServiceFactory() override;
 
   // Overrides from BrowserContextKeyedServiceFactory:
-  virtual content::BrowserContext* GetBrowserContextToUse(
-      content::BrowserContext* context) const OVERRIDE;
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* profile) const OVERRIDE;
-  virtual void RegisterProfilePrefs(
-      user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
+  content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const override;
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* profile) const override;
+  void RegisterProfilePrefs(
+      user_prefs::PrefRegistrySyncable* registry) override;
 
   DISALLOW_COPY_AND_ASSIGN(TorLauncherServiceFactory);
 };

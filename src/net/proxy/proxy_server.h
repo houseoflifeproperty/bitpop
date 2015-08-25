@@ -39,11 +39,18 @@ class NET_EXPORT ProxyServer {
   // Default copy-constructor and assignment operator are OK!
 
   // Constructs an invalid ProxyServer.
-  ProxyServer() : scheme_(SCHEME_INVALID) {}
+  ProxyServer();
 
   ProxyServer(Scheme scheme, const HostPortPair& host_port_pair);
 
+  ProxyServer(Scheme scheme, const HostPortPair& host_port_pair,
+              const std::string& username, const std::string& password);
+
+  ProxyServer(const ProxyServer& copy);
+
   bool is_valid() const { return scheme_ != SCHEME_INVALID; }
+
+  bool has_auth_info() const { return !username_.empty(); }
 
   // Gets the proxy's scheme (i.e. SOCKS4, SOCKS5, HTTP)
   Scheme scheme() const { return scheme_; }
@@ -64,6 +71,10 @@ class NET_EXPORT ProxyServer {
 
   // Returns true if this ProxyServer is a QUIC proxy.
   bool is_quic() const { return scheme_ == SCHEME_QUIC; }
+
+  std::string username() const { return username_; }
+
+  std::string password() const { return password_; }
 
   const HostPortPair& host_port_pair() const;
 
@@ -144,7 +155,9 @@ class NET_EXPORT ProxyServer {
 
   bool operator==(const ProxyServer& other) const {
     return scheme_ == other.scheme_ &&
-           host_port_pair_.Equals(other.host_port_pair_);
+           host_port_pair_.Equals(other.host_port_pair_) &&
+           username_ == other.username_ &&
+           password_ == other.password_;
   }
 
   // Comparator function so this can be placed in a std::map.
@@ -164,6 +177,8 @@ class NET_EXPORT ProxyServer {
 
   Scheme scheme_;
   HostPortPair host_port_pair_;
+  std::string username_;
+  std::string password_;
 };
 
 typedef std::pair<HostPortPair, ProxyServer> HostPortProxyPair;

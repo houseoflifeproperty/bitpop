@@ -2,3 +2,15 @@
   margin-top: 0.4em;
   margin-left: 2.5em;
 }
+
+.align-right {
+  text-align: right;
+}
+
+.error-message {
+  color: red;
+}
+
+#bridgeList {
+  width: 80%;
+}

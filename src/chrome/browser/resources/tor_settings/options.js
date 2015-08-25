@@ -53,7 +53,6 @@ function load() {
 
   // TODO: register overlays
 
-  cr.ui.FocusManager.disableMouseFocusOnButtons();
   OptionsFocusManager.getInstance().initialize();
   Preferences.getInstance().initialize();
   OptionsPage.initialize();

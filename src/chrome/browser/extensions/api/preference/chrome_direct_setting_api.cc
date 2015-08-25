@@ -48,6 +48,8 @@ class PreferenceWhitelist {
     whitelist_.insert("extensions.torlauncher.default_bridge_type");
     whitelist_.insert("extensions.torlauncher.default_bridge_recommended_type");
     whitelist_.insert("extensions.torlauncher.default_bridge");
+
+    whitelist_.insert("proxy");
   }
 
   ~PreferenceWhitelist() {}

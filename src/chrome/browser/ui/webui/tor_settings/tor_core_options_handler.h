@@ -24,11 +24,11 @@ namespace tor_settings {
 class CoreOptionsHandler : public options::CoreOptionsHandler {
  public:
   CoreOptionsHandler();
-  virtual ~CoreOptionsHandler();
+  ~CoreOptionsHandler() override;
 
   // OptionsPageUIHandler implementation.
-  virtual void GetLocalizedValues(
-      base::DictionaryValue* localized_strings) OVERRIDE;
+  void GetLocalizedValues(
+      base::DictionaryValue* localized_strings) override;
 
   // Adds localized strings to |localized_strings|.
   static void GetStaticLocalizedValues(

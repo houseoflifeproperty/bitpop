@@ -143,6 +143,8 @@ DataReductionProxyConfig::~DataReductionProxyConfig() {
 
 void DataReductionProxyConfig::InitializeOnIOThread(const scoped_refptr<
     net::URLRequestContextGetter>& url_request_context_getter) {
+  thread_checker_.DetachFromThread();
+
   secure_proxy_checker_.reset(
       new SecureProxyChecker(url_request_context_getter));
 

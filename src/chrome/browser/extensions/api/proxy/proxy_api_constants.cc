@@ -20,6 +20,8 @@ const char kProxyConfigRules[] = "rules";
 const char kProxyConfigRuleHost[] = "host";
 const char kProxyConfigRulePort[] = "port";
 const char kProxyConfigRuleScheme[] = "scheme";
+const char kProxyConfigRuleUsername[] = "username";
+const char kProxyConfigRulePassword[] = "password";
 const char kProxyConfigBypassList[] = "bypassList";
 
 const char kProxyEventFatal[] = "fatal";

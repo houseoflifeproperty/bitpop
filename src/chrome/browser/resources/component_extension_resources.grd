@@ -318,9 +318,20 @@
       <include name="IDR_TOR_HELPER_ICON19_PNG" file="tor_helper/icon19.png" type="BINDATA"/>
       <include name="IDR_TOR_HELPER_ICON38_PNG" file="tor_helper/icon38.png" type="BINDATA"/>
       <include name="IDR_TOR_HELPER_ICON48_PNG" file="tor_helper/icon48.png" type="BINDATA"/>
+      <include name="IDR_TOR_HELPER_NODE_BOTTOM_PNG" file="tor_helper/node-bottom.png" type="BINDATA"/>
+      <include name="IDR_TOR_HELPER_NODE_MID_PNG" file="tor_helper/node-mid.png" type="BINDATA"/>
+      <include name="IDR_TOR_HELPER_NODE_TOP_PNG" file="tor_helper/node-top.png" type="BINDATA"/>
       <include name="IDR_TOR_HELPER_POPUP_CSS" file="tor_helper/popup.css" type="BINDATA"/>
       <include name="IDR_TOR_HELPER_POPUP_JS" file="tor_helper/popup.js" type="BINDATA"/>
-
+      <include name="IDR_TOR_HELPER_CA_PNG" file="tor_helper/ca.png" type="BINDATA"/>
+      <include name="IDR_TOR_HELPER_NE_PNG" file="tor_helper/ne.png" type="BINDATA"/>
+      <include name="IDR_TOR_HELPER_JP_PNG" file="tor_helper/ja.png" type="BINDATA"/>
+      <include name="IDR_TOR_HELPER_UR_PNG" file="tor_helper/ur.png" type="BINDATA"/>
+      <include name="IDR_TOR_HELPER_SA_PNG" file="tor_helper/sa.png" type="BINDATA"/>
+      <include name="IDR_TOR_HELPER_WINDOW_DUPLICATE_PNG" file="tor_helper/window_duplicate.png" type="BINDATA"/>
+      <include name="IDR_TOR_HELPER_CONFIGURE_PNG" file="tor_helper/configure.png" type="BINDATA"/>
+      <include name="IDR_TOR_HELPER_FINISH_PNG" file="tor_helper/finish.png" type="BINDATA"/>
+      <include name="IDR_TOR_HELPER_HELP_ABOUT_PNG" file="tor_helper/help_about.png" type="BINDATA"/>
     </includes>
   </release>
 </grit>

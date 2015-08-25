@@ -27,6 +27,13 @@ torlauncher.util = {
   kDefaultBridgePref: "defaultBridge",
   kDefaultBridgeTypePref: "defaultBridgeType",
 
+  ERROR: 1,
+  WARN: 1 << 1,
+  INFO: 1 << 2,
+  DEBUG: 1 << 3,
+
+  mLogVerbosity: 0,
+
   translate: function(messageID, args) {
     if (!torlauncher.messages[gUILanguage]) {
       if (gUILanguage == "en-US")
@@ -420,7 +427,7 @@ torlauncher.util = {
 
   pr_debug: function (message) {
     if (!torlauncher.util.is_production)
-      console.log(message);
+      console.info(message);
   },
 
   isGeneratorFunction: function (functionToCheck) {

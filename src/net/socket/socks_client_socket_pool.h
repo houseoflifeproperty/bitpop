@@ -28,6 +28,9 @@ class NET_EXPORT_PRIVATE SOCKSSocketParams
  public:
   SOCKSSocketParams(const scoped_refptr<TransportSocketParams>& proxy_server,
                     bool socks_v5, const HostPortPair& host_port_pair);
+  SOCKSSocketParams(const scoped_refptr<TransportSocketParams>& proxy_server,
+                    bool socks_v5, const HostPortPair& host_port_pair,
+                    const std::string& username, const std::string& password);
 
   const scoped_refptr<TransportSocketParams>& transport_params() const {
     return transport_params_;
@@ -35,6 +38,8 @@ class NET_EXPORT_PRIVATE SOCKSSocketParams
   const HostResolver::RequestInfo& destination() const { return destination_; }
   bool is_socks_v5() const { return socks_v5_; }
   bool ignore_limits() const { return ignore_limits_; }
+  std::string username() const { return username_; }
+  std::string password() const { return password_; }
 
  private:
   friend class base::RefCounted<SOCKSSocketParams>;
@@ -46,6 +51,8 @@ class NET_EXPORT_PRIVATE SOCKSSocketParams
   HostResolver::RequestInfo destination_;
   const bool socks_v5_;
   bool ignore_limits_;
+  std::string username_;
+  std::string password_;
 
   DISALLOW_COPY_AND_ASSIGN(SOCKSSocketParams);
 };

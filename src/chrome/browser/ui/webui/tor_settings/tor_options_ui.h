@@ -73,7 +73,7 @@ class OptionsUI : public content::WebUIController,
   typedef base::CallbackList<void()> OnFinishedLoadingCallbackList;
 
   explicit OptionsUI(content::WebUI* web_ui);
-  virtual ~OptionsUI();
+  ~OptionsUI() override;
 
   // Registers a callback to be called once the settings frame has finished
   // loading on the HTML/JS side.
@@ -92,15 +92,15 @@ class OptionsUI : public content::WebUIController,
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Overridden from content::WebContentsObserver:
-  virtual void DidStartProvisionalLoadForFrame(
+  void DidStartProvisionalLoadForFrame(
       content::RenderFrameHost* render_frame_host,
       const GURL& validated_url,
       bool is_error_page,
-      bool is_iframe_srcdoc) OVERRIDE;
+      bool is_iframe_srcdoc) override;
 
   // Overridden from OptionsPageUIHandlerHost:
-  virtual void InitializeHandlers() OVERRIDE;
-  virtual void OnFinishedLoading() OVERRIDE;
+  void InitializeHandlers() override;
+  void OnFinishedLoading() override;
 
  private:
   // Adds OptionsPageUiHandler to the handlers list if handler is enabled.

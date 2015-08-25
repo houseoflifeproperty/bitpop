@@ -11,8 +11,8 @@ CookieAuthentication 1
 ## fteproxy configuration
 ClientTransportPlugin fte exec PluggableTransports/fteproxy.bin --managed
 
-## obfsproxy configuration
-ClientTransportPlugin obfs2,obfs3,scramblesuit exec PluggableTransports/obfsproxy.bin managed
+## obfs4proxy configuration
+ClientTransportPlugin obfs2,obfs3,obfs4,scramblesuit exec PluggableTransports/obfs4proxy
 
 ## flash proxy configuration
 #

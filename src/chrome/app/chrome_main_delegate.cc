@@ -654,17 +654,16 @@ void ChromeMainDelegate::InitMacCrashReporter(
 void ChromeMainDelegate::PreSandboxStartup() {
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
-  base::CommandLine& non_const_cmd_line = 
+  base::CommandLine& non_const_cmd_line =
       const_cast<base::CommandLine&>(command_line);
   std::string process_type =
       command_line.GetSwitchValueASCII(switches::kProcessType);
 
   if (process_type.empty() &&
       non_const_cmd_line.HasSwitch(switches::kLaunchTorBrowser)) {
-    non_const_cmd_line.AppendSwitchASCII(switches::kProfileDirectory,
-                                         "TorProfile");
-    non_const_cmd_line.AppendSwitchASCII(switches::kProxyServer,
-                                         "socks5://localhost:9150");
+    if (!non_const_cmd_line.HasSwitch(switches::kProfileDirectory))
+      non_const_cmd_line.AppendSwitchASCII(switches::kProfileDirectory,
+                                           "TorProfile");
   }
 
 #if defined(OS_POSIX)

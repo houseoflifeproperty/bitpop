@@ -101,7 +101,7 @@
     </div>
     <div id="tor-isp-block-settings-section" class="tor-settings-subsection"
          hidden>
-      <div class="settings-row">
+      <div class="settings-row" id ="bridgeTypeRadioGroup">
         <label for="bridgesRadioYes">
           <input type="radio" id="bridgesRadioYes" name="bridgeType"
                  value="default"/>
@@ -115,7 +115,7 @@
         </div>
       </div><!-- #settings-row -->
       <div class="settings-row">
-        <label for="bridgeRadioCustom">
+        <label for="bridgeRadioCustom" id="bridgeTypeRadioGroup2">
           <input type="radio" id="bridgeRadioCustom" name="bridgeType"
                  value="custom"/>
           <span i18n-content="torsettings_useBridges_custom"></span>
@@ -124,11 +124,17 @@
           <label id="bridgeListLabel" for="bridgeList">
             <span i18n-content="torsettings_useBridges_label"></span>
           </label><br>
-          <textarea id="bridgeList" row="3"
-                    i18n-placeholder-text="torsettings_useBridges_placeholder">
-          </textarea>
+          <textarea id="bridgeList" rows="7"
+                    i18n-placeholder-text="torsettings_useBridges_placeholder"></textarea>
         </div>
       </div><!-- #settings-row -->
     </div><!-- #tor-isp-block-settings-section -->
+  </section>
+  <section id="apply-settings-section">
+    <div id="error_message" class="error-message"></div>
+    <div class="align-right">
+      <button id="saveSettingsBtn" class="default-button" type="submit"
+          i18n-content="torsettings_saveSettings"></button>
+    </div>
   </section>
 </div>

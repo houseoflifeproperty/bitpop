@@ -28,6 +28,18 @@ class BoundNetLog;
 // Currently no SOCKSv5 authentication is supported.
 class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
  public:
+  struct AuthenticationInfo {
+    AuthenticationInfo(bool should_auth, const std::string& uname,
+        const std::string& pass)
+        : should_authenticate(should_auth),
+          username(uname),
+          password(pass) {}
+
+    bool should_authenticate;
+    std::string username;
+    std::string password;
+  };
+
   // |req_info| contains the hostname and port to which the socket above will
   // communicate to via the SOCKS layer.
   //
@@ -35,7 +47,8 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
   // always pass it a hostname. This means the DNS resolving is done
   // proxy side.
   SOCKS5ClientSocket(scoped_ptr<ClientSocketHandle> transport_socket,
-                     const HostResolver::RequestInfo& req_info);
+                     const HostResolver::RequestInfo& req_info,
+                     const AuthenticationInfo& auth_info);
 
   // On destruction Disconnect() is called.
   ~SOCKS5ClientSocket() override;
@@ -79,6 +92,10 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
     STATE_GREET_WRITE_COMPLETE,
     STATE_GREET_READ,
     STATE_GREET_READ_COMPLETE,
+    STATE_AUTH_WRITE,
+    STATE_AUTH_WRITE_COMPLETE,
+    STATE_AUTH_READ,
+    STATE_AUTH_READ_COMPLETE,
     STATE_HANDSHAKE_WRITE,
     STATE_HANDSHAKE_WRITE_COMPLETE,
     STATE_HANDSHAKE_READ,
@@ -94,6 +111,7 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
   };
 
   static const unsigned int kGreetReadHeaderSize;
+  static const unsigned int kAuthReadHeaderSize;
   static const unsigned int kWriteHeaderSize;
   static const unsigned int kReadHeaderSize;
   static const uint8 kSOCKS5Version;
@@ -109,14 +127,22 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
   int DoHandshakeReadComplete(int result);
   int DoHandshakeWrite();
   int DoHandshakeWriteComplete(int result);
+  int DoAuthRead();
+  int DoAuthReadComplete(int result);
+  int DoAuthWrite();
+  int DoAuthWriteComplete(int result);
   int DoGreetRead();
   int DoGreetReadComplete(int result);
   int DoGreetWrite();
   int DoGreetWriteComplete(int result);
 
+  int BuildAuthWriteBuffer(std::string* auth,
+                           const std::string& username,
+                           const std::string& password) const;
   // Writes the SOCKS handshake buffer into |handshake|
   // and return OK on success.
   int BuildHandshakeWriteBuffer(std::string* handshake) const;
+
 
   CompletionCallback io_callback_;
 
@@ -152,6 +178,8 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
   HostResolver::RequestInfo host_request_info_;
 
   BoundNetLog net_log_;
+
+  AuthenticationInfo auth_info_;
 
   DISALLOW_COPY_AND_ASSIGN(SOCKS5ClientSocket);
 };

@@ -27,6 +27,7 @@
 #include "chrome/browser/sessions/tab_restore_service_delegate.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 #include "chrome/browser/signin/signin_header_helper.h"
+#include "chrome/browser/torlauncher/torlauncher_service_factory.h"
 #include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/accelerator_utils.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
@@ -59,6 +60,7 @@
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/favicon/content/content_favicon_driver.h"
 #include "components/google/core/browser/google_util.h"
+#include "components/torlauncher/torlauncher_service.h"
 #include "components/translate/core/browser/language_state.h"
 #include "components/ui/zoom/page_zoom.h"
 #include "components/ui/zoom/zoom_controller.h"
@@ -329,9 +331,18 @@ void NewEmptyWindow(Profile* profile, HostDesktopType desktop_type) {
     incognito = true;
   }
 
+  torlauncher::TorLauncherService *tl_service =
+      torlauncher::TorLauncherServiceFactory::GetForProfile(profile);
+  if (incognito &&
+      tl_service->waiting_for_tor_to_start()) {
+    tl_service->SetupTorCircuits();
+  }
   if (incognito) {
-    content::RecordAction(UserMetricsAction("NewIncognitoWindow"));
-    OpenEmptyWindow(profile->GetOffTheRecordProfile(), desktop_type);
+    if (!tl_service->waiting_for_tor_to_start() &&
+         tl_service->tor_circuits_established()) {
+      content::RecordAction(UserMetricsAction("NewIncognitoWindow"));
+      OpenEmptyWindow(profile->GetOffTheRecordProfile(), desktop_type);
+    }
   } else {
     content::RecordAction(UserMetricsAction("NewWindow"));
     SessionService* session_service =

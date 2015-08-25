@@ -11,28 +11,33 @@ torlauncher.registerBridgePrefs = function *() {
       "obfs3 109.105.109.163:38980 1E05F577A0EC0213F971D81BF4D86A9E4E8229ED",
       "obfs3 109.105.109.163:47779 4C331FA9B3D1D6D8FB0D8FBBF0C259C360D97E6A"
     ],
-    "meek-amazon": [
-      "meek 0.0.2.0:2 url=https://d2zfqthxsdq309.cloudfront.net/ front=a0.awsstatic.com"
-    ],
+    // "meek-amazon": [
+    //   "meek 0.0.2.0:2 4EE0CC769EB4B15A872F742EDE27D298A59DCADE url=https://d2zfqthxsdq309.cloudfront.net/ front=a0.awsstatic.com"
+    // ],
     "fte-ipv6": [
-      "fte [2001:49f0:d002:1::2]:80 B629B0B607C8AC9349B5646C24E9D242184F5B6E",
+      "fte [2001:49f0:d002:1::2]:80 FDC5BA65D93B6BCA5EBDF8EF8E4FA936B7F1F8E5",
       "fte [2001:49f0:d00a:1::c]:80 2BD466989944867075E872310EBAD65BC88C8AEF"
     ],
-    "meek-azure": [
-      "meek 0.0.2.0:3 url=https://az668014.vo.msecnd.net/ front=ajax.aspnetcdn.com"
+    // "meek-azure": [
+    //   "meek 0.0.2.0:3 A2C13B7DFCAB1CBF3A884B6EB99A98067AB6EF44 url=https://az786092.vo.msecnd.net/ front=ajax.aspnetcdn.com"
+    // ],
+    "obfs4": [
+      "obfs4 178.209.52.110:443 67E72FF33D7D41BF11C569646A0A7B4B188340DF cert=Z+cv8z19Qb8RxWlkagp7SxiDQN++b7D2Tntowhf+j4D15/kLuj3EoSSGvuREGPc3h60Ofw iat-mode=0",
+      "obfs4 83.212.101.3:41213 A09D536DD1752D542E1FBB3C9CE4449D51298239 cert=lPRQ/MXdD1t5SRZ9MquYQNT9m5DV757jtdXdlePmRCudUU9CFUOX1Tm7/meFSyPOsud7Cw iat-mode=0",
+      "obfs4 104.131.108.182:56880 EF577C30B9F788B0E1801CF7E433B3B77792B77A cert=0SFhfDQrKjUJP8Qq6wrwSICEPf3Vl/nJRsYxWbg3QRoSqhl2EB78MPS2lQxbXY4EW1wwXA iat-mode=0"
     ],
     "flashproxy": [
-      "flashproxy 0.0.1.0:1",
-      "flashproxy 0.0.1.0:2",
-      "flashproxy 0.0.1.0:3",
-      "flashproxy 0.0.1.0:4",
-      "flashproxy 0.0.1.0:5"
+      "flashproxy 0.0.1.0:1 4D6C0DF6DEC9398A4DEF07084F3CD395A96DD2AD",
+      "flashproxy 0.0.1.0:2 4D6C0DF6DEC9398A4DEF07084F3CD395A96DD2AD",
+      "flashproxy 0.0.1.0:3 4D6C0DF6DEC9398A4DEF07084F3CD395A96DD2AD",
+      "flashproxy 0.0.1.0:4 4D6C0DF6DEC9398A4DEF07084F3CD395A96DD2AD",
+      "flashproxy 0.0.1.0:5 4D6C0DF6DEC9398A4DEF07084F3CD395A96DD2AD"
     ],
-    "meek-google": [
-      "meek 0.0.2.0:1 url=https://meek-reflect.appspot.com/ front=www.google.com"
-    ],
+    // "meek-google": [
+    //   "meek 0.0.2.0:1 46D4A71197B8FA515A826C6B017C522FE264655B url=https://meek-reflect.appspot.com/ front=www.google.com"
+    // ],
     "fte": [
-      "fte 192.240.101.106:80 B629B0B607C8AC9349B5646C24E9D242184F5B6E",
+      "fte 192.240.101.106:80 FDC5BA65D93B6BCA5EBDF8EF8E4FA936B7F1F8E5",
       "fte 50.7.176.114:80 2BD466989944867075E872310EBAD65BC88C8AEF",
       "fte 131.252.210.150:8080 0E858AC201BF0F3FA3C462F64844CBFFC7297A42",
       "fte 128.105.214.161:8080 1E326AAFB3FCB515015250D8FCCC8E37F91A153B",
@@ -45,4 +50,5 @@ torlauncher.registerBridgePrefs = function *() {
     ]
   };
   yield torlauncher.util.setPref("defaultBridge", defaultBridge);
+
 };

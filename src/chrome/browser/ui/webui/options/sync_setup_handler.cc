@@ -269,8 +269,10 @@ void SyncSetupHandler::GetStaticLocalizedValues(
     { "fullEncryptionOption", IDS_SYNC_FULL_ENCRYPTION_DATA },
   };
 
-  RegisterStrings(localized_strings, resources, arraysize(resources));
-  RegisterTitle(localized_strings, "syncSetupOverlay", IDS_SYNC_SETUP_TITLE);
+  options::OptionsPageUIHandlerStaticContainer::RegisterStrings(
+      localized_strings, resources, arraysize(resources));
+  options::OptionsPageUIHandlerStaticContainer::RegisterTitle(
+      localized_strings, "syncSetupOverlay", IDS_SYNC_SETUP_TITLE);
 }
 
 void SyncSetupHandler::ConfigureSyncDone() {

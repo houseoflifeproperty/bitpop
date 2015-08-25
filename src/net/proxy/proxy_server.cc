@@ -67,6 +67,10 @@ ProxyServer::Scheme GetSchemeFromURIInternal(std::string::const_iterator begin,
 
 }  // namespace
 
+ProxyServer::ProxyServer()
+  : scheme_(SCHEME_INVALID) {
+}
+
 ProxyServer::ProxyServer(Scheme scheme, const HostPortPair& host_port_pair)
       : scheme_(scheme), host_port_pair_(host_port_pair) {
   if (scheme_ == SCHEME_DIRECT || scheme_ == SCHEME_INVALID) {
@@ -75,6 +79,26 @@ ProxyServer::ProxyServer(Scheme scheme, const HostPortPair& host_port_pair)
     // do raw field comparisons in the equality and comparison functions.
     DCHECK(host_port_pair.Equals(HostPortPair()));
     host_port_pair_ = HostPortPair();
+  }
+}
+
+ProxyServer::ProxyServer(Scheme scheme, const HostPortPair& host_port_pair,
+            const std::string& username, const std::string& password)
+    : scheme_(scheme),
+      host_port_pair_(host_port_pair),
+      username_(username),
+      password_(password) {
+}
+
+
+ProxyServer::ProxyServer(const ProxyServer& copy)
+  : scheme_(copy.scheme()),
+    username_(copy.username()),
+    password_(copy.password()) {
+  if (scheme_ == SCHEME_DIRECT || scheme_ == SCHEME_INVALID) {
+    host_port_pair_ = HostPortPair();
+  } else {
+    host_port_pair_ = copy.host_port_pair();
   }
 }
 
@@ -112,8 +136,29 @@ ProxyServer ProxyServer::FromURI(std::string::const_iterator begin,
     begin = colon + 3;  // Skip past the "://"
   }
 
+  bool has_username_pass = false;
+  std::string username = "";
+  std::string password = "";
+  std::string::const_iterator sobaka = std::find(begin, end, '@');
+  if (sobaka != end && (end - sobaka) >= 2) {
+    std::string::const_iterator colon2 = std::find(begin, sobaka, ':');
+    if (colon2 != sobaka) {
+      username.append(begin, colon2);
+      password.append(colon2+1, sobaka);
+    } else {
+      username.append(begin, sobaka);
+    }
+    has_username_pass = true;
+    begin = sobaka + 1;
+  }
+
   // Now parse the <host>[":"<port>].
-  return FromSchemeHostAndPort(scheme, begin, end);
+  ProxyServer server = FromSchemeHostAndPort(scheme, begin, end);
+  if (has_username_pass) {
+    server.username_ = username;
+    server.password_ = password;
+  }
+  return server;
 }
 
 std::string ProxyServer::ToURI() const {
@@ -126,7 +171,10 @@ std::string ProxyServer::ToURI() const {
     case SCHEME_SOCKS4:
       return std::string("socks4://") + host_port_pair().ToString();
     case SCHEME_SOCKS5:
-      return std::string("socks5://") + host_port_pair().ToString();
+      return std::string("socks5://") +
+          (has_auth_info() ? (username() +
+              (!password().empty() ? ":" + password() : "") + "@") : "") +
+          host_port_pair().ToString();
     case SCHEME_HTTPS:
       return std::string("https://") + host_port_pair().ToString();
     case SCHEME_QUIC:

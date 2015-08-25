@@ -213,9 +213,17 @@ int InitSocketPoolHelper(ClientSocketPoolManager::SocketGroupType group_type,
       connection_group = base::StringPrintf(
           "socks%c/%s", socks_version, connection_group.c_str());
 
-      socks_params = new SOCKSSocketParams(proxy_tcp_params,
-                                           socks_version == '5',
-                                           origin_host_port);
+      if (proxy_server.has_auth_info()) {
+        socks_params = new SOCKSSocketParams(proxy_tcp_params,
+                                             socks_version == '5',
+                                             origin_host_port,
+                                             proxy_server.username(),
+                                             proxy_server.password());
+      } else {
+        socks_params = new SOCKSSocketParams(proxy_tcp_params,
+                                             socks_version == '5',
+                                             origin_host_port);
+      }
     }
   }
 

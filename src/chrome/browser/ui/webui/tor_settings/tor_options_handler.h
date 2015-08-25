@@ -28,9 +28,9 @@
 #include "base/prefs/pref_change_registrar.h"
 #include "base/prefs/pref_member.h"
 #include "base/scoped_observer.h"
+#include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shell_integration.h"
-#include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
 #include "chrome/browser/ui/webui/tor_settings/tor_options_ui.h"
@@ -55,24 +55,28 @@ class TorOptionsHandler
       public content::NotificationObserver {
  public:
   TorOptionsHandler();
-  virtual ~TorOptionsHandler();
+  ~TorOptionsHandler() override;
 
   // OptionsPageUIHandler implementation.
-  virtual void GetLocalizedValues(base::DictionaryValue* values) OVERRIDE;
-  virtual void PageLoadStarted() OVERRIDE;
-  virtual void InitializeHandler() OVERRIDE;
-  virtual void InitializePage() OVERRIDE;
-  virtual void RegisterMessages() OVERRIDE;
-  virtual void Uninitialize() OVERRIDE;
+  void GetLocalizedValues(base::DictionaryValue* values) override;
+  void PageLoadStarted() override;
+  void InitializeHandler() override;
+  void InitializePage() override;
+  void RegisterMessages() override;
+  void Uninitialize() override;
 
  private:
   // content::NotificationObserver implementation.
-  virtual void Observe(int type,
+  void Observe(int type,
                        const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+                       const content::NotificationDetails& details) override;
 
   // Updates the UI with the given state for the default browser.
   void SetDefaultBrowserUIString(int status_string_id);
+
+  // C++ functions called from the tor settings page Javascript
+  // void CancelTorSettingsChange(const base::ListValue *args);
+  void SaveTorSettings(const base::ListValue* args);
 
   bool page_initialized_;
 

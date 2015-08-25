@@ -27,6 +27,7 @@
         '../base/base.gyp:base',
         '../base/base.gyp:base_prefs',
         '../crypto/crypto.gyp:crypto',
+        '../third_party/mojo/mojo_public.gyp:mojo_system',
         '../ui/base/ui_base.gyp:ui_base',
         'components.gyp:keyed_service_core',
         'components.gyp:pref_registry',

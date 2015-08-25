@@ -92,10 +92,13 @@ function closeThisWindow(aBootstrapDidComplete) {
   cleanup();
 
   if (gOpenerCallbackFunc) {
+    console.info('gOpenerCallbackFunc: aBootstrapDidComplete == ' +
+        (aBootstrapDidComplete ? 'true' : 'false'));
     gOpenerCallbackFunc(aBootstrapDidComplete);
   }
 
   if (aBootstrapDidComplete) {
+    console.info('chrome.runtime.sendMessage: TorBootstrapCompleteInProgressDialog');
     chrome.runtime.sendMessage( { kind: "TorBootstrapCompleteInProgressDialog" });
     // chrome.runtime.sendMessage(
     //     kTorHelperExtensionId,  { 'kind': kTorOpenNewSessionWindowMessage });

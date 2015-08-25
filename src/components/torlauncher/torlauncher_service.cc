@@ -16,6 +16,9 @@
 
 #include "components/torlauncher/torlauncher_service.h"
 
+#include <cstring>
+#include <iostream>
+#include <fstream>
 #include <locale>
 #include <sstream>
 #include <string>
@@ -54,7 +57,6 @@
 #include "content/public/browser/web_contents.h"
 #include "crypto/random.h"
 #include "extensions/browser/extension_host.h"
-#include "extensions/browser/extension_system.h"
 #include "extensions/browser/process_manager.h"
 #include "grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -84,6 +86,8 @@ const char kTorControlHostEnv[] = "TOR_CONTROL_HOST";
 const char kTorControlPortEnv[] = "TOR_CONTROL_PORT";
 const char kTorControlPasswdEnv[] = "TOR_CONTROL_PASSWD";
 const char kTorControlCookieAuthFileEnv[] = "TOR_CONTROL_COOKIE_AUTH_FILE";
+
+const base::FilePath::StringType kTorDataDirname = FILE_PATH_LITERAL("TorData");
 
 std::string ToHex(char value, int min_len) {
   std::string rv = base::HexEncode(&value, sizeof(value));
@@ -173,7 +177,7 @@ void ExecuteScriptInBackgroundPage(Profile* profile,
                                    const std::string& extension_id,
                                    const std::string& script) {
   extensions::ProcessManager* manager =
-      extensions::ExtensionSystem::Get(profile)->process_manager();
+      extensions::ProcessManager::Get(profile);
   extensions::ExtensionHost* host =
       manager->GetBackgroundHostForExtension(extension_id);
   if (host == NULL) {
@@ -183,7 +187,7 @@ void ExecuteScriptInBackgroundPage(Profile* profile,
   //std::string script2 =
   //    "window.domAutomationController.setAutomationId(0);" + script;
   host->render_view_host()->GetMainFrame()->
-      ExecuteJavaScriptForTests(base::UTF8ToUTF16(script));
+      ExecuteJavaScript(base::UTF8ToUTF16(script));
 }
 
 }
@@ -191,60 +195,143 @@ void ExecuteScriptInBackgroundPage(Profile* profile,
 namespace torlauncher {
 
 //static
+bool TorLauncherService::CopyTorDataToProfileDirIfNeeded(Profile* profile) {
+  DCHECK(profile);
+
+  base::ThreadRestrictions::ScopedAllowIO allow_io;
+
+  base::FilePath profile_path = profile->GetPath();
+  base::FilePath tor_data_dir =
+      profile_path.Append(kTorDataDirname);
+  base::FilePath original_tor_data_dir;
+  if (!PathService::Get(chrome::DIR_TOR_BROWSER_COMPONENTS,
+                        &original_tor_data_dir))
+    return false;
+  original_tor_data_dir =
+      original_tor_data_dir.Append(FILE_PATH_LITERAL("Data"));
+  original_tor_data_dir =
+      original_tor_data_dir.Append(FILE_PATH_LITERAL("Tor"));
+
+  if (!base::DirectoryExists(tor_data_dir))
+    return base::CopyDirectory(original_tor_data_dir, tor_data_dir, true);
+
+  // Create empty 'torrc' file if not exists
+  base::FilePath torrc_path = tor_data_dir.Append(FILE_PATH_LITERAL("torrc"));
+  if (!base::PathExists(torrc_path)) {
+    std::fstream fs;
+    std::string fpath;
+#if defined(OS_WIN)
+    fpath = base::WideToUTF8(torrc_path.value());
+#elif defined(OS_MACOSX)
+    fpath = torrc_path.value();
+#endif
+    fs.open(fpath.c_str(), std::ios::out);
+    fs.close();
+  }
+
+  const base::FilePath::StringType files_to_check[] = {
+    FILE_PATH_LITERAL("torrc-defaults"),
+    FILE_PATH_LITERAL("geoip"),
+    FILE_PATH_LITERAL("geoip6")
+  };
+
+  for (int fname_index = 0;
+       static_cast<size_t>(fname_index) <
+          sizeof(files_to_check)/sizeof(files_to_check[0]);
+       ++fname_index) {
+    base::FilePath src_path =
+        original_tor_data_dir.Append(files_to_check[fname_index]);
+    base::FilePath dst_path =
+        tor_data_dir.Append(files_to_check[fname_index]);
+
+    // This should not happen
+    if (!base::PathExists(src_path))
+      return false;
+
+    // Just copy over if does not exist
+    if (!base::PathExists(dst_path)) {
+      if (!base::CopyFile(src_path, dst_path))
+        return false;
+      continue;
+    }
+
+    base::File src_file(src_path,
+                        base::File::FLAG_OPEN | base::File::FLAG_READ);
+    base::File dst_file(dst_path,
+                        base::File::FLAG_OPEN | base::File::FLAG_READ);
+
+    // Do not compare contents from the beginning, just do the file size check
+    if (src_file.GetLength() != dst_file.GetLength()) {
+      src_file.Close();
+      dst_file.Close();
+      if (!base::CopyFile(src_path, dst_path))
+        return false;
+      continue;
+    }
+
+    // In case file sizes are equal, do restricted (by buf size) contents check
+    const int kBufferSize = 4096;
+    scoped_ptr<char[]> src_buf(new char[kBufferSize]);
+    scoped_ptr<char[]> dst_buf(new char[kBufferSize]);
+    int src_size = src_file.Read(0, src_buf.get(), kBufferSize);
+    int dst_size = dst_file.Read(0, dst_buf.get(), kBufferSize);
+    if (src_size != dst_size ||
+        std::memcmp(src_buf.get(), dst_buf.get(),
+                    std::min(src_size, dst_size)) != 0) {
+      src_file.Close();
+      dst_file.Close();
+      if (!base::CopyFile(src_path, dst_path))
+        return false;
+      continue;
+    }
+  }
+
+  return true;
+}
+
+//static
 void TorLauncherService::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
-  registry->RegisterIntegerPref(pref_names::kLogLevel, kLogLevelDefault,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(pref_names::kLogMethod, kLogMethodDefault,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(pref_names::kLogLevel, kLogLevelDefault);
+  registry->RegisterIntegerPref(pref_names::kLogMethod, kLogMethodDefault);
   registry->RegisterIntegerPref(pref_names::kMaxTorLogEntries,
-      kMaxTorLogEntriesDefault,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+      kMaxTorLogEntriesDefault);
 
   registry->RegisterStringPref(pref_names::kControlHost,
-      std::string(kControlHostDefault),
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(pref_names::kControlPort, kControlPortDefault,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+                               std::string(kControlHostDefault));
+  registry->RegisterIntegerPref(pref_names::kControlPort, kControlPortDefault);
 
-  registry->RegisterBooleanPref(pref_names::kStartTor, kStartTorDefault,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(pref_names::kStartTor, kStartTorDefault);
   registry->RegisterBooleanPref(pref_names::kPromptAtStartup,
-      kPromptAtStartupDefault,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+                                kPromptAtStartupDefault);
   registry->RegisterBooleanPref(pref_names::kOnlyConfigureTor,
-      kOnlyConfigureTorDefault,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+                                kOnlyConfigureTorDefault);
 
   registry->RegisterStringPref(pref_names::kTorPath,
-      std::string(kTorPathDefault),
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+                               std::string(kTorPathDefault));
   registry->RegisterStringPref(pref_names::kTorrcPath,
-      std::string(kTorrcPathDefault),
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+                               std::string(kTorrcPathDefault));
   registry->RegisterStringPref(pref_names::kTorDataDirPath,
-      std::string(kTorDataDirPathDefault),
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+                               std::string(kTorDataDirPathDefault));
 
-  registry->RegisterStringPref(pref_names::kDefaultBridgeType, std::string(),
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(pref_names::kDefaultBridgeType, std::string());
   registry->RegisterStringPref(pref_names::kDefaultBridgeRecommendedType,
-      std::string(),
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+                               std::string());
   registry->RegisterStringPref(pref_names::kDefaultBridge,
-      std::string(),
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+                               std::string());
 }
 
 TorLauncherService::TorLauncherService(Profile *profile)
   : profile_(profile),
-    tor_file_base_dir_(""),
+    //tor_file_base_dir_(""),
     tor_process_status_(UNKNOWN),
     tor_process_(nullptr),
     control_host_(""),
     control_port_(0),
     control_passwd_(""),
-    tor_circuits_established_(false) {
+    control_connection_opened_(false),
+    tor_circuits_established_(false),
+    waiting_for_tor_to_start_(true) {
   DCHECK(profile);
   DLOG(INFO) << "TorLauncherService::TorLauncherService(0x" <<
       base::HexEncode(static_cast<void*>(&profile), sizeof(profile)) << ")";
@@ -314,7 +401,7 @@ std::string TorLauncherService::TorGetPassword(bool please_hash,
 TorLauncherService::TorStatus TorLauncherService::GetTorProcessStatus() {
   if (tor_process_status_ == RUNNING && tor_process_.get()) {
     base::TerminationStatus status =
-        base::GetTerminationStatus(tor_process_->handle(), nullptr);
+        base::GetTerminationStatus(tor_process_->Handle(), nullptr);
     if (status != base::TERMINATION_STATUS_STILL_RUNNING)
       tor_process_status_ = EXITED;
   }
@@ -327,11 +414,22 @@ bool TorLauncherService::StartTor(bool disable_network,
   tor_process_status_ = UNKNOWN;
 
   std::string msg;
+  std::string first_msg;
   base::FilePath exe_file = GetTorFile(TOR, &msg);
+  if (!msg.empty())
+    first_msg = msg;
   base::FilePath torrc_file = GetTorFile(TORRC, &msg);
+  if (!msg.empty() && first_msg.empty())
+    first_msg = msg;
   base::FilePath torrc_defaults_file = GetTorFile(TORRC_DEFAULTS, &msg);
+  if (!msg.empty() && first_msg.empty())
+    first_msg = msg;
   base::FilePath data_dir = GetTorFile(TOR_DATA_DIR, &msg);
+  if (!msg.empty() && first_msg.empty())
+    first_msg = msg;
   std::string hashed_password = TorGetPassword(true, &msg);
+  if (!msg.empty() && first_msg.empty())
+    first_msg = msg;
 
   std::string details_key;
   if (exe_file.empty())
@@ -342,6 +440,8 @@ bool TorLauncherService::StartTor(bool disable_network,
     details_key = "datadir_missing";
   else if (hashed_password.empty())
     details_key = "password_hash_missing";
+
+  DLOG(INFO) << details_key << ": " << first_msg;
 
   // TODO: make an alert showing with this error message "Unable to start tor"
   if (!details_key.empty()) {
@@ -375,7 +475,7 @@ bool TorLauncherService::StartTor(bool disable_network,
   cmd_line.push_back("HashedControlPassword");
   cmd_line.push_back(hashed_password);
 
-  base::ProcessId pid = base::Process::Current().pid();
+  base::ProcessId pid = base::Process::Current().Pid();
   std::ostringstream oss("");
   oss << pid;
   cmd_line.push_back("__OwningControllerProcess");
@@ -416,10 +516,12 @@ bool TorLauncherService::StartTor(bool disable_network,
   if (error_desc)
     error_desc->log_message = "Starting " + cl;
 
-  base::ProcessHandle ph;
-  if (base::LaunchProcess(cmd_line, base::LaunchOptions(), &ph)) {
-    tor_process_ = make_scoped_ptr(new base::Process(ph));
+  base::Process process = base::LaunchProcess(cmd_line, base::LaunchOptions());
+  if (process.IsValid()) {
+    tor_process_ = make_scoped_ptr(new base::Process(process.Handle()));
     tor_process_start_time_ = base::Time::Now();
+    control_connection_opened_ = false;
+    tor_circuits_established_ = false;
   } else {
     tor_process_status_ = EXITED;
     // TODO: show alert in javascript code
@@ -435,10 +537,13 @@ bool TorLauncherService::StartTor(bool disable_network,
 } // StartTor()
 
 void TorLauncherService::ShutdownTor() {
+  control_connection_opened_ = false;
+  tor_circuits_established_ = false;
+
   if (tor_process_.get()) {
-    if (base::GetTerminationStatus(tor_process_->handle(), nullptr) ==
+    if (base::GetTerminationStatus(tor_process_->Handle(), nullptr) ==
         base::TERMINATION_STATUS_STILL_RUNNING)
-      tor_process_->Terminate(0);
+      tor_process_->Terminate(0, true);
     tor_process_->Close();
     tor_process_.reset();
   }
@@ -478,18 +583,18 @@ base::FilePath TorLauncherService::GetTorFile(
 #endif
         break;
       case TORRC_DEFAULTS:
-        path = base::FilePath(FILE_PATH_LITERAL("Data"));
-        path = path.Append(FILE_PATH_LITERAL("Tor"));
+        path = base::FilePath(kTorDataDirname);
+        //path = path.Append(FILE_PATH_LITERAL("Tor"));
         path = path.Append(FILE_PATH_LITERAL("torrc-defaults"));
         break;
       case TORRC:
-        path = base::FilePath(FILE_PATH_LITERAL("Data"));
-        path = path.Append(FILE_PATH_LITERAL("Tor"));
+        path = base::FilePath(kTorDataDirname);
+        //path = path.Append(FILE_PATH_LITERAL("Tor"));
         path = path.Append(FILE_PATH_LITERAL("torrc"));
         break;
       case TOR_DATA_DIR:
-        path = base::FilePath(FILE_PATH_LITERAL("Data"));
-        path = path.Append(FILE_PATH_LITERAL("Tor"));
+        path = base::FilePath(kTorDataDirname);
+        //path = path.Append(FILE_PATH_LITERAL("Tor"));
         break;
       default:
         NOTREACHED();
@@ -505,17 +610,22 @@ base::FilePath TorLauncherService::GetTorFile(
 
   if (is_relative_path) {
     // Turn into an absolute path
-    if (tor_file_base_dir_.empty()) {
-      if (!PathService::Get(chrome::DIR_TOR_BROWSER_COMPONENTS, &tor_file_base_dir_)) {
-        if (error_message)
-          *error_message =
-              l10n_util::GetStringFUTF8(
-                  IDS_TORLAUNCHER_ERR_FAILED_TO_FIND_REQUIRED_PATH,
-                  base::UTF8ToUTF16(MapTorFileTypeToString(tor_file_type)));
-        return base::FilePath();
-      }
+    base::FilePath tor_file_base_dir;
+    if (tor_file_type != TOR)
+      tor_file_base_dir = profile_->GetPath();
+    else
+      PathService::Get(chrome::DIR_TOR_BROWSER_COMPONENTS,
+                       &tor_file_base_dir);
+    if (tor_file_base_dir.empty()) {
+      if (error_message)
+        *error_message =
+            l10n_util::GetStringFUTF8(
+                IDS_TORLAUNCHER_ERR_FAILED_TO_FIND_REQUIRED_PATH,
+                base::UTF8ToUTF16(MapTorFileTypeToString(tor_file_type)));
+      return base::FilePath();
     }
-    path = tor_file_base_dir_.Append(path);
+
+    path = tor_file_base_dir.Append(path);
   }
 
   base::ThreadRestrictions::ScopedAllowIO allow_io;
@@ -638,7 +748,19 @@ void TorLauncherService::Observe(
   }
 }
 
+void TorLauncherService::SetupTorCircuits() {
+  if (control_connection_opened_) {
+    waiting_for_tor_to_start_ = true;
+    DLOG(INFO) << "Executing: launchControlTorPhaseTwo() ...";
+    ExecuteScriptInBackgroundPage(
+        profile_,
+        extension_misc::kTorLauncherAppId,
+        "torlauncher.torProcessService.launchControlTorPhaseTwo();");
+  }
+}
+
 void TorLauncherService::SetTorOpenControlConnectionSuccess() {
+  control_connection_opened_ = true;
   base::CommandLine *command_line = base::CommandLine::ForCurrentProcess();
 
   if (command_line->HasSwitch(switches::kLaunchTorBrowser)) {
@@ -649,11 +771,7 @@ void TorLauncherService::SetTorOpenControlConnectionSuccess() {
           ui::PAGE_TRANSITION_LINK);
       chrome::Navigate(&params);
     } else {
-      DLOG(INFO) << "Executing: launchControlTorPhaseTwo() ...";
-      ExecuteScriptInBackgroundPage(
-          profile_,
-          extension_misc::kTorLauncherAppId,
-          "torlauncher.torProcessService.launchControlTorPhaseTwo();");
+      SetupTorCircuits();
     }
   }
 }
@@ -662,6 +780,7 @@ void TorLauncherService::SetTorCircuitsEstablished(bool established) {
   DCHECK_EQ(tor_process_status_, RUNNING);
   tor_circuits_established_ = established;
   if (established) {
+      waiting_for_tor_to_start_ = false;
       chrome::NavigateParams params(
           profile_->GetOffTheRecordProfile(),
           GURL("https://check.torproject.org/?lang=en_US"),

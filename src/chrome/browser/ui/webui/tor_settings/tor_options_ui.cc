@@ -36,6 +36,7 @@
 #include "base/values.h"
 #include "chrome/browser/browser_about_handler.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/metrics_handler.h"
 #include "chrome/browser/ui/webui/options/help_overlay_handler.h"
@@ -55,8 +56,8 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_ui.h"
-#include "grit/tor_options_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/tor_options_resources.h"
 #include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -88,17 +89,17 @@ class OptionsUIHTMLSource : public content::URLDataSource {
   explicit OptionsUIHTMLSource(base::DictionaryValue* localized_strings);
 
   // content::URLDataSource implementation.
-  virtual std::string GetSource() const OVERRIDE;
-  virtual void StartDataRequest(
+  std::string GetSource() const override;
+  void StartDataRequest(
       const std::string& path,
       int render_process_id,
       int render_frame_id,
-      const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
-  virtual std::string GetMimeType(const std::string&) const OVERRIDE;
-  virtual bool ShouldDenyXFrameOptions() const OVERRIDE;
+      const content::URLDataSource::GotDataCallback& callback) override;
+  std::string GetMimeType(const std::string&) const override;
+  bool ShouldDenyXFrameOptions() const override;
 
  private:
-  virtual ~OptionsUIHTMLSource();
+  ~OptionsUIHTMLSource() override;
 
   // Localized strings collection.
   scoped_ptr<base::DictionaryValue> localized_strings_;
@@ -122,11 +123,11 @@ void OptionsUIHTMLSource::StartDataRequest(
     int render_frame_id,
     const content::URLDataSource::GotDataCallback& callback) {
   scoped_refptr<base::RefCountedMemory> response_bytes;
-  webui::SetFontAndTextDirection(localized_strings_.get());
+  const std::string& app_locale = g_browser_process->GetApplicationLocale();
+  webui::SetLoadTimeDataDefaults(app_locale, localized_strings_.get());
 
   if (path == kLocalizedStringsFile) {
     // Return dynamically-generated strings from memory.
-    webui::UseVersion2 version;
     std::string strings_js;
     webui::AppendJsonJS(localized_strings_.get(), &strings_js);
     response_bytes = base::RefCountedString::TakeString(&strings_js);
@@ -219,6 +220,9 @@ OptionsUI::OptionsUI(content::WebUI* web_ui)
 
   web_ui->AddMessageHandler(new MetricsHandler());
 
+  // Enable extension API calls in the WebUI.
+  extensions::TabHelper::CreateForWebContents(web_ui->GetWebContents());
+
   // |localized_strings| ownership is taken over by this constructor.
   OptionsUIHTMLSource* html_source =
       new OptionsUIHTMLSource(localized_strings);
@@ -277,16 +281,13 @@ base::RefCountedMemory* OptionsUI::GetFaviconResourceBytes(
 void OptionsUI::RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterBooleanPref(
       prefs::kTorSettingsShowProxySection,
-      false,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+      false);
   registry->RegisterBooleanPref(
       prefs::kTorSettingsShowFirewallSection,
-      false,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+      false);
   registry->RegisterBooleanPref(
       prefs::kTorSettingsShowISPBlockSection,
-      false,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+      false);
 }
 
 void OptionsUI::DidStartProvisionalLoadForFrame(

@@ -15927,6 +15927,9 @@ After you create a new supervised user, you can manage their settings at any tim
     <message name="IDS_TOR_SETTINGS_USEBRIDGES_PLACEHOLDER" desc="">
       type address:port
     </message>
+    <message name="IDS_TOR_SETTINGS_SAVE_SETTINGS" desc="">
+      Save Settings
+    </message>
     </messages>
   </release>
 </grit>

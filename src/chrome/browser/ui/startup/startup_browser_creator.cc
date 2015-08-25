@@ -44,6 +44,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/torlauncher/torlauncher_service_factory.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_dialogs.h"
@@ -63,6 +64,7 @@
 #include "components/google/core/browser/google_util.h"
 #include "components/search_engines/util.h"
 #include "components/signin/core/common/profile_management_switches.h"
+#include "components/torlauncher/torlauncher_service.h"
 #include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
@@ -299,11 +301,34 @@ bool StartupBrowserCreator::LaunchBrowser(
   // Continue with the incognito profile from here on if Incognito mode
   // is forced.
   if (IncognitoModePrefs::ShouldLaunchIncognito(command_line,
-                                                profile->GetPrefs())) {
+                                                profile->GetPrefs()) ||
+      command_line.HasSwitch(switches::kLaunchTorBrowser)) {
     profile = profile->GetOffTheRecordProfile();
   } else if (command_line.HasSwitch(switches::kIncognito)) {
     LOG(WARNING) << "Incognito mode disabled by policy, launching a normal "
                  << "browser session.";
+  }
+
+  if (command_line.HasSwitch(switches::kLaunchTorBrowser)) {
+    // If this is a fresh Protected Mode instance launch - setup the Tor Data
+    // directory structure, in case any changes were made during update, or
+    // just fill it up on first profile dir creation
+    if (process_startup == chrome::startup::IS_PROCESS_STARTUP) {
+      if (!torlauncher::TorLauncherService::CopyTorDataToProfileDirIfNeeded(
+            profile->GetOriginalProfile()))
+        LOG(WARNING) << "Tor Data files copy error.";
+    } else {
+      // Launch Tor Phase 2 if not already in it
+      torlauncher::TorLauncherService *tl_service =
+          torlauncher::TorLauncherServiceFactory::GetForProfile(
+              profile->GetOriginalProfile());
+      if (!tl_service->tor_circuits_established()) {
+        tl_service->SetupTorCircuits();
+        in_synchronous_profile_launch_ = false;
+        profile_launch_observer.Get().AddLaunched(profile);
+        return true;
+      }
+    }
   }
 
   // Note: This check should have been done in ProcessCmdLineImpl()
@@ -331,7 +356,7 @@ bool StartupBrowserCreator::LaunchBrowser(
     Browser *browser =
         chrome::FindTabbedBrowser(profile, false, host_desktop_type);
     if (!in_synchronous_profile_launch_ &&
-        base::command_line.HasSwitch(switches::kLaunchTorBrowser) && browser) {
+        command_line.HasSwitch(switches::kLaunchTorBrowser) && browser) {
       browser->window()->Activate();
       in_synchronous_profile_launch_ = false;
     } else {
@@ -514,11 +539,12 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
     if (command_line.HasSwitch(switches::kDisablePromptOnRepost))
       content::NavigationController::DisablePromptOnRepost();
 
-    if (command_line.HasSwitch(switches::kLaunchTorBrowser) &&
-        !command_line.HasSwitch(switches::kAppId)) // &&
-        // !command_line.HasSwitch(switches::kOpenTorSettingsPage))
-      const_cast<CommandLine&>(command_line).AppendSwitchASCII(
-          switches::kAppId, extension_misc::kTorLauncherAppId);
+    if (command_line.HasSwitch(switches::kLaunchTorBrowser)) {
+      if (!command_line.HasSwitch(switches::kAppId))
+        const_cast<base::CommandLine&>(command_line).AppendSwitchASCII(
+            switches::kAppId, extension_misc::kTorLauncherAppId);
+    }
+
   }
 
   bool silent_launch = false;

@@ -20,6 +20,8 @@ extern const char kProxyConfigRules[];
 extern const char kProxyConfigRuleHost[];
 extern const char kProxyConfigRulePort[];
 extern const char kProxyConfigRuleScheme[];
+extern const char kProxyConfigRuleUsername[];
+extern const char kProxyConfigRulePassword[];
 extern const char kProxyConfigBypassList[];
 
 extern const char kProxyEventFatal[];

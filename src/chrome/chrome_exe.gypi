@@ -330,7 +330,7 @@
               ],
             },
             {
-              'destination': '<(PRODUCT_DIR)/<(mac_product_name).app/TorBrowser',
+              'destination': '<(PRODUCT_DIR)/<(mac_product_name).app/Contents/TorBrowser',
               'files': [
                 '<(PRODUCT_DIR)/torlauncher/Data',
                 '<(PRODUCT_DIR)/torlauncher/Tor',

@@ -117,6 +117,15 @@ cr.define('options', function() {
       //   });
       // }
 
+      $('bridgesRadioYes').addEventListener('click',
+          this.onBridgeTypeRadioChange_.bind(this), false);
+      $('bridgeRadioCustom').addEventListener('click',
+          this.onBridgeTypeRadioChange_.bind(this), false);
+
+      //$('cancelBtn').addEventListener('click',
+      //    function () { window.close(); /*chrome.send('CancelTorSettingsChange');*/ }, false);
+      $('saveSettingsBtn').addEventListener('click',
+          this.saveSettings_.bind(this), false);
       Preferences.getInstance().addEventListener(
           'torlauncher.settings.show_proxy_section',
           this.onShowProxySectionChanged_.bind(this));
@@ -388,157 +397,179 @@ cr.define('options', function() {
         }
       }
 
-      // // Firewall block initialization
-      // var firewallSettings = settingsObj.firewallSettings;
-      // if (firewallSettings.hasOwnProperty('haveFirewall')) {
-      //   Preferences.getInstance().setBooleanPref(
-      //       'torlauncher.settings.show_firewall_section',
-      //       firewallSettings.haveFirewall,
-      //       true);
-      //   if (firewallSettings.hasOwnProperty('allowedPorts'))
-      //     $('tor-allowed-ports').value = firewallSettings.allowedPorts;
-      // }
+      // Firewall block initialization
+      var firewallSettings = settingsObj.firewallSettings;
+      if (firewallSettings.hasOwnProperty('haveFirewall')) {
+        Preferences.setBooleanPref(
+            'torlauncher.settings.show_firewall_section',
+            firewallSettings.haveFirewall,
+            true);
+        if (firewallSettings.hasOwnProperty('allowedPorts'))
+          $('tor-allowed-ports').value = firewallSettings.allowedPorts;
+      }
 
-      // // Bridge block initialization
-      // var bridgeSettings = settingsObj.bridgeSettings;
-      // if (bridgeSettings.hasOwnProperty('useBridges')) {
-      //   Preferences.getInstance().setBooleanPref(
-      //       'torlauncher.settings.show_isp_block_section',
-      //       bridgeSettings.useBridges,
-      //       true);
-      //   if (bridgeSettings.hasOwnProperty('canUseDefaultBridges') &&
-      //       !bridgeSettings.canUseDefaultBridges) {
-      //     this.enableElemWithLabel_('defaultBridgeType', false);
-      //   } else {
-      //     if (bridgeSettings.hasOwnProperty('useDefault')) {
-      //       $('bridgesRadioYes').checked = bridgeSettings.useDefault;
-      //       $('bridgeRadioCustom').checked = !bridgeSettings.useDefault;
-      //       if (bridgeSettings.useDefault &&
-      //           bridgeSettings.hasOwnProperty('defaultType')&&
-      //           bridgeSettings.hasOwnProperty('typeList')) {
+      // Bridge block initialization
+      var bridgeSettings = settingsObj.bridgeSettings;
+      if (bridgeSettings.hasOwnProperty('useBridges')) {
+        Preferences.setBooleanPref(
+            'torlauncher.settings.show_isp_block_section',
+            bridgeSettings.useBridges,
+            true);
+        this.initDefaultBridgeTypeMenu_(bridgeSettings);
+        if (bridgeSettings.hasOwnProperty('canUseDefaultBridges') &&
+            !bridgeSettings.canUseDefaultBridges) {
+          this.enableElemWithLabel_('defaultBridgeType', false);
 
-      //       } else {
-      //         if (bridgeSettings.hasOwnProperty('bridgeList')) {
-      //           for (var i = 0; i < bridgeSettings.bridgeList.length)
-      //             $('bridgeList').value +=
-      //                 ((i != 0) ? '\n' : '') + bridgeSettings.bridgeList[i];
-      //         }
-      //       }
-      //     }
-      //   }
-      // }
+          var label = document.getElementById("bridgeSettingsPrompt");
+          if (label)
+            label.setAttribute("hidden", true);
+
+          var radioGroup = document.getElementById("bridgeTypeRadioGroup");
+          if (radioGroup)
+            radioGroup.setAttribute("hidden", true);
+
+          var radioGroup2 = document.getElementById("bridgeTypeRadioGroup2");
+          if (radioGroup2)
+            radioGroup2.setAttribute("hidden", true);
+        }
+
+        var radioID = ((bridgeSettings.useDefault) ?
+            "bridgesRadioYes" : "bridgeRadioCustom");
+        var radio = document.getElementById(radioID);
+        if (radio)
+          radio.checked = true;
+        this.onBridgeTypeRadioChange_();
+      }
+
+      if (bridgeSettings.useBridges) {
+        if (bridgeSettings.useDefault) {
+          if (bridgeSettings.hasOwnProperty('defaultType'))
+            $('defaultBridgeType').value = bridgeSettings.defaultType;
+        } else {
+          if (bridgeSettings.hasOwnProperty('bridgeList')) {
+            for (var i = 0; i < bridgeSettings.bridgeList.length; ++i) {
+                $('bridgeList').value +=
+                   ((i != 0) ? '\n' : '') + bridgeSettings.bridgeList[i];
+            }
+          }
+        }
+      }
 
       console.log('} // initializePageUIWithData');
       return null;
     },
 
-  // Enables / disables aID as well as optional aID+"Label" element.
-  enableElemWithLabel_: function(aID, aEnable)
-  {
-    if (!aID)
-      return;
+    initDefaultBridgeTypeMenu_: function (bridgeSettings) {
+      var menu = document.getElementById("defaultBridgeType");
+      if (!menu)
+        return;
 
-    var elem = document.getElementById(aID);
-    if (elem) {
-      var label = document.getElementById(aID + "Label");
-      if (aEnable) {
-        if (label)
-          label.removeAttribute("disabled");
+      menu.options.length = 0;
 
-        elem.removeAttribute("disabled");
+      var typeArray = bridgeSettings.typeList;
+      if (!typeArray || typeArray.length === 0)
+        return;
+
+      var recommendedType = bridgeSettings.recommendedType;
+      var selectedType = bridgeSettings.defaultType;
+      if (!selectedType)
+        selectedType = recommendedType;
+
+      for (var i = 0; i < typeArray.length; i++) {
+        var bridgeType = typeArray[i];
+
+        var menuItemLabel = bridgeType;
+        if (bridgeType == recommendedType) {
+          menuItemLabel +=
+              " " + bridgeSettings.recommendedBridgeMenuItemLabelSuffix;
+        }
+
+        var option = document.createElement('option');
+        option.value = bridgeType;
+        if (bridgeType == selectedType)
+          option.selected = true;
+        option.text = menuItemLabel;
+        menu.add(option);
       }
-      else {
-        if (label)
-          label.setAttribute("disabled", true);
+    },
 
-        elem.setAttribute("disabled", true);
+    onCustomBridgesTextInput_: function () {
+      $('bridgeRadioCustom').checked = true;
+      this.onBridgeTypeRadioChange_();
+    },
+
+    onBridgeTypeRadioChange_: function () {
+      var useCustom = $('bridgeRadioCustom').hasAttribute('checked');
+      this.enableElemWithLabel_('defaultBridgeType', !useCustom);
+      this.enableElemWithLabel_('bridgeListLabel', useCustom);
+      var focusElemID = ((useCustom) ? 'bridgeList' : 'defaultBridgeType');
+      var elem = $(focusElemID);
+      if (elem)
+        elem.focus();
+    },
+
+    // Enables / disables aID as well as optional aID+"Label" element.
+    enableElemWithLabel_: function(aID, aEnable)
+    {
+      if (!aID)
+        return;
+
+      var elem = document.getElementById(aID);
+      if (elem) {
+        var label = document.getElementById(aID + "Label");
+        if (aEnable) {
+          if (label)
+            label.removeAttribute("disabled");
+
+          elem.removeAttribute("disabled");
+        }
+        else {
+          if (label)
+            label.setAttribute("disabled", true);
+
+          elem.setAttribute("disabled", true);
+        }
       }
-    }
-  },
-    // /**
-    //  * Adds hidden warning boxes for settings potentially controlled by
-    //  * extensions.
-    //  * @param {string} parentDiv The div name to append the bubble to.
-    //  * @param {string} bubbleId The ID to use for the bubble.
-    //  * @param {boolean} first Add as first node if true, otherwise last.
-    //  * @private
-    //  */
-    // addExtensionControlledBox_: function(parentDiv, bubbleId, first) {
-    //   var bubble = $('extension-controlled-warning-template').cloneNode(true);
-    //   bubble.id = bubbleId;
-    //   var parent = $(parentDiv);
-    //   if (first)
-    //     parent.insertBefore(bubble, parent.firstChild);
-    //   else
-    //     parent.appendChild(bubble);
-    // },
+    },
 
-    // /**
-    //  * Adds a bubble showing that an extension is controlling a particular
-    //  * setting.
-    //  * @param {string} parentDiv The div name to append the bubble to.
-    //  * @param {string} bubbleId The ID to use for the bubble.
-    //  * @param {string} extensionId The ID of the controlling extension.
-    //  * @param {string} extensionName The name of the controlling extension.
-    //  * @private
-    //  */
-    // toggleExtensionControlledBox_: function(
-    //     parentDiv, bubbleId, extensionId, extensionName) {
-    //   var bubble = $(bubbleId);
-    //   assert(bubble);
-    //   bubble.hidden = extensionId.length == 0;
-    //   if (bubble.hidden)
-    //     return;
+    saveSettings_: function () {
+      var settings = {};
+      settings.proxySettings = null;
+      settings.firewallSettings = null;
+      settings.bridgeSettings = null;
 
-    //   // Set the extension image.
-    //   var div = bubble.firstElementChild;
-    //   div.style.backgroundImage =
-    //       'url(chrome://extension-icon/' + extensionId + '/24/1)';
+      if (!$('tor-proxy-settings-section').hidden) {
+        settings.proxySettings = {};
+        var s = $('tor-proxy-type');
+        settings.proxySettings.haveProxy = (s.options[s.selectedIndex].value) ? true : false;
+        settings.proxySettings.proxyType = s.options[s.selectedIndex].value;
+        settings.proxySettings.proxyAddr = $('tor-proxy-addr').value;
+        settings.proxySettings.proxyPort = $('tor-proxy-port').value;
+        settings.proxySettings.proxyUsername = $('tor-proxy-username').value;
+        settings.proxySettings.proxyPassword = $('tor-proxy-password').value;
+      }
 
-    //   // Set the bubble label.
-    //   var label = loadTimeData.getStringF('extensionControlled', extensionName);
-    //   var docFrag = parseHtmlSubset('<div>' + label + '</div>', ['B', 'DIV']);
-    //   div.innerHTML = docFrag.firstChild.innerHTML;
+      if (!$('tor-firewall-settings-section').hidden) {
+        settings.firewallSettings = {};
+        settings.firewallSettings.firewallAllowedPorts =
+            $('tor-allowed-ports').value;
+      }
 
-    //   // Wire up the button to disable the right extension.
-    //   var button = div.nextElementSibling;
-    //   button.dataset.extensionId = extensionId;
-    // },
+      if (!$('tor-isp-block-settings-section').hidden) {
+        settings.bridgeSettings = {};
+        settings.bridgeSettings.useBridges = $('bridgesRadioYes').checked ||
+            $('bridgeRadioCustom').checked;
+        settings.bridgeSettings.useDefault = $('bridgesRadioYes').checked;
+        if (settings.bridgeSettings.useDefault) {
+          var ts = $('defaultBridgeType');
+          settings.bridgeSettings.defaultType = ts.options[ts.selectedIndex].value;
+        } else {
+          settings.bridgeSettings.bridgeList = $('bridgeList').value
+        }
+      }
 
-    // /**
-    //  * Toggles the warning boxes that show which extension is controlling
-    //  * various settings of Chrome.
-    //  * @param {object} details A dictionary of ID+name pairs for each of the
-    //  *     settings controlled by an extension.
-    //  * @private
-    //  */
-    // toggleExtensionIndicators_: function(details) {
-    //   this.toggleExtensionControlledBox_('search-section-content',
-    //                                      'search-engine-controlled',
-    //                                      details.searchEngine.id,
-    //                                      details.searchEngine.name);
-    //   this.toggleExtensionControlledBox_('extension-controlled-container',
-    //                                      'homepage-controlled',
-    //                                      details.homePage.id,
-    //                                      details.homePage.name);
-    //   this.toggleExtensionControlledBox_('startup-section-content',
-    //                                      'startpage-controlled',
-    //                                      details.startUpPage.id,
-    //                                      details.startUpPage.name);
-    //   this.toggleExtensionControlledBox_('newtab-section-content',
-    //                                      'newtab-controlled',
-    //                                      details.newTabPage.id,
-    //                                      details.newTabPage.name);
-    //   this.toggleExtensionControlledBox_('proxy-section-content',
-    //                                      'proxy-controlled',
-    //                                      details.proxy.id,
-    //                                      details.proxy.name);
-
-    //   // The proxy section contains just the warning box and nothing else, so
-    //   // if we're hiding the proxy warning box, we should also hide its header
-    //   // section.
-    //   $('proxy-section').hidden = details.proxy.id.length == 0;
-    // },
+      chrome.send('SaveTorSettings', [ settings ]);
+    },
 
     onShowProxySectionChanged_: function (event) {
       var container = $('tor-proxy-settings-section');
@@ -554,60 +585,23 @@ cr.define('options', function() {
       var container = $('tor-isp-block-settings-section');
       container.hidden = !event.value.value;
     },
+
+    closeSettingsWindow_: function () {
+      window.close();
+    },
+
+    displayErrorMessage_: function (message) {
+      $('error_message').innerText = message;
+    }
   };
 
-  console.log('cr.makePublic: before:');
   //Forward public APIs to private implementations.
   cr.makePublic(TorOptions, [
     'initializePageUIWithData',
-    // 'addBluetoothDevice',
-    // 'deleteCurrentProfile',
-    // 'enableCertificateButton',
-    // 'enableDisplayButton',
-    // 'enableFactoryResetSection',
-    // 'getCurrentProfile',
-    // 'getStartStopSyncButton',
-    // 'hideBluetoothSettings',
-    'notifyInitializationComplete',
-    // 'removeBluetoothDevice',
-    // 'scrollToSection',
-    // 'setAccountPictureManaged',
-    // 'setWallpaperManaged',
-    // 'setAutoOpenFileTypesDisplayed',
-    // 'setBluetoothState',
-    // 'setCanSetTime',
-    // 'setFontSize',
-    // 'setNativeThemeButtonEnabled',
-    // 'setNetworkPredictionValue',
-    // 'setHighContrastCheckboxState',
-    // 'setMetricsReportingCheckboxState',
-    // 'setMetricsReportingSettingVisibility',
-    // 'setProfilesInfo',
-    // 'setSpokenFeedbackCheckboxState',
-    // 'setThemesResetButtonEnabled',
-    // 'setVirtualKeyboardCheckboxState',
-    // 'setupPageZoomSelector',
-    // 'setupProxySettingsButton',
-    // 'showBluetoothSettings',
-    // 'showCreateProfileError',
-    // 'showCreateProfileSuccess',
-    // 'showCreateProfileWarning',
-    // 'showHotwordAlwaysOnSection',
-    // 'showHotwordSection',
-    // 'showMouseControls',
-    // 'showSupervisedUserImportError',
-    // 'showSupervisedUserImportSuccess',
-    // 'showTouchpadControls',
-    // 'toggleExtensionIndicators',
-    // 'updateAccountPicture',
-    // 'updateAutoLaunchState',
-    // 'updateDefaultBrowserState',
-    // 'updateEasyUnlock',
-    // 'updateManagesSupervisedUsers',
-    // 'updateSearchEngines',
-    // 'updateSyncState',
+    'closeSettingsWindow',
+    'displayErrorMessage',
+    'notifyInitializationComplete'
   ]);
-  console.log(':cr.makePublic: after.')
 
   // Export
   return {

@@ -23,9 +23,55 @@
 </head>
 <body>
   <ul class="menu">
-    <li><a href="#" class="menu-link" id="launch_tor_browser" hidden="true">New Protected Window</a></li>
-    <li><a href="#" class="menu-link" id="about_protected_mode">About Protected Mode...</a></li>
-    <li><a href="#" class="menu-link" id="network_settings">Network Settings...</a></li>
+    <li><a href="#" class="menu-link" id="launch_tor_browser"><img src="window_duplicate.png"><span class="menu-title">New Protected Window</span></a></li>
+    <li><a href="#" class="menu-link" id="about_protected_mode"><img src="help_about.png"><span class="menu-title">About Protected Mode...</span></a></li>
+    <li><a href="#" class="menu-link" id="network_settings"><img src="configure.png"><span class="menu-title">Network Settings...</span></a></li>
+    <li><a href="#" class="menu-link" id="change_tor_circuit"><img src="finish.png"><span class="menu-title">Change Tor Circuit</span><br/><span class="box hidden" id="change_circuit_message">Success</span></a></li>
   </ul>
+  <div class="country-selection" id="countrySelection">
+    <h3>Choose exit node country</h3>
+    <ul class="country-list">
+      <li><a href="#" class="country-link" id="CA"><img src="ca.png"><span class="country-title">Canada</span></a></li>
+      <li><a href="#" class="country-link" id="NL"><img src="ne.png"><span class="country-title">Netherlands</span></a></li>
+      <li><a href="#" class="country-link" id="JP"><img src="ja.png"><span class="country-title">Japan</span></a></li>
+      <li><a href="#" class="country-link" id="UY"><img src="ur.png"><span class="country-title">Uruguay</span></a></li>
+      <li><a href="#" class="country-link" id="ZA"><img src="sa.png"><span class="country-title">South Africa</span></a></li>
+    </ul>
+  </div>
+  <!-- <div id="not_protected_message">
+    This browser window <strong>is not Protected</strong>
+  </div>
+  <div id="tor_circuit" class="tor-circuit-display" hidden>
+    <h3>Tor circuit for this site:</h3>
+    <div class="circuit-info">
+      <p class="current-domain">(<span id="current_site_domain">google.com</span>)</p>
+      <button type="button" class="change-circuit-btn">Change Circuit</button>
+    </div>
+    <div class="network-graph-box">
+      <table class="network-graph">
+        <tr>
+          <td class="top-node-img"></td>
+          <td class="node-desc">This browser</td>
+        </tr>
+        <tr>
+          <td class="mid-node-img"></td>
+          <td class="node-desc" id="nodeDesc_1">France (192.123.56.91)</td>
+        </tr>
+        <tr>
+          <td class="mid-node-img"></td>
+          <td class="node-desc" id="nodeDesc_2">Germany (21.192.4.8)</td>
+        </tr>
+        <tr>
+
+          <td class="mid-node-img"></td>
+          <td class="node-desc" id="nodeDesc_3">Italy (194.51.37.11)</td>
+        </tr>
+        <tr>
+          <td class="bottom-node-img"></td>
+          <td class="node-desc">Internet</td>
+        </tr>
+      </table>
+    </div>
+  </div> -->
 </body>
 </html>

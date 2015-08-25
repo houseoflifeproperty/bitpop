@@ -27,11 +27,13 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
+#include "base/prefs/pref_service.h"
 #include "base/process/launch.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/prefs/proxy_config_dictionary.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/torlauncher/torlauncher_service_factory.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -40,11 +42,13 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/torlauncher.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/torlauncher/torlauncher_service.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/switches.h"
 
 #if defined(OS_MACOSX)
 #include "chrome/browser/chrome_browser_application_mac.h"
@@ -61,14 +65,18 @@ ExtensionFunction::ResponseAction TorlauncherLaunchTorBrowserFunction::Run() {
   if (params->options.get() && params->options->open_tor_settings.get())
     open_tor_settings = *params->options->open_tor_settings;
 
-  Profile* profile = Profile::FromBrowserContext(browser_context());
+  //Profile* profile = Profile::FromBrowserContext(browser_context());
 
-  if (profile->IsProtectedModeEnabled()) {
+  Browser* browser = chrome::FindLastActiveWithHostDesktopType(
+      chrome::HOST_DESKTOP_TYPE_NATIVE);
+  Profile* profile = browser->profile();
+
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          ::switches::kLaunchTorBrowser)) {
     if (open_tor_settings) {
       chrome::NavigateParams params(
-          chrome::FindLastActiveWithProfile(profile,
-                                            chrome::HOST_DESKTOP_TYPE_NATIVE),
-          GURL(chrome::kChromeUITorSettingsURL),
+          profile,
+          GURL("chrome://chrome/tor-settings/"),
           ui::PAGE_TRANSITION_LINK);
       chrome::Navigate(&params);
     } else {
@@ -83,20 +91,19 @@ ExtensionFunction::ResponseAction TorlauncherLaunchTorBrowserFunction::Run() {
     base::FilePath program_path = command_line.GetProgram();
     base::CommandLine new_command_line(program_path);
 
-    new_command_line.AppendSwitch(switches::kLaunchTorBrowser);
-    base::FilePath user_data_dir;
-    PathService::Get(chrome::DIR_TOR_USER_DATA, &user_data_dir);
-    new_command_line.AppendSwitchPath(switches::kUserDataDir, user_data_dir);
+    new_command_line.AppendSwitch(::switches::kLaunchTorBrowser);
 
     base::FilePath original_profile_dir = profile->GetPath();
-    new_command_line.AppendSwitchPath(switches::kOriginalBrowserProfileDir,
+    new_command_line.AppendSwitchPath(::switches::kOriginalBrowserProfileDir,
                                       original_profile_dir);
 
     if (open_tor_settings)
-      new_command_line.AppendSwitch(switches::kOpenTorSettingsPage);
+      new_command_line.AppendSwitch(::switches::kOpenTorSettingsPage);
 
-    base::ProcessHandle ph;
-    if (base::LaunchProcess(new_command_line, base::LaunchOptions(), &ph)) {
+    new_command_line.AppendSwitch(
+        extensions::switches::kShowComponentExtensionOptions);
+
+    if (base::LaunchProcess(new_command_line, base::LaunchOptions()).IsValid()) {
       DLOG(INFO) << "Tor browser instance launched successfully.";
     }
   }
@@ -140,11 +147,6 @@ ExtensionFunction::ResponseAction TorlauncherInitiateAppQuitFunction::Run() {
       torlauncher::TorLauncherServiceFactory::GetForProfile(profile);
   tl_service->ShutdownTor();
 
-// #if defined(OS_MACOSX)
-//   chrome_browser_application_mac::Terminate();
-// #else
-//   chrome::AttemptUserExit();
-// #endif
   chrome::CloseAllBrowsersAndQuit();
 
   results_ = make_scoped_ptr(new base::ListValue());
@@ -267,17 +269,12 @@ TorlauncherSendTorNetworkSettingsResultFunction::Run() {
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
   Profile* profile = Profile::FromBrowserContext(browser_context());
-
-  DLOG(INFO) << "CALL: SendTorNetworkSettingsResult('" <<
-      params->settings << "')";
-
   if (!params->settings.empty()) {
       base::JSONReader reader(base::JSON_ALLOW_TRAILING_COMMAS);
       base::Value *result = reader.ReadToValue(params->settings);
     if (!result)
       DLOG(ERROR) << reader.GetErrorMessage();
     else {
-      DLOG(INFO) << "After JSONReader::ReadToValue: " << *result;
       content::NotificationService::current()->Notify(
           chrome::NOTIFICATION_TOR_NETWORK_SETTINGS_READY,
           content::Source<Profile>(profile),
@@ -294,10 +291,6 @@ TorlauncherSendTorNetworkSettingsResultFunction::Run() {
 ExtensionFunction::ResponseAction
 TorlauncherNotifyTorOpenControlConnectionSuccessFunction::Run() {
   Profile* profile = Profile::FromBrowserContext(browser_context());
-  DLOG(INFO) << "CALL: notifyTorOpenControlConnectionSuccess() ," <<
-      " profile: 0x" <<
-      base::HexEncode(static_cast<void*>(&profile), sizeof(profile));
-
   content::NotificationService::current()->Notify(
       chrome::TORLAUNCHER_APP_OPEN_CONTROL_CONNECTION_SUCCESS,
       content::Source<Profile>(profile),
@@ -311,13 +304,66 @@ TorlauncherNotifyTorOpenControlConnectionSuccessFunction::Run() {
 ExtensionFunction::ResponseAction
 TorlauncherNotifyTorCircuitsEstablishedFunction::Run() {
   Profile* profile = Profile::FromBrowserContext(browser_context());
-  DLOG(INFO) << "CALL: notifyTorCircuitsEstablished() , profile: 0x" <<
-      base::HexEncode(static_cast<void*>(&profile), sizeof(profile));
-
   content::NotificationService::current()->Notify(
       chrome::TORLAUNCHER_APP_FINISHED_INITIALIZING_CIRCUITS,
       content::Source<Profile>(profile),
       content::NotificationService::NoDetails());
+
+  results_ = make_scoped_ptr(new base::ListValue());
+
+  return RespondNow(ArgumentList(results_.Pass()));
+}
+
+ExtensionFunction::ResponseAction
+TorlauncherNotifyTorSaveSettingsSuccessFunction::Run() {
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+  content::NotificationService::current()->Notify(
+      chrome::TORLAUNCHER_APP_TOR_SAVE_SETTINGS_SUCCESS,
+      content::Source<Profile>(profile),
+      content::NotificationService::NoDetails());
+
+  results_ = make_scoped_ptr(new base::ListValue());
+
+  return RespondNow(ArgumentList(results_.Pass()));
+}
+
+ExtensionFunction::ResponseAction
+TorlauncherNotifyTorSaveSettingsErrorFunction::Run() {
+  scoped_ptr<api::torlauncher::NotifyTorSaveSettingsError::Params> params(
+      api::torlauncher::NotifyTorSaveSettingsError::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+  content::NotificationService::current()->Notify(
+      chrome::TORLAUNCHER_APP_TOR_SAVE_SETTINGS_ERROR,
+      content::Source<Profile>(profile),
+      content::Details<std::string>(new std::string(params->message)));
+
+  results_ = make_scoped_ptr(new base::ListValue());
+
+  return RespondNow(ArgumentList(results_.Pass()));
+}
+
+ExtensionFunction::ResponseAction
+TorlauncherSetTorProxyFunction::Run() {
+  scoped_ptr<api::torlauncher::SetTorProxy::Params> params(
+      api::torlauncher::SetTorProxy::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          ::switches::kLaunchTorBrowser)) {
+    DLOG(INFO) << "Setting proxy server...";
+    if (!params->tor_proxy_username.empty() && !params->tor_proxy_password.empty()) {
+      base::DictionaryValue* proxy_dict =
+          ProxyConfigDictionary::CreateFixedServers(
+              "socks5://" + params->tor_proxy_username + ":" +
+                params->tor_proxy_password + "@localhost:9150",
+              "");
+      profile->GetOffTheRecordProfile()->
+          GetPrefs()->Set(prefs::kProxy, *proxy_dict);
+    }
+  }
 
   results_ = make_scoped_ptr(new base::ListValue());
 

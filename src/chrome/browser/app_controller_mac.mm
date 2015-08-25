@@ -142,7 +142,7 @@ Browser* CreateBrowser(Profile* profile) {
   }
 
   Browser* browser = chrome::GetLastActiveBrowser();
-  CHECK(browser);
+  //CHECK(browser);
   return browser;
 }
 
