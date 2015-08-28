@@ -2623,9 +2623,9 @@
         # define.
         'defines': ['CR_CLANG_REVISION=<!(python <(DEPTH)/tools/clang/scripts/update.py --print-revision)'],
       }],
-      ['enable_rlz==1', {
-        'defines': ['ENABLE_RLZ'],
-      }],
+      #['enable_rlz==1', {
+      #  'defines': ['ENABLE_RLZ'],
+      #}],
       ['component=="shared_library"', {
         'defines': ['COMPONENT_BUILD'],
       }],
