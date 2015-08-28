@@ -99,6 +99,20 @@ void ExternalComponentLoader::StartLoading() {
   }
 #endif
 
+  {
+    base::CommandLine* const command_line =
+        base::CommandLine::ForCurrentProcess();
+    if (command_line->HasSwitch(::switches::kLaunchTorBrowser)) {
+      std::string extension_id(
+          extension_misc::kHTTPSEverywhereExtensionId);
+      prefs_->SetString(extension_id + ".external_update_url",
+                        extension_urls::GetWebstoreUpdateUrl().spec());
+      extension_id = extension_misc::kScriptSafeExtensionId;
+      prefs_->SetString(extension_id + ".external_update_url",
+                        extension_urls::GetWebstoreUpdateUrl().spec());
+    }
+  }
+
   LoadFinished();
 }
 
