@@ -54,6 +54,8 @@ const char kTorLauncherAppId[] = "gedbhlplmladiedjcndlndakofpdibcb";
 #if defined(ENABLE_MEDIA_ROUTER)
 const char kMediaRouterStableExtensionId[] = "fjhoaacokmgbjemoflkofnenfaiekifl";
 #endif  // defined(ENABLE_MEDIA_ROUTER)
+const char kHTTPSEverywhereExtensionId[] = "gcbommkclmclpchllfjekcdonpmejbdp";
+const char kScriptSafeExtensionId[] = "oiigbmnaadbkfbmpbfijlflahbdbdgdf";
 
 #if defined(OS_CHROMEOS)
 // The extension id for the built-in component extension.

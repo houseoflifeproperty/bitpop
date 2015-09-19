@@ -248,6 +248,9 @@ extern const char kMediaFileSystemPathPart[];
 extern const uint8 kWebstoreSignaturesPublicKey[];
 extern const int kWebstoreSignaturesPublicKeySize;
 
+extern const char kHTTPSEverywhereExtensionId[];
+extern const char kScriptSafeExtensionId[];
+
 }  // namespace extension_misc
 
 #endif  // CHROME_COMMON_EXTENSIONS_EXTENSION_CONSTANTS_H_
