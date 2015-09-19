@@ -1,0 +1,3 @@
+[submodule "src/third_party/Sparkle"]
+	path = src/third_party/Sparkle
+	url = https://github.com/leiferikb/bitpop-sparkle.git

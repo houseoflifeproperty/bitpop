@@ -3577,8 +3577,15 @@
           'dependencies': [
             '../third_party/google_toolbox_for_mac/google_toolbox_for_mac.gyp:google_toolbox_for_mac',
             '../third_party/mozilla/mozilla.gyp:mozilla',
+            '../third_party/Sparkle/Sparkle_custom.gyp:Sparkle',
+          ],
+          'include_dirs': [
+            '<(PRODUCT_DIR)/Sparkle_versioned/Sparkle.framework/Headers',
           ],
           'link_settings': {
+            'mac_framework_dirs': [
+              '<(PRODUCT_DIR)',
+            ],
             'libraries': [
               '$(SDKROOT)/System/Library/Frameworks/Accelerate.framework',
               '$(SDKROOT)/System/Library/Frameworks/AddressBook.framework',
@@ -3589,6 +3596,7 @@
               '$(SDKROOT)/System/Library/Frameworks/OpenGL.framework',
               '$(SDKROOT)/System/Library/Frameworks/QuartzCore.framework',
               '$(SDKROOT)/System/Library/Frameworks/SecurityInterface.framework',
+              '<(PRODUCT_DIR)/Sparkle.framework',
             ],
           },
         }],

@@ -208,6 +208,12 @@
         '<(PRODUCT_DIR)/app_mode_loader.app',
       ],
     },
+    {
+      'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Frameworks',
+      'files': [
+        '<(PRODUCT_DIR)/Sparkle.framework',
+      ],
+    }
   ],
   'conditions': [
     ['branding=="Chrome"', {
