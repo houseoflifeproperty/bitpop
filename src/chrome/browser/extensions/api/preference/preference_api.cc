@@ -144,6 +144,35 @@ PrefMappingEntry kPrefMapping[] = {
      APIPermission::kAccessibilityFeaturesRead,
      APIPermission::kAccessibilityFeaturesModify},
 #endif
+     // BITPOP:
+    {"uncensorShouldRedirect", prefs::kUncensorShouldRedirect,
+     APIPermission::kBitpop, APIPermission::kBitpop
+    },
+    {"uncensorShowMessage", prefs::kUncensorShowMessage,
+     APIPermission::kBitpop, APIPermission::kBitpop
+    },
+    {"uncensorNotifyUpdates", prefs::kUncensorNotifyUpdates,
+     APIPermission::kBitpop, APIPermission::kBitpop
+    },
+    {"uncensorDomainFilter", prefs::kUncensorDomainFilter,
+     APIPermission::kBitpop, APIPermission::kBitpop
+    },
+    {"uncensorDomainExceptions", prefs::kUncensorDomainExceptions,
+     APIPermission::kBitpop, APIPermission::kBitpop
+    },
+    {"globalProxyControl", prefs::kGlobalProxyControl,
+     APIPermission::kBitpop, APIPermission::kBitpop
+    },
+    {"showMessageForActiveProxy", prefs::kShowMessageForActiveProxy,
+     APIPermission::kBitpop, APIPermission::kBitpop
+    },
+    {"ipRecognitionCountryName", prefs::kIPRecognitionCountryName,
+     APIPermission::kBitpop, APIPermission::kBitpop
+    },
+    {"blockedSitesList", prefs::kBlockedSitesList,
+     APIPermission::kBitpop, APIPermission::kBitpop
+    },
+    // />
 };
 
 class IdentityPrefTransformer : public PrefTransformerInterface {

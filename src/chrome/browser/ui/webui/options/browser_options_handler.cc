@@ -687,6 +687,12 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
                      Profile::FromWebUI(web_ui())->GetPrefs()->GetBoolean(
                          prefs::kResolveTimezoneByGeolocation));
 #endif
+
+  base::CommandLine * const command_line =
+      base::CommandLine::ForCurrentProcess();
+  values->SetBoolean("isInTorlauncherMode",
+                     command_line->HasSwitch(switches::kLaunchTorBrowser));
+
 }
 
 #if defined(ENABLE_PRINT_PREVIEW)

@@ -1732,6 +1732,8 @@
       'browser/ui/website_settings/website_settings_utils.h',
       'browser/ui/webui/bookmarks_ui.cc',
       'browser/ui/webui/bookmarks_ui.h',
+      'browser/ui/webui/censored_page_ui.cc',
+      'browser/ui/webui/censored_page_ui.h',
       'browser/ui/webui/chrome_web_contents_handler.cc',
       'browser/ui/webui/chrome_web_contents_handler.h',
       'browser/ui/webui/copresence_ui.cc',

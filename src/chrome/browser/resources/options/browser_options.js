@@ -756,6 +756,15 @@ cr.define('options', function() {
         if (button)
           chrome.send('disableExtension', [button.dataset.extensionId]);
       });
+
+      // BITPOP:
+      var isInTorlauncherMode = loadTimeData.getBoolean('isInTorlauncherMode');
+      if (isInTorlauncherMode) {
+        $('disableInTorLauncherMode1').hidden = true;
+        $('disableInTorLauncherMode2').hidden = true;
+        // Uncomment next line if compiling in google_chrome mode
+        //$('metrics-reporting-setting').hidden = true;
+      }
     },
 
     /** @override */

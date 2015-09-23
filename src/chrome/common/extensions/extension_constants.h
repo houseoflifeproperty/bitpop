@@ -16,6 +16,9 @@ namespace extension_urls {
 // Chrome. Usually you should prefer using GetWebstoreUpdateUrl.
 GURL GetDefaultWebstoreUpdateUrl();
 
+// This returns the compile-time constant update url specific to BitPop.
+GURL GetBitpopUpdateUrl();
+
 // Field to use with webstore URL for tracking launch source.
 extern const char kWebstoreSourceField[];
 
@@ -99,8 +102,14 @@ extern const char kInAppPaymentsSupportAppId[];
 extern const char kMediaRouterStableExtensionId[];
 #endif  // defined(ENABLE_MEDIA_ROUTER)
 
+// BITPOP:
 // The extension id of the Tor integration application.
 extern const char kTorLauncherAppId[];
+
+extern const char kUncensorISPExtensionId[];
+
+extern const char kUncensorFilterExtensionId[];
+// />
 
 // The buckets used for app launches.
 enum AppLaunchBucket {

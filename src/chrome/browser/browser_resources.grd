@@ -77,6 +77,9 @@
       <structure name="IDR_READER_OUT_OF_DATE_HTML" file="resources\reader_out_of_date.html" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_SECURITY_INTERSTITIAL_UI_HTML" file="resources\security_warnings\interstitial_ui.html" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_SECURITY_INTERSTITIAL_HTML" file="resources\security_warnings\interstitial_v2.html" flattenhtml="true" type="chrome_html" />
+      <!-- BITPOP: -->
+      <structure name="IDR_CENSORED_PAGE_HTML" file="resources\censored_page.html" flattenhtml="true" type="chrome_html" />
+      <!-- /> -->
     </structures>
     <includes>
       <if expr="is_win">
@@ -448,6 +451,9 @@
       <!-- Bitpop includes -->
       <include name="IDR_TORLAUNCHER_MANIFEST" file="resources\torlauncher\manifest.json" type="BINDATA" />
       <include name="IDR_TOR_HELPER_MANIFEST" file="resources\tor_helper\manifest.json" type="BINDATA" />
+      <!-- BITPOP: -->
+      <include name="IDR_CENSORED_PNG" file="resources\censored.png" type="BINDATA" />
+      <!-- /> -->
     </includes>
   </release>
 </grit>

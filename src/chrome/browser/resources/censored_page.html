@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>This page is censored in your country</title>
+  <style type="text/css">
+    html, body {
+      background-color: white;
+    }
+    section {
+      background: white;
+      color: black;
+      border: 3px solid black;
+      border-radius: 1em;
+      padding: 1em;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      margin-right: -50%;
+      transform: translate(-50%, -50%);
+    }
+    section img {
+      float: left;
+      padding: 0 7px 7px 0;
+    }
+    .yes-no-choice-block {
+      text-align: center;
+    }
+    button {
+      font-size: 1.2em;
+    }
+    .yes-no-choice-block button:first-child {
+      margin-right: 3em;
+    }
+  </style>
+</head>
+<body>
+  <section>
+    <img src="censored.png" />
+    <p>The page you requested is censored in your country.<br>
+       Would you like to use BitPop Protected Mode to visit this page anyway?
+    </p>
+    <div class="yes-no-choice-block">
+      <button type="button">Yes</button>
+      <button type="button">No</button>
+    </div>
+  </section>
+</body>
+</html>

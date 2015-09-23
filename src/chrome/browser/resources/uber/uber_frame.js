@@ -111,7 +111,12 @@ cr.define('uber_frame', function() {
 
     var selectedGroup = selectedNavItem.getAttribute('group');
     for (var i = 0; i < navItems.length; ++i) {
-      navItems[i].hidden = navItems[i].getAttribute('group') != selectedGroup;
+      if (!loadTimeData.getBoolean('isTorProtectedMode') &&
+          navItems[i].id == "tor-settings-list-item") {
+        navItems[i].hidden = true;
+      } else {
+        navItems[i].hidden = navItems[i].getAttribute('group') != selectedGroup;
+      }
     }
   }
 

@@ -76,10 +76,19 @@ const char Profile::kNoHostedDomainFound[] = "NO_HOSTED_DOMAIN";
 
 // static
 void Profile::RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
-  registry->RegisterBooleanPref(
-      prefs::kSearchSuggestEnabled,
-      true,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  base::CommandLine * const command_line =
+      base::CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kLaunchTorBrowser)) {
+    // We removed the syncing from that property to make sure it is always false.
+    registry->RegisterBooleanPref(
+        prefs::kSearchSuggestEnabled,
+        false);
+  } else {
+    registry->RegisterBooleanPref(
+        prefs::kSearchSuggestEnabled,
+        true,
+        user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  }
 #if defined(OS_ANDROID)
   registry->RegisterStringPref(
       prefs::kContextualSearchEnabled,
@@ -99,7 +108,7 @@ void Profile::RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterBooleanPref(prefs::kSSLErrorOverrideAllowed, true);
   registry->RegisterDictionaryPref(prefs::kSafeBrowsingIncidentsSent);
   registry->RegisterBooleanPref(
-      prefs::kSafeBrowsingExtendedReportingOptInAllowed, true);
+      prefs::kSafeBrowsingExtendedReportingOptInAllowed, false);
 #if defined(ENABLE_GOOGLE_NOW)
   registry->RegisterBooleanPref(prefs::kGoogleGeolocationAccessEnabled, false);
 #endif
@@ -150,6 +159,41 @@ void Profile::RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   // Preferences related to the avatar bubble and user manager tutorials.
   registry->RegisterIntegerPref(prefs::kProfileAvatarTutorialShown, 0);
 #endif
+
+  // BITPOP:
+  registry->RegisterIntegerPref(prefs::kUncensorShouldRedirect,
+                                0,
+                                user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kUncensorShowMessage,
+                                true,
+                                user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kUncensorNotifyUpdates,
+                                true,
+                                user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kUncensorDomainFilter,
+                                "{}", // JSON
+                                user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kUncensorDomainExceptions,
+                                "{}", // JSON
+                                user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterIntegerPref(prefs::kGlobalProxyControl,
+                                0,
+                                user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kShowMessageForActiveProxy,
+                                true,
+                                user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kIPRecognitionCountryName,
+                               std::string());
+  registry->RegisterStringPref(prefs::kBlockedSitesList,
+                               "[]",
+                               user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  // />
+
+// #if defined(OS_MACOSX)
+//   registry->RegisterBooleanPref(prefs::kAutomaticUpdatesEnabled,
+//                              true,
+//                              user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+// #endif
 }
 
 std::string Profile::GetDebugName() {

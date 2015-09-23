@@ -827,6 +827,18 @@ extern const char kAnimationPolicy[];
 extern const char kTorSettingsShowProxySection[];
 extern const char kTorSettingsShowFirewallSection[];
 extern const char kTorSettingsShowISPBlockSection[];
+
+extern const char kUncensorShouldRedirect[];
+extern const char kUncensorShowMessage[];
+extern const char kUncensorNotifyUpdates[];
+extern const char kUncensorDomainFilter[];
+extern const char kUncensorDomainExceptions[];
+extern const char kGlobalProxyControl[];
+extern const char kShowMessageForActiveProxy[];
+extern const char kIPRecognitionCountryName[];
+extern const char kBlockedSitesList[];
+
+extern const char kShouldNotEncrypt[];
 // />
 
 }  // namespace prefs

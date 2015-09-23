@@ -80,6 +80,7 @@ extern const char kChromeUIThumbnailListURL[];
 // BITPOP:
 extern const char kChromeUITorSettingsURL[];
 extern const char kChromeUITorSettingsFrameURL[];
+extern const char kChromeUICensoredPageURL[];
 // />
 extern const char kChromeUIUberURL[];
 extern const char kChromeUIUberFrameURL[];
@@ -233,6 +234,7 @@ extern const char kChromeUIThumbnailListHost[];
 // BITPOP:
 extern const char kChromeUITorSettingsHost[];
 extern const char kChromeUITorSettingsFrameHost[];
+extern const char kChromeUICensoredPageHost[];
 // />
 extern const char kChromeUITouchIconHost[];
 extern const char kChromeUITranslateInternalsHost[];

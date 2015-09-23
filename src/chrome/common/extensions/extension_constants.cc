@@ -17,6 +17,13 @@ GURL GetDefaultWebstoreUpdateUrl() {
   return GURL(kGalleryUpdateHttpsUrl);
 }
 
+const char kBitpopGalleryUpdateHttpsUrl[] =
+    "https://tools.bitpop.com/ext/updates.xml";
+
+GURL GetBitpopUpdateUrl() {
+  return GURL(kBitpopGalleryUpdateHttpsUrl);
+}
+
 const char kWebstoreSourceField[] = "utm_source";
 
 const char kLaunchSourceAppList[] = "chrome-app-launcher";
@@ -50,7 +57,11 @@ const char kHotwordSharedModuleId[] = "lccekmodgklaepjeofjdjpbminllajkg";
 const char kSettingsAppId[] = "ennkphjdgehloodpbhlhldgbnhmacadg";
 const char kYoutubeAppId[] = "blpcfgokakmgnkcojhhkbfbldkacnbeo";
 const char kInAppPaymentsSupportAppId[] = "nmmhkkegccagdldgiimedpiccmgmieda";
+// BITPOP:
 const char kTorLauncherAppId[] = "gedbhlplmladiedjcndlndakofpdibcb";
+const char kUncensorISPExtensionId[] = "fjfallkmojjifpfkopjoogodecehcjam";
+const char kUncensorFilterExtensionId[] = "oadgfoondcimpmclpkphkdnjhaddaehg";
+// />
 #if defined(ENABLE_MEDIA_ROUTER)
 const char kMediaRouterStableExtensionId[] = "fjhoaacokmgbjemoflkofnenfaiekifl";
 #endif  // defined(ENABLE_MEDIA_ROUTER)

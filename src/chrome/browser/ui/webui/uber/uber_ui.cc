@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/webui/uber/uber_ui.h"
 
+#include "base/command_line.h"
 #include "base/stl_util.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
 #include "chrome/browser/ui/webui/extensions/extensions_ui.h"
@@ -55,6 +56,9 @@ content::WebUIDataSource* CreateUberHTMLSource() {
   // BITPOP:
   source->AddString("torSettingsFrameURL", chrome::kChromeUITorSettingsFrameURL);
   source->AddString("torSettingsHost", chrome::kChromeUITorSettingsHost);
+  source->AddBoolean("isTorProtectedMode",
+                     base::CommandLine::ForCurrentProcess()->HasSwitch(
+                        switches::kLaunchTorBrowser));
   // />
 
   return source;
@@ -113,6 +117,9 @@ content::WebUIDataSource* CreateUberFrameHTMLSource(
   source->AddString("torSettingsHost", chrome::kChromeUITorSettingsHost);
   source->AddLocalizedString("torSettingsDisplayName", IDS_TOR_SETTINGS_TITLE);
   source->AddString("torSettingsGroup", settings_group);
+  source->AddBoolean("isTorProtectedMode",
+                   base::CommandLine::ForCurrentProcess()->HasSwitch(
+                      switches::kLaunchTorBrowser));
   // />
   bool overridesHistory =
       HasExtensionType(browser_context, chrome::kChromeUIHistoryHost);

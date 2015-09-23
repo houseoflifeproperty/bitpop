@@ -186,6 +186,7 @@ void TorOptionsHandler::InitializePage() {
 
   Profile* profile = Profile::FromWebUI(web_ui());
 
+  registrar_.RemoveAll();
   registrar_.Add(this,
                  chrome::NOTIFICATION_TOR_NETWORK_SETTINGS_READY,
                  content::Source<Profile>(profile));

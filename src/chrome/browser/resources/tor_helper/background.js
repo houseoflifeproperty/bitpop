@@ -45,8 +45,6 @@ tor_helper.resetProxyServer = function () {
 
   const kInitialUrl = 'https://check.torproject.org/?lang=en_US';
 
-  tor_helper.resetProxyServer();
-
   chrome.runtime.onMessageExternal.addListener(
       function (message, sender, sendResponse) {
     switch (message.kind) {

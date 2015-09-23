@@ -109,6 +109,10 @@
     "dependencies": ["permission:autotestPrivate"],
     "contexts": ["blessed_extension"]
   },
+  "bitpop": {
+    "dependencies": ["permission:bitpop"],
+    "contexts": ["blessed_extension"]
+  },
   "bookmarkManagerPrivate": {
     "dependencies": ["permission:bookmarkManagerPrivate"],
     "contexts": ["blessed_extension"]

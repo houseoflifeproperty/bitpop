@@ -460,6 +460,9 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
            APIPermissionInfo::kFlagInternal,
        IDS_EXTENSION_PROMPT_WARNING_START_PAGE_SETTING_OVERRIDE,
        PermissionMessage::kStartupPages},
+      // BITPOP:
+      {APIPermission::kBitpop, "bitpop"},
+      // />
   };
 
   std::vector<APIPermissionInfo*> permissions;

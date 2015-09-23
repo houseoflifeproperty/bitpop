@@ -336,7 +336,8 @@ cr.define('uber', function() {
     // Lazy load of iframe contents.
     var sourceUrl = container.dataset.url + (path || '');
     var frame = container.querySelector('iframe');
-    if (!frame) {
+    if (!frame && (loadTimeData.getBoolean('isTorProtectedMode') ||
+        container.id != "tor-settings")) {
       frame = container.ownerDocument.createElement('iframe');
       frame.name = pageId;
       frame.setAttribute('role', 'presentation');

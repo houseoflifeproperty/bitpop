@@ -82,6 +82,15 @@
       "platform_app", "extension", "legacy_packaged_app", "hosted_app"
     ]
   },
+  "bitpop": {
+    "channel": "stable",
+    "extension_types": ["extension"],
+    "location": "component",
+    "whitelist": [
+      "9E3547E66312E177080F3B7AF1C558F4CA4ADC98", // Uncensor ISP
+      "9E94D3FCE2FAD5945F7F2088616EDEDA42086E09"  // Uncensor Filter
+    ]
+  },
   "bookmarkManagerPrivate": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"],

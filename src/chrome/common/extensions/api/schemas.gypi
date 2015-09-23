@@ -16,6 +16,7 @@
       'automation.idl',
       'automation_internal.idl',
       'autotest_private.idl',
+      'bitpop.json',
       'bookmark_manager_private.json',
       'bookmarks.json',
       'braille_display_private.idl',

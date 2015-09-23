@@ -85,6 +85,7 @@ const char kChromeUIThumbnailListURL[] = "chrome://thumbnails/";
 // BITPOP:
 const char kChromeUITorSettingsURL[] = "chrome://tor-settings/";
 const char kChromeUITorSettingsFrameURL[] = "chrome://tor-settings-frame/";
+const char kChromeUICensoredPageURL[] = "chrome://censored-page/";
 // />
 const char kChromeUIUberURL[] = "chrome://chrome/";
 const char kChromeUIUberFrameURL[] = "chrome://uber-frame/";
@@ -245,6 +246,7 @@ const char kChromeUIThumbnailHost2[] = "thumb2";
 const char kChromeUIThumbnailListHost[] = "thumbnails";
 const char kChromeUITorSettingsHost[] = "tor-settings";
 const char kChromeUITorSettingsFrameHost[] = "tor-settings-frame";
+const char kChromeUICensoredPageHost[] = "censored-page";
 const char kChromeUITouchIconHost[] = "touch-icon";
 const char kChromeUITranslateInternalsHost[] = "translate-internals";
 const char kChromeUIUberFrameHost[] = "uber-frame";
