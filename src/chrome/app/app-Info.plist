@@ -348,5 +348,7 @@
 			</dict>
 		</dict>
 	</array>
+	<key>SUPublicDSAKeyFile</key>
+	<string>dsa_pub.pem</string>
 </dict>
 </plist>

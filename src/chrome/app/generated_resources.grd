@@ -15840,6 +15840,10 @@ After you create a new supervised user, you can manage their settings at any tim
         </message>
       </if>
 
+    <!-- BitPop Autoupdate strings -->
+    <message name="IDS_CHECK_FOR_UPDATES" desc="Mac OS update check menu item title">
+      Check for Updates...
+    </message>
     <!-- Torlauncher strings -->
     <message name="IDS_TORLAUNCHER_APP_NAME" desc="Component app name as shown on chrome://extensions/ page.">
       Tor Launcher
